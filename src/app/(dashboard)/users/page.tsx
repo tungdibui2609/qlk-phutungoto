@@ -54,8 +54,7 @@ export default function UsersPage() {
     }
 
     async function toggleUserStatus(id: string, currentStatus: boolean) {
-        const { error } = await supabase
-            .from('user_profiles' as any)
+        const { error } = await (supabase.from('user_profiles') as any)
             .update({ is_active: !currentStatus })
             .eq('id', id)
 
