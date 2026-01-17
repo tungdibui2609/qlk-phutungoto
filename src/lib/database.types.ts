@@ -120,7 +120,7 @@ export interface Database {
                     address: string | null
                     tax_code: string | null
                     website: string | null
-                    note: string | null
+                    notes: string | null
                     status: string | null
                     is_active: boolean
                 }
@@ -136,7 +136,7 @@ export interface Database {
                     address?: string | null
                     tax_code?: string | null
                     website?: string | null
-                    note?: string | null
+                    notes?: string | null
                     status?: string | null
                     is_active?: boolean
                 }
@@ -152,7 +152,7 @@ export interface Database {
                     address?: string | null
                     tax_code?: string | null
                     website?: string | null
-                    note?: string | null
+                    notes?: string | null
                     status?: string | null
                     is_active?: boolean
                 }
