@@ -36,8 +36,13 @@ export async function GET(req: NextRequest) {
                     getAll() {
                         return cookieStore.getAll()
                     },
-                    setAll(cookiesToSet) {
-                        // Optional: Handle cookie updates if needed, though for just reading session it's fine to ignore or empty
+                    setAll(cookiesToSet: any) {
+                        try {
+                            cookiesToSet.forEach(({ name, value, options }: any) =>
+                                cookieStore.set(name, value, options)
+                            )
+                        } catch {
+                        }
                     },
                 },
             }
