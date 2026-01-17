@@ -1,0 +1,826 @@
+'use client'
+
+import React, { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { supabase } from '@/lib/supabaseClient'
+import { Printer, Edit3 } from 'lucide-react'
+
+interface CompanyInfo {
+    name: string
+    short_name: string | null
+    address: string | null
+    phone: string | null
+    email: string | null
+    tax_code: string | null
+    logo_url: string | null
+}
+
+interface OrderItem {
+    id: string
+    product_name: string | null
+    unit: string | null
+    quantity: number
+    price: number
+    note: string | null
+    products: { sku: string } | null
+}
+
+interface InboundOrder {
+    id: string
+    code: string
+    status: string
+    created_at: string
+    warehouse_name: string | null
+    description: string | null
+    supplier_address: string | null
+    supplier_phone: string | null
+    supplier: { name: string } | null
+}
+
+// Editable text component - shows input on screen, shows text when printing
+function EditableText({
+    value,
+    onChange,
+    placeholder = '',
+    className = '',
+    isSnapshot = false
+}: {
+    value: string
+    onChange: (val: string) => void
+    placeholder?: string
+    className?: string
+    isSnapshot?: boolean
+}) {
+    return (
+        <>
+            <input
+                type="text"
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder={placeholder}
+                className={`print:hidden ${isSnapshot ? 'hidden' : ''} bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none transition-colors ${className}`}
+            />
+            <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''} ${className}`}>{value || ''}</span>
+        </>
+    )
+}
+
+function AutoResizeInput({
+    value,
+    onChange,
+    minWidth = 30,
+    className = '',
+    isSnapshot = false
+}: {
+    value: string
+    onChange: (val: string) => void
+    minWidth?: number
+    className?: string
+    isSnapshot?: boolean
+}) {
+    return (
+        <div className={`inline-grid items-center ${className} print:hidden ${isSnapshot ? 'hidden' : ''}`}>
+            {/* Hidden span to measure content width */}
+            <span className="invisible col-start-1 row-start-1 px-1 overflow-hidden whitespace-pre border-b border-transparent opacity-0 pointer-events-none">
+                {value || '00'}
+            </span>
+            <input
+                type="text"
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                className="col-start-1 row-start-1 w-full h-full text-center bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none"
+                style={{ minWidth: `${minWidth}px` }}
+            />
+        </div>
+    )
+}
+
+
+function numberToVietnameseText(number: number): string {
+    const defaultNumbers = ' hai ba bốn năm sáu bảy tám chín'
+    const chuHangDonVi = ('1 mốt' + defaultNumbers).split(' ')
+    const chuHangChuc = ('lẻ mười' + defaultNumbers).split(' ')
+    const chuHangTram = ('không một' + defaultNumbers).split(' ')
+    const dvBlock = '1 nghìn triệu tỷ'.split(' ')
+
+    function convert_block_three(number: string): string {
+        var a = parseInt(number.substring(0, 1))
+        var b = parseInt(number.substring(1, 2))
+        var c = parseInt(number.substring(2, 3))
+        var chu = ''
+        // Hàng trăm
+        chu = chuHangTram[a] + ' trăm'
+        // Hàng chục
+        if (b === 0) {
+            if (c !== 0) {
+                chu += ' lẻ ' + chuHangTram[c]
+            }
+        } else if (b === 1) {
+            chu += ' mười'
+            if (c === 1) chu += ' một'
+            else if (c !== 0) chu += ' ' + chuHangDonVi[c]
+        } else {
+            chu += ' ' + chuHangChuc[b] + ' mươi'
+            if (c === 1) chu += ' mốt'
+            else if (c === 4) chu += ' tư'
+            else if (c !== 0) chu += ' ' + chuHangDonVi[c]
+        }
+        return chu
+    }
+
+    function to_vietnamese(number: number): string {
+        var str = number.toString()
+        var i = str.length
+        if (i === 0 || str === 'NaN' || str === '0') return 'Không đồng'
+
+        var chu = ''
+        var dau = ''
+        var index = 0
+        var result = ''
+
+        if (number < 0) {
+            dau = 'Âm '
+            str = str.substring(1)
+            i--
+        }
+
+        var arr = []
+        var position = i
+
+        while (position >= 0) {
+            arr.push(str.substring(Math.max(0, position - 3), position))
+            position -= 3
+        }
+
+        for (i = 0; i < arr.length; i++) {
+            if (arr[i] !== '' && arr[i] !== '000') {
+                result = convert_block_three(arr[i].padStart(3, '0')) + (dvBlock[i] === '1' ? '' : ' ' + dvBlock[i]) + ' ' + result
+            }
+            index++
+        }
+
+        result = result.trim()
+        // Capitalize first letter
+        return dau + result.charAt(0).toUpperCase() + result.slice(1) + ' đồng'
+    }
+
+    return to_vietnamese(number)
+}
+
+function InboundPrintContent() {
+    const searchParams = useSearchParams()
+    const orderId = searchParams.get('id')
+    const printType = searchParams.get('type') || 'official' // 'internal' or 'official'
+    const isSnapshot = searchParams.get('snapshot') === '1'
+    const isInternal = printType === 'internal'
+
+    const [loading, setLoading] = useState(true)
+    const [order, setOrder] = useState<InboundOrder | null>(null)
+    const [items, setItems] = useState<OrderItem[]>([])
+    const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null)
+
+    // Editable fields
+    const [editDay, setEditDay] = useState('')
+    const [editMonth, setEditMonth] = useState('')
+    const [editYear, setEditYear] = useState('')
+    const [editSupplierName, setEditSupplierName] = useState('')
+    const [editSupplierAddress, setEditSupplierAddress] = useState('')
+    const [editTheoDoc, setEditTheoDoc] = useState('')
+    const [editTheoSo, setEditTheoSo] = useState('')
+    const [editTheoDay, setEditTheoDay] = useState('')
+    const [editTheoMonth, setEditTheoMonth] = useState('')
+    const [editTheoYear, setEditTheoYear] = useState('')
+    const [editTheoCua, setEditTheoCua] = useState('')
+    const [editWarehouse, setEditWarehouse] = useState('')
+    const [editLocation, setEditLocation] = useState('')
+    const [editDescription, setEditDescription] = useState('')
+    const [amountInWords, setAmountInWords] = useState('')
+    const [attachedDocs, setAttachedDocs] = useState('')
+
+    // Editable signature fields
+    const [signTitle1, setSignTitle1] = useState('Người lập phiếu')
+    const [signTitle2, setSignTitle2] = useState('Thủ kho')
+    const [signTitle3, setSignTitle3] = useState('Kế toán trưởng')
+    const [signPerson1, setSignPerson1] = useState('')
+    const [signPerson2, setSignPerson2] = useState('')
+    const [signPerson3, setSignPerson3] = useState('')
+    const [signDay, setSignDay] = useState('')
+    const [signMonth, setSignMonth] = useState('')
+    const [signYear, setSignYear] = useState('')
+
+    // Accounting fields (Nợ / Có)
+    const [debitAccount, setDebitAccount] = useState('')
+    const [creditAccount, setCreditAccount] = useState('')
+
+    // General note field
+    const [editNote, setEditNote] = useState('')
+
+    useEffect(() => {
+        async function fetchData() {
+            if (!orderId) {
+                setLoading(false)
+                return
+            }
+
+            try {
+                // Fetch company info
+                const { data: companyData } = await supabase
+                    .from('company_settings')
+                    .select('*')
+                    .limit(1)
+                    .single()
+
+                if (companyData) {
+                    setCompanyInfo(companyData as any)
+                    setEditLocation((companyData as any).address || '')
+                }
+
+                // Fetch order
+                const { data: orderData } = await supabase
+                    .from('inbound_orders')
+                    .select(`
+                        *,
+                        supplier:suppliers(name)
+                    `)
+                    .eq('id', orderId)
+                    .single()
+
+                if (orderData) {
+                    const o = orderData as any
+                    setOrder(o)
+
+                    // Set editable fields from order data
+                    const d = new Date(o.created_at)
+                    if (!isNaN(d.getTime())) {
+                        setEditDay(d.getDate().toString())
+                        setEditMonth((d.getMonth() + 1).toString())
+                        setEditYear(d.getFullYear().toString())
+                    }
+                    setEditSupplierName(o.supplier?.name || '')
+                    setEditSupplierAddress(o.supplier_address || '')
+                    setEditWarehouse(o.warehouse_name || 'Kho mặc định')
+                    setEditDescription(o.description || '')
+
+                    // Fetch items
+                    const { data: itemsData } = await supabase
+                        .from('inbound_order_items')
+                        .select('*, products(sku)')
+                        .eq('order_id', orderId)
+                    // ... rest of items fetching
+                    if (itemsData) {
+                        setItems(itemsData as any)
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching data:', error)
+            } finally {
+                setLoading(false)
+            }
+        }
+
+        fetchData()
+    }, [orderId])
+
+    // Auto-calculate amount in words when items change
+    useEffect(() => {
+        if (items.length > 0) {
+            const total = items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0)
+            setAmountInWords(numberToVietnameseText(total))
+        }
+    }, [items])
+
+    const handlePrint = () => {
+        window.print()
+    }
+
+    if (loading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <div className="text-gray-500">Đang tải...</div>
+            </div>
+        )
+    }
+
+    if (!order) {
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <div className="text-red-500">Không tìm thấy phiếu nhập</div>
+            </div>
+        )
+    }
+
+    return (
+        <div className="pt-0 px-6 pb-6 print:p-4 max-w-4xl mx-auto bg-white text-black text-[13px] leading-relaxed">
+            {/* Toolbar - Hidden when printing or snapshotting */}
+            <div className={`fixed top-4 right-4 print:hidden z-50 flex items-center gap-2 ${isSnapshot ? 'hidden' : ''}`}>
+                <button
+                    onClick={handlePrint}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-full shadow-lg transition-all hover:scale-105"
+                >
+                    <Printer size={20} />
+                    In phiếu
+                </button>
+            </div>
+
+            {/* Header */}
+            <div className="relative mb-4">
+                {/* Legal Header - Top Right - Only show for official form */}
+                {!isInternal && (
+                    <div className="absolute top-4 right-0 text-center text-[10px] leading-tight font-bold text-gray-700">
+                        <div className="text-red-600 font-bold">Mẫu số 01 - VT</div>
+                        <div>(Ban hành theo Thông tư số 200/2014/TT-BTC</div>
+                        <div>Ngày 22/12/2014 của Bộ Tài chính)</div>
+                    </div>
+                )}
+
+                <div className="flex items-center gap-3">
+                    {/* Logo */}
+                    <div className="shrink-0">
+                        {companyInfo?.logo_url ? (
+                            <img
+                                src={companyInfo.logo_url}
+                                alt="Logo"
+                                className={isInternal ? "h-20 w-auto object-contain" : "h-16 w-auto object-contain"}
+                            />
+                        ) : (
+                            <div className={`${isInternal ? 'h-20 w-20 text-2xl' : 'h-14 w-14 text-xl'} bg-orange-500 rounded-lg flex items-center justify-center text-white font-bold`}>
+                                {companyInfo?.short_name?.[0] || 'C'}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Company Info */}
+                    <div className="flex flex-col justify-center gap-0.5">
+                        <div className={`text-emerald-700 font-bold uppercase leading-tight ${isInternal ? 'text-base' : 'text-xs'}`}>
+                            {companyInfo?.name || 'CÔNG TY'}
+                        </div>
+                        {companyInfo?.address && (
+                            <div className={`font-bold text-gray-700 leading-tight ${isInternal ? 'text-sm' : 'text-[11px]'}`}>
+                                Địa chỉ: {companyInfo.address}
+                            </div>
+                        )}
+                        <div className={`font-bold text-gray-700 leading-tight ${isInternal ? 'text-sm' : 'text-[11px]'}`}>
+                            {companyInfo?.email && `Email: ${companyInfo.email}`}
+                            {companyInfo?.email && companyInfo?.phone && <span className="mx-1">|</span>}
+                            {companyInfo?.phone && `ĐT: ${companyInfo.phone}`}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Title */}
+            <div className="relative text-center mt-8 mb-2">
+                <h1 className="text-xl font-bold tracking-wide" style={{ fontFamily: "'Times New Roman', Times, serif" }}>
+                    PHIẾU NHẬP KHO
+                </h1>
+
+                {/* Nợ/Có on the right - absolute positioned - Only for official form */}
+                {!isInternal && (
+                    <div className="absolute top-8 right-36 text-left">
+                        {/* Nợ */}
+                        <div className="text-sm font-medium text-gray-700">
+                            <span className={`print:hidden ${isSnapshot ? 'hidden' : ''}`}>
+                                Nợ:{' '}
+                                <input
+                                    type="text"
+                                    value={debitAccount}
+                                    onChange={(e) => setDebitAccount(e.target.value)}
+                                    className="w-16 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
+                                />
+                            </span>
+                            <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''}`}>Nợ: <span className="inline-block min-w-[40px] border-b border-dashed border-gray-300">{debitAccount}</span></span>
+                        </div>
+                        {/* Có */}
+                        <div className="text-sm font-medium text-gray-700 mt-1">
+                            <span className={`print:hidden ${isSnapshot ? 'hidden' : ''}`}>
+                                Có:{' '}
+                                <input
+                                    type="text"
+                                    value={creditAccount}
+                                    onChange={(e) => setCreditAccount(e.target.value)}
+                                    className="w-16 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
+                                />
+                            </span>
+                            <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''}`}>Có: <span className="inline-block min-w-[40px] border-b border-dashed border-gray-300">{creditAccount}</span></span>
+                        </div>
+                    </div>
+                )}
+
+                {/* Centered: Date */}
+                <div className="text-sm italic text-gray-600 mt-2">
+                    <span className={`print:hidden ${isSnapshot ? 'hidden' : ''}`}>
+                        Ngày{' '}
+                        <input
+                            type="text"
+                            value={editDay}
+                            onChange={(e) => setEditDay(e.target.value)}
+                            className="w-8 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
+                        />
+                        {' '}tháng{' '}
+                        <input
+                            type="text"
+                            value={editMonth}
+                            onChange={(e) => setEditMonth(e.target.value)}
+                            className="w-8 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
+                        />
+                        {' '}năm{' '}
+                        <input
+                            type="text"
+                            value={editYear}
+                            onChange={(e) => setEditYear(e.target.value)}
+                            className="w-14 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
+                        />
+                    </span>
+                    <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''}`}>
+                        Ngày {editDay} tháng {editMonth} năm {editYear}
+                    </span>
+                </div>
+
+                {/* Centered: Số */}
+                <div className="text-sm font-medium mt-1">
+                    Số: <span className="font-bold text-orange-600">{order.code}</span>
+                </div>
+            </div>
+
+            {/* Order Info - All fields are editable */}
+            <div className="mt-6 space-y-2 text-sm">
+                <div className="flex items-center">
+                    <span className="text-gray-600 shrink-0">- Họ tên người giao:</span>
+                    <EditableText
+                        value={editSupplierName}
+                        onChange={setEditSupplierName}
+                        className="ml-2 flex-1 font-medium"
+                        isSnapshot={isSnapshot}
+                    />
+                </div>
+                <div className="flex items-center">
+                    <span className="text-gray-600 shrink-0">- Địa chỉ:</span>
+                    <EditableText
+                        value={editSupplierAddress}
+                        onChange={setEditSupplierAddress}
+                        className="ml-2 flex-1 font-medium"
+                        isSnapshot={isSnapshot}
+                    />
+                </div>
+                {!isInternal && (
+                    <div className="flex items-center">
+                        <span className="text-gray-600 shrink-0">- Theo</span>
+                        <AutoResizeInput
+                            value={editTheoDoc}
+                            onChange={setEditTheoDoc}
+                            className="mx-1"
+                            minWidth={60}
+                            isSnapshot={isSnapshot}
+                        />
+                        <span className={`hidden print:inline-block mx-1 ${!editTheoDoc ? 'min-w-[100px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoDoc || ''}</span>
+
+                        <span className="text-gray-600">số</span>
+                        <AutoResizeInput
+                            value={editTheoSo}
+                            onChange={setEditTheoSo}
+                            className="mx-1"
+                            minWidth={40}
+                            isSnapshot={isSnapshot}
+                        />
+                        <span className={`hidden print:inline-block mx-1 ${!editTheoSo ? 'min-w-[85px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoSo || ''}</span>
+
+                        <span className="text-gray-600">ngày</span>
+                        <AutoResizeInput
+                            value={editTheoDay}
+                            onChange={setEditTheoDay}
+                            className="mx-1"
+                            minWidth={25}
+                            isSnapshot={isSnapshot}
+                        />
+                        <span className={`hidden print:inline-block mx-1 ${!editTheoDay ? 'min-w-[30px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoDay || ''}</span>
+
+                        <span className="text-gray-600">tháng</span>
+                        <AutoResizeInput
+                            value={editTheoMonth}
+                            onChange={setEditTheoMonth}
+                            className="mx-1"
+                            minWidth={25}
+                            isSnapshot={isSnapshot}
+                        />
+                        <span className={`hidden print:inline-block mx-1 ${!editTheoMonth ? 'min-w-[30px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoMonth || ''}</span>
+
+                        <span className="text-gray-600">năm</span>
+                        <AutoResizeInput
+                            value={editTheoYear}
+                            onChange={setEditTheoYear}
+                            className="mx-1"
+                            minWidth={30}
+                            isSnapshot={isSnapshot}
+                        />
+                        <span className={`hidden print:inline-block mx-1 ${!editTheoYear ? 'min-w-[40px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoYear || ''}</span>
+
+                        <span className="text-gray-600">của</span>
+                        <AutoResizeInput
+                            value={editTheoCua}
+                            onChange={setEditTheoCua}
+                            className="mx-1"
+                            minWidth={100}
+                            isSnapshot={isSnapshot}
+                        />
+                        <span className={`hidden print:inline-block mx-1 ${!editTheoCua ? 'min-w-[100px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoCua || ''}</span>
+                    </div>
+                )}
+                <div className="flex items-center gap-8">
+                    <div className="flex items-center">
+                        <span className="text-gray-600 shrink-0">- Nhập tại kho:</span>
+                        <EditableText
+                            value={editWarehouse}
+                            onChange={setEditWarehouse}
+                            className="ml-2 font-medium"
+                            isSnapshot={isSnapshot}
+                        />
+                    </div>
+                    <div className="flex items-center flex-1">
+                        <span className="text-gray-600 shrink-0">Địa điểm:</span>
+                        <input
+                            type="text"
+                            value={editLocation}
+                            onChange={(e) => setEditLocation(e.target.value)}
+                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
+                        />
+                        <span className={`hidden print:inline ml-2 flex-1 min-w-[50px] ${isSnapshot ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
+                    </div>
+                </div>
+                {editDescription && (
+                    <div className="flex items-center">
+                        <span className="text-gray-600 shrink-0">- Diễn giải:</span>
+                        <EditableText
+                            value={editDescription}
+                            onChange={setEditDescription}
+                            className="ml-2 flex-1 font-medium italic"
+                            isSnapshot={isSnapshot}
+                        />
+                    </div>
+                )}
+                <div className="flex items-center">
+                    <span className="text-gray-600 shrink-0">- Ghi chú:</span>
+                    <input
+                        type="text"
+                        value={editNote}
+                        onChange={(e) => setEditNote(e.target.value)}
+                        className={`print:hidden ${isSnapshot ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
+                    />
+                    <span className={`hidden print:inline ml-2 flex-1 ${isSnapshot ? 'inline' : ''}`}>{editNote || '\u00A0'}</span>
+                </div>
+            </div>
+
+            {/* Items Table */}
+            <div className="mt-6">
+                <table className="w-full border-collapse text-sm">
+                    <thead>
+                        <tr className="bg-gray-100">
+                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-10">STT</th>
+                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-48">Tên, nhãn hiệu quy cách, phẩm chất vật tư, dụng cụ sản phẩm, hàng hóa</th>
+                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">Mã số</th>
+                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-14">Đơn vị tính</th>
+                            <th colSpan={2} className="border border-gray-400 px-2 py-2 text-center">Số lượng</th>
+                            {!isInternal && <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">Đơn giá</th>}
+                            {!isInternal && <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-28">Thành tiền</th>}
+                            {isInternal && <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-32">Ghi chú</th>}
+                        </tr>
+                        <tr className="bg-gray-100">
+                            <th className="border border-gray-400 px-2 py-2 text-center w-16">Theo chứng từ</th>
+                            <th className="border border-gray-400 px-2 py-2 text-center w-16">Thực nhập</th>
+                        </tr>
+                        <tr className="bg-gray-100 font-normal">
+                            <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">A</th>
+                            <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">B</th>
+                            <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">C</th>
+                            <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">D</th>
+                            <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">1</th>
+                            <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">2</th>
+                            {!isInternal && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">3</th>}
+                            {!isInternal && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">4</th>}
+                            {isInternal && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">3</th>}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {items.map((item, index) => {
+                            const unitPrice = item.price || 0
+                            const totalPrice = unitPrice * item.quantity
+                            return (
+                                <tr key={item.id} className="hover:bg-gray-50">
+                                    <td className="border border-gray-400 px-2 py-1.5 text-center">{index + 1}</td>
+                                    <td className="border border-gray-400 px-2 py-1.5">{item.product_name || 'N/A'}</td>
+                                    <td className="border border-gray-400 px-2 py-1.5 text-center font-mono text-xs">
+                                        {item.products?.sku || '-'}
+                                    </td>
+                                    <td className="border border-gray-400 px-2 py-1.5 text-center">{item.unit || '-'}</td>
+                                    <td className="border border-gray-400 px-2 py-1.5 text-center font-medium">
+                                        {item.quantity}
+                                    </td>
+                                    <td className="border border-gray-400 px-2 py-1.5 text-center font-medium">
+                                        {item.quantity}
+                                    </td>
+                                    {!isInternal && (
+                                        <td className="border border-gray-400 px-2 py-1.5 text-right">
+                                            {unitPrice > 0 ? unitPrice.toLocaleString('vi-VN') : '-'}
+                                        </td>
+                                    )}
+                                    {!isInternal && (
+                                        <td className="border border-gray-400 px-2 py-1.5 text-right font-medium">
+                                            {totalPrice > 0 ? totalPrice.toLocaleString('vi-VN') : '-'}
+                                        </td>
+                                    )}
+                                    {isInternal && (
+                                        <td className="border border-gray-400 px-2 py-1.5 text-xs text-gray-600">
+                                            {item.note || ''}
+                                        </td>
+                                    )}
+                                </tr>
+                            )
+                        })}
+                        {items.length === 0 && (
+                            <tr>
+                                <td colSpan={isInternal ? 7 : 8} className="border border-gray-400 px-2 py-4 text-center text-gray-400">
+                                    Không có hàng hóa
+                                </td>
+                            </tr>
+                        )}
+                        {/* Total Row */}
+                        <tr className="font-bold">
+                            <td className="border border-gray-400 px-2 py-1.5 text-center"></td>
+                            <td className="border border-gray-400 px-2 py-1.5 text-center">Cộng</td>
+                            <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
+                            <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
+                            <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
+                            <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
+                            {!isInternal && <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>}
+                            {!isInternal && (
+                                <td className="border border-gray-400 px-2 py-1.5 text-right">
+                                    {items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0).toLocaleString('vi-VN')}
+                                </td>
+                            )}
+                            {isInternal && <td className="border border-gray-400 px-2 py-1.5 text-center"></td>}
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            {/* Summary */}
+            <div className="mt-4 text-sm space-y-1">
+                {!isInternal && (
+                    <div className="flex items-center">
+                        <span className="shrink-0">- Tổng số tiền (viết bằng chữ):</span>
+                        <EditableText
+                            value={amountInWords}
+                            onChange={setAmountInWords}
+                            className="ml-2 flex-1 font-medium italic"
+                            isSnapshot={isSnapshot}
+                        />
+                    </div>
+                )}
+                {!isInternal && (
+                    <div className="flex items-center">
+                        <span className="shrink-0">- Số chứng từ gốc kèm theo:</span>
+                        <EditableText
+                            value={attachedDocs}
+                            onChange={setAttachedDocs}
+                            className="ml-2 flex-1 font-medium"
+                            isSnapshot={isSnapshot}
+                        />
+                    </div>
+                )}
+            </div>
+
+            <div className="mt-10 grid grid-cols-3 gap-4 text-center text-sm">
+                <div>
+                    <div className="text-sm italic text-center mb-1 invisible">
+                        Ngày ... tháng ... năm ...
+                    </div>
+                    <div className="font-semibold">
+                        <input
+                            type="text"
+                            value={signTitle1}
+                            onChange={(e) => setSignTitle1(e.target.value)}
+                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
+                        />
+                        <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''}`}>{signTitle1}</span>
+                    </div>
+                    <div className="text-xs text-gray-500 italic hidden">(Hoặc bộ phận có nhu cầu nhập)</div>
+                    <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
+                    <div className="h-16"></div>
+                    <div className="mt-4">
+                        <input
+                            type="text"
+                            value={signPerson1}
+                            onChange={(e) => setSignPerson1(e.target.value)}
+                            placeholder="Nhập tên..."
+                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
+                        />
+                        <span className={`hidden print:inline font-medium ${isSnapshot ? 'inline' : ''}`}>{signPerson1}</span>
+                    </div>
+                </div>
+                <div>
+                    <div className="text-sm italic text-center mb-1 invisible">
+                        Ngày ... tháng ... năm ...
+                    </div>
+                    <div className="font-semibold">
+                        <input
+                            type="text"
+                            value={signTitle2}
+                            onChange={(e) => setSignTitle2(e.target.value)}
+                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
+                        />
+                        <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''}`}>{signTitle2}</span>
+                    </div>
+                    <div className="text-xs text-gray-500 italic hidden">(Hoặc bộ phận có nhu cầu nhập)</div>
+                    <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
+                    <div className="h-16"></div>
+                    <div className="mt-4">
+                        <input
+                            type="text"
+                            value={signPerson2}
+                            onChange={(e) => setSignPerson2(e.target.value)}
+                            placeholder="Nhập tên..."
+                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
+                        />
+                        <span className={`hidden print:inline font-medium ${isSnapshot ? 'inline' : ''}`}>{signPerson2}</span>
+                    </div>
+                </div>
+                <div>
+                    <div className="text-sm italic text-center mb-1">
+                        <span className={`print:hidden ${isSnapshot ? 'hidden' : ''}`}>
+                            Ngày
+                            <input
+                                type="text"
+                                value={signDay}
+                                onChange={(e) => setSignDay(e.target.value)}
+                                className="w-8 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-1"
+                            />
+                            tháng
+                            <input
+                                type="text"
+                                value={signMonth}
+                                onChange={(e) => setSignMonth(e.target.value)}
+                                className="w-8 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-1"
+                            />
+                            năm
+                            <input
+                                type="text"
+                                value={signYear}
+                                onChange={(e) => setSignYear(e.target.value)}
+                                className="w-12 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-1"
+                            />
+                        </span>
+                        <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''}`}>
+                            Ngày {signDay || '\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0'} tháng {signMonth || '\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0'} năm {signYear || ''}
+                        </span>
+                    </div>
+                    <div className="font-semibold">
+                        <input
+                            type="text"
+                            value={signTitle3}
+                            onChange={(e) => setSignTitle3(e.target.value)}
+                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
+                        />
+                        <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''}`}>{signTitle3}</span>
+                    </div>
+                    <div className="text-xs text-gray-500 italic">(Hoặc bộ phận có nhu cầu nhập)</div>
+                    <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
+                    <div className="h-16"></div>
+                    <div>
+                        <input
+                            type="text"
+                            value={signPerson3}
+                            onChange={(e) => setSignPerson3(e.target.value)}
+                            placeholder="Nhập tên..."
+                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
+                        />
+                        <span className={`hidden print:inline font-medium ${isSnapshot ? 'inline' : ''}`}>{signPerson3}</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Print Styles */}
+            <style jsx global>{`
+                @media print {
+                    @page {
+                        size: A4;
+                        margin: 1mm 10mm 10mm 10mm;
+                    }
+                    body {
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    .no-print {
+                        display: none !important;
+                    }
+                }
+            `}</style>
+        </div>
+    )
+}
+
+export default function InboundPrintPage() {
+    return (
+        <React.Suspense fallback={<div className="p-8 text-center">Đang tải...</div>}>
+            <InboundPrintContent />
+        </React.Suspense>
+    )
+}
