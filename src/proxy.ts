@@ -60,7 +60,7 @@ export async function proxy(request: NextRequest) {
 
     // Protected routes logic
     // Allow access to login, static files, and api
-    if (!session && !request.nextUrl.pathname.startsWith('/login')) {
+    if (!session && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/print')) {
         // Redirect unauthenticated users to login page
         const url = request.nextUrl.clone()
         url.pathname = '/login'
