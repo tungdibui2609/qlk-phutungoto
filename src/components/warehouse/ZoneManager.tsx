@@ -222,7 +222,7 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
             .order('created_at', { ascending: false })
 
         if (!error && data) {
-            setTemplates(data.map(t => ({
+            setTemplates((data as any[]).map(t => ({
                 id: t.id,
                 name: t.name,
                 structure: t.structure as TemplateNode,
@@ -242,7 +242,7 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
         if (error) {
             console.error('Error fetching zones:', error)
         } else {
-            const loadedZones = (data || []).map(z => ({ ...z, _status: 'existing' } as LocalZone))
+            const loadedZones = (data as any[] || []).map(z => ({ ...z, _status: 'existing' } as LocalZone))
             setZones(loadedZones)
             setOriginalZones(data || [])
 
@@ -513,11 +513,11 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
                     .select('position_id')
                     .in('zone_id', zoneIdsToDelete)
 
-                const posIdsToDelete = zpData?.map(item => item.position_id) || []
+                const posIdsToDelete = (zpData as any[])?.map(item => item.position_id) || []
                 console.log(`[ZoneManager] Found ${posIdsToDelete.length} associated positions to delete`)
 
                 // 1. First, delete zone_positions for these zones (though CASCADE should handle this)
-                const { error: zpError, count: zpCount } = await supabase.from('zone_positions').delete().in('zone_id', zoneIdsToDelete)
+                const { error: zpError, count: zpCount } = await (supabase.from('zone_positions') as any).delete().in('zone_id', zoneIdsToDelete)
                 console.log(`[ZoneManager] zone_positions delete result: count=${zpCount}, error=`, zpError)
                 if (zpError) console.warn('zone_positions delete warning:', zpError)
 
@@ -546,7 +546,7 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
             // 2. Updates
             const zoneUpdates = zones.filter(z => z._status === 'modified')
             for (const z of zoneUpdates) {
-                const { error } = await supabase.from('zones').update({ code: z.code, name: z.name }).eq('id', z.id)
+                const { error } = await (supabase.from('zones') as any).update({ code: z.code, name: z.name }).eq('id', z.id)
                 if (error) throw error
             }
 
@@ -561,7 +561,7 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
                     parent_id: z.parent_id,
                     level: z.level
                 }))
-                const { error } = await supabase.from('zones').insert(cleanZones)
+                const { error } = await (supabase.from('zones') as any).insert(cleanZones)
                 if (error) throw error
             }
 
@@ -572,14 +572,14 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
             // 1. Pos Deletes
             const posIdsToDelete = allPos.filter(p => p._status === 'deleted').map(p => p.id)
             if (posIdsToDelete.length > 0) {
-                const { error } = await supabase.from('positions').delete().in('id', posIdsToDelete)
+                const { error } = await (supabase.from('positions') as any).delete().in('id', posIdsToDelete)
                 if (error) throw error
             }
 
             // 2. Pos Updates
             const posUpdates = allPos.filter(p => p._status === 'modified')
             for (const p of posUpdates) {
-                const { error } = await supabase.from('positions').update({ code: p.code }).eq('id', p.id)
+                const { error } = await (supabase.from('positions') as any).update({ code: p.code }).eq('id', p.id)
                 if (error) throw error
             }
 
@@ -596,7 +596,7 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
                         batch_name: p.batch_name
                     }))
 
-                    const { error: posError } = await supabase.from('positions').insert(posPayloads)
+                    const { error: posError } = await (supabase.from('positions') as any).insert(posPayloads)
                     if (posError) throw posError
 
                     // Create links
@@ -604,7 +604,7 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
                         zone_id: zoneId,
                         position_id: p.id
                     }))
-                    const { error: linkError } = await supabase.from('zone_positions').insert(links)
+                    const { error: linkError } = await (supabase.from('zone_positions') as any).insert(links)
                     if (linkError) throw linkError
                 }
             }
@@ -648,8 +648,8 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
 
         const structure = buildTemplateFromZone(zoneId)
 
-        const { error } = await supabase
-            .from('zone_templates')
+        const { error } = await (supabase
+            .from('zone_templates') as any)
             .insert([{
                 name: templateName.trim(),
                 structure
