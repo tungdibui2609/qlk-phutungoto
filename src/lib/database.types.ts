@@ -583,7 +583,6 @@ export interface Database {
                     rows: number
                     cols: number
                     direction: string | null
-                    direction: string | null
                     custom_layout: Json | null
                     position_columns: number | null
                     cell_width: number | null
@@ -601,7 +600,6 @@ export interface Database {
                     rows?: number
                     cols?: number
                     direction?: string | null
-                    direction?: string | null
                     custom_layout?: Json | null
                     position_columns?: number | null
                     cell_width?: number | null
@@ -618,7 +616,6 @@ export interface Database {
                     zone_id?: string
                     rows?: number
                     cols?: number
-                    direction?: string | null
                     direction?: string | null
                     custom_layout?: Json | null
                     position_columns?: number | null
