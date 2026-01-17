@@ -304,7 +304,7 @@ function OutboundPrintContent() {
     }
 
     return (
-        <div className="pt-0 px-6 pb-6 print:p-4 max-w-4xl mx-auto bg-white text-black text-[13px] leading-relaxed">
+        <div id="print-ready" className="pt-0 px-6 pb-6 print:p-4 max-w-4xl mx-auto bg-white text-black text-[13px] leading-relaxed">
             {/* Toolbar - Hidden when printing */}
             <div className={`fixed top-4 right-4 print:hidden z-50 flex items-center gap-2 ${isSnapshot ? 'hidden' : ''}`}>
                 <button
