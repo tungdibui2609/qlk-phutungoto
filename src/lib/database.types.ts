@@ -201,8 +201,33 @@ export interface Database {
             branches: {
                 Row: {
                     id: string
+                    created_at: string
+                    code: string | null
                     name: string
+                    address: string | null
+                    phone: string | null
+                    is_active: boolean
                     is_default: boolean
+                }
+                Insert: {
+                    id?: string
+                    created_at?: string
+                    code?: string | null
+                    name: string
+                    address?: string | null
+                    phone?: string | null
+                    is_active?: boolean
+                    is_default?: boolean
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    code?: string | null
+                    name?: string
+                    address?: string | null
+                    phone?: string | null
+                    is_active?: boolean
+                    is_default?: boolean
                 }
             }
             inbound_orders: {
