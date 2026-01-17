@@ -50,10 +50,30 @@ export async function GET(req: NextRequest) {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token || '';
 
+        // Fetch company settings server-side to ensure availability
+        const { data: companyData } = await supabase
+            .from('company_settings')
+            .select('*')
+            .limit(1)
+            .single();
+
         // Construct the URL that the screenshot service will visit
-        // We add snapshot=1 to tell the page to render in "clean/print" mode
-        // And token to authenticate the screenshot service against RLS
-        const targetUrl = `${base}/print/inbound?id=${id}&snapshot=1&token=${token}`;
+        // We pass company info via params to avoid client-side fetch issues
+        const params = new URLSearchParams();
+        params.set('id', id);
+        params.set('snapshot', '1');
+        params.set('token', token);
+
+        if (companyData) {
+            if (companyData.name) params.set('cmp_name', companyData.name);
+            if (companyData.address) params.set('cmp_address', companyData.address);
+            if (companyData.phone) params.set('cmp_phone', companyData.phone);
+            if (companyData.email) params.set('cmp_email', companyData.email);
+            if (companyData.logo_url) params.set('cmp_logo', companyData.logo_url);
+            if (companyData.short_name) params.set('cmp_short', companyData.short_name);
+        }
+
+        const targetUrl = `${base}/print/inbound?${params.toString()}`;
 
         // Call external Puppeteer screenshot service
         const serviceBase = (process.env.SCREENSHOT_SERVICE_URL || '').trim() || 'https://chupanh.onrender.com';

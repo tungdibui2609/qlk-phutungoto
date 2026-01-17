@@ -173,10 +173,28 @@ function OutboundPrintContent() {
     const isSnapshot = searchParams.get('snapshot') === '1'
     const isInternal = printType === 'internal'
 
+    // Check for company info in params (from screenshot service)
+    const cmpName = searchParams.get('cmp_name')
+    const cmpAddress = searchParams.get('cmp_address')
+    const cmpPhone = searchParams.get('cmp_phone')
+    const cmpEmail = searchParams.get('cmp_email')
+    const cmpLogo = searchParams.get('cmp_logo')
+    const cmpShort = searchParams.get('cmp_short')
+
+    const initialCompanyInfo = cmpName ? {
+        name: cmpName,
+        address: cmpAddress,
+        phone: cmpPhone,
+        email: cmpEmail,
+        logo_url: cmpLogo,
+        short_name: cmpShort,
+        tax_code: null
+    } as CompanyInfo : null
+
     const [loading, setLoading] = useState(true)
     const [order, setOrder] = useState<OutboundOrder | null>(null)
     const [items, setItems] = useState<OrderItem[]>([])
-    const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null)
+    const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(initialCompanyInfo)
 
     // Editable fields
     const [editDay, setEditDay] = useState('')
@@ -186,7 +204,7 @@ function OutboundPrintContent() {
     const [editCustomerAddress, setEditCustomerAddress] = useState('')
     const [editReason, setEditReason] = useState('')
     const [editWarehouse, setEditWarehouse] = useState('')
-    const [editLocation, setEditLocation] = useState('')
+    const [editLocation, setEditLocation] = useState(cmpAddress || '')
     const [editDescription, setEditDescription] = useState('')
     const [amountInWords, setAmountInWords] = useState('')
     const [attachedDocs, setAttachedDocs] = useState('')
