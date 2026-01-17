@@ -45,14 +45,14 @@ export default function SupplierForm({ initialData, isEditMode = false }: Suppli
 
         try {
             if (isEditMode && initialData) {
-                const { error } = await supabase
-                    .from('suppliers')
+                const { error } = await (supabase
+                    .from('suppliers') as any)
                     .update(formData)
                     .eq('id', initialData.id)
                 if (error) throw error
             } else {
-                const { error } = await supabase
-                    .from('suppliers')
+                const { error } = await (supabase
+                    .from('suppliers') as any)
                     .insert([formData])
                 if (error) throw error
             }
