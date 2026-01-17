@@ -602,6 +602,26 @@ export interface Database {
                     quantity?: number
                 }
             }
+            product_vehicle_compatibility: {
+                Row: {
+                    id: string
+                    created_at: string
+                    product_id: string
+                    vehicle_id: string
+                }
+                Insert: {
+                    id?: string
+                    created_at?: string
+                    product_id: string
+                    vehicle_id: string
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    product_id?: string
+                    vehicle_id?: string
+                }
+            }
         }
     }
 }
