@@ -647,6 +647,44 @@ export interface Database {
                     vehicle_id?: string
                 }
             }
+            company_settings: {
+                Row: {
+                    id: string
+                    updated_at: string
+                    name: string
+                    short_name: string
+                    tax_code: string | null
+                    address: string | null
+                    phone: string | null
+                    email: string | null
+                    website: string | null
+                    logo_url: string | null
+                }
+                Insert: {
+                    id?: string
+                    updated_at?: string
+                    name: string
+                    short_name: string
+                    tax_code?: string | null
+                    address?: string | null
+                    phone?: string | null
+                    email?: string | null
+                    website?: string | null
+                    logo_url?: string | null
+                }
+                Update: {
+                    id?: string
+                    updated_at?: string
+                    name?: string
+                    short_name?: string
+                    tax_code?: string | null
+                    address?: string | null
+                    phone?: string | null
+                    email?: string | null
+                    website?: string | null
+                    logo_url?: string | null
+                }
+            }
         }
     }
 }
