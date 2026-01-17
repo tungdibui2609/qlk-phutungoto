@@ -357,7 +357,7 @@ export interface Database {
                     driver_name: string | null
                     driver_phone: string | null
                     status: string
-                    description: string | null
+                    notes: string | null
                     brand: string
                     model: string
                     body_type: string | null
@@ -373,7 +373,7 @@ export interface Database {
                     driver_name?: string | null
                     driver_phone?: string | null
                     status?: string
-                    description?: string | null
+                    notes?: string | null
                     brand: string
                     model: string
                     body_type?: string | null
@@ -389,7 +389,7 @@ export interface Database {
                     driver_name?: string | null
                     driver_phone?: string | null
                     status?: string
-                    description?: string | null
+                    notes?: string | null
                     brand?: string
                     model?: string
                     body_type?: string | null
