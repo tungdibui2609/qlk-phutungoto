@@ -81,8 +81,7 @@ export default function RolesPage() {
         if (!editingId) return
         setSaving(true)
 
-        const { error } = await supabase
-            .from('roles')
+        const { error } = await (supabase.from('roles') as any)
             .update({
                 name: editData.name,
                 description: editData.description || null,
@@ -207,8 +206,8 @@ export default function RolesPage() {
                                             type="button"
                                             onClick={() => togglePermission(perm.key)}
                                             className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${editData.permissions.includes(perm.key)
-                                                    ? 'bg-orange-100 text-orange-700'
-                                                    : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
+                                                ? 'bg-orange-100 text-orange-700'
+                                                : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
                                                 }`}
                                         >
                                             {editData.permissions.includes(perm.key) && <Check size={10} />}
