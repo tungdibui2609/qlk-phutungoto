@@ -29,6 +29,18 @@ export interface Database {
                     status: string | null
                     supplier_id: string | null
                     manufacturer: string | null
+                    part_number: string | null
+                    cross_reference_numbers: string[] | null
+                    compatible_models: string[] | null
+                    oem_number: string | null
+                    origin_country: string | null
+                    quality_grade: string | null
+                    warranty_months: number | null
+                    weight_kg: number | null
+                    dimensions: string | null
+                    lead_time_days: number | null
+                    is_active: boolean
+                    is_returnable: boolean
                 }
                 Insert: {
                     id?: string
@@ -49,6 +61,18 @@ export interface Database {
                     status?: string | null
                     supplier_id?: string | null
                     manufacturer?: string | null
+                    part_number?: string | null
+                    cross_reference_numbers?: string[] | null
+                    compatible_models?: string[] | null
+                    oem_number?: string | null
+                    origin_country?: string | null
+                    quality_grade?: string | null
+                    warranty_months?: number | null
+                    weight_kg?: number | null
+                    dimensions?: string | null
+                    lead_time_days?: number | null
+                    is_active?: boolean
+                    is_returnable?: boolean
                 }
                 Update: {
                     id?: string
@@ -69,6 +93,18 @@ export interface Database {
                     status?: string | null
                     supplier_id?: string | null
                     manufacturer?: string | null
+                    part_number?: string | null
+                    cross_reference_numbers?: string[] | null
+                    compatible_models?: string[] | null
+                    oem_number?: string | null
+                    origin_country?: string | null
+                    quality_grade?: string | null
+                    warranty_months?: number | null
+                    weight_kg?: number | null
+                    dimensions?: string | null
+                    lead_time_days?: number | null
+                    is_active?: boolean
+                    is_returnable?: boolean
                 }
             }
             suppliers: {
