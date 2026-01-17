@@ -215,8 +215,17 @@ function InboundPrintContent() {
     // General note field
     const [editNote, setEditNote] = useState('')
 
+    const token = searchParams.get('token')
+
     useEffect(() => {
         async function fetchData() {
+            if (token) {
+                await supabase.auth.setSession({
+                    access_token: token,
+                    refresh_token: ''
+                })
+            }
+
             if (!orderId) {
                 setLoading(false)
                 return

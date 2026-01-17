@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
 
@@ -25,9 +27,28 @@ export async function GET(req: NextRequest) {
         const envBase = (process.env.PRINT_BASE || '').toString().trim().replace(/\/$/, '');
         const base = envBase || safeHostFromReq(req) || 'http://localhost:3000';
 
+        const cookieStore = await cookies();
+        const supabase = createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            {
+                cookies: {
+                    getAll() {
+                        return cookieStore.getAll()
+                    },
+                    setAll(cookiesToSet) {
+                        // Optional: Handle cookie updates if needed, though for just reading session it's fine to ignore or empty
+                    },
+                },
+            }
+        );
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || '';
+
         // Construct the URL that the screenshot service will visit
         // We add snapshot=1 to tell the page to render in "clean/print" mode
-        const targetUrl = `${base}/print/inbound?id=${id}&snapshot=1`;
+        // And token to authenticate the screenshot service against RLS
+        const targetUrl = `${base}/print/inbound?id=${id}&snapshot=1&token=${token}`;
 
         // Call external Puppeteer screenshot service
         const serviceBase = (process.env.SCREENSHOT_SERVICE_URL || '').trim() || 'https://chupanh.onrender.com';

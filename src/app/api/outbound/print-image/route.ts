@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
 
@@ -24,7 +26,24 @@ export async function GET(req: NextRequest) {
         const envBase = (process.env.PRINT_BASE || '').toString().trim().replace(/\/$/, '');
         const base = envBase || safeHostFromReq(req) || 'http://localhost:3000';
 
-        const targetUrl = `${base}/print/outbound?id=${id}&snapshot=1`;
+        const cookieStore = await cookies();
+        const supabase = createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            {
+                cookies: {
+                    getAll() {
+                        return cookieStore.getAll()
+                    },
+                    setAll(cookiesToSet) {
+                    },
+                },
+            }
+        );
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || '';
+
+        const targetUrl = `${base}/print/outbound?id=${id}&snapshot=1&token=${token}`;
 
         // Call external Puppeteer screenshot service
         const serviceBase = (process.env.SCREENSHOT_SERVICE_URL || '').trim() || 'https://chupanh.onrender.com';
