@@ -28,6 +28,7 @@ export interface Database {
                     image_url: string | null
                     status: string | null
                     supplier_id: string | null
+                    manufacturer: string | null
                 }
                 Insert: {
                     id?: string
@@ -47,6 +48,7 @@ export interface Database {
                     image_url?: string | null
                     status?: string | null
                     supplier_id?: string | null
+                    manufacturer?: string | null
                 }
                 Update: {
                     id?: string
@@ -66,6 +68,7 @@ export interface Database {
                     image_url?: string | null
                     status?: string | null
                     supplier_id?: string | null
+                    manufacturer?: string | null
                 }
             }
             suppliers: {
