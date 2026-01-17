@@ -19,16 +19,15 @@ export default function VehiclesPage() {
 
     async function fetchVehicles() {
         setLoading(true)
-        const { data, error } = await supabase
-            .from('vehicles')
+        const { data, error } = await (supabase.from('vehicles') as any)
             .select('*')
             .order('brand')
             .order('model')
 
         if (data) {
-            setVehicles(data)
+            setVehicles(data as any)
             // Expand all brands by default
-            const brands = new Set(data.map(v => v.brand))
+            const brands = new Set((data as any[]).map((v: any) => v.brand as string))
             setExpandedBrands(brands)
         }
         setLoading(false)
