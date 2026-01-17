@@ -55,7 +55,7 @@ export default function UsersPage() {
 
     async function toggleUserStatus(id: string, currentStatus: boolean) {
         const { error } = await supabase
-            .from('user_profiles')
+            .from('user_profiles' as any)
             .update({ is_active: !currentStatus })
             .eq('id', id)
 
@@ -214,8 +214,8 @@ export default function UsersPage() {
                                         <button
                                             onClick={() => toggleUserStatus(user.id, user.is_active)}
                                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${user.is_active
-                                                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                                                    : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
+                                                ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                                : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
                                                 }`}
                                         >
                                             {user.is_active ? <CheckCircle size={12} /> : <XCircle size={12} />}
