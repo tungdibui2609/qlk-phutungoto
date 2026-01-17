@@ -52,8 +52,8 @@ export default function ZoneAssignment({ refreshKey }: ZoneAssignmentProps) {
 
         // Map positions with zone names
         const posWithZone: PositionWithZone[] = posData.map(pos => {
-            const zp = zpData.find(z => z.position_id === pos.id)
-            return { ...pos, zoneName: zp?.zones?.name || null }
+            const zp = zpData.find(z => z.position_id === (pos as any).id)
+            return { ...(pos as any), zoneName: zp?.zones?.name || null }
         })
 
         setPositions(posWithZone)
