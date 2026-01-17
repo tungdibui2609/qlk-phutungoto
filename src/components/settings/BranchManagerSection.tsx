@@ -191,7 +191,7 @@ export default function BranchManagerSection() {
                                 <label className="block text-sm font-medium text-stone-700 mb-1">Mã chi nhánh <span className="text-red-500">*</span></label>
                                 <input
                                     name="code"
-                                    defaultValue={editingBranch?.code}
+                                    defaultValue={editingBranch?.code || ''}
                                     required
                                     placeholder="TD01"
                                     className="w-full px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
