@@ -287,18 +287,30 @@ export interface Database {
             roles: {
                 Row: {
                     id: string
+                    created_at: string
                     code: string
                     name: string
+                    description: string | null
+                    permissions: string[] | null
+                    is_system: boolean
                 }
                 Insert: {
                     id?: string
+                    created_at?: string
                     code: string
                     name: string
+                    description?: string | null
+                    permissions?: string[] | null
+                    is_system?: boolean
                 }
                 Update: {
                     id?: string
+                    created_at?: string
                     code?: string
                     name?: string
+                    description?: string | null
+                    permissions?: string[] | null
+                    is_system?: boolean
                 }
             }
             user_profiles: {
