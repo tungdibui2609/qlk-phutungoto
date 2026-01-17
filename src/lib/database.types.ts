@@ -583,7 +583,16 @@ export interface Database {
                     rows: number
                     cols: number
                     direction: string | null
+                    direction: string | null
                     custom_layout: Json | null
+                    position_columns: number | null
+                    cell_width: number | null
+                    cell_height: number | null
+                    child_layout: string | null
+                    child_columns: number | null
+                    child_width: number | null
+                    collapsible: boolean | null
+                    display_type: string | null
                 }
                 Insert: {
                     id?: string
@@ -592,7 +601,16 @@ export interface Database {
                     rows?: number
                     cols?: number
                     direction?: string | null
+                    direction?: string | null
                     custom_layout?: Json | null
+                    position_columns?: number | null
+                    cell_width?: number | null
+                    cell_height?: number | null
+                    child_layout?: string | null
+                    child_columns?: number | null
+                    child_width?: number | null
+                    collapsible?: boolean | null
+                    display_type?: string | null
                 }
                 Update: {
                     id?: string
@@ -601,7 +619,16 @@ export interface Database {
                     rows?: number
                     cols?: number
                     direction?: string | null
+                    direction?: string | null
                     custom_layout?: Json | null
+                    position_columns?: number | null
+                    cell_width?: number | null
+                    cell_height?: number | null
+                    child_layout?: string | null
+                    child_columns?: number | null
+                    child_width?: number | null
+                    collapsible?: boolean | null
+                    display_type?: string | null
                 }
             }
             inventory: {
