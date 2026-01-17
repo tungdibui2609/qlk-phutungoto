@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
@@ -16,7 +16,7 @@ interface PositionWithZone extends Position {
     zone_id?: string | null
 }
 
-export default function WarehouseMapPage() {
+function WarehouseMapContent() {
     const [positions, setPositions] = useState<PositionWithZone[]>([])
     const [zones, setZones] = useState<Zone[]>([])
     const [layouts, setLayouts] = useState<ZoneLayout[]>([])
@@ -394,5 +394,13 @@ export default function WarehouseMapPage() {
                 </div>
             )}
         </div>
+    )
+}
+
+export default function WarehouseMapPage() {
+    return (
+        <Suspense fallback={<div className="p-8 text-center text-gray-500">Đang tải bản đồ...</div>}>
+            <WarehouseMapContent />
+        </Suspense>
     )
 }
