@@ -93,6 +93,8 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
                 display_order: posStart + i,
                 batch_name: `Batch ${new Date().toLocaleTimeString()} - ${targetZone?.name}`,
                 created_at: new Date().toISOString(),
+                status: 'active',
+                lot_id: null,
                 _status: 'new'
             }))
 
@@ -181,6 +183,8 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
                     display_order: posStart + i,
                     batch_name: `Auto Batch ${new Date().toLocaleTimeString()} - ${leafZone?.name}`,
                     created_at: new Date().toISOString(),
+                    status: 'active',
+                    lot_id: null,
                     _status: 'new' as const
                 }))
 
