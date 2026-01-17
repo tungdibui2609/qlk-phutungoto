@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
                     getAll() {
                         return cookieStore.getAll()
                     },
-                    setAll(cookiesToSet) {
+                    setAll(cookiesToSet: any) {
                     },
                 },
             }
