@@ -65,14 +65,14 @@ export default function VehicleForm({ initialData, isEditMode = false }: Vehicle
 
         try {
             if (isEditMode && initialData) {
-                const { error } = await supabase
-                    .from('vehicles')
+                const { error } = await (supabase
+                    .from('vehicles') as any)
                     .update(payload)
                     .eq('id', initialData.id)
                 if (error) throw error
             } else {
-                const { error } = await supabase
-                    .from('vehicles')
+                const { error } = await (supabase
+                    .from('vehicles') as any)
                     .insert([payload])
                 if (error) throw error
             }
