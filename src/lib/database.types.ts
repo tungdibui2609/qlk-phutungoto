@@ -205,6 +205,38 @@ export interface Database {
                     slug?: string | null
                 }
             }
+            vehicles: {
+                Row: {
+                    id: string
+                    created_at: string
+                    name: string
+                    license_plate: string
+                    driver_name: string | null
+                    driver_phone: string | null
+                    status: string
+                    description: string | null
+                }
+                Insert: {
+                    id?: string
+                    created_at?: string
+                    name: string
+                    license_plate: string
+                    driver_name?: string | null
+                    driver_phone?: string | null
+                    status?: string
+                    description?: string | null
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    name?: string
+                    license_plate?: string
+                    driver_name?: string | null
+                    driver_phone?: string | null
+                    status?: string
+                    description?: string | null
+                }
+            }
         }
     }
 }

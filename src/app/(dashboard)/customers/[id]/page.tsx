@@ -15,7 +15,7 @@ export default function EditCustomerPage() {
             const { data, error } = await supabase
                 .from('customers')
                 .select('*')
-                .eq('id', params.id)
+                .eq('id', params.id as string)
                 .single()
 
             if (data) setCustomer(data)

@@ -18,7 +18,7 @@ export default function EditSupplierPage() {
             const { data } = await supabase
                 .from('suppliers')
                 .select('*')
-                .eq('id', params.id)
+                .eq('id', params.id as string)
                 .single()
 
             if (data) setSupplier(data)

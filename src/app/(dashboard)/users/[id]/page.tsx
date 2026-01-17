@@ -15,7 +15,7 @@ export default function EditUserPage() {
             const { data, error } = await supabase
                 .from('user_profiles')
                 .select('*')
-                .eq('id', params.id)
+                .eq('id', params.id as string)
                 .single()
 
             if (data) setUser(data)

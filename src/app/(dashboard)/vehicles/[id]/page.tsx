@@ -18,7 +18,7 @@ export default function EditVehiclePage() {
             const { data } = await supabase
                 .from('vehicles')
                 .select('*')
-                .eq('id', params.id)
+                .eq('id', params.id as string)
                 .single()
 
             if (data) setVehicle(data)
