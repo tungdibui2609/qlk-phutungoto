@@ -70,8 +70,8 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
         try {
             if (isEditMode && initialData) {
                 // Update existing user profile
-                const { error } = await supabase
-                    .from('user_profiles')
+                const { error } = await (supabase
+                    .from('user_profiles') as any)
                     .update({
                         employee_code: formData.employee_code || null,
                         full_name: formData.full_name,
@@ -108,8 +108,8 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
 
                     if (signUpData.user) {
                         // 2. Create user profile
-                        const { error: profileError } = await supabase
-                            .from('user_profiles')
+                        const { error: profileError } = await (supabase
+                            .from('user_profiles') as any)
                             .insert([{
                                 id: signUpData.user.id,
                                 employee_code: formData.employee_code || null,
@@ -125,8 +125,8 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                     }
                 } else if (authData.user) {
                     // 2. Create user profile
-                    const { error: profileError } = await supabase
-                        .from('user_profiles')
+                    const { error: profileError } = await (supabase
+                        .from('user_profiles') as any)
                         .insert([{
                             id: authData.user.id,
                             employee_code: formData.employee_code || null,
