@@ -101,6 +101,7 @@ export interface Database {
                     id: string
                     code: string
                     status: string
+                    created_at: string
                     supplier_address: string | null
                     supplier_phone: string | null
                     image_url: string | null
@@ -109,6 +110,7 @@ export interface Database {
                     id?: string
                     code: string
                     status?: string
+                    created_at?: string
                     supplier_address?: string | null
                     supplier_phone?: string | null
                     image_url?: string | null
@@ -117,6 +119,7 @@ export interface Database {
                     id?: string
                     code?: string
                     status?: string
+                    created_at?: string
                     supplier_address?: string | null
                     supplier_phone?: string | null
                     image_url?: string | null
