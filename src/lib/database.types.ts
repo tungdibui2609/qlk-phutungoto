@@ -124,7 +124,42 @@ export interface Database {
             customers: {
                 Row: {
                     id: string
+                    created_at: string
+                    code: string
                     name: string
+                    contact_person: string | null
+                    phone: string | null
+                    email: string | null
+                    address: string | null
+                    tax_code: string | null
+                    notes: string | null
+                    is_active: boolean
+                }
+                Insert: {
+                    id?: string
+                    created_at?: string
+                    code: string
+                    name: string
+                    contact_person?: string | null
+                    phone?: string | null
+                    email?: string | null
+                    address?: string | null
+                    tax_code?: string | null
+                    notes?: string | null
+                    is_active?: boolean
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    code?: string
+                    name?: string
+                    contact_person?: string | null
+                    phone?: string | null
+                    email?: string | null
+                    address?: string | null
+                    tax_code?: string | null
+                    notes?: string | null
+                    is_active?: boolean
                 }
             }
             branches: {
