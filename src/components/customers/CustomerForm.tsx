@@ -66,14 +66,14 @@ export default function CustomerForm({ initialData, isEditMode = false }: Custom
 
         try {
             if (isEditMode && initialData) {
-                const { error } = await supabase
-                    .from('customers')
+                const { error } = await (supabase
+                    .from('customers') as any)
                     .update(payload)
                     .eq('id', initialData.id)
                 if (error) throw error
             } else {
-                const { error } = await supabase
-                    .from('customers')
+                const { error } = await (supabase
+                    .from('customers') as any)
                     .insert([payload])
                 if (error) throw error
             }
