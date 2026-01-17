@@ -284,6 +284,64 @@ export interface Database {
                     description?: string | null
                 }
             }
+            roles: {
+                Row: {
+                    id: string
+                    code: string
+                    name: string
+                }
+                Insert: {
+                    id?: string
+                    code: string
+                    name: string
+                }
+                Update: {
+                    id?: string
+                    code?: string
+                    name?: string
+                }
+            }
+            user_profiles: {
+                Row: {
+                    id: string
+                    created_at: string
+                    employee_code: string | null
+                    full_name: string
+                    phone: string | null
+                    email: string | null
+                    avatar_url: string | null
+                    role_id: string | null
+                    department: string | null
+                    is_active: boolean
+                    last_login: string | null
+                }
+                Insert: {
+                    id: string
+                    created_at?: string
+                    employee_code?: string | null
+                    full_name: string
+                    phone?: string | null
+                    email?: string | null
+                    avatar_url?: string | null
+                    role_id?: string | null
+                    department?: string | null
+                    is_active?: boolean
+                    last_login?: string | null
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    employee_code?: string | null
+                    full_name?: string
+                    phone?: string | null
+                    email?: string | null
+                    avatar_url?: string | null
+                    role_id?: string | null
+                    department?: string | null
+                    is_active?: boolean
+                    last_login?: string | null
+                }
+            }
         }
     }
 }
