@@ -94,13 +94,14 @@ export default function ZoneAssignment({ refreshKey }: ZoneAssignmentProps) {
 
         // Delete existing assignments first
         const idsArray = Array.from(selectedIds)
-        await supabase.from('zone_positions').delete().in('position_id', idsArray)
+        await (supabase.from('zone_positions') as any).delete().in('position_id', idsArray)
 
         // Insert new assignments
         const inserts = idsArray.map(id => ({ position_id: id, zone_id: targetZoneId }))
-        const { error } = await supabase.from('zone_positions').insert(inserts)
+        const { error } = await (supabase.from('zone_positions') as any).insert(inserts)
 
         if (error) {
+            console.error('Zone assignment error:', error)
             alert('Lỗi: ' + error.message)
         } else {
             alert(`Đã gán ${selectedIds.size} ô vào zone thành công!`)
@@ -112,7 +113,7 @@ export default function ZoneAssignment({ refreshKey }: ZoneAssignmentProps) {
     async function handleUnassign() {
         if (selectedIds.size === 0) return
         const idsArray = Array.from(selectedIds)
-        await supabase.from('zone_positions').delete().in('position_id', idsArray)
+        await (supabase.from('zone_positions') as any).delete().in('position_id', idsArray)
         alert(`Đã bỏ gán ${selectedIds.size} ô!`)
         setSelectedIds(new Set())
         fetchData()
