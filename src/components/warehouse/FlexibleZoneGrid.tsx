@@ -83,7 +83,7 @@ export default function FlexibleZoneGrid({
         depth: number = 0,
         breadcrumb: string[] = []
     ): React.ReactNode {
-        const layout = layouts[zone.id]
+        const layout = layouts[zone.id] as any
         const isCollapsed = collapsedZones.has(zone.id)
         const hasChildren = zone.children.length > 0
         const hasPositions = zone.positions.length > 0
