@@ -262,6 +262,12 @@ export interface Database {
                     driver_phone: string | null
                     status: string
                     description: string | null
+                    brand: string
+                    model: string
+                    body_type: string | null
+                    year_from: number | null
+                    year_to: number | null
+                    engine_type: string | null
                 }
                 Insert: {
                     id?: string
@@ -272,6 +278,12 @@ export interface Database {
                     driver_phone?: string | null
                     status?: string
                     description?: string | null
+                    brand: string
+                    model: string
+                    body_type?: string | null
+                    year_from?: number | null
+                    year_to?: number | null
+                    engine_type?: string | null
                 }
                 Update: {
                     id?: string
@@ -282,6 +294,12 @@ export interface Database {
                     driver_phone?: string | null
                     status?: string
                     description?: string | null
+                    brand?: string
+                    model?: string
+                    body_type?: string | null
+                    year_from?: number | null
+                    year_to?: number | null
+                    engine_type?: string | null
                 }
             }
             roles: {
