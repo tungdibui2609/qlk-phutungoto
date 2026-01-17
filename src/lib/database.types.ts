@@ -75,8 +75,10 @@ export interface Database {
                 Row: {
                     id: string
                     created_at: string
+                    code: string
                     name: string
                     contact_name: string | null
+                    contact_person: string | null
                     email: string | null
                     phone: string | null
                     address: string | null
@@ -84,6 +86,39 @@ export interface Database {
                     website: string | null
                     note: string | null
                     status: string | null
+                    is_active: boolean
+                }
+                Insert: {
+                    id?: string
+                    created_at?: string
+                    code: string
+                    name: string
+                    contact_name?: string | null
+                    contact_person?: string | null
+                    email?: string | null
+                    phone?: string | null
+                    address?: string | null
+                    tax_code?: string | null
+                    website?: string | null
+                    note?: string | null
+                    status?: string | null
+                    is_active?: boolean
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    code?: string
+                    name?: string
+                    contact_name?: string | null
+                    contact_person?: string | null
+                    email?: string | null
+                    phone?: string | null
+                    address?: string | null
+                    tax_code?: string | null
+                    website?: string | null
+                    note?: string | null
+                    status?: string | null
+                    is_active?: boolean
                 }
             }
             customers: {
