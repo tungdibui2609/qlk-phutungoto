@@ -102,6 +102,8 @@ export interface Database {
                     code: string
                     status: string
                     created_at: string
+                    warehouse_name: string | null
+                    description: string | null
                     supplier_address: string | null
                     supplier_phone: string | null
                     image_url: string | null
@@ -111,6 +113,8 @@ export interface Database {
                     code: string
                     status?: string
                     created_at?: string
+                    warehouse_name?: string | null
+                    description?: string | null
                     supplier_address?: string | null
                     supplier_phone?: string | null
                     image_url?: string | null
@@ -120,6 +124,8 @@ export interface Database {
                     code?: string
                     status?: string
                     created_at?: string
+                    warehouse_name?: string | null
+                    description?: string | null
                     supplier_address?: string | null
                     supplier_phone?: string | null
                     image_url?: string | null
