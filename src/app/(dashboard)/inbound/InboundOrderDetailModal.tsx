@@ -177,7 +177,10 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
         try {
             showToast('Đang tạo ảnh phiếu...', 'info')
             const res = await fetch(`/api/inbound/print-image?id=${order.id}`)
-            if (!res.ok) throw new Error('Failed to generate image')
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}))
+                throw new Error(errData.details || errData.error || 'Failed to generate image')
+            }
 
             const blob = await res.blob()
             const url = window.URL.createObjectURL(blob)
@@ -192,9 +195,9 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
 
             showToast('Đã tải ảnh phiếu thành công', 'success')
             setShowPrintMenu(false)
-        } catch (error) {
+        } catch (error: any) {
             console.error('Download error:', error)
-            showToast('Lỗi khi tải ảnh phiếu', 'error')
+            showToast(`Lỗi: ${error.message}`, 'error')
         }
     }
 
