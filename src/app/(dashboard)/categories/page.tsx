@@ -39,7 +39,7 @@ export default function CategoriesPage() {
 
         const slug = newName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
 
-        const { error } = await supabase.from('categories').insert([{
+        const { error } = await (supabase.from('categories') as any).insert([{
             name: newName.trim(),
             description: newDescription.trim() || null,
             slug
@@ -60,7 +60,7 @@ export default function CategoriesPage() {
         if (!editName.trim()) return
         setSaving(true)
 
-        const { error } = await supabase.from('categories').update({
+        const { error } = await (supabase.from('categories') as any).update({
             name: editName.trim(),
             description: editDescription.trim() || null
         }).eq('id', id)
