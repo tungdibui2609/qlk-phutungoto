@@ -95,8 +95,8 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
 
     async function fetchProductVehicles() {
         if (!initialData) return
-        const { data } = await supabase
-            .from('product_vehicle_compatibility')
+        const { data } = await (supabase
+            .from('product_vehicle_compatibility') as any)
             .select('vehicle_id')
             .eq('product_id', initialData.id)
         if (data) {
@@ -162,14 +162,14 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
             let productId = initialData?.id
 
             if (isEditMode && initialData) {
-                const { error } = await supabase
-                    .from('products')
+                const { error } = await (supabase
+                    .from('products') as any)
                     .update(payload)
                     .eq('id', initialData.id)
                 if (error) throw error
             } else {
-                const { data, error } = await supabase
-                    .from('products')
+                const { data, error } = await (supabase
+                    .from('products') as any)
                     .insert([payload])
                     .select()
                     .single()
@@ -180,8 +180,8 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
             // Update vehicle compatibility
             if (productId) {
                 // Remove old associations
-                await supabase
-                    .from('product_vehicle_compatibility')
+                await (supabase
+                    .from('product_vehicle_compatibility') as any)
                     .delete()
                     .eq('product_id', productId)
 
@@ -191,8 +191,8 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                         product_id: productId,
                         vehicle_id
                     }))
-                    await supabase
-                        .from('product_vehicle_compatibility')
+                    await (supabase
+                        .from('product_vehicle_compatibility') as any)
                         .insert(vehicleAssocs)
                 }
             }
