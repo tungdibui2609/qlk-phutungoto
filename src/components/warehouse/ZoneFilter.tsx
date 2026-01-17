@@ -33,7 +33,7 @@ export default function ZoneFilter({ selectedZoneId, onZoneSelect }: ZoneFilterP
         } else {
             setZones(data || [])
             // Expand all by default
-            setExpandedNodes(new Set((data || []).map(z => z.id)))
+            setExpandedNodes(new Set((data as any[] || []).map(z => z.id)))
         }
         setLoading(false)
     }
