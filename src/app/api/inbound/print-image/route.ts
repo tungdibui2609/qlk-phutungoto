@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
 
         // Set a timeout for the fetch
         const controller = new AbortController();
-        const timeoutMs = 30000; // 30 seconds
+        const timeoutMs = 60000; // 60 seconds
         const timer = setTimeout(() => controller.abort(), timeoutMs);
 
         try {

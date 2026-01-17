@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
         const screenshotUrl = `${serviceBase.replace(/\/+$/, '')}/screenshot?url=${encodeURIComponent(targetUrl)}`;
 
         const controller = new AbortController();
-        const timeoutMs = 30000;
+        const timeoutMs = 60000;
         const timer = setTimeout(() => controller.abort(), timeoutMs);
 
         try {
