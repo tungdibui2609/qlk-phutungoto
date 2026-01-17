@@ -182,6 +182,29 @@ export interface Database {
                     note?: string | null
                 }
             }
+            categories: {
+                Row: {
+                    id: string
+                    created_at: string
+                    name: string
+                    description: string | null
+                    slug: string | null
+                }
+                Insert: {
+                    id?: string
+                    created_at?: string
+                    name: string
+                    description?: string | null
+                    slug?: string | null
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    name?: string
+                    description?: string | null
+                    slug?: string | null
+                }
+            }
         }
     }
 }
