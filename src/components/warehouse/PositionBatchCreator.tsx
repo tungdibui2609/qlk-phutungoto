@@ -53,7 +53,7 @@ export default function PositionBatchCreator({ onPositionsCreated }: PositionBat
         if (data) {
             const groups: Record<string, number> = {}
             data.forEach(p => {
-                const name = p.batch_name || '(Không có nhóm)'
+                const name = (p as any).batch_name || '(Không có nhóm)'
                 groups[name] = (groups[name] || 0) + 1
             })
 
