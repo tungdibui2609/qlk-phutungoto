@@ -131,7 +131,7 @@ export default function PositionBatchCreator({ onPositionsCreated }: PositionBat
                 batch_name: batchName.trim()
             }))
 
-            const { error } = await supabase.from('positions').insert(batch)
+            const { error } = await (supabase.from('positions') as any).insert(batch)
 
             if (error) {
                 console.error('Batch insert error:', error)
@@ -157,7 +157,7 @@ export default function PositionBatchCreator({ onPositionsCreated }: PositionBat
             return
         }
 
-        let query = supabase.from('positions').delete()
+        let query = (supabase.from('positions') as any).delete()
         if (batchNameToDelete === '(Không có nhóm)') {
             query = query.is('batch_name', null)
         } else {
@@ -183,7 +183,7 @@ export default function PositionBatchCreator({ onPositionsCreated }: PositionBat
             return
         }
 
-        let query = supabase.from('positions').update({ batch_name: newBatchName.trim() })
+        let query = (supabase.from('positions') as any).update({ batch_name: newBatchName.trim() })
         if (oldName === '(Không có nhóm)') {
             query = query.is('batch_name', null)
         } else {
@@ -210,8 +210,8 @@ export default function PositionBatchCreator({ onPositionsCreated }: PositionBat
         }
 
         setSavingEdit(true)
-        const { error } = await supabase
-            .from('positions')
+        const { error } = await (supabase
+            .from('positions') as any)
             .update({ code: editCode.trim().toUpperCase() })
             .eq('id', positionId)
 

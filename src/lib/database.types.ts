@@ -513,6 +513,8 @@ export interface Database {
                     code: string
                     lot_id: string | null
                     status: string
+                    batch_name: string | null
+                    display_order: number | null
                 }
                 Insert: {
                     id?: string
@@ -520,6 +522,8 @@ export interface Database {
                     code: string
                     lot_id?: string | null
                     status?: string
+                    batch_name?: string | null
+                    display_order?: number | null
                 }
                 Update: {
                     id?: string
@@ -527,6 +531,8 @@ export interface Database {
                     code?: string
                     lot_id?: string | null
                     status?: string
+                    batch_name?: string | null
+                    display_order?: number | null
                 }
             }
             zones: {
