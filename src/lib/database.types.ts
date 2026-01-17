@@ -372,6 +372,44 @@ export interface Database {
                     last_login?: string | null
                 }
             }
+            lots: {
+                Row: {
+                    id: string
+                    created_at: string
+                    code: string
+                    notes: string | null
+                    product_id: string | null
+                    supplier_id: string | null
+                    inbound_date: string | null
+                    batch_code: string | null
+                    quantity: number
+                    status: string
+                }
+                Insert: {
+                    id?: string
+                    created_at?: string
+                    code: string
+                    notes?: string | null
+                    product_id?: string | null
+                    supplier_id?: string | null
+                    inbound_date?: string | null
+                    batch_code?: string | null
+                    quantity?: number
+                    status?: string
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    code?: string
+                    notes?: string | null
+                    product_id?: string | null
+                    supplier_id?: string | null
+                    inbound_date?: string | null
+                    batch_code?: string | null
+                    quantity?: number
+                    status?: string
+                }
+            }
         }
     }
 }
