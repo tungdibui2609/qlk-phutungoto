@@ -159,7 +159,7 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
                     const { data, error } = await (supabase
                         .from('zone_layouts') as any)
                         .update({ ...settings, updated_at: new Date().toISOString() })
-                        .eq('id', existing.id)
+                        .eq('id', (existing as any).id)
                         .select()
                         .single()
                     if (!error && data) savedLayouts.push(data)
