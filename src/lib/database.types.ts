@@ -410,6 +410,127 @@ export interface Database {
                     status?: string
                 }
             }
+            positions: {
+                Row: {
+                    id: string
+                    created_at: string
+                    code: string
+                    lot_id: string | null
+                    status: string
+                }
+                Insert: {
+                    id?: string
+                    created_at?: string
+                    code: string
+                    lot_id?: string | null
+                    status?: string
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    code?: string
+                    lot_id?: string | null
+                    status?: string
+                }
+            }
+            zones: {
+                Row: {
+                    id: string
+                    created_at: string
+                    code: string
+                    name: string
+                    parent_id: string | null
+                    level: number
+                }
+                Insert: {
+                    id?: string
+                    created_at?: string
+                    code: string
+                    name: string
+                    parent_id?: string | null
+                    level?: number
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    code?: string
+                    name?: string
+                    parent_id?: string | null
+                    level?: number
+                }
+            }
+            zone_positions: {
+                Row: {
+                    id: string
+                    created_at: string
+                    zone_id: string
+                    position_id: string
+                }
+                Insert: {
+                    id?: string
+                    created_at?: string
+                    zone_id: string
+                    position_id: string
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    zone_id?: string
+                    position_id?: string
+                }
+            }
+            zone_layouts: {
+                Row: {
+                    id: string
+                    created_at: string
+                    zone_id: string
+                    rows: number
+                    cols: number
+                    direction: string | null
+                    custom_layout: Json | null
+                }
+                Insert: {
+                    id?: string
+                    created_at?: string
+                    zone_id: string
+                    rows?: number
+                    cols?: number
+                    direction?: string | null
+                    custom_layout?: Json | null
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    zone_id?: string
+                    rows?: number
+                    cols?: number
+                    direction?: string | null
+                    custom_layout?: Json | null
+                }
+            }
+            inventory: {
+                Row: {
+                    id: string
+                    created_at: string
+                    product_id: string
+                    position_id: string | null
+                    quantity: number
+                }
+                Insert: {
+                    id?: string
+                    created_at?: string
+                    product_id: string
+                    position_id?: string | null
+                    quantity?: number
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    product_id?: string
+                    position_id?: string | null
+                    quantity?: number
+                }
+            }
         }
     }
 }
