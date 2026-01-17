@@ -100,7 +100,7 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
             .select('vehicle_id')
             .eq('product_id', initialData.id)
         if (data) {
-            setSelectedVehicles(data.map(d => d.vehicle_id))
+            setSelectedVehicles(data.map((d: any) => d.vehicle_id))
         }
     }
 
@@ -488,8 +488,8 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                                             <label
                                                 key={v.id}
                                                 className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer text-sm transition-colors ${selectedVehicles.includes(v.id)
-                                                        ? 'bg-orange-100 text-orange-700'
-                                                        : 'hover:bg-stone-50 text-stone-600'
+                                                    ? 'bg-orange-100 text-orange-700'
+                                                    : 'hover:bg-stone-50 text-stone-600'
                                                     }`}
                                             >
                                                 <input
