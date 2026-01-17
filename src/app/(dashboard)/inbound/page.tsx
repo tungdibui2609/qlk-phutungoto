@@ -12,8 +12,6 @@ import { useToast } from '@/components/ui/ToastProvider'
 type InboundOrder = Database['public']['Tables']['inbound_orders']['Row'] & {
     supplier: { name: string } | null
     items?: { note: string | null }[]
-    description?: string | null
-    warehouse_name?: string | null
 }
 
 export default function InboundPage() {
