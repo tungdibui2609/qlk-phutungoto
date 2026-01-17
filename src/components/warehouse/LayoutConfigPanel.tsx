@@ -109,8 +109,8 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
             }
 
             if (layout) {
-                const { data, error } = await supabase
-                    .from('zone_layouts')
+                const { data, error } = await (supabase
+                    .from('zone_layouts') as any)
                     .update(payload)
                     .eq('id', layout.id)
                     .select()
@@ -120,8 +120,8 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
                 showToast('Đã lưu!', 'success')
                 onSave(data)
             } else {
-                const { data, error } = await supabase
-                    .from('zone_layouts')
+                const { data, error } = await (supabase
+                    .from('zone_layouts') as any)
                     .insert({ zone_id: zone.id, ...payload })
                     .select()
                     .single()
@@ -156,8 +156,8 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
 
                 if (existing) {
                     // Update existing
-                    const { data, error } = await supabase
-                        .from('zone_layouts')
+                    const { data, error } = await (supabase
+                        .from('zone_layouts') as any)
                         .update({ ...settings, updated_at: new Date().toISOString() })
                         .eq('id', existing.id)
                         .select()
@@ -165,8 +165,8 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
                     if (!error && data) savedLayouts.push(data)
                 } else {
                     // Insert new
-                    const { data, error } = await supabase
-                        .from('zone_layouts')
+                    const { data, error } = await (supabase
+                        .from('zone_layouts') as any)
                         .insert({ zone_id: sibling.id, ...settings })
                         .select()
                         .single()
@@ -228,8 +228,8 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
                             key={opt.value}
                             onClick={() => setDisplayType(opt.value)}
                             className={`px-2 py-2 text-xs rounded-lg border transition-colors text-left ${displayType === opt.value
-                                    ? 'bg-blue-500 text-white border-blue-500'
-                                    : 'bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
+                                ? 'bg-blue-500 text-white border-blue-500'
+                                : 'bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
                                 }`}
                         >
                             <div className="font-medium">{opt.label}</div>
