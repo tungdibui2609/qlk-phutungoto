@@ -915,7 +915,13 @@ function OutboundPrintContent() {
                     }
                 `}} />
             )}
-        </div >
+            {/* Dummy QR for screenshot service cropping */}
+            <img
+                src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+                alt="QR"
+                className="opacity-0 w-[1px] h-[1px] absolute bottom-0 left-0 -z-50"
+            />
+        </div>
     )
 }
 
