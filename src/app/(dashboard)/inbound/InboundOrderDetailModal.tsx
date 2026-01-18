@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { X, Calendar, Package, User, FileText, CheckCircle, Clock, Printer, ChevronDown } from 'lucide-react'
+import { X, Calendar, Package, User, FileText, CheckCircle, Clock, Printer, ChevronDown, Eye } from 'lucide-react'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/ToastProvider'
 
@@ -25,6 +25,7 @@ interface OrderItem {
     product_name: string | null
     unit: string | null
     quantity: number
+    document_quantity: number
     price: number
     note: string | null
     products: { sku: string } | null
@@ -43,6 +44,7 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
     const [showPrintMenu, setShowPrintMenu] = useState(false)
     const [imageUrl, setImageUrl] = useState<string | null>(null)
     const [uploading, setUploading] = useState(false)
+    const [visibleNoteId, setVisibleNoteId] = useState<string | null>(null)
     const fileInputRef = React.useRef<HTMLInputElement>(null)
 
     useEffect(() => {
@@ -174,13 +176,13 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
 
 
 
-    if (!order) return null
+    const totalAmount = items.reduce((sum, item) => sum + (item.quantity * item.price), 0)
 
-    const totalAmount = items.reduce((sum, item) => sum + ((item.quantity || 0) * (item.price || 0)), 0)
+    if (!order) return null
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                 {/* Header */}
                 <div className="p-6 border-b border-stone-200 dark:border-zinc-800 flex justify-between items-start bg-stone-50 dark:bg-zinc-900/50">
                     <div>
@@ -306,15 +308,17 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                         {loading ? (
                             <div className="py-8 text-center text-gray-500">Đang tải chi tiết...</div>
                         ) : (
-                            <div className="border border-gray-200 dark:border-zinc-700 rounded-xl overflow-hidden">
-                                <table className="w-full text-sm text-left">
+                            <div className="border border-gray-200 dark:border-zinc-700 rounded-xl overflow-x-auto">
+                                <table className="w-full text-xs text-left">
                                     <thead className="bg-stone-50 dark:bg-zinc-800/50 text-stone-500 font-medium">
                                         <tr>
                                             <th className="px-4 py-3 w-10">#</th>
-                                            <th className="px-4 py-3 w-36">Mã SP</th>
-                                            <th className="px-4 py-3 w-64">Sản phẩm</th>
+                                            <th className="px-4 py-3 min-w-[370px]">Sản phẩm</th>
                                             <th className="px-4 py-3 w-24">ĐVT</th>
-                                            <th className="px-4 py-3 w-24 text-right">Số lượng</th>
+                                            <th className="px-4 py-3 w-24 text-right">SL Thực nhập</th>
+                                            <th className="px-4 py-3 w-24 text-right">SL Chứng từ</th>
+                                            <th className="px-4 py-3 w-32 text-right">Đơn giá</th>
+                                            <th className="px-4 py-3 w-32 text-right">Thành tiền</th>
                                             <th className="px-4 py-3">Ghi chú</th>
                                         </tr>
                                     </thead>
@@ -322,22 +326,74 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                         {items.map((item, index) => (
                                             <tr key={item.id} className="hover:bg-stone-50 dark:hover:bg-zinc-800/30">
                                                 <td className="px-4 py-3 text-stone-400">{index + 1}</td>
-                                                <td className="px-4 py-3 font-mono text-stone-600 dark:text-gray-400 whitespace-nowrap">
-                                                    {item.products?.sku || '-'}
-                                                </td>
                                                 <td className="px-4 py-3 font-medium text-stone-900 dark:text-white">
-                                                    {item.product_name || 'N/A'}
+                                                    <div className="text-[10px] text-stone-500 font-mono mb-0.5">{item.products?.sku || '-'}</div>
+                                                    <div>{item.product_name || 'N/A'}</div>
                                                 </td>
                                                 <td className="px-4 py-3 text-stone-500">{item.unit || '-'}</td>
                                                 <td className="px-4 py-3 text-right font-medium">{item.quantity}</td>
-                                                <td className="px-4 py-3 text-stone-500 text-xs italic">
-                                                    {item.note || ''}
+                                                <td className="px-4 py-3 text-right font-medium text-blue-600">{item.document_quantity || item.quantity}</td>
+                                                <td className="px-4 py-3 text-right text-stone-500">
+                                                    {(item.price || 0).toLocaleString()}
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-bold text-orange-600">
+                                                    {((item.quantity || 0) * (item.price || 0)).toLocaleString()}
+                                                </td>
+                                                <td className="px-4 py-3 text-center relative pointer-events-none">
+                                                    <div className="pointer-events-auto inline-block">
+                                                        {item.note ? (
+                                                            <div className="relative">
+                                                                <button
+                                                                    onClick={() => setVisibleNoteId(visibleNoteId === item.id ? null : item.id)}
+                                                                    className="text-red-500 hover:text-red-600 transition-colors relative z-10"
+                                                                    title="Xem ghi chú"
+                                                                >
+                                                                    <Eye size={18} />
+                                                                </button>
+
+                                                                {/* Tooltip content */}
+                                                                {visibleNoteId === item.id && (
+                                                                    <div className="absolute right-full top-1/2 -translate-y-1/2 mr-4 w-64 bg-white dark:bg-zinc-800 p-4 rounded-xl shadow-2xl border border-stone-200 dark:border-zinc-700 z-50 animate-in fade-in slide-in-from-right-2 zoom-in-95 duration-200">
+                                                                        <h4 className="text-[10px] uppercase tracking-wider font-bold text-stone-400 mb-2 border-b border-stone-100 dark:border-zinc-700 pb-1">
+                                                                            Ghi chú
+                                                                        </h4>
+                                                                        <p className="text-sm text-stone-700 dark:text-stone-300 leading-relaxed text-left">
+                                                                            {item.note}
+                                                                        </p>
+                                                                        {/* Arrow */}
+                                                                        <div className="absolute top-1/2 -right-2 -translate-y-1/2 w-4 h-4 bg-white dark:bg-zinc-800 transform rotate-45 border-t border-r border-stone-200 dark:border-zinc-700"></div>
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Click backdrop to close */}
+                                                                {visibleNoteId === item.id && (
+                                                                    <div
+                                                                        className="fixed inset-0 z-0 bg-transparent"
+                                                                        onClick={() => setVisibleNoteId(null)}
+                                                                    />
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <Eye size={18} className="text-stone-300 mx-auto" />
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
+                                        {items.length > 0 && (
+                                            <tr className="bg-stone-50 dark:bg-zinc-800/50 font-bold">
+                                                <td colSpan={6} className="px-4 py-3 text-right text-stone-900 dark:text-white">
+                                                    Tổng cộng:
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-orange-600 text-sm">
+                                                    {totalAmount.toLocaleString()}
+                                                </td>
+                                                <td className="px-4 py-3"></td>
+                                            </tr>
+                                        )}
                                         {items.length === 0 && (
                                             <tr>
-                                                <td colSpan={5} className="px-4 py-8 text-center text-stone-400">
+                                                <td colSpan={7} className="px-4 py-8 text-center text-stone-400">
                                                     Không tìm thấy chi tiết hàng hóa
                                                 </td>
                                             </tr>

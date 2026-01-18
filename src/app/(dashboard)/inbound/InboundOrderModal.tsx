@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { X, Plus, Trash2, Save, FileText } from 'lucide-react'
+import { X, Plus, Trash2, Save, FileText, ChevronDown, FilePenLine } from 'lucide-react'
 import { Combobox } from '@/components/ui/Combobox'
 import { useToast } from '@/components/ui/ToastProvider'
 
@@ -54,8 +54,11 @@ interface OrderItem {
     productName: string
     unit: string
     quantity: number
+    document_quantity: number
     price: number
     note: string
+    isDocQtyVisible?: boolean
+    isNoteOpen?: boolean
 }
 
 export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrderId }: InboundOrderModalProps) {
@@ -69,6 +72,8 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
     const [warehouseName, setWarehouseName] = useState('')
     const [description, setDescription] = useState('')
     const [items, setItems] = useState<OrderItem[]>([])
+
+    const totalAmount = items.reduce((sum, item) => sum + item.quantity * item.price, 0)
 
     // Data State
     const [products, setProducts] = useState<Product[]>([])
@@ -150,6 +155,7 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                             productName: i.product_name || '',
                             unit: i.unit || '',
                             quantity: i.quantity,
+                            document_quantity: i.document_quantity || i.quantity,
                             price: i.price || 0,
                             note: i.note || ''
                         })))
@@ -192,6 +198,7 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
             productName: '',
             unit: '',
             quantity: 1,
+            document_quantity: 1,
             price: 0,
             note: ''
         }])
@@ -209,6 +216,15 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                     productName: prod?.name || '',
                     unit: prod?.unit || '',
                     price: prod?.cost_price || 0
+                }
+            }
+
+            if (field === 'quantity') {
+                const newValue = Number(value)
+                return {
+                    ...item,
+                    quantity: newValue,
+                    document_quantity: !item.isDocQtyVisible ? newValue : item.document_quantity
                 }
             }
 
@@ -284,6 +300,7 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                 product_name: item.productName,
                 unit: item.unit,
                 quantity: item.quantity,
+                document_quantity: item.document_quantity || item.quantity,
                 price: item.price,
                 note: item.note
             }))
@@ -309,7 +326,7 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-7xl h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                 {/* Header */}
                 <div className="p-6 border-b border-stone-200 dark:border-zinc-800 flex justify-between items-center bg-stone-50 dark:bg-zinc-900/50">
                     <div>
@@ -423,25 +440,23 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                     <div className="space-y-4">
                         <div className="flex items-center justify-between">
                             <h3 className="font-bold text-stone-900 dark:text-white">Chi tiết hàng hóa</h3>
-                            <button
-                                onClick={addItem}
-                                className="flex items-center gap-2 px-3 py-1.5 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-lg text-sm font-medium transition-colors"
-                            >
-                                <Plus size={16} />
-                                Thêm dòng
-                            </button>
                         </div>
 
                         <div className="border border-stone-200 dark:border-zinc-700 rounded-xl overflow-visible">
-                            <table className="w-full text-sm text-left">
-                                <thead className="bg-stone-50 dark:bg-zinc-800/50 text-stone-500 font-medium">
+                            <table className="w-full text-xs text-left">
+                                <thead className="bg-stone-50 dark:bg-zinc-800/50 text-stone-500 font-medium text-center">
                                     <tr>
                                         <th className="px-4 py-3 w-10">#</th>
-                                        <th className="px-4 py-3 min-w-[400px]">Sản phẩm</th>
+                                        <th className="px-4 py-3 min-w-[370px]">Sản phẩm</th>
                                         <th className="px-4 py-3 w-24">ĐVT</th>
-                                        <th className="px-4 py-3 w-32">Số lượng</th>
-                                        <th className="px-4 py-3 w-32">Đơn giá</th>
-                                        <th className="px-4 py-3 w-32">Thành tiền</th>
+                                        <th className="px-4 py-3 w-48 text-right">
+                                            <div className="flex flex-col items-center w-fit ml-auto">
+                                                <span>SL</span>
+                                                <span>Thực nhập</span>
+                                            </div>
+                                        </th>
+                                        <th className="px-4 py-3 w-40 text-right">Đơn giá</th>
+                                        <th className="px-4 py-3 w-32 text-right">Thành tiền</th>
                                         <th className="px-4 py-3">Ghi chú</th>
                                         <th className="px-4 py-3 w-10"></th>
                                     </tr>
@@ -450,48 +465,126 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                                     {items.map((item, index) => (
                                         <tr key={item.id} className="group hover:bg-stone-50 dark:hover:bg-zinc-800/30">
                                             <td className="px-4 py-3 text-stone-400">{index + 1}</td>
-                                            <td className="px-4 py-3">
+                                            <td className="px-4 py-3 align-top">
                                                 <Combobox
                                                     options={products.map(p => ({
                                                         value: p.id,
-                                                        label: `${p.sku} - ${p.name}`
+                                                        label: `${p.sku} - ${p.name}`,
+                                                        sku: p.sku,
+                                                        name: p.name
                                                     }))}
                                                     value={item.productId}
                                                     onChange={(val) => updateItem(item.id, 'productId', val)}
-                                                    placeholder="-- Chọn SP hoặc tìm kiếm --"
+                                                    placeholder="-- Chọn SP --"
                                                     className="w-full"
+                                                    renderValue={(option) => (
+                                                        <div className="flex flex-col text-left w-full">
+                                                            <div className="text-[10px] text-stone-500 font-mono mb-0.5">{option.sku}</div>
+                                                            <div className="font-medium text-xs text-stone-900 dark:text-gray-100 line-clamp-2 leading-tight">
+                                                                {option.name}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 />
                                             </td>
-                                            <td className="px-4 py-3 text-stone-500">{item.unit || '-'}</td>
+                                            <td className="px-4 py-3 text-center text-stone-500">{item.unit || '-'}</td>
                                             <td className="px-4 py-3">
-                                                <input
-                                                    type="number"
-                                                    value={item.quantity}
-                                                    onChange={e => updateItem(item.id, 'quantity', Number(e.target.value))}
-                                                    className="w-full bg-transparent outline-none text-right font-medium"
-                                                    min="1"
-                                                />
+                                                <div className="flex flex-col gap-2">
+                                                    <div className="relative">
+                                                        <input
+                                                            type="text"
+                                                            value={item.quantity ? item.quantity.toLocaleString('vi-VN') : ''}
+                                                            onChange={e => {
+                                                                const val = e.target.value.replace(/\D/g, '')
+                                                                updateItem(item.id, 'quantity', Number(val))
+                                                            }}
+                                                            className="w-full bg-transparent outline-none text-right font-medium pr-6"
+                                                        />
+                                                        <button
+                                                            onClick={() => {
+                                                                const newItems = [...items]
+                                                                newItems[index].isDocQtyVisible = !newItems[index].isDocQtyVisible
+                                                                setItems(newItems)
+                                                            }}
+                                                            className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 rounded-md hover:bg-stone-100"
+                                                            title="Nhập số lượng chứng từ"
+                                                            tabIndex={-1}
+                                                        >
+                                                            <ChevronDown size={14} className={`transition-transform duration-200 ${item.isDocQtyVisible ? 'rotate-180' : ''}`} />
+                                                        </button>
+                                                    </div>
+
+                                                    {item.isDocQtyVisible && (
+                                                        <div className="relative animate-in slide-in-from-top-2 duration-200">
+                                                            <div className="text-[10px] text-stone-500 text-center mb-0.5">SL chứng từ</div>
+                                                            <input
+                                                                type="text"
+                                                                value={item.document_quantity ? item.document_quantity.toLocaleString('vi-VN') : ''}
+                                                                onChange={e => {
+                                                                    const val = e.target.value.replace(/\D/g, '')
+                                                                    updateItem(item.id, 'document_quantity', Number(val))
+                                                                }}
+                                                                className="w-full bg-stone-50 border border-stone-200 rounded px-2 py-1 text-right text-xs text-stone-600 outline-none focus:border-blue-500"
+                                                                placeholder="SL chứng từ"
+                                                            />
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <input
-                                                    type="number"
-                                                    value={item.price}
-                                                    onChange={e => updateItem(item.id, 'price', Number(e.target.value))}
+                                                    type="text"
+                                                    value={item.price ? item.price.toLocaleString('vi-VN') : ''}
+                                                    onChange={e => {
+                                                        const val = e.target.value.replace(/\D/g, '')
+                                                        updateItem(item.id, 'price', val ? Number(val) : 0)
+                                                    }}
                                                     className="w-full bg-transparent outline-none text-right font-medium"
-                                                    min="0"
+                                                    placeholder="0"
                                                 />
                                             </td>
                                             <td className="px-4 py-3 text-right font-medium text-stone-700 dark:text-gray-300">
                                                 {(item.quantity * item.price).toLocaleString()}
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <input
-                                                    type="text"
-                                                    value={item.note}
-                                                    onChange={e => updateItem(item.id, 'note', e.target.value)}
-                                                    className="w-full bg-transparent outline-none text-stone-500"
-                                                    placeholder="..."
-                                                />
+                                            <td className="px-4 py-3 relative">
+                                                <div className="flex items-center justify-center">
+                                                    <button
+                                                        onClick={() => {
+                                                            const newItems = [...items]
+                                                            // Close others
+                                                            newItems.forEach(i => { if (i.id !== item.id) i.isNoteOpen = false })
+                                                            newItems[index].isNoteOpen = !newItems[index].isNoteOpen
+                                                            setItems(newItems)
+                                                        }}
+                                                        className={`p-2 rounded-full transition-colors ${item.note ? 'text-blue-600 bg-blue-50' : 'text-stone-400 hover:text-stone-600 hover:bg-stone-100'}`}
+                                                        title="Ghi chú"
+                                                    >
+                                                        <FilePenLine size={16} />
+                                                    </button>
+
+                                                    {item.isNoteOpen && (
+                                                        <>
+                                                            <div
+                                                                className="fixed inset-0 z-[60]"
+                                                                onClick={() => {
+                                                                    const newItems = [...items]
+                                                                    newItems[index].isNoteOpen = false
+                                                                    setItems(newItems)
+                                                                }}
+                                                            />
+                                                            <div className="absolute right-full top-0 mr-2 z-[70] w-64 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg shadow-xl p-3 animate-in fade-in zoom-in-95 duration-200">
+                                                                <div className="mb-2 font-medium text-sm text-stone-700 dark:text-gray-200">Ghi chú</div>
+                                                                <textarea
+                                                                    value={item.note}
+                                                                    onChange={e => updateItem(item.id, 'note', e.target.value)}
+                                                                    className="w-full h-24 p-2 text-sm border border-stone-200 dark:border-zinc-700 rounded-md bg-stone-50 dark:bg-zinc-900 outline-none focus:border-blue-500 resize-none"
+                                                                    placeholder="Nhập ghi chú..."
+                                                                    autoFocus
+                                                                />
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <button
@@ -510,31 +603,54 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                                             </td>
                                         </tr>
                                     )}
+                                    {items.length > 0 && (
+                                        <tr className="bg-stone-50 dark:bg-zinc-800/50 font-bold border-t border-stone-200 dark:border-zinc-700">
+                                            <td colSpan={5} className="px-4 py-3 text-right text-stone-900 dark:text-white">
+                                                Tổng cộng:
+                                            </td>
+                                            <td className="px-4 py-3 text-right text-orange-600 text-base">
+                                                {totalAmount.toLocaleString()}
+                                            </td>
+                                            <td colSpan={2} className="px-4 py-3"></td>
+                                        </tr>
+                                    )}
                                 </tbody>
                             </table>
+                            <button
+                                onClick={addItem}
+                                className="w-full py-3 flex items-center justify-center gap-2 text-stone-500 hover:text-orange-600 hover:bg-orange-50 transition-colors border-t border-stone-200 dark:border-zinc-700 font-medium text-sm"
+                            >
+                                <Plus size={16} />
+                                Thêm dòng
+                            </button>
                         </div>
                     </div>
                 </div>
 
                 {/* Footer */}
-                <div className="p-6 border-t border-stone-200 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900/50 flex justify-end gap-3">
-                    <button
-                        onClick={onClose}
-                        className="px-6 py-2.5 bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-600 text-stone-700 dark:text-gray-300 rounded-lg font-medium hover:bg-stone-50 dark:hover:bg-zinc-700 transition-colors"
-                        disabled={submitting}
-                    >
-                        Hủy bỏ
-                    </button>
-                    <button
-                        onClick={handleSubmit}
-                        disabled={submitting}
-                        className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-lg font-bold shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        <Save size={20} />
-                        {submitting ? 'Đang lưu...' : 'Lưu Phiếu Nhập'}
-                    </button>
+                <div className="p-6 border-t border-stone-200 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900/50 flex items-center justify-between gap-4">
+                    <div className="text-xs text-stone-500 italic flex items-center gap-1">
+                        * Lưu ý: Nếu <b>SL chứng từ</b> khác <b>thực nhập</b>, bấm vào mũi tên <ChevronDown size={14} className="inline" /> cạnh ô số lượng để khai báo.
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={onClose}
+                            className="px-6 py-2.5 bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-600 text-stone-700 dark:text-gray-300 rounded-lg font-medium hover:bg-stone-50 dark:hover:bg-zinc-700 transition-colors"
+                            disabled={submitting}
+                        >
+                            Hủy bỏ
+                        </button>
+                        <button
+                            onClick={handleSubmit}
+                            disabled={submitting}
+                            className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-lg font-bold shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <Save size={20} />
+                            {submitting ? 'Đang lưu...' : 'Lưu Phiếu Nhập'}
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
+        </div >
     )
 }

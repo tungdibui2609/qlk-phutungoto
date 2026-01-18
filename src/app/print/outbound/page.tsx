@@ -20,6 +20,7 @@ interface OrderItem {
     product_name: string | null
     unit: string | null
     quantity: number
+    document_quantity: number
     price: number
     note: string | null
     products: { sku: string } | null
@@ -69,29 +70,39 @@ function AutoResizeInput({
     value,
     onChange,
     minWidth = 30,
+    emptyWidth = 30,
     className = '',
     isSnapshot = false
 }: {
     value: string
     onChange: (val: string) => void
     minWidth?: number
+    emptyWidth?: number
     className?: string
     isSnapshot?: boolean
 }) {
     return (
-        <div className={`inline-grid items-center ${className} print:hidden ${isSnapshot ? 'hidden' : ''}`}>
-            {/* Hidden span to measure content width */}
-            <span className="invisible col-start-1 row-start-1 px-1 overflow-hidden whitespace-pre border-b border-transparent opacity-0 pointer-events-none">
-                {value || '00'}
+        <>
+            <div className={`inline-grid items-center ${className} print:hidden ${isSnapshot ? 'hidden' : ''}`}>
+                {/* Hidden span to measure content width */}
+                <span className="invisible col-start-1 row-start-1 px-1 overflow-hidden whitespace-pre border-b border-transparent opacity-0 pointer-events-none">
+                    {value || '00'}
+                </span>
+                <input
+                    type="text"
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    className="col-start-1 row-start-1 w-full h-full text-center bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none"
+                    style={{ minWidth: `${minWidth}px` }}
+                />
+            </div>
+            <span
+                className={`hidden print:inline-block ${isSnapshot ? 'inline-block' : ''} ${className}`}
+                style={{ minWidth: !value ? `${emptyWidth}px` : undefined }}
+            >
+                {value || ''}
             </span>
-            <input
-                type="text"
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                className="col-start-1 row-start-1 w-full h-full text-center bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none"
-                style={{ minWidth: `${minWidth}px` }}
-            />
-        </div>
+        </>
     )
 }
 
@@ -172,7 +183,11 @@ function numberToVietnameseText(number: number): string {
 
         result = result.trim()
         // Capitalize first letter
-        return dau + result.charAt(0).toUpperCase() + result.slice(1) + ' đồng chẵn./.'
+        let suffix = ' đồng./.'
+        if (number > 0 && number % 1000000 === 0) {
+            suffix = ' đồng chẵn./.'
+        }
+        return dau + result.charAt(0).toUpperCase() + result.slice(1) + suffix
     }
 
     return to_vietnamese(number)
@@ -207,6 +222,7 @@ function OutboundPrintContent() {
     const [order, setOrder] = useState<OutboundOrder | null>(null)
     const [items, setItems] = useState<OrderItem[]>([])
     const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(initialCompanyInfo)
+    const [docQuantities, setDocQuantities] = useState<Record<string, string>>({})
 
     // Editable fields
     const [editDay, setEditDay] = useState('')
@@ -297,7 +313,7 @@ function OutboundPrintContent() {
                     setEditWarehouse(searchParams.get('editWarehouse') || o.warehouse_name || 'Kho mặc định')
                     setEditDescription(searchParams.get('editDescription') || o.description || '')
                     setEditReason(searchParams.get('editReason') || o.description || '')
-                    setEditLocation(searchParams.get('editLocation') || cmpAddress || '')
+                    setEditLocation(searchParams.get('editLocation') || cmpAddress || (companyData as any)?.address || '')
 
                     setAmountInWords(searchParams.get('amountInWords') || '')
                     setAttachedDocs(searchParams.get('attachedDocs') || '')
@@ -691,7 +707,12 @@ function OutboundPrintContent() {
                                     </td>
                                     <td className="border border-gray-400 px-2 py-1.5 text-center">{item.unit || '-'}</td>
                                     <td className="border border-gray-400 px-2 py-1.5 text-center font-medium">
-                                        {item.quantity}
+                                        <EditableText
+                                            value={docQuantities[item.id] !== undefined ? docQuantities[item.id] : (item.document_quantity || item.quantity).toString()}
+                                            onChange={(val) => setDocQuantities(prev => ({ ...prev, [item.id]: val }))}
+                                            className="text-center font-medium w-full"
+                                            isSnapshot={isSnapshot}
+                                        />
                                     </td>
                                     <td className="border border-gray-400 px-2 py-1.5 text-center font-medium">
                                         {item.quantity}

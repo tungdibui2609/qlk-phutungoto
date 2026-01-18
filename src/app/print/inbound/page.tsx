@@ -20,6 +20,7 @@ interface OrderItem {
     product_name: string | null
     unit: string | null
     quantity: number
+    document_quantity: number
     price: number
     note: string | null
     products: { sku: string } | null
@@ -69,29 +70,39 @@ function AutoResizeInput({
     value,
     onChange,
     minWidth = 30,
+    emptyWidth = 30,
     className = '',
     isSnapshot = false
 }: {
     value: string
     onChange: (val: string) => void
     minWidth?: number
+    emptyWidth?: number
     className?: string
     isSnapshot?: boolean
 }) {
     return (
-        <div className={`inline-grid items-center ${className} print:hidden ${isSnapshot ? 'hidden' : ''}`}>
-            {/* Hidden span to measure content width */}
-            <span className="invisible col-start-1 row-start-1 px-1 overflow-hidden whitespace-pre border-b border-transparent opacity-0 pointer-events-none">
-                {value || '00'}
+        <>
+            <div className={`inline-grid items-center ${className} print:hidden ${isSnapshot ? 'hidden' : ''}`}>
+                {/* Hidden span to measure content width */}
+                <span className="invisible col-start-1 row-start-1 px-1 overflow-hidden whitespace-pre border-b border-transparent opacity-0 pointer-events-none">
+                    {value || '00'}
+                </span>
+                <input
+                    type="text"
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    className="col-start-1 row-start-1 w-full h-full text-center bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none"
+                    style={{ minWidth: `${minWidth}px` }}
+                />
+            </div>
+            <span
+                className={`hidden print:inline-block ${isSnapshot ? 'inline-block' : ''} ${className}`}
+                style={{ minWidth: !value ? `${emptyWidth}px` : undefined }}
+            >
+                {value || ''}
             </span>
-            <input
-                type="text"
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                className="col-start-1 row-start-1 w-full h-full text-center bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none"
-                style={{ minWidth: `${minWidth}px` }}
-            />
-        </div>
+        </>
     )
 }
 
@@ -179,7 +190,11 @@ function numberToVietnameseText(number: number): string {
 
         result = result.trim()
         // Capitalize first letter
-        return dau + result.charAt(0).toUpperCase() + result.slice(1) + ' đồng chẵn./.'
+        let suffix = ' đồng./.'
+        if (number > 0 && number % 1000000 === 0) {
+            suffix = ' đồng chẵn./.'
+        }
+        return dau + result.charAt(0).toUpperCase() + result.slice(1) + suffix
     }
 
     return to_vietnamese(number)
@@ -214,6 +229,7 @@ function InboundPrintContent() {
     const [order, setOrder] = useState<InboundOrder | null>(null)
     const [items, setItems] = useState<OrderItem[]>([])
     const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(initialCompanyInfo)
+    const [docQuantities, setDocQuantities] = useState<Record<string, string>>({})
 
     // Editable fields
     const [editDay, setEditDay] = useState('')
@@ -310,7 +326,7 @@ function InboundPrintContent() {
                     setEditSupplierAddress(searchParams.get('editSupplierAddress') || o.supplier_address || '')
                     setEditWarehouse(searchParams.get('editWarehouse') || o.warehouse_name || 'Kho mặc định')
                     setEditDescription(searchParams.get('editDescription') || o.description || '')
-                    setEditLocation(searchParams.get('editLocation') || cmpAddress || '')
+                    setEditLocation(searchParams.get('editLocation') || cmpAddress || (companyData as any)?.address || '')
 
                     // Other fields hydration
                     setEditTheoDoc(searchParams.get('editTheoDoc') || '')
@@ -639,9 +655,9 @@ function InboundPrintContent() {
                             onChange={setEditTheoDoc}
                             className="mx-1 font-bold"
                             minWidth={60}
+                            emptyWidth={100}
                             isSnapshot={isSnapshot}
                         />
-                        <span className={`hidden print:inline-block mx-1 font-bold ${!editTheoDoc ? 'min-w-[100px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoDoc || ''}</span>
 
                         <span className="text-gray-600">số</span>
                         <AutoResizeInput
@@ -649,9 +665,9 @@ function InboundPrintContent() {
                             onChange={setEditTheoSo}
                             className="mx-1 font-bold"
                             minWidth={40}
+                            emptyWidth={85}
                             isSnapshot={isSnapshot}
                         />
-                        <span className={`hidden print:inline-block mx-1 font-bold ${!editTheoSo ? 'min-w-[85px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoSo || ''}</span>
 
                         <span className="text-gray-600">ngày</span>
                         <AutoResizeInput
@@ -659,9 +675,9 @@ function InboundPrintContent() {
                             onChange={setEditTheoDay}
                             className="mx-1 font-bold"
                             minWidth={25}
+                            emptyWidth={30}
                             isSnapshot={isSnapshot}
                         />
-                        <span className={`hidden print:inline-block mx-1 font-bold ${!editTheoDay ? 'min-w-[30px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoDay || ''}</span>
 
                         <span className="text-gray-600">tháng</span>
                         <AutoResizeInput
@@ -669,9 +685,9 @@ function InboundPrintContent() {
                             onChange={setEditTheoMonth}
                             className="mx-1 font-bold"
                             minWidth={25}
+                            emptyWidth={30}
                             isSnapshot={isSnapshot}
                         />
-                        <span className={`hidden print:inline-block mx-1 font-bold ${!editTheoMonth ? 'min-w-[30px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoMonth || ''}</span>
 
                         <span className="text-gray-600">năm</span>
                         <AutoResizeInput
@@ -679,9 +695,9 @@ function InboundPrintContent() {
                             onChange={setEditTheoYear}
                             className="mx-1 font-bold"
                             minWidth={30}
+                            emptyWidth={40}
                             isSnapshot={isSnapshot}
                         />
-                        <span className={`hidden print:inline-block mx-1 font-bold ${!editTheoYear ? 'min-w-[40px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoYear || ''}</span>
 
                         <span className="text-gray-600">của</span>
                         <AutoResizeInput
@@ -689,9 +705,9 @@ function InboundPrintContent() {
                             onChange={setEditTheoCua}
                             className="mx-1 font-bold"
                             minWidth={100}
+                            emptyWidth={100}
                             isSnapshot={isSnapshot}
                         />
-                        <span className={`hidden print:inline-block mx-1 font-bold ${!editTheoCua ? 'min-w-[100px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoCua || ''}</span>
                     </div>
                 )}
                 <div className="flex items-center gap-8">
@@ -781,7 +797,12 @@ function InboundPrintContent() {
                                     </td>
                                     <td className="border border-gray-400 px-2 py-1.5 text-center">{item.unit || '-'}</td>
                                     <td className="border border-gray-400 px-2 py-1.5 text-center font-medium">
-                                        {item.quantity}
+                                        <EditableText
+                                            value={docQuantities[item.id] !== undefined ? docQuantities[item.id] : (item.document_quantity || item.quantity).toString()}
+                                            onChange={(val) => setDocQuantities(prev => ({ ...prev, [item.id]: val }))}
+                                            className="text-center font-medium w-full"
+                                            isSnapshot={isSnapshot}
+                                        />
                                     </td>
                                     <td className="border border-gray-400 px-2 py-1.5 text-center font-medium">
                                         {item.quantity}

@@ -20,6 +20,7 @@ interface ComboboxProps {
     isLoading?: boolean
     emptyText?: string
     allowCustom?: boolean
+    renderValue?: (option: ComboboxOption) => React.ReactNode
 }
 
 export function Combobox({
@@ -32,7 +33,8 @@ export function Combobox({
     disabled = false,
     isLoading = false,
     emptyText = 'No results found.',
-    allowCustom = false
+    allowCustom = false,
+    renderValue
 }: ComboboxProps) {
     const [isOpen, setIsOpen] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
@@ -112,20 +114,26 @@ export function Combobox({
                     <Search size={16} />
                 </div>
 
-                <input
-                    ref={inputRef}
-                    type="text"
-                    className="w-full bg-transparent border-none outline-none py-2 px-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400"
-                    placeholder={placeholder}
-                    value={searchTerm}
-                    onChange={(e) => {
-                        setSearchTerm(e.target.value)
-                        setIsOpen(true)
-                        if (onSearchChange) onSearchChange(e.target.value)
-                    }}
-                    onFocus={() => setIsOpen(true)}
-                    disabled={disabled}
-                />
+                {!isOpen && value && selectedOption && renderValue ? (
+                    <div className="flex-1 py-1.5 px-2 text-sm cursor-text min-h-[40px] flex items-center">
+                        {renderValue(selectedOption)}
+                    </div>
+                ) : (
+                    <input
+                        ref={inputRef}
+                        type="text"
+                        className="w-full bg-transparent border-none outline-none py-2 px-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400"
+                        placeholder={placeholder}
+                        value={searchTerm}
+                        onChange={(e) => {
+                            setSearchTerm(e.target.value)
+                            setIsOpen(true)
+                            if (onSearchChange) onSearchChange(e.target.value)
+                        }}
+                        onFocus={() => setIsOpen(true)}
+                        disabled={disabled}
+                    />
+                )}
 
                 <div className="flex items-center pr-2 gap-1">
                     {value && !disabled && (
