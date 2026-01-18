@@ -751,7 +751,7 @@ function OutboundPrintContent() {
                             value={signPerson1}
                             onChange={(e) => setSignPerson1(e.target.value)}
                             placeholder="Nhập tên..."
-                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
+                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                         />
                         <span className={`hidden print:inline font-bold ${isSnapshot ? 'inline' : ''}`}>{signPerson1}</span>
                     </div>
@@ -778,7 +778,7 @@ function OutboundPrintContent() {
                             value={signPerson4}
                             onChange={(e) => setSignPerson4(e.target.value)}
                             placeholder="Nhập tên..."
-                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
+                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                         />
                         <span className={`hidden print:inline font-bold ${isSnapshot ? 'inline' : ''}`}>{signPerson4}</span>
                     </div>
@@ -805,7 +805,7 @@ function OutboundPrintContent() {
                             value={signPerson2}
                             onChange={(e) => setSignPerson2(e.target.value)}
                             placeholder="Nhập tên..."
-                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
+                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                         />
                         <span className={`hidden print:inline font-bold ${isSnapshot ? 'inline' : ''}`}>{signPerson2}</span>
                     </div>
@@ -818,21 +818,21 @@ function OutboundPrintContent() {
                                 type="text"
                                 value={signDay}
                                 onChange={(e) => setSignDay(e.target.value)}
-                                className="w-6 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-0.5"
+                                className="w-6 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-0.5 font-bold"
                             />
                             tháng
                             <input
                                 type="text"
                                 value={signMonth}
                                 onChange={(e) => setSignMonth(e.target.value)}
-                                className="w-6 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-0.5"
+                                className="w-6 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-0.5 font-bold"
                             />
                             năm
                             <input
                                 type="text"
                                 value={signYear}
                                 onChange={(e) => setSignYear(e.target.value)}
-                                className="w-10 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-0.5"
+                                className="w-10 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-0.5 font-bold"
                             />
                         </span>
                         <span className={`hidden print:inline-block whitespace-nowrap ${isSnapshot ? 'inline-block' : ''}`}>
@@ -857,7 +857,7 @@ function OutboundPrintContent() {
                             value={signPerson3}
                             onChange={(e) => setSignPerson3(e.target.value)}
                             placeholder="Nhập tên..."
-                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
+                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                         />
                         <span className={`hidden print:inline font-bold ${isSnapshot ? 'inline' : ''}`}>{signPerson3}</span>
                     </div>
