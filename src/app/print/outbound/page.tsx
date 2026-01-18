@@ -102,17 +102,26 @@ function numberToVietnameseText(number: number): string {
     const chuHangTram = ('không một' + defaultNumbers).split(' ')
     const dvBlock = '1 nghìn triệu tỷ'.split(' ')
 
-    function convert_block_three(number: string): string {
+    function convert_block_three(number: string, isLeading: boolean = false): string {
         var a = parseInt(number.substring(0, 1))
         var b = parseInt(number.substring(1, 2))
         var c = parseInt(number.substring(2, 3))
         var chu = ''
+
         // Hàng trăm
-        chu = chuHangTram[a] + ' trăm'
+        if (!isLeading || a !== 0) {
+            chu = chuHangTram[a] + ' trăm'
+        }
+
         // Hàng chục
         if (b === 0) {
             if (c !== 0) {
-                chu += ' lẻ ' + chuHangTram[c]
+                // If leading and hundreds was skipped (a=0), we don't say "lẻ"
+                if (isLeading && a === 0) {
+                    chu += ' ' + chuHangTram[c]
+                } else {
+                    chu += ' lẻ ' + chuHangTram[c]
+                }
             }
         } else if (b === 1) {
             chu += ' mười'
@@ -153,14 +162,17 @@ function numberToVietnameseText(number: number): string {
 
         for (i = 0; i < arr.length; i++) {
             if (arr[i] !== '' && arr[i] !== '000') {
-                result = convert_block_three(arr[i].padStart(3, '0')) + (dvBlock[i] === '1' ? '' : ' ' + dvBlock[i]) + ' ' + result
+                // Determine if this is the leading block (most significant)
+                // Since we iterate 0..len, and arr is built right-to-left
+                const isLeading = i === arr.length - 1
+                result = convert_block_three(arr[i].padStart(3, '0'), isLeading) + (dvBlock[i] === '1' ? '' : ' ' + dvBlock[i]) + ' ' + result
             }
             index++
         }
 
         result = result.trim()
         // Capitalize first letter
-        return dau + result.charAt(0).toUpperCase() + result.slice(1) + ' đồng'
+        return dau + result.charAt(0).toUpperCase() + result.slice(1) + ' đồng chẵn./.'
     }
 
     return to_vietnamese(number)

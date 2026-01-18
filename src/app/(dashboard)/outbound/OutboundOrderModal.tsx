@@ -55,6 +55,7 @@ interface OrderItem {
     productName: string
     unit: string
     quantity: number
+    price: number
     note: string
 }
 
@@ -146,6 +147,7 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
             productName: '',
             unit: '',
             quantity: 1,
+            price: 0,
             note: ''
         }])
     }
@@ -160,7 +162,8 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                     ...item,
                     productId: value,
                     productName: prod?.name || '',
-                    unit: prod?.unit || ''
+                    unit: prod?.unit || '',
+                    price: prod?.cost_price || 0
                 }
             }
 
@@ -254,7 +257,7 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                 product_name: item.productName,
                 unit: item.unit,
                 quantity: item.quantity,
-                price: 0,
+                price: item.price || 0,
                 note: item.note
             }))
 
@@ -419,6 +422,8 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                         <th className="px-4 py-3 min-w-[300px]">Sản phẩm</th>
                                         <th className="px-4 py-3 w-24">ĐVT</th>
                                         <th className="px-4 py-3 w-32">Số lượng</th>
+                                        <th className="px-4 py-3 w-32">Đơn giá</th>
+                                        <th className="px-4 py-3 w-32">Thành tiền</th>
                                         <th className="px-4 py-3">Ghi chú</th>
                                         <th className="px-4 py-3 w-10"></th>
                                     </tr>
@@ -451,6 +456,18 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                             </td>
                                             <td className="px-4 py-3">
                                                 <input
+                                                    type="number"
+                                                    value={item.price}
+                                                    onChange={e => updateItem(item.id, 'price', Number(e.target.value))}
+                                                    className="w-full bg-transparent outline-none text-right font-medium"
+                                                    min="0"
+                                                />
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-medium text-stone-700 dark:text-gray-300">
+                                                {(item.quantity * (item.price || 0)).toLocaleString()}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <input
                                                     type="text"
                                                     value={item.note}
                                                     onChange={e => updateItem(item.id, 'note', e.target.value)}
@@ -470,9 +487,11 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                     ))}
                                     {items.length === 0 && (
                                         <tr>
-                                            <td colSpan={8} className="px-4 py-8 text-center text-stone-400">
-                                                Chưa có sản phẩm nào
-                                            </td>
+                                            <tr>
+                                                <td colSpan={10} className="px-4 py-8 text-center text-stone-400">
+                                                    Chưa có sản phẩm nào
+                                                </td>
+                                            </tr>
                                         </tr>
                                     )}
                                 </tbody>

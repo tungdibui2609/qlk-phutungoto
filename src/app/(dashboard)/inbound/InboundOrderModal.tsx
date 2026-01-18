@@ -284,7 +284,7 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                 product_name: item.productName,
                 unit: item.unit,
                 quantity: item.quantity,
-                price: 0,
+                price: item.price,
                 note: item.note
             }))
 
@@ -440,6 +440,8 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                                         <th className="px-4 py-3 min-w-[400px]">Sản phẩm</th>
                                         <th className="px-4 py-3 w-24">ĐVT</th>
                                         <th className="px-4 py-3 w-32">Số lượng</th>
+                                        <th className="px-4 py-3 w-32">Đơn giá</th>
+                                        <th className="px-4 py-3 w-32">Thành tiền</th>
                                         <th className="px-4 py-3">Ghi chú</th>
                                         <th className="px-4 py-3 w-10"></th>
                                     </tr>
@@ -472,6 +474,18 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                                             </td>
                                             <td className="px-4 py-3">
                                                 <input
+                                                    type="number"
+                                                    value={item.price}
+                                                    onChange={e => updateItem(item.id, 'price', Number(e.target.value))}
+                                                    className="w-full bg-transparent outline-none text-right font-medium"
+                                                    min="0"
+                                                />
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-medium text-stone-700 dark:text-gray-300">
+                                                {(item.quantity * item.price).toLocaleString()}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <input
                                                     type="text"
                                                     value={item.note}
                                                     onChange={e => updateItem(item.id, 'note', e.target.value)}
@@ -491,7 +505,7 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                                     ))}
                                     {items.length === 0 && (
                                         <tr>
-                                            <td colSpan={6} className="px-4 py-8 text-center text-stone-400">
+                                            <td colSpan={8} className="px-4 py-8 text-center text-stone-400">
                                                 Chưa có sản phẩm nào
                                             </td>
                                         </tr>
