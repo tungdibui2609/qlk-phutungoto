@@ -84,7 +84,7 @@ function WarehouseMapContent() {
     // Collapsed zones
     const [collapsedZones, setCollapsedZones] = useState<Set<string>>(new Set())
 
-    const [lotInfo, setLotInfo] = useState<Record<string, { code: string, product_name: string, quantity: number }>>({})
+    const [lotInfo, setLotInfo] = useState<Record<string, { code: string, product_name: string, unit?: string, sku?: string, inbound_date?: string, created_at?: string, quantity: number }>>({})
 
     useEffect(() => {
         fetchData()
@@ -99,7 +99,7 @@ function WarehouseMapContent() {
             supabase.from('zone_positions').select('*'),
             supabase.from('inventory').select('position_id').gt('quantity', 0),
             supabase.from('zone_layouts').select('*'),
-            supabase.from('lots').select('id, code, quantity, products(name)')
+            supabase.from('lots').select('id, code, quantity, inbound_date, created_at, products(name, unit, sku)')
         ])
 
         const posData = posRes.data || []
@@ -116,11 +116,15 @@ function WarehouseMapContent() {
         })
 
         // Build Lot Info Map
-        const lotInfoMap: Record<string, { code: string, product_name: string, quantity: number }> = {};
+        const lotInfoMap: Record<string, { code: string, product_name: string, unit?: string, sku?: string, inbound_date?: string, created_at?: string, quantity: number }> = {};
         (lotsData as any[]).forEach((l: any) => {
             lotInfoMap[l.id] = {
                 code: l.code,
                 product_name: l.products?.name,
+                unit: l.products?.unit,
+                sku: l.products?.sku,
+                inbound_date: l.inbound_date,
+                created_at: l.created_at,
                 quantity: l.quantity
             }
         })
@@ -140,7 +144,18 @@ function WarehouseMapContent() {
         // Filter by search term
         if (searchTerm) {
             const term = searchTerm.toLowerCase()
-            result = result.filter(p => p.code.toLowerCase().includes(term))
+            result = result.filter(p => {
+                const posCode = p.code.toLowerCase()
+                const lot = p.lot_id ? lotInfo[p.lot_id] : null
+                const lotCode = lot?.code?.toLowerCase() || ''
+                const productName = lot?.product_name?.toLowerCase() || ''
+                const sku = lot?.sku?.toLowerCase() || ''
+
+                return posCode.includes(term) ||
+                    lotCode.includes(term) ||
+                    productName.includes(term) ||
+                    sku.includes(term)
+            })
         }
 
         // Filter by zone
@@ -159,7 +174,7 @@ function WarehouseMapContent() {
         }
 
         return result
-    }, [positions, selectedZoneId, searchTerm, zones])
+    }, [positions, selectedZoneId, searchTerm, zones, lotInfo])
 
     // Filter zones to pass to grid
     const filteredZones = useMemo(() => {

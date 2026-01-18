@@ -23,7 +23,7 @@ interface FlexibleZoneGridProps {
     onPositionClick: (position: Position) => void
     onConfigureZone?: (zone: Zone) => void
     highlightLotId?: string | null
-    lotInfo?: Record<string, { code: string, product_name: string, quantity: number }>
+    lotInfo?: Record<string, { code: string, product_name: string, unit?: string, sku?: string, inbound_date?: string, created_at?: string, quantity: number }>
 }
 
 export default function FlexibleZoneGrid({
@@ -463,12 +463,12 @@ export default function FlexibleZoneGrid({
                 `}
             >
                 {/* Header: Pos Code */}
-                <div className="flex justify-between items-start w-full">
-                    <span className="font-mono text-[10px] items-center text-gray-400 dark:text-gray-500 font-semibold leading-none">
+                <div className="flex justify-center items-start w-full relative">
+                    <span className="font-mono text-[10px] items-center text-black dark:text-white font-bold leading-none">
                         {pos.code}
                     </span>
                     {/* Status Icons */}
-                    <div className="flex gap-0.5">
+                    <div className="flex gap-0.5 absolute right-0 top-0">
                         {isTargetLot && (
                             <div title="Đang chọn" className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
                         )}
@@ -487,16 +487,37 @@ export default function FlexibleZoneGrid({
                         <div className={`text-xs font-bold leading-tight ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'}`}>
                             {lotDetail.code}
                         </div>
+                        {lotDetail.sku && (
+                            <div className="text-[9px] font-mono text-blue-600 dark:text-blue-400">
+                                {lotDetail.sku}
+                            </div>
+                        )}
                         {lotDetail.product_name && (
-                            <div className="text-[9px] text-gray-500 dark:text-gray-400 line-clamp-2 leading-none">
+                            <div className="text-[9px] text-gray-500 dark:text-gray-400 line-clamp-1 leading-none" title={lotDetail.product_name}>
                                 {lotDetail.product_name}
                             </div>
                         )}
-                        {lotDetail.quantity > 0 && (
-                            <div className="mt-0.5 px-1.5 py-0.5 rounded-full bg-white/50 dark:bg-black/20 text-[9px] font-mono font-bold text-gray-700 dark:text-gray-300 border border-black/5 dark:border-white/10">
-                                {lotDetail.quantity}
-                            </div>
-                        )}
+                        <div className="flex gap-1 flex-wrap justify-center">
+                            {lotDetail.quantity > 0 && (
+                                <div className="px-1.5 py-0.5 rounded-full bg-white/50 dark:bg-black/20 text-[9px] font-mono font-bold text-gray-700 dark:text-gray-300 border border-black/5 dark:border-white/10">
+                                    {lotDetail.quantity} {lotDetail.unit}
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex flex-col gap-0.5 mt-0.5 w-full px-1">
+                            {lotDetail.inbound_date && (
+                                <div className="flex justify-between text-[8px] text-gray-400">
+                                    <span>Nhập:</span>
+                                    <span>{new Date(lotDetail.inbound_date).toLocaleDateString('vi-VN')}</span>
+                                </div>
+                            )}
+                            {lotDetail.created_at && (
+                                <div className="flex justify-between text-[8px] text-gray-400">
+                                    <span>Đóng:</span>
+                                    <span>{new Date(lotDetail.created_at).toLocaleDateString('vi-VN')}</span>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 ) : (
                     <div className="flex-1"></div>
