@@ -882,24 +882,33 @@ function OutboundPrintContent() {
             `}</style>
 
             {/* Snapshot Specific Styles - Fixes height issue */}
-            {
-                isSnapshot && (
-                    <style jsx global>{`
+            {/* Snapshot Specific Styles - Fixes height and width issue */}
+            {isSnapshot && (
+                <style jsx global>{`
                     html, body {
                         background: white !important;
                         height: fit-content !important;
-                        min-height: 0 !important;
+                        width: 210mm !important; /* Force A4 width */
+                        max-width: 210mm !important;
+                        min-width: 210mm !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        overflow: hidden !important;
                     }
                     body::before {
-                        display: none !important; /* Hide background pattern */
+                        display: none !important;
                     }
                     #print-ready {
-                        padding-bottom: 0px !important;
-                        margin-bottom: 0px !important;
+                        width: 100% !important;
+                        padding: 10mm 10mm 10mm 10mm !important; /* Match print margins */
+                        margin: 0 !important;
+                        max-width: none !important;
+                        box-shadow: none !important;
+                        border: none !important;
+                        box-sizing: border-box !important;
                     }
                 `}</style>
-                )
-            }
+            )}
         </div >
     )
 }
