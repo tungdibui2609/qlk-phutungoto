@@ -946,8 +946,8 @@ function InboundPrintContent() {
                         background: white !important;
                         height: fit-content !important;
                         min-height: 0 !important;
-                        width: fit-content !important;
-                        min-width: 1270px !important;
+                        width: 1240px !important;
+                        min-width: 1240px !important;
                         margin: 0 !important;
                         padding: 0 !important;
                         overflow: hidden !important;
@@ -960,14 +960,14 @@ function InboundPrintContent() {
                         display: none !important;
                     }
                     #print-ready {
-                        width: 1250px !important;
+                        width: 1240px !important;
                         height: fit-content !important;
                         padding: 30px 30px 0 30px !important;
                         margin: 0 auto !important;
                         max-width: none !important;
                         box-shadow: none !important;
                         border: none !important;
-                        box-sizing: content-box !important;
+                        box-sizing: border-box !important;
                     }
                 `}} />
             )}
