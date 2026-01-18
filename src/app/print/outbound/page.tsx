@@ -906,7 +906,7 @@ function OutboundPrintContent() {
                     #print-ready {
                         width: 1250px !important;
                         height: fit-content !important;
-                        padding: 30px !important;
+                        padding: 30px 30px 0 30px !important;
                         margin: 0 auto !important;
                         max-width: none !important;
                         box-shadow: none !important;
