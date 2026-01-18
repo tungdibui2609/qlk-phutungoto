@@ -889,6 +889,7 @@ function OutboundPrintContent() {
                     html, body {
                         background: white !important;
                         height: fit-content !important;
+                        min-height: 0 !important;
                         width: 210mm !important;
                         max-width: 210mm !important;
                         min-width: 210mm !important;
@@ -896,11 +897,16 @@ function OutboundPrintContent() {
                         padding: 0 !important;
                         overflow: hidden !important;
                     }
+                    .min-h-screen {
+                        min-height: 0 !important;
+                        height: auto !important;
+                    }
                     body::before {
                         display: none !important;
                     }
                     #print-ready {
                         width: 100% !important;
+                        height: fit-content !important;
                         padding: 10mm !important;
                         margin: 0 !important;
                         max-width: none !important;
