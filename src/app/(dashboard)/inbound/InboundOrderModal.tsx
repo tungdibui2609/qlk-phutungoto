@@ -409,13 +409,13 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                     <div className="space-y-4">
                         <div className="flex items-center gap-2 pb-2 border-b border-stone-200 dark:border-zinc-800">
                             <div className="w-1 h-4 bg-stone-400 rounded-full"></div>
-                            <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Ghi chú</h3>
+                            <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Diễn giải</h3>
                         </div>
                         <textarea
                             value={description}
                             onChange={e => setDescription(e.target.value)}
                             className="w-full px-4 py-3 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg h-20 resize-none text-sm"
-                            placeholder="Ghi chú về lô hàng, số hóa đơn, chứng từ..."
+                            placeholder="Diễn giải về lô hàng, số hóa đơn, chứng từ..."
                         />
                     </div>
 
