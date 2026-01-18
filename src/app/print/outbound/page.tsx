@@ -553,7 +553,7 @@ function OutboundPrintContent() {
                     <EditableText
                         value={editCustomerName}
                         onChange={setEditCustomerName}
-                        className="ml-2 flex-1 font-medium"
+                        className="ml-2 flex-1 font-bold"
                         isSnapshot={isSnapshot}
                     />
                 </div>
@@ -562,7 +562,7 @@ function OutboundPrintContent() {
                     <EditableText
                         value={editCustomerAddress}
                         onChange={setEditCustomerAddress}
-                        className="ml-2 flex-1 font-medium"
+                        className="ml-2 flex-1 font-bold"
                         isSnapshot={isSnapshot}
                     />
                 </div>
@@ -571,7 +571,7 @@ function OutboundPrintContent() {
                     <EditableText
                         value={editReason}
                         onChange={setEditReason}
-                        className="ml-2 flex-1 font-medium"
+                        className="ml-2 flex-1 font-bold"
                         isSnapshot={isSnapshot}
                     />
                 </div>
@@ -581,7 +581,7 @@ function OutboundPrintContent() {
                         <EditableText
                             value={editWarehouse}
                             onChange={setEditWarehouse}
-                            className="ml-2 font-medium"
+                            className="ml-2 font-bold"
                             isSnapshot={isSnapshot}
                         />
                     </div>
@@ -591,9 +591,9 @@ function OutboundPrintContent() {
                             type="text"
                             value={editLocation}
                             onChange={(e) => setEditLocation(e.target.value)}
-                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
+                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                         />
-                        <span className={`hidden print:inline ml-2 flex-1 min-w-[50px] ${isSnapshot ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
+                        <span className={`hidden print:inline ml-2 flex-1 min-w-[50px] font-bold ${isSnapshot ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
                     </div>
                 </div>
                 <div className="flex items-center">
@@ -602,9 +602,9 @@ function OutboundPrintContent() {
                         type="text"
                         value={editNote}
                         onChange={(e) => setEditNote(e.target.value)}
-                        className={`print:hidden ${isSnapshot ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
+                        className={`print:hidden ${isSnapshot ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                     />
-                    <span className={`hidden print:inline ml-2 flex-1 ${isSnapshot ? 'inline' : ''}`}>{editNote || '\u00A0'}</span>
+                    <span className={`hidden print:inline ml-2 flex-1 font-bold ${isSnapshot ? 'inline' : ''}`}>{editNote || '\u00A0'}</span>
                 </div>
             </div>
 
@@ -753,7 +753,7 @@ function OutboundPrintContent() {
                             placeholder="Nhập tên..."
                             className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
                         />
-                        <span className={`hidden print:inline font-medium ${isSnapshot ? 'inline' : ''}`}>{signPerson1}</span>
+                        <span className={`hidden print:inline font-bold ${isSnapshot ? 'inline' : ''}`}>{signPerson1}</span>
                     </div>
                 </div>
                 <div>
@@ -780,7 +780,7 @@ function OutboundPrintContent() {
                             placeholder="Nhập tên..."
                             className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
                         />
-                        <span className={`hidden print:inline font-medium ${isSnapshot ? 'inline' : ''}`}>{signPerson4}</span>
+                        <span className={`hidden print:inline font-bold ${isSnapshot ? 'inline' : ''}`}>{signPerson4}</span>
                     </div>
                 </div>
                 <div>
@@ -807,7 +807,7 @@ function OutboundPrintContent() {
                             placeholder="Nhập tên..."
                             className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
                         />
-                        <span className={`hidden print:inline font-medium ${isSnapshot ? 'inline' : ''}`}>{signPerson2}</span>
+                        <span className={`hidden print:inline font-bold ${isSnapshot ? 'inline' : ''}`}>{signPerson2}</span>
                     </div>
                 </div>
                 <div>
@@ -859,7 +859,7 @@ function OutboundPrintContent() {
                             placeholder="Nhập tên..."
                             className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
                         />
-                        <span className={`hidden print:inline font-medium ${isSnapshot ? 'inline' : ''}`}>{signPerson3}</span>
+                        <span className={`hidden print:inline font-bold ${isSnapshot ? 'inline' : ''}`}>{signPerson3}</span>
                     </div>
                 </div>
             </div>

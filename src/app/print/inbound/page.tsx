@@ -572,7 +572,7 @@ function InboundPrintContent() {
                     <EditableText
                         value={editSupplierName}
                         onChange={setEditSupplierName}
-                        className="ml-2 flex-1 font-medium"
+                        className="ml-2 flex-1 font-bold"
                         isSnapshot={isSnapshot}
                     />
                 </div>
@@ -581,7 +581,7 @@ function InboundPrintContent() {
                     <EditableText
                         value={editSupplierAddress}
                         onChange={setEditSupplierAddress}
-                        className="ml-2 flex-1 font-medium"
+                        className="ml-2 flex-1 font-bold"
                         isSnapshot={isSnapshot}
                     />
                 </div>
@@ -591,61 +591,61 @@ function InboundPrintContent() {
                         <AutoResizeInput
                             value={editTheoDoc}
                             onChange={setEditTheoDoc}
-                            className="mx-1"
+                            className="mx-1 font-bold"
                             minWidth={60}
                             isSnapshot={isSnapshot}
                         />
-                        <span className={`hidden print:inline-block mx-1 ${!editTheoDoc ? 'min-w-[100px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoDoc || ''}</span>
+                        <span className={`hidden print:inline-block mx-1 font-bold ${!editTheoDoc ? 'min-w-[100px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoDoc || ''}</span>
 
                         <span className="text-gray-600">số</span>
                         <AutoResizeInput
                             value={editTheoSo}
                             onChange={setEditTheoSo}
-                            className="mx-1"
+                            className="mx-1 font-bold"
                             minWidth={40}
                             isSnapshot={isSnapshot}
                         />
-                        <span className={`hidden print:inline-block mx-1 ${!editTheoSo ? 'min-w-[85px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoSo || ''}</span>
+                        <span className={`hidden print:inline-block mx-1 font-bold ${!editTheoSo ? 'min-w-[85px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoSo || ''}</span>
 
                         <span className="text-gray-600">ngày</span>
                         <AutoResizeInput
                             value={editTheoDay}
                             onChange={setEditTheoDay}
-                            className="mx-1"
+                            className="mx-1 font-bold"
                             minWidth={25}
                             isSnapshot={isSnapshot}
                         />
-                        <span className={`hidden print:inline-block mx-1 ${!editTheoDay ? 'min-w-[30px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoDay || ''}</span>
+                        <span className={`hidden print:inline-block mx-1 font-bold ${!editTheoDay ? 'min-w-[30px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoDay || ''}</span>
 
                         <span className="text-gray-600">tháng</span>
                         <AutoResizeInput
                             value={editTheoMonth}
                             onChange={setEditTheoMonth}
-                            className="mx-1"
+                            className="mx-1 font-bold"
                             minWidth={25}
                             isSnapshot={isSnapshot}
                         />
-                        <span className={`hidden print:inline-block mx-1 ${!editTheoMonth ? 'min-w-[30px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoMonth || ''}</span>
+                        <span className={`hidden print:inline-block mx-1 font-bold ${!editTheoMonth ? 'min-w-[30px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoMonth || ''}</span>
 
                         <span className="text-gray-600">năm</span>
                         <AutoResizeInput
                             value={editTheoYear}
                             onChange={setEditTheoYear}
-                            className="mx-1"
+                            className="mx-1 font-bold"
                             minWidth={30}
                             isSnapshot={isSnapshot}
                         />
-                        <span className={`hidden print:inline-block mx-1 ${!editTheoYear ? 'min-w-[40px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoYear || ''}</span>
+                        <span className={`hidden print:inline-block mx-1 font-bold ${!editTheoYear ? 'min-w-[40px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoYear || ''}</span>
 
                         <span className="text-gray-600">của</span>
                         <AutoResizeInput
                             value={editTheoCua}
                             onChange={setEditTheoCua}
-                            className="mx-1"
+                            className="mx-1 font-bold"
                             minWidth={100}
                             isSnapshot={isSnapshot}
                         />
-                        <span className={`hidden print:inline-block mx-1 ${!editTheoCua ? 'min-w-[100px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoCua || ''}</span>
+                        <span className={`hidden print:inline-block mx-1 font-bold ${!editTheoCua ? 'min-w-[100px]' : ''} ${isSnapshot ? 'inline-block' : ''}`}>{editTheoCua || ''}</span>
                     </div>
                 )}
                 <div className="flex items-center gap-8">
@@ -654,7 +654,7 @@ function InboundPrintContent() {
                         <EditableText
                             value={editWarehouse}
                             onChange={setEditWarehouse}
-                            className="ml-2 font-medium"
+                            className="ml-2 font-bold"
                             isSnapshot={isSnapshot}
                         />
                     </div>
@@ -664,9 +664,9 @@ function InboundPrintContent() {
                             type="text"
                             value={editLocation}
                             onChange={(e) => setEditLocation(e.target.value)}
-                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
+                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                         />
-                        <span className={`hidden print:inline ml-2 flex-1 min-w-[50px] ${isSnapshot ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
+                        <span className={`hidden print:inline ml-2 flex-1 min-w-[50px] font-bold ${isSnapshot ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
                     </div>
                 </div>
                 {editDescription && (
@@ -675,7 +675,7 @@ function InboundPrintContent() {
                         <EditableText
                             value={editDescription}
                             onChange={setEditDescription}
-                            className="ml-2 flex-1 font-medium italic"
+                            className="ml-2 flex-1 font-bold italic"
                             isSnapshot={isSnapshot}
                         />
                     </div>
@@ -686,9 +686,9 @@ function InboundPrintContent() {
                         type="text"
                         value={editNote}
                         onChange={(e) => setEditNote(e.target.value)}
-                        className={`print:hidden ${isSnapshot ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
+                        className={`print:hidden ${isSnapshot ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                     />
-                    <span className={`hidden print:inline ml-2 flex-1 ${isSnapshot ? 'inline' : ''}`}>{editNote || '\u00A0'}</span>
+                    <span className={`hidden print:inline ml-2 flex-1 font-bold ${isSnapshot ? 'inline' : ''}`}>{editNote || '\u00A0'}</span>
                 </div>
             </div>
 
@@ -793,7 +793,7 @@ function InboundPrintContent() {
                         <EditableText
                             value={amountInWords}
                             onChange={setAmountInWords}
-                            className="ml-2 flex-1 font-medium italic"
+                            className="ml-2 flex-1 font-bold italic"
                             isSnapshot={isSnapshot}
                         />
                     </div>
@@ -804,7 +804,7 @@ function InboundPrintContent() {
                         <EditableText
                             value={attachedDocs}
                             onChange={setAttachedDocs}
-                            className="ml-2 flex-1 font-medium"
+                            className="ml-2 flex-1 font-bold"
                             isSnapshot={isSnapshot}
                         />
                     </div>
@@ -836,7 +836,7 @@ function InboundPrintContent() {
                             placeholder="Nhập tên..."
                             className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
                         />
-                        <span className={`hidden print:inline font-medium ${isSnapshot ? 'inline' : ''}`}>{signPerson1}</span>
+                        <span className={`hidden print:inline font-bold ${isSnapshot ? 'inline' : ''}`}>{signPerson1}</span>
                     </div>
                 </div>
                 <div>
@@ -863,7 +863,7 @@ function InboundPrintContent() {
                             placeholder="Nhập tên..."
                             className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
                         />
-                        <span className={`hidden print:inline font-medium ${isSnapshot ? 'inline' : ''}`}>{signPerson2}</span>
+                        <span className={`hidden print:inline font-bold ${isSnapshot ? 'inline' : ''}`}>{signPerson2}</span>
                     </div>
                 </div>
                 <div>
@@ -915,7 +915,7 @@ function InboundPrintContent() {
                             placeholder="Nhập tên..."
                             className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
                         />
-                        <span className={`hidden print:inline font-medium ${isSnapshot ? 'inline' : ''}`}>{signPerson3}</span>
+                        <span className={`hidden print:inline font-bold ${isSnapshot ? 'inline' : ''}`}>{signPerson3}</span>
                     </div>
                 </div>
             </div>
