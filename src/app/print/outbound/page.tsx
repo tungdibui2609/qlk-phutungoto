@@ -884,7 +884,8 @@ function OutboundPrintContent() {
             {/* Snapshot Specific Styles - Fixes height issue */}
             {/* Snapshot Specific Styles - Fixes height and width issue */}
             {isSnapshot && (
-                <style jsx global>{`
+                <style dangerouslySetInnerHTML={{
+                    __html: `
                     html, body {
                         background: white !important;
                         height: fit-content !important;
@@ -907,7 +908,7 @@ function OutboundPrintContent() {
                         border: none !important;
                         box-sizing: border-box !important;
                     }
-                `}</style>
+                `}} />
             )}
         </div >
     )
