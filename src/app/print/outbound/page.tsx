@@ -890,9 +890,9 @@ function OutboundPrintContent() {
                         background: white !important;
                         height: fit-content !important;
                         min-height: 0 !important;
-                        width: 210mm !important;
-                        max-width: 210mm !important;
-                        min-width: 210mm !important;
+                        width: 900px !important;
+                        max-width: 900px !important;
+                        min-width: 900px !important;
                         margin: 0 !important;
                         padding: 0 !important;
                         overflow: hidden !important;
@@ -907,7 +907,7 @@ function OutboundPrintContent() {
                     #print-ready {
                         width: 100% !important;
                         height: fit-content !important;
-                        padding: 10mm !important;
+                        padding: 20px !important;
                         margin: 0 !important;
                         max-width: none !important;
                         box-shadow: none !important;
