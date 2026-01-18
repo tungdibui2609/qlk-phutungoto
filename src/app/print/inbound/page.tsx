@@ -947,7 +947,7 @@ function InboundPrintContent() {
                         height: fit-content !important;
                         min-height: 0 !important;
                         width: fit-content !important;
-                        min-width: 1120px !important;
+                        min-width: 1270px !important;
                         margin: 0 !important;
                         padding: 0 !important;
                         overflow: hidden !important;
@@ -960,7 +960,7 @@ function InboundPrintContent() {
                         display: none !important;
                     }
                     #print-ready {
-                        width: 1100px !important;
+                        width: 1250px !important;
                         height: fit-content !important;
                         padding: 30px !important;
                         margin: 0 auto !important;
