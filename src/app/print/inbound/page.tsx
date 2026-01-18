@@ -83,21 +83,23 @@ function AutoResizeInput({
 }) {
     return (
         <>
-            <div className={`inline-grid items-center ${className} print:hidden ${isSnapshot ? 'hidden' : ''}`}>
-                {/* Hidden span to measure content width */}
-                <span className="invisible col-start-1 row-start-1 px-1 overflow-hidden whitespace-pre border-b border-transparent opacity-0 pointer-events-none">
-                    {value || '00'}
+            <span className={`${isSnapshot ? 'hidden' : ''} print:hidden ${className}`}>
+                <span className="inline-grid items-center w-full h-full">
+                    {/* Hidden span to measure content width */}
+                    <span className="invisible col-start-1 row-start-1 px-1 overflow-hidden whitespace-pre border-b border-transparent opacity-0 pointer-events-none">
+                        {value || '00'}
+                    </span>
+                    <input
+                        type="text"
+                        value={value}
+                        onChange={(e) => onChange(e.target.value)}
+                        className="col-start-1 row-start-1 w-full h-full text-center bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none"
+                        style={{ minWidth: `${minWidth}px` }}
+                    />
                 </span>
-                <input
-                    type="text"
-                    value={value}
-                    onChange={(e) => onChange(e.target.value)}
-                    className="col-start-1 row-start-1 w-full h-full text-center bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none"
-                    style={{ minWidth: `${minWidth}px` }}
-                />
-            </div>
+            </span>
             <span
-                className={`hidden print:inline-block ${isSnapshot ? 'inline-block' : ''} ${className}`}
+                className={`${isSnapshot ? 'inline-block' : 'hidden'} print:inline-block ${className}`}
                 style={{ minWidth: !value ? `${emptyWidth}px` : undefined }}
             >
                 {value || ''}
