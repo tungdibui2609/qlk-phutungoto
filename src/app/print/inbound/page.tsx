@@ -923,20 +923,40 @@ function InboundPrintContent() {
             {/* Print Styles */}
             <style jsx global>{`
                 @media print {
-                    @page {
-                        size: A4;
-                        margin: 1mm 10mm 10mm 10mm;
+                @page {
+                size: A4;
+            margin: 1mm 10mm 10mm 10mm;
                     }
-                    body {
-                        -webkit-print-color-adjust: exact;
-                        print-color-adjust: exact;
+            body {
+                -webkit - print - color - adjust: exact;
+            print-color-adjust: exact;
                     }
-                    .no-print {
-                        display: none !important;
+            .no-print {
+                display: none !important;
                     }
                 }
             `}</style>
-        </div>
+
+            {/* Snapshot Specific Styles - Fixes height issue */}
+            {
+                isSnapshot && (
+                    <style jsx global>{`
+                    html, body {
+                        background: white !important;
+                        height: fit-content !important;
+                        min-height: 0 !important;
+                    }
+                    body::before {
+                        display: none !important; /* Hide background pattern */
+                    }
+                    #print-ready {
+                        padding-bottom: 0px !important;
+                        margin-bottom: 0px !important;
+                    }
+                `}</style>
+                )
+            }
+        </div >
     )
 }
 
