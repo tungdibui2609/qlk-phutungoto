@@ -388,7 +388,7 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                     <div className="space-y-4">
                         <div className="flex items-center gap-2 pb-2 border-b border-stone-200 dark:border-zinc-800">
                             <div className="w-1 h-4 bg-stone-400 rounded-full"></div>
-                            <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Diễn giải</h3>
+                            <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Diễn giải kèm theo / lý do xuất</h3>
                         </div>
                         <textarea
                             value={description}

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Printer, Edit3 } from 'lucide-react'
+import { Printer, Edit3, Loader2 } from 'lucide-react'
 
 interface CompanyInfo {
     name: string
@@ -229,6 +229,10 @@ function OutboundPrintContent() {
     // General note field
     const [editNote, setEditNote] = useState('')
 
+    // Download loading state
+    const [isDownloading, setIsDownloading] = useState(false)
+    const [downloadTimer, setDownloadTimer] = useState(0)
+
     const token = searchParams.get('token')
 
     useEffect(() => {
@@ -337,6 +341,16 @@ function OutboundPrintContent() {
     }
 
     const handleDownload = async () => {
+        if (isDownloading) return
+
+        setIsDownloading(true)
+        setDownloadTimer(0)
+
+        // Start timer
+        const timerInterval = setInterval(() => {
+            setDownloadTimer(prev => prev + 1)
+        }, 1000)
+
         try {
             const params = new URLSearchParams()
             if (orderId) params.set('id', orderId)
@@ -387,6 +401,10 @@ function OutboundPrintContent() {
         } catch (error: any) {
             console.error(error)
             alert(`Lỗi tải ảnh: ${error.message}`)
+        } finally {
+            clearInterval(timerInterval)
+            setIsDownloading(false)
+            setDownloadTimer(0)
         }
     }
 
@@ -412,10 +430,20 @@ function OutboundPrintContent() {
             <div className={`fixed top-4 right-4 print:hidden z-50 flex items-center gap-2 ${isSnapshot ? 'hidden' : ''}`}>
                 <button
                     onClick={handleDownload}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium rounded-full shadow-lg transition-all hover:scale-105"
+                    disabled={isDownloading}
+                    className={`flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium rounded-full shadow-lg transition-all hover:scale-105 ${isDownloading ? 'opacity-70 cursor-wait' : ''}`}
                 >
-                    <Printer size={20} />
-                    Tải ảnh phiếu
+                    {isDownloading ? (
+                        <>
+                            <Loader2 size={20} className="animate-spin" />
+                            Đang tạo ảnh... ({downloadTimer}s)
+                        </>
+                    ) : (
+                        <>
+                            <Printer size={20} />
+                            Tải ảnh phiếu
+                        </>
+                    )}
                 </button>
                 <button
                     onClick={handlePrint}

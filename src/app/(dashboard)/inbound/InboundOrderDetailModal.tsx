@@ -237,7 +237,7 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                         </div>
                         <div className="space-y-4">
                             <div>
-                                <label className="text-xs font-semibold text-stone-400 uppercase">Ghi chú</label>
+                                <label className="text-xs font-semibold text-stone-400 uppercase">Diễn giải</label>
                                 <p className="font-medium text-stone-900 dark:text-gray-200 flex items-start gap-2 mt-1">
                                     <FileText size={16} className="text-stone-400 mt-0.5" />
                                     <span className="italic text-stone-600 dark:text-gray-400">
