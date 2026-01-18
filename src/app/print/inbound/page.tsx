@@ -956,7 +956,7 @@ function InboundPrintContent() {
                     }
                     #print-ready {
                         width: 100% !important;
-                        padding: 10mm 10mm 10mm 10mm !important;
+                        padding: 10mm !important;
                         margin: 0 !important;
                         max-width: none !important;
                         box-shadow: none !important;
