@@ -269,18 +269,40 @@ function OutboundPrintContent() {
                     const o = orderData as any
                     setOrder(o)
 
-                    // Set editable fields from order data
+                    // Set editable fields from order data OR URL params
                     const d = new Date(o.created_at)
                     if (!isNaN(d.getTime())) {
-                        setEditDay(d.getDate().toString())
-                        setEditMonth((d.getMonth() + 1).toString())
-                        setEditYear(d.getFullYear().toString())
+                        setEditDay(searchParams.get('editDay') || d.getDate().toString())
+                        setEditMonth(searchParams.get('editMonth') || (d.getMonth() + 1).toString())
+                        setEditYear(searchParams.get('editYear') || d.getFullYear().toString())
                     }
-                    setEditCustomerName(o.customer_name || '')
-                    setEditCustomerAddress(o.customer_address || '')
-                    setEditWarehouse(o.warehouse_name || 'Kho mặc định')
-                    setEditDescription(o.description || '')
-                    setEditReason(o.description || '')
+                    setEditCustomerName(searchParams.get('editCustomerName') || o.customer_name || '')
+                    setEditCustomerAddress(searchParams.get('editCustomerAddress') || o.customer_address || '')
+                    setEditWarehouse(searchParams.get('editWarehouse') || o.warehouse_name || 'Kho mặc định')
+                    setEditDescription(searchParams.get('editDescription') || o.description || '')
+                    setEditReason(searchParams.get('editReason') || o.description || '')
+                    setEditLocation(searchParams.get('editLocation') || cmpAddress || '')
+
+                    setAmountInWords(searchParams.get('amountInWords') || '')
+                    setAttachedDocs(searchParams.get('attachedDocs') || '')
+
+                    setSignTitle1(searchParams.get('signTitle1') || 'Người lập phiếu')
+                    setSignTitle2(searchParams.get('signTitle2') || 'Thủ kho')
+                    setSignTitle3(searchParams.get('signTitle3') || 'Kế toán trưởng')
+                    setSignTitle4(searchParams.get('signTitle4') || 'Người nhận hàng')
+
+                    setSignPerson1(searchParams.get('signPerson1') || '')
+                    setSignPerson2(searchParams.get('signPerson2') || '')
+                    setSignPerson3(searchParams.get('signPerson3') || '')
+                    setSignPerson4(searchParams.get('signPerson4') || '')
+
+                    setSignDay(searchParams.get('signDay') || '')
+                    setSignMonth(searchParams.get('signMonth') || '')
+                    setSignYear(searchParams.get('signYear') || '')
+
+                    setDebitAccount(searchParams.get('debitAccount') || '')
+                    setCreditAccount(searchParams.get('creditAccount') || '')
+                    setEditNote(searchParams.get('editNote') || '')
 
                     // Fetch items
                     const { data: itemsData } = await supabase
@@ -314,6 +336,60 @@ function OutboundPrintContent() {
         window.print()
     }
 
+    const handleDownload = async () => {
+        try {
+            const params = new URLSearchParams()
+            if (orderId) params.set('id', orderId)
+            params.set('type', printType)
+
+            // Append all editable fields
+            params.set('editDay', editDay)
+            params.set('editMonth', editMonth)
+            params.set('editYear', editYear)
+            params.set('editCustomerName', editCustomerName)
+            params.set('editCustomerAddress', editCustomerAddress)
+            params.set('editReason', editReason)
+            params.set('editWarehouse', editWarehouse)
+            params.set('editLocation', editLocation)
+            params.set('editDescription', editDescription)
+            params.set('amountInWords', amountInWords)
+            params.set('attachedDocs', attachedDocs)
+            params.set('signTitle1', signTitle1)
+            params.set('signTitle2', signTitle2)
+            params.set('signTitle3', signTitle3)
+            params.set('signTitle4', signTitle4)
+            params.set('signPerson1', signPerson1)
+            params.set('signPerson2', signPerson2)
+            params.set('signPerson3', signPerson3)
+            params.set('signPerson4', signPerson4)
+            params.set('signDay', signDay)
+            params.set('signMonth', signMonth)
+            params.set('signYear', signYear)
+            params.set('debitAccount', debitAccount)
+            params.set('creditAccount', creditAccount)
+            params.set('editNote', editNote)
+
+            const res = await fetch(`/api/outbound/print-image?${params.toString()}`)
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}))
+                throw new Error(errData.details || errData.error || 'Failed to generate image')
+            }
+
+            const blob = await res.blob()
+            const url = window.URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `Phieu_xuat_${order?.code || 'scan'}.jpg`
+            document.body.appendChild(a)
+            a.click()
+            window.URL.revokeObjectURL(url)
+            document.body.removeChild(a)
+        } catch (error: any) {
+            console.error(error)
+            alert(`Lỗi tải ảnh: ${error.message}`)
+        }
+    }
+
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
@@ -332,8 +408,15 @@ function OutboundPrintContent() {
 
     return (
         <div id="print-ready" className="pt-0 px-6 pb-6 print:p-4 max-w-4xl mx-auto bg-white text-black text-[13px] leading-relaxed">
-            {/* Toolbar - Hidden when printing */}
+            {/* Toolbar - Hidden when printing or snapshotting */}
             <div className={`fixed top-4 right-4 print:hidden z-50 flex items-center gap-2 ${isSnapshot ? 'hidden' : ''}`}>
+                <button
+                    onClick={handleDownload}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium rounded-full shadow-lg transition-all hover:scale-105"
+                >
+                    <Printer size={20} />
+                    Tải ảnh phiếu
+                </button>
                 <button
                     onClick={handlePrint}
                     className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-full shadow-lg transition-all hover:scale-105"

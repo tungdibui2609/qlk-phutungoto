@@ -172,34 +172,7 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
         }
     }
 
-    const handleDownloadImage = async () => {
-        if (!order) return
-        try {
-            showToast('Đang tạo ảnh phiếu...', 'info')
-            const res = await fetch(`/api/outbound/print-image?id=${order.id}`)
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({}))
-                throw new Error(errData.details || errData.error || 'Failed to generate image')
-            }
 
-            const blob = await res.blob()
-            const url = window.URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url
-            // Use the order code for filename
-            a.download = `Phieu_xuat_${order.code}.png`
-            document.body.appendChild(a)
-            a.click()
-            window.URL.revokeObjectURL(url)
-            document.body.removeChild(a)
-
-            showToast('Đã tải ảnh phiếu thành công', 'success')
-            setShowPrintMenu(false)
-        } catch (error: any) {
-            console.error('Download error:', error)
-            showToast(`Lỗi: ${error.message}`, 'error')
-        }
-    }
 
     if (!order) return null
 
@@ -424,18 +397,7 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                                             <div className="text-xs text-stone-500">Mẫu 02-VT đầy đủ</div>
                                         </div>
                                     </button>
-                                    <button
-                                        onClick={handleDownloadImage}
-                                        className="w-full px-4 py-3 text-left hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-3 text-stone-700 dark:text-gray-200 border-t border-stone-100 dark:border-zinc-700"
-                                    >
-                                        <div className="w-4 h-4 flex items-center justify-center">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-500"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg>
-                                        </div>
-                                        <div>
-                                            <div className="font-medium">Tải ảnh phiếu</div>
-                                            <div className="text-xs text-stone-500">Lưu dưới dạng ảnh (PNG)</div>
-                                        </div>
-                                    </button>
+
                                 </div>
                             </>
                         )}

@@ -60,6 +60,13 @@ export async function GET(req: NextRequest) {
         // Construct the URL that the screenshot service will visit
         // We pass company info via params to avoid client-side fetch issues
         const params = new URLSearchParams();
+
+        // Forward all params from request (print type, editable fields, etc.)
+        searchParams.forEach((value, key) => {
+            params.set(key, value);
+        });
+
+        // Ensure system params are set
         params.set('id', id);
         params.set('snapshot', '1');
         params.set('token', token);

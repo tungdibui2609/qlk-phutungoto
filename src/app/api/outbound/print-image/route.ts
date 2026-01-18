@@ -51,6 +51,12 @@ export async function GET(req: NextRequest) {
             .single();
 
         const params = new URLSearchParams();
+
+        // Forward all params from request (print type, editable fields, etc.)
+        searchParams.forEach((value, key) => {
+            params.set(key, value);
+        });
+
         params.set('id', id);
         params.set('snapshot', '1');
         params.set('token', token);
