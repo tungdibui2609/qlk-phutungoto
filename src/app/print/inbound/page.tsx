@@ -944,7 +944,7 @@ function InboundPrintContent() {
                     html, body {
                         background: white !important;
                         height: fit-content !important;
-                        width: 210mm !important; /* Force A4 width */
+                        width: 210mm !important;
                         max-width: 210mm !important;
                         min-width: 210mm !important;
                         margin: 0 !important;
@@ -956,7 +956,7 @@ function InboundPrintContent() {
                     }
                     #print-ready {
                         width: 100% !important;
-                        padding: 10mm 10mm 10mm 10mm !important; /* Match print margins */
+                        padding: 10mm 10mm 10mm 10mm !important;
                         margin: 0 !important;
                         max-width: none !important;
                         box-shadow: none !important;
