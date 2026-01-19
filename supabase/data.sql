@@ -4,7 +4,7 @@ SET session_replication_role = replica;
 -- PostgreSQL database dump
 --
 
--- \restrict FILKcOthDQqpDUm752czcsOCCXL2c87AEkV5HUaz4MHxFf0SlEfoQ5k3Lpna5nZ
+-- \restrict aDniEv3ZvOqVlVW8VzW9awAmy47M4MqrzuaKFfx3IQiqlu6Qo6cuDU2C6aWfDD3
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.6
@@ -38,7 +38,7 @@ SET row_security = off;
 --
 
 INSERT INTO "auth"."users" ("instance_id", "id", "aud", "role", "email", "encrypted_password", "email_confirmed_at", "invited_at", "confirmation_token", "confirmation_sent_at", "recovery_token", "recovery_sent_at", "email_change_token_new", "email_change", "email_change_sent_at", "last_sign_in_at", "raw_app_meta_data", "raw_user_meta_data", "is_super_admin", "created_at", "updated_at", "phone", "phone_confirmed_at", "phone_change", "phone_change_token", "phone_change_sent_at", "email_change_token_current", "email_change_confirm_status", "banned_until", "reauthentication_token", "reauthentication_sent_at", "is_sso_user", "deleted_at", "is_anonymous") VALUES
-	('00000000-0000-0000-0000-000000000000', '1d502b01-df8b-4f27-9965-fa550a5b4096', 'authenticated', 'authenticated', 'tungdibui2609@gmail.com', '$2a$10$mNiEWIIg.k5FY4/yXM1pM.34Yrqub4MqYBj./yMV0BkhWn/KcD4Em', '2026-01-13 15:26:07.948032+00', NULL, '', NULL, '', NULL, '', '', NULL, '2026-01-18 03:05:16.562689+00', '{"provider": "email", "providers": ["email"]}', '{"email_verified": true}', NULL, '2026-01-13 15:26:07.914315+00', '2026-01-19 05:37:09.092233+00', NULL, NULL, '', '', NULL, '', 0, NULL, '', NULL, false, NULL, false);
+	('00000000-0000-0000-0000-000000000000', '1d502b01-df8b-4f27-9965-fa550a5b4096', 'authenticated', 'authenticated', 'tungdibui2609@gmail.com', '$2a$10$mNiEWIIg.k5FY4/yXM1pM.34Yrqub4MqYBj./yMV0BkhWn/KcD4Em', '2026-01-13 15:26:07.948032+00', NULL, '', NULL, '', NULL, '', '', NULL, '2026-01-18 03:05:16.562689+00', '{"provider": "email", "providers": ["email"]}', '{"email_verified": true}', NULL, '2026-01-13 15:26:07.914315+00', '2026-01-19 09:20:44.657863+00', NULL, NULL, '', '', NULL, '', 0, NULL, '', NULL, false, NULL, false);
 
 
 --
@@ -66,9 +66,9 @@ INSERT INTO "auth"."identities" ("provider_id", "user_id", "identity_data", "pro
 --
 
 INSERT INTO "auth"."sessions" ("id", "user_id", "created_at", "updated_at", "factor_id", "aal", "not_after", "refreshed_at", "user_agent", "ip", "tag", "oauth_client_id", "refresh_token_hmac_key", "refresh_token_counter", "scopes") VALUES
-	('155f4ba1-a468-4190-94d3-17c5ded8e8e3', '1d502b01-df8b-4f27-9965-fa550a5b4096', '2026-01-18 03:05:16.562821+00', '2026-01-18 16:33:07.675818+00', NULL, 'aal1', NULL, '2026-01-18 16:33:07.675707', 'Next.js Middleware', '14.226.144.3', NULL, NULL, NULL, NULL, NULL),
 	('17524cd3-0721-4949-a03b-85c558b355a4', '1d502b01-df8b-4f27-9965-fa550a5b4096', '2026-01-17 15:53:44.215142+00', '2026-01-18 17:05:08.31188+00', NULL, 'aal1', NULL, '2026-01-18 17:05:08.311743', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36', '14.226.144.3', NULL, NULL, NULL, NULL, NULL),
 	('09ba69eb-ec49-4d56-84b7-746bdd78e1e9', '1d502b01-df8b-4f27-9965-fa550a5b4096', '2026-01-13 18:10:16.935516+00', '2026-01-19 05:37:09.116909+00', NULL, 'aal1', NULL, '2026-01-19 05:37:09.115073', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36', '14.226.144.3', NULL, NULL, NULL, NULL, NULL),
+	('155f4ba1-a468-4190-94d3-17c5ded8e8e3', '1d502b01-df8b-4f27-9965-fa550a5b4096', '2026-01-18 03:05:16.562821+00', '2026-01-19 09:20:44.680656+00', NULL, 'aal1', NULL, '2026-01-19 09:20:44.680507', 'Next.js Middleware', '14.226.144.3', NULL, NULL, NULL, NULL, NULL),
 	('5e893145-fe47-4666-8823-021dda0ffb58', '1d502b01-df8b-4f27-9965-fa550a5b4096', '2026-01-13 16:34:12.458755+00', '2026-01-16 17:41:04.147353+00', NULL, 'aal1', NULL, '2026-01-16 17:41:04.145363', 'node', '14.226.144.3', NULL, NULL, NULL, NULL, NULL);
 
 
@@ -199,7 +199,6 @@ INSERT INTO "auth"."refresh_tokens" ("instance_id", "id", "token", "user_id", "r
 	('00000000-0000-0000-0000-000000000000', 78, 'up7urzzm4h7y', '1d502b01-df8b-4f27-9965-fa550a5b4096', true, '2026-01-18 14:17:42.348662+00', '2026-01-18 15:16:11.353735+00', 'u7kdgr5ph6lq', '155f4ba1-a468-4190-94d3-17c5ded8e8e3'),
 	('00000000-0000-0000-0000-000000000000', 72, 'b7nccozhlan3', '1d502b01-df8b-4f27-9965-fa550a5b4096', true, '2026-01-18 08:00:12.07745+00', '2026-01-18 16:06:31.833369+00', '3zfxb6d7i3qu', '17524cd3-0721-4949-a03b-85c558b355a4'),
 	('00000000-0000-0000-0000-000000000000', 79, '4rotas3knljo', '1d502b01-df8b-4f27-9965-fa550a5b4096', true, '2026-01-18 15:16:11.376798+00', '2026-01-18 16:33:07.625568+00', 'up7urzzm4h7y', '155f4ba1-a468-4190-94d3-17c5ded8e8e3'),
-	('00000000-0000-0000-0000-000000000000', 81, 'qsw5goomabm6', '1d502b01-df8b-4f27-9965-fa550a5b4096', false, '2026-01-18 16:33:07.64761+00', '2026-01-18 16:33:07.64761+00', '4rotas3knljo', '155f4ba1-a468-4190-94d3-17c5ded8e8e3'),
 	('00000000-0000-0000-0000-000000000000', 80, '4mw55czquzpc', '1d502b01-df8b-4f27-9965-fa550a5b4096', true, '2026-01-18 16:06:31.855015+00', '2026-01-18 17:05:08.246254+00', 'b7nccozhlan3', '17524cd3-0721-4949-a03b-85c558b355a4'),
 	('00000000-0000-0000-0000-000000000000', 82, 'vif5ke2tgzl6', '1d502b01-df8b-4f27-9965-fa550a5b4096', false, '2026-01-18 17:05:08.273512+00', '2026-01-18 17:05:08.273512+00', '4mw55czquzpc', '17524cd3-0721-4949-a03b-85c558b355a4'),
 	('00000000-0000-0000-0000-000000000000', 63, 'mquplbdrwqvp', '1d502b01-df8b-4f27-9965-fa550a5b4096', true, '2026-01-17 15:48:53.953792+00', '2026-01-19 01:18:57.106459+00', 'd6ac5qs653h7', '09ba69eb-ec49-4d56-84b7-746bdd78e1e9'),
@@ -207,7 +206,9 @@ INSERT INTO "auth"."refresh_tokens" ("instance_id", "id", "token", "user_id", "r
 	('00000000-0000-0000-0000-000000000000', 84, 'keeecq2wgb6e', '1d502b01-df8b-4f27-9965-fa550a5b4096', true, '2026-01-19 02:31:43.998163+00', '2026-01-19 03:30:05.107348+00', 'awtld67af2pp', '09ba69eb-ec49-4d56-84b7-746bdd78e1e9'),
 	('00000000-0000-0000-0000-000000000000', 85, 'b7x35e7jja5a', '1d502b01-df8b-4f27-9965-fa550a5b4096', true, '2026-01-19 03:30:05.131745+00', '2026-01-19 04:28:34.582609+00', 'keeecq2wgb6e', '09ba69eb-ec49-4d56-84b7-746bdd78e1e9'),
 	('00000000-0000-0000-0000-000000000000', 86, 'axg325moqzkj', '1d502b01-df8b-4f27-9965-fa550a5b4096', true, '2026-01-19 04:28:34.605435+00', '2026-01-19 05:37:09.048799+00', 'b7x35e7jja5a', '09ba69eb-ec49-4d56-84b7-746bdd78e1e9'),
-	('00000000-0000-0000-0000-000000000000', 87, 'qqba7g7obaql', '1d502b01-df8b-4f27-9965-fa550a5b4096', false, '2026-01-19 05:37:09.075109+00', '2026-01-19 05:37:09.075109+00', 'axg325moqzkj', '09ba69eb-ec49-4d56-84b7-746bdd78e1e9');
+	('00000000-0000-0000-0000-000000000000', 87, 'qqba7g7obaql', '1d502b01-df8b-4f27-9965-fa550a5b4096', false, '2026-01-19 05:37:09.075109+00', '2026-01-19 05:37:09.075109+00', 'axg325moqzkj', '09ba69eb-ec49-4d56-84b7-746bdd78e1e9'),
+	('00000000-0000-0000-0000-000000000000', 81, 'qsw5goomabm6', '1d502b01-df8b-4f27-9965-fa550a5b4096', true, '2026-01-18 16:33:07.64761+00', '2026-01-19 09:20:44.596307+00', '4rotas3knljo', '155f4ba1-a468-4190-94d3-17c5ded8e8e3'),
+	('00000000-0000-0000-0000-000000000000', 88, '3rb3jutlmhkk', '1d502b01-df8b-4f27-9965-fa550a5b4096', false, '2026-01-19 09:20:44.63357+00', '2026-01-19 09:20:44.63357+00', 'qsw5goomabm6', '155f4ba1-a468-4190-94d3-17c5ded8e8e3');
 
 
 --
@@ -333,7 +334,7 @@ INSERT INTO "public"."products" ("id", "sku", "name", "category_id", "manufactur
 	('85c1bddc-9b5d-4886-a74e-26171b9e30e4', 'FUEL-PUMP-CRV', 'Bơm xăng Honda CR-V', '655fda9a-f8f6-4148-8c71-3dd69075f8f4', 'Honda Genuine Parts', '17045-TLA-A01', NULL, 'Cái', 5, NULL, '2026-01-15 15:10:00.391984+00', '2026-01-15 15:10:00.391984+00', NULL, 5200000.00, NULL, NULL, NULL, 0, NULL, NULL, 0.00, 0.00, 0.00, NULL, 0, true, true, NULL),
 	('30281587-b1ba-4e19-95b4-a98b30bc2939', 'CABIN-FILTER-MAZDA', 'Lọc gió điều hòa Mazda 3/6', '655fda9a-f8f6-4148-8c71-3dd69075f8f4', 'Mazda Genuine Parts', 'KD45-61-J6X', NULL, 'Cái', 25, NULL, '2026-01-15 15:10:00.391984+00', '2026-01-15 15:10:00.391984+00', NULL, 450000.00, NULL, NULL, NULL, 0, NULL, NULL, 0.00, 0.00, 0.00, NULL, 0, true, true, NULL),
 	('d4c8fa74-83c9-4624-ba38-a9412229ce50', 'TIRE-MICH-18', 'Lốp Michelin Primacy 4 225/55R18', '913a1256-8ebb-4468-a88f-021f54fc148e', 'Michelin', 'MIC-2255518', NULL, 'Cái', 20, NULL, '2026-01-15 15:10:00.391984+00', '2026-01-15 15:10:00.391984+00', NULL, 3200000.00, NULL, NULL, NULL, 0, NULL, NULL, 0.00, 0.00, 0.00, NULL, 0, true, true, NULL),
-	('9971a66c-4f90-4662-90e7-e230dd7459ca', 'RAD-COOLANT', 'Nước làm mát màu xanh Prestone', 'f2c7a22e-72be-45fe-8284-fedf2cb44471', 'Prestone', 'AF-3200', NULL, 'Can 4L', 30, NULL, '2026-01-15 15:10:00.391984+00', '2026-01-15 15:10:00.391984+00', NULL, 180000.00, NULL, NULL, NULL, 0, NULL, NULL, 0.00, 0.00, 0.00, NULL, 0, true, true, NULL);
+	('9971a66c-4f90-4662-90e7-e230dd7459ca', 'RAD-COOLANT', 'Nước làm mát màu xanh Prestone', 'f2c7a22e-72be-45fe-8284-fedf2cb44471', 'Prestone', 'AF-3200', '{}', 'Can 4L', 30, '', '2026-01-15 15:10:00.391984+00', '2026-01-15 15:10:00.391984+00', '', 0.00, '', 'Hàn Quốc', '', 0, NULL, '', 0.00, 0.00, 0.00, NULL, 0, true, true, NULL);
 
 
 --
@@ -393,6 +394,17 @@ INSERT INTO "public"."inbound_order_items" ("id", "order_id", "product_id", "pro
 INSERT INTO "public"."lots" ("id", "code", "notes", "status", "product_id", "supplier_id", "inbound_date", "batch_code", "quantity", "created_at") VALUES
 	('7db353da-6108-49c3-8720-a883ef5c4341', 'LOT-150126-001', 'test', 'active', 'c6747278-0dfb-4ad9-bca5-2ac5fdce59bc', NULL, '2026-01-15', NULL, 20, '2026-01-15 15:59:14.039803+00'),
 	('579c3fbb-79d7-4a7c-a88b-945f49b0a30a', 'LOT-190126-001', 'test', 'active', '26bf2d5b-4a37-4864-a6d4-22aa9fd467a3', '751811a1-da4e-4fc7-86cf-1345d2a01d08', '2026-01-18', 'abc 111', 24, '2026-01-18 17:16:50.563673+00');
+
+
+--
+-- Data for Name: origins; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+INSERT INTO "public"."origins" ("id", "created_at", "name", "code", "description", "is_active") VALUES
+	('89781df7-6289-4b6a-a9a0-057b79a09876', '2026-01-19 09:57:00.818035+00', 'Nhật Bản', NULL, NULL, true),
+	('752ff3ae-4822-4221-81ca-22c38c98acd0', '2026-01-19 09:57:11.198703+00', 'Việt Nam', NULL, NULL, true),
+	('def6229f-e3eb-4a06-916a-474cfdfbe973', '2026-01-19 09:57:23.791396+00', 'Hàn Quốc', NULL, NULL, true),
+	('718d3eba-88b4-425e-88ad-41d9591b9dcd', '2026-01-19 09:58:21.625558+00', 'Thái Lan', NULL, NULL, true);
 
 
 --
@@ -1517,6 +1529,19 @@ INSERT INTO "public"."roles" ("id", "code", "name", "description", "permissions"
 	('82173143-6942-4256-876d-571a4bbb9275', 'warehouse', 'Thủ kho', 'Quản lý nhập xuất kho', '["inventory.view", "inventory.edit", "operations.inbound", "operations.outbound"]', true, '2026-01-13 18:17:40.701916+00'),
 	('64450164-3a8e-4dc2-968b-425d066f92b0', 'sales', 'Nhân viên bán hàng', 'Xem sản phẩm, tạo đơn xuất', '["products.view", "customers.view", "customers.edit", "operations.outbound"]', true, '2026-01-13 18:17:40.701916+00'),
 	('39133840-41cd-4837-a26e-b8afd7b0a267', 'viewer', 'Xem báo cáo', 'Chỉ xem báo cáo và thống kê', '["reports.view", "products.view", "inventory.view"]', true, '2026-01-13 18:17:40.701916+00');
+
+
+--
+-- Data for Name: units; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+INSERT INTO "public"."units" ("id", "created_at", "name", "description", "is_active") VALUES
+	('7bf3ad28-cd3b-4ab1-8646-6b426fa620a9', '2026-01-19 09:34:35.298856+00', 'Cái', NULL, true),
+	('0ec10ed0-6bdf-49e9-8961-31441a86a927', '2026-01-19 09:34:48.019037+00', 'Hộp', NULL, true),
+	('747aac74-d686-437f-b799-550b146caccc', '2026-01-19 09:35:00.048345+00', 'Bộ', NULL, true),
+	('5023cc9a-71c3-43d2-8659-6c22b471ca3f', '2026-01-19 09:35:08.93879+00', 'Thùng', NULL, true),
+	('50aca497-04d5-42f1-8206-c98593860b55', '2026-01-19 09:38:25.742732+00', 'Bình', NULL, true),
+	('b2906b96-a92f-4f33-a2ae-aa93dcec8521', '2026-01-19 09:38:46.486839+00', 'Chiếc', NULL, true);
 
 
 --
@@ -3081,13 +3106,13 @@ INSERT INTO "storage"."objects" ("id", "bucket_id", "name", "owner", "created_at
 -- Name: refresh_tokens_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: supabase_auth_admin
 --
 
-SELECT pg_catalog.setval('"auth"."refresh_tokens_id_seq"', 87, true);
+SELECT pg_catalog.setval('"auth"."refresh_tokens_id_seq"', 88, true);
 
 
 --
 -- PostgreSQL database dump complete
 --
 
--- \unrestrict FILKcOthDQqpDUm752czcsOCCXL2c87AEkV5HUaz4MHxFf0SlEfoQ5k3Lpna5nZ
+-- \unrestrict aDniEv3ZvOqVlVW8VzW9awAmy47M4MqrzuaKFfx3IQiqlu6Qo6cuDU2C6aWfDD3
 
 RESET ALL;

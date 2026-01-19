@@ -715,6 +715,55 @@ export interface Database {
                     logo_url?: string | null
                 }
             }
+            units: {
+                Row: {
+                    id: string
+                    created_at: string
+                    name: string
+                    description: string | null
+                    is_active: boolean
+                }
+                Insert: {
+                    id?: string
+                    created_at?: string
+                    name: string
+                    description?: string | null
+                    is_active?: boolean
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    name?: string
+                    description?: string | null
+                    is_active?: boolean
+                }
+            }
+            origins: {
+                Row: {
+                    id: string
+                    created_at: string
+                    name: string
+                    code: string | null
+                    description: string | null
+                    is_active: boolean
+                }
+                Insert: {
+                    id?: string
+                    created_at?: string
+                    name: string
+                    code?: string | null
+                    description?: string | null
+                    is_active?: boolean
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    name?: string
+                    code?: string | null
+                    description?: string | null
+                    is_active?: boolean
+                }
+            }
         }
     }
 }

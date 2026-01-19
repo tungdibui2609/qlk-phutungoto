@@ -10,6 +10,8 @@ type Product = Database['public']['Tables']['products']['Row']
 type Category = Database['public']['Tables']['categories']['Row']
 type Supplier = Database['public']['Tables']['suppliers']['Row']
 type Vehicle = Database['public']['Tables']['vehicles']['Row']
+type Unit = Database['public']['Tables']['units']['Row']
+type Origin = Database['public']['Tables']['origins']['Row']
 
 interface ProductFormProps {
     initialData?: Product
@@ -23,10 +25,7 @@ const QUALITY_GRADES = [
     { value: 'Generic', label: 'Generic - Hàng phổ thông' },
 ]
 
-const ORIGIN_COUNTRIES = [
-    'Việt Nam', 'Nhật Bản', 'Hàn Quốc', 'Thái Lan', 'Trung Quốc',
-    'Đức', 'Mỹ', 'Đài Loan', 'Indonesia', 'Malaysia', 'Khác'
-]
+// ORIGIN_COUNTRIES removed in favor of DB fetch
 
 export default function ProductForm({ initialData, isEditMode = false }: ProductFormProps) {
     const router = useRouter()
@@ -34,6 +33,8 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
     const [categories, setCategories] = useState<Category[]>([])
     const [suppliers, setSuppliers] = useState<Supplier[]>([])
     const [vehicles, setVehicles] = useState<Vehicle[]>([])
+    const [units, setUnits] = useState<Unit[]>([])
+    const [origins, setOrigins] = useState<Origin[]>([])
     const [selectedVehicles, setSelectedVehicles] = useState<string[]>([])
     const [crossRefs, setCrossRefs] = useState<string[]>(initialData?.cross_reference_numbers || [])
     const [newCrossRef, setNewCrossRef] = useState('')
@@ -73,6 +74,8 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
         fetchCategories()
         fetchSuppliers()
         fetchVehicles()
+        fetchUnits()
+        fetchOrigins()
         if (isEditMode && initialData) {
             fetchProductVehicles()
         }
@@ -91,6 +94,16 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
     async function fetchVehicles() {
         const { data } = await supabase.from('vehicles').select('*').order('brand').order('model')
         if (data) setVehicles(data)
+    }
+
+    async function fetchUnits() {
+        const { data } = await (supabase.from('units') as any).select('*').eq('is_active', true).order('name')
+        if (data) setUnits(data)
+    }
+
+    async function fetchOrigins() {
+        const { data } = await (supabase.from('origins') as any).select('*').eq('is_active', true).order('name')
+        if (data) setOrigins(data)
     }
 
     async function fetchProductVehicles() {
@@ -372,9 +385,22 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                                     className={inputClass}
                                 >
                                     <option value="">-- Chọn --</option>
-                                    {ORIGIN_COUNTRIES.map(c => (
-                                        <option key={c} value={c}>{c}</option>
-                                    ))}
+                                    {origins.length > 0 ? (
+                                        origins.map(o => (
+                                            <option key={o.id} value={o.name}>{o.name}</option>
+                                        ))
+                                    ) : (
+                                        // Fallback if no origins in DB yet
+                                        <>
+                                            <option value="Việt Nam">Việt Nam</option>
+                                            <option value="Nhật Bản">Nhật Bản</option>
+                                            <option value="Hàn Quốc">Hàn Quốc</option>
+                                            <option value="Trung Quốc">Trung Quốc</option>
+                                            <option value="Thái Lan">Thái Lan</option>
+                                            <option value="Đức">Đức</option>
+                                            <option value="Mỹ">Mỹ</option>
+                                        </>
+                                    )}
                                 </select>
                             </div>
                             <div>
@@ -669,13 +695,17 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm font-medium text-stone-700 mb-2">Đơn vị tính</label>
-                                <input
+                                <select
                                     name="unit"
-                                    value={formData.unit}
+                                    value={formData.unit || ''}
                                     onChange={handleChange}
                                     className={inputClass}
-                                    placeholder="cái, bộ, hộp..."
-                                />
+                                >
+                                    <option value="">-- Chọn đơn vị --</option>
+                                    {units.map(u => (
+                                        <option key={u.id} value={u.name}>{u.name}</option>
+                                    ))}
+                                </select>
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-stone-700 mb-2">Tồn tối thiểu</label>

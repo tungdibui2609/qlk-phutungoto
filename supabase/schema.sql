@@ -238,6 +238,19 @@ CREATE TABLE IF NOT EXISTS "public"."lots" (
 ALTER TABLE "public"."lots" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."origins" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL,
+    "name" "text" NOT NULL,
+    "code" "text",
+    "description" "text",
+    "is_active" boolean DEFAULT true
+);
+
+
+ALTER TABLE "public"."origins" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."outbound_order_items" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "order_id" "uuid",
@@ -383,6 +396,18 @@ CREATE TABLE IF NOT EXISTS "public"."suppliers" (
 
 
 ALTER TABLE "public"."suppliers" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."units" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL,
+    "name" "text" NOT NULL,
+    "description" "text",
+    "is_active" boolean DEFAULT true
+);
+
+
+ALTER TABLE "public"."units" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."user_profiles" (
@@ -551,6 +576,11 @@ ALTER TABLE ONLY "public"."lots"
 
 
 
+ALTER TABLE ONLY "public"."origins"
+    ADD CONSTRAINT "origins_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."outbound_order_items"
     ADD CONSTRAINT "outbound_order_items_pkey" PRIMARY KEY ("id");
 
@@ -618,6 +648,11 @@ ALTER TABLE ONLY "public"."suppliers"
 
 ALTER TABLE ONLY "public"."suppliers"
     ADD CONSTRAINT "suppliers_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."units"
+    ADD CONSTRAINT "units_pkey" PRIMARY KEY ("id");
 
 
 
@@ -976,6 +1011,14 @@ CREATE POLICY "Enable delete for all users" ON "public"."suppliers" FOR DELETE U
 
 
 
+CREATE POLICY "Enable delete for authenticated users only" ON "public"."origins" FOR DELETE TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Enable delete for authenticated users only" ON "public"."units" FOR DELETE TO "authenticated" USING (true);
+
+
+
 CREATE POLICY "Enable insert access for authenticated users" ON "public"."inbound_order_items" FOR INSERT WITH CHECK (("auth"."role"() = 'authenticated'::"text"));
 
 
@@ -1000,6 +1043,14 @@ CREATE POLICY "Enable insert for all users" ON "public"."suppliers" FOR INSERT W
 
 
 
+CREATE POLICY "Enable insert for authenticated users only" ON "public"."origins" FOR INSERT TO "authenticated" WITH CHECK (true);
+
+
+
+CREATE POLICY "Enable insert for authenticated users only" ON "public"."units" FOR INSERT TO "authenticated" WITH CHECK (true);
+
+
+
 CREATE POLICY "Enable read access for all users" ON "public"."inbound_order_items" FOR SELECT USING (true);
 
 
@@ -1009,6 +1060,10 @@ CREATE POLICY "Enable read access for all users" ON "public"."inbound_orders" FO
 
 
 CREATE POLICY "Enable read access for all users" ON "public"."lots" FOR SELECT USING (true);
+
+
+
+CREATE POLICY "Enable read access for all users" ON "public"."origins" FOR SELECT USING (true);
 
 
 
@@ -1025,6 +1080,10 @@ CREATE POLICY "Enable read access for all users" ON "public"."products" FOR SELE
 
 
 CREATE POLICY "Enable read access for all users" ON "public"."suppliers" FOR SELECT USING (true);
+
+
+
+CREATE POLICY "Enable read access for all users" ON "public"."units" FOR SELECT USING (true);
 
 
 
@@ -1049,6 +1108,14 @@ CREATE POLICY "Enable update for all users" ON "public"."lots" FOR UPDATE USING 
 
 
 CREATE POLICY "Enable update for all users" ON "public"."suppliers" FOR UPDATE USING (true);
+
+
+
+CREATE POLICY "Enable update for authenticated users only" ON "public"."origins" FOR UPDATE TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Enable update for authenticated users only" ON "public"."units" FOR UPDATE TO "authenticated" USING (true);
 
 
 
@@ -1085,6 +1152,9 @@ ALTER TABLE "public"."locations" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."lots" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."origins" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."outbound_order_items" ENABLE ROW LEVEL SECURITY;
 
 
@@ -1098,6 +1168,9 @@ ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."suppliers" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."units" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."warehouses" ENABLE ROW LEVEL SECURITY;
@@ -1353,6 +1426,12 @@ GRANT ALL ON TABLE "public"."lots" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."origins" TO "anon";
+GRANT ALL ON TABLE "public"."origins" TO "authenticated";
+GRANT ALL ON TABLE "public"."origins" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."outbound_order_items" TO "anon";
 GRANT ALL ON TABLE "public"."outbound_order_items" TO "authenticated";
 GRANT ALL ON TABLE "public"."outbound_order_items" TO "service_role";
@@ -1398,6 +1477,12 @@ GRANT ALL ON TABLE "public"."roles" TO "service_role";
 GRANT ALL ON TABLE "public"."suppliers" TO "anon";
 GRANT ALL ON TABLE "public"."suppliers" TO "authenticated";
 GRANT ALL ON TABLE "public"."suppliers" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."units" TO "anon";
+GRANT ALL ON TABLE "public"."units" TO "authenticated";
+GRANT ALL ON TABLE "public"."units" TO "service_role";
 
 
 
