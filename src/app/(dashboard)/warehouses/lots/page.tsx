@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { Plus, Search, Boxes, MapPin, Trash2, Calendar, Package, Factory, Hash, Layers, X, ChevronDown, ChevronUp, Filter } from 'lucide-react'
+import { Plus, Search, Boxes, MapPin, Trash2, Calendar, Package, Factory, Hash, Layers, X, ChevronDown, ChevronUp, Filter, QrCode as QrIcon, Printer } from 'lucide-react'
+import QRCode from "react-qr-code"
 import Link from 'next/link'
 
 type Lot = Database['public']['Tables']['lots']['Row'] & {
@@ -38,6 +39,9 @@ export default function LotManagementPage() {
     const [inboundDate, setInboundDate] = useState('')
     const [batchCode, setBatchCode] = useState('')
     const [quantity, setQuantity] = useState('')
+
+    // QR Code State
+    const [qrLot, setQrLot] = useState<Lot | null>(null)
 
     useEffect(() => {
         fetchLots()
@@ -427,16 +431,22 @@ export default function LotManagementPage() {
                                     )}
                                 </div>
                                 {lot.positions && lot.positions.length > 0 ? (
-                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold border border-emerald-100 dark:border-emerald-800">
+                                    <button
+                                        onClick={() => router.push(`/warehouses/map?assignLotId=${lot.id}`)}
+                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold border border-emerald-100 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                                    >
                                         <MapPin size={12} />
                                         {lot.positions[0].code}
                                         {lot.positions.length > 1 && <span className="ml-1 text-[10px] opacity-70">+{lot.positions.length - 1}</span>}
-                                    </div>
+                                    </button>
                                 ) : (
-                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800/50 text-zinc-400 text-xs font-bold border border-zinc-200 dark:border-zinc-700">
+                                    <button
+                                        onClick={() => router.push(`/warehouses/map?assignLotId=${lot.id}`)}
+                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800/50 text-zinc-400 text-xs font-bold border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+                                    >
                                         <MapPin size={12} />
                                         Chưa gán
-                                    </div>
+                                    </button>
                                 )}
                             </div>
 
@@ -470,13 +480,13 @@ export default function LotManagementPage() {
                             {/* Dates Grid */}
                             <div className="grid grid-cols-2 gap-3 mb-5">
                                 <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
-                                    <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày Bóc/Nhập</div>
+                                    <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày nhập kho</div>
                                     <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
                                         {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : '--/--/----'}
                                     </div>
                                 </div>
                                 <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
-                                    <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày Đóng/Tạo</div>
+                                    <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày lên kệ</div>
                                     <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
                                         {new Date(lot.created_at).toLocaleDateString('vi-VN')}
                                     </div>
@@ -487,11 +497,11 @@ export default function LotManagementPage() {
                             <div className="flex items-center justify-between pt-4 border-t border-zinc-100 dark:border-zinc-800 mt-auto">
                                 <div className="flex gap-2">
                                     <button
-                                        onClick={() => router.push(`/warehouses/map?assignLotId=${lot.id}`)}
-                                        className="w-9 h-9 flex items-center justify-center rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-900/40 transition-colors"
-                                        title="Gán vị trí"
+                                        onClick={() => setQrLot(lot)}
+                                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                        title="Mã QR"
                                     >
-                                        <MapPin size={16} />
+                                        <QrIcon size={16} />
                                     </button>
                                 </div>
 
@@ -514,6 +524,46 @@ export default function LotManagementPage() {
                             </div>
                         </div>
                     ))}
+                </div>
+            )}
+            {/* QR Code Modal */}
+            {qrLot && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-zinc-900 rounded-3xl p-8 max-w-sm w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200 border border-zinc-200 dark:border-zinc-800 relative">
+                        <button
+                            onClick={() => setQrLot(null)}
+                            className="absolute top-4 right-4 p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-600 transition-colors"
+                        >
+                            <X size={20} />
+                        </button>
+
+                        <div className="flex flex-col items-center text-center space-y-6">
+                            <div className="space-y-1">
+                                <h3 className="text-xl font-bold text-zinc-900 dark:text-white">
+                                    Mã QR LOT
+                                </h3>
+                                <p className="text-sm text-zinc-500 font-mono">
+                                    {qrLot.code}
+                                </p>
+                            </div>
+
+                            <div className="p-4 bg-white rounded-2xl shadow-inner border border-zinc-100">
+                                <QRCode
+                                    value={qrLot.code}
+                                    size={200}
+                                    className="h-auto w-full max-w-[200px]"
+                                />
+                            </div>
+
+                            <button
+                                onClick={() => window.print()}
+                                className="flex items-center gap-2 px-5 py-2.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl font-medium hover:opacity-90 transition-opacity"
+                            >
+                                <Printer size={18} />
+                                In tem mã vạch
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </section>
