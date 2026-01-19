@@ -14,6 +14,7 @@ interface Role {
 interface UserProfile {
     id: string
     employee_code: string | null
+    username: string | null
     full_name: string
     phone: string | null
     email: string | null
@@ -34,6 +35,7 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
 
     const [formData, setFormData] = useState({
         employee_code: initialData?.employee_code || '',
+        username: initialData?.username || '',
         full_name: initialData?.full_name || '',
         phone: initialData?.phone || '',
         email: initialData?.email || '',
@@ -46,7 +48,34 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
 
     useEffect(() => {
         fetchRoles()
+        if (!isEditMode) {
+            fetchLatestEmployeeCode()
+        }
     }, [])
+
+    async function fetchLatestEmployeeCode() {
+        try {
+            const { data } = await supabase
+                .from('user_profiles')
+                .select('employee_code')
+                .ilike('employee_code', 'NV%')
+                .order('employee_code', { ascending: false })
+                .limit(1)
+                .maybeSingle()
+
+            let nextCode = 'NV001'
+            if (data && (data as any).employee_code) {
+                const currentCode = (data as any).employee_code
+                const numberPart = parseInt(currentCode.replace(/\D/g, ''), 10)
+                if (!isNaN(numberPart)) {
+                    nextCode = `NV${String(numberPart + 1).padStart(3, '0')}`
+                }
+            }
+            setFormData(prev => ({ ...prev, employee_code: nextCode }))
+        } catch (error) {
+            console.error('Error fetching employee code:', error)
+        }
+    }
 
     async function fetchRoles() {
         const { data } = await supabase.from('roles').select('*').order('name')
@@ -74,6 +103,7 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                     .from('user_profiles') as any)
                     .update({
                         employee_code: formData.employee_code || null,
+                        username: formData.username || null,
                         full_name: formData.full_name,
                         phone: formData.phone || null,
                         email: formData.email || null,
@@ -86,22 +116,31 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                 if (error) throw error
             } else {
                 // Create new user with Supabase Auth
-                if (!formData.email || !formData.password) {
-                    throw new Error('Email và mật khẩu là bắt buộc')
+                let submitEmail = formData.email
+                if (!submitEmail && formData.username) {
+                    submitEmail = `${formData.username}@no-email.com`
+                }
+
+                if (!submitEmail || !formData.password) {
+                    throw new Error('Tài khoản (hoặc Email) và mật khẩu là bắt buộc')
                 }
 
                 // 1. Create auth user
                 const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-                    email: formData.email,
+                    email: submitEmail,
                     password: formData.password,
                     email_confirm: true,
+                    user_metadata: { username: formData.username }
                 })
 
                 if (authError) {
                     // Fallback: use signUp if admin API not available
                     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-                        email: formData.email,
+                        email: submitEmail,
                         password: formData.password,
+                        options: {
+                            data: { username: formData.username }
+                        }
                     })
 
                     if (signUpError) throw signUpError
@@ -113,9 +152,10 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                             .insert([{
                                 id: signUpData.user.id,
                                 employee_code: formData.employee_code || null,
+                                username: formData.username || null,
                                 full_name: formData.full_name,
                                 phone: formData.phone || null,
-                                email: formData.email,
+                                email: submitEmail,
                                 role_id: formData.role_id || null,
                                 department: formData.department || null,
                                 is_active: formData.is_active,
@@ -130,9 +170,10 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                         .insert([{
                             id: authData.user.id,
                             employee_code: formData.employee_code || null,
+                            username: formData.username || null,
                             full_name: formData.full_name,
                             phone: formData.phone || null,
-                            email: formData.email,
+                            email: submitEmail,
                             role_id: formData.role_id || null,
                             department: formData.department || null,
                             is_active: formData.is_active,
@@ -204,16 +245,15 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-medium text-stone-700 mb-1.5">
-                                Email đăng nhập <span className="text-red-500">*</span>
+                                Tên tài khoản (Username) <span className="text-red-500">*</span>
                             </label>
                             <input
-                                type="email"
-                                name="email"
+                                name="username"
                                 required
-                                value={formData.email}
+                                value={formData.username}
                                 onChange={handleChange}
                                 className={inputClass}
-                                placeholder="VD: user@company.com"
+                                placeholder="VD: user01"
                             />
                         </div>
                         <div>
