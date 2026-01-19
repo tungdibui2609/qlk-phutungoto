@@ -1,1 +1,17 @@
 phiên bangr hoàn chỉnh về phiếu nhập , phiếu xuất , sơ do kho, chua tinh duoc phan cao cap hon vi ko co du liẹu
+Tôi đã tải lại mới nhất xong cho bạn rồi nhé.
+
+Để sau này bạn có thể tự tải, bạn hãy lưu lại bộ lệnh này (copy và chạy lần lượt trong Terminal của VS Code):
+
+Bước 1: Đổi tên file env tạm thời (để tránh lỗi parser như lúc nãy) ren .env.local .env.local.bak
+
+Bước 2: Tải cấu trúc (Schema) npx supabase db dump --linked -f supabase/schema.sql
+
+Bước 3: Tải dữ liệu (Data) npx supabase db dump --linked --data-only -f supabase/data.sql
+
+Bước 4: Đổi tên lại như cũ ren .env.local.bak .env.local
+
+Chỉ đơn giản vậy thôi! Nếu bạn quên thì cứ mở tin nhắn này ra xem lại nhé.
+
+schema.sql
+Open
