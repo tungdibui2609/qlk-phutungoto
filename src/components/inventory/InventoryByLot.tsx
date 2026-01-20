@@ -6,9 +6,26 @@ import { Search, Loader2, MapPin } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 
 type Lot = Database['public']['Tables']['lots']['Row'] & {
-    products: { name: string; unit: string; product_code?: string; sku: string } | null
+    lot_items: (Database['public']['Tables']['lot_items']['Row'] & {
+        products: { name: string; unit: string; product_code?: string; sku: string } | null
+    })[] | null
     suppliers: { name: string } | null
     positions: { code: string }[] | null
+    // Legacy support
+    products: { name: string; unit: string; product_code?: string; sku: string } | null
+}
+
+interface FlattenedLotItem {
+    id: string
+    lotCode: string
+    productSku: string
+    productName: string
+    productUnit: string
+    quantity: number
+    batchCode: string
+    inboundDate: string | null
+    positions: { code: string }[] | null
+    supplierName: string
 }
 
 export default function InventoryByLot() {
@@ -24,8 +41,24 @@ export default function InventoryByLot() {
         setLoading(true)
         const { data, error } = await supabase
             .from('lots')
-            .select('*, products(name, unit, product_code:id, sku), suppliers(name), positions(code)')
-            .eq('status', 'active') // Filter only active lots by default implies "current inventory"
+            .select(`
+                *,
+                lot_items (
+                    id,
+                    quantity,
+                    product_id,
+                    products (
+                        name,
+                        unit,
+                        sku,
+                        product_code:id
+                    )
+                ),
+                products(name, unit, product_code:id, sku),
+                suppliers(name),
+                positions(code)
+            `)
+            .eq('status', 'active')
             .order('created_at', { ascending: false })
 
         if (error) {
@@ -95,33 +128,64 @@ export default function InventoryByLot() {
                                     </td>
                                 </tr>
                             ) : (
-                                filteredLots.map((lot) => (
-                                    <tr key={lot.id} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
-                                        <td className="px-4 py-3 font-mono text-emerald-600 font-medium">{lot.code}</td>
-                                        <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-400">{lot.products?.sku || 'N/A'}</td>
-                                        <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">{lot.products?.name}</td>
-                                        <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{lot.batch_code || '-'}</td>
+                                filteredLots.flatMap(lot => {
+                                    // If we have lot_items, map them. Otherwise check for legacy product.
+                                    if (lot.lot_items && lot.lot_items.length > 0) {
+                                        return lot.lot_items.map((item, idx) => ({
+                                            id: item.id || `${lot.id}-item-${idx}`,
+                                            lotCode: lot.code,
+                                            productSku: item.products?.sku || 'N/A',
+                                            productName: item.products?.name || 'Unknown',
+                                            productUnit: item.products?.unit || '-',
+                                            quantity: item.quantity,
+                                            batchCode: lot.batch_code || '-',
+                                            inboundDate: lot.inbound_date,
+                                            positions: lot.positions,
+                                            supplierName: lot.suppliers?.name || '-'
+                                        }))
+                                    } else if (lot.products) {
+                                        // Legacy fallback
+                                        return [{
+                                            id: lot.id,
+                                            lotCode: lot.code,
+                                            productSku: lot.products.sku || 'N/A',
+                                            productName: lot.products.name,
+                                            productUnit: lot.products.unit,
+                                            quantity: lot.quantity,
+                                            batchCode: lot.batch_code || '-',
+                                            inboundDate: lot.inbound_date,
+                                            positions: lot.positions,
+                                            supplierName: lot.suppliers?.name || '-'
+                                        }]
+                                    }
+                                    return []
+                                }).map((item, idx) => (
+                                    <tr key={`${item.id}-${idx}`} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
+                                        <td className="px-4 py-3 font-mono text-emerald-600 font-medium">{item.lotCode}</td>
+                                        <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-400">{item.productSku}</td>
+                                        <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">{item.productName}</td>
+                                        <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{item.batchCode}</td>
                                         <td className="px-4 py-3">
-                                            {lot.positions && lot.positions.length > 0 ? (
-                                              <div className="flex flex-wrap gap-1">
-                                                {lot.positions.map((pos, idx) => (
-                                                    <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-100 dark:border-blue-800">
-                                                        <MapPin className="w-3 h-3 mr-1" />
-                                                        {pos.code}
-                                                    </span>
-                                                ))}
-                                              </div>
+                                            {item.positions && item.positions.length > 0 ? (
+                                                <div className="flex flex-wrap gap-1">
+                                                    {item.positions.map((pos, pIdx) => (
+                                                        <span key={pIdx} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-100 dark:border-blue-800">
+                                                            <MapPin className="w-3 h-3 mr-1" />
+                                                            {pos.code}
+                                                        </span>
+                                                    ))}
+                                                </div>
                                             ) : (
                                                 <span className="text-stone-400 italic">Chưa xếp</span>
                                             )}
                                         </td>
                                         <td className="px-4 py-3 text-stone-600 dark:text-stone-400">
-                                            {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : '-'}
+                                            {item.inboundDate ? new Date(item.inboundDate).toLocaleDateString('vi-VN') : '-'}
                                         </td>
                                         <td className="px-4 py-3 text-right font-bold text-stone-900 dark:text-stone-100">
-                                            {lot.quantity?.toLocaleString() || 0}
+                                            {item.quantity?.toLocaleString() || 0}
                                         </td>
-                                        <td className="px-4 py-3 text-center text-stone-500">{lot.products?.unit}</td>
+                                        <td className="px-4 py-3 text-center text-stone-500">{item.productUnit}</td>
                                     </tr>
                                 ))
                             )}
@@ -129,8 +193,8 @@ export default function InventoryByLot() {
                     </table>
                 </div>
             </div>
-            
-             <div className="text-xs text-stone-500 text-right mt-2">
+
+            <div className="text-xs text-stone-500 text-right mt-2">
                 * Chỉ hiển thị các LOT đang có trạng thái "active".
             </div>
         </div>

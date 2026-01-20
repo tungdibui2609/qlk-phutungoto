@@ -4,14 +4,24 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { Plus, Search, Boxes, MapPin, Trash2, Calendar, Package, Factory, Hash, Layers, X, ChevronDown, ChevronUp, Filter, QrCode as QrIcon, Printer } from 'lucide-react'
+import { Plus, Search, Boxes, MapPin, Trash2, Calendar, Package, Factory, Hash, Layers, X, ChevronDown, ChevronUp, Filter, QrCode as QrIcon, Printer, Edit } from 'lucide-react'
 import QRCode from "react-qr-code"
 import Link from 'next/link'
+import { Combobox } from '@/components/ui/Combobox'
 
 type Lot = Database['public']['Tables']['lots']['Row'] & {
-    products: { name: string; unit: string; product_code?: string } | null
+    lot_items: (Database['public']['Tables']['lot_items']['Row'] & {
+        products: { name: string; unit: string; product_code?: string; sku: string } | null
+    })[] | null
     suppliers: { name: string } | null
     positions: { code: string }[] | null
+    // Legacy support for display if needed, but we will primarily use lot_items
+    products?: { name: string; unit: string; product_code?: string } | null
+}
+
+interface LotItemInput {
+    productId: string
+    quantity: number
 }
 
 type Product = Database['public']['Tables']['products']['Row']
@@ -26,22 +36,25 @@ export default function LotManagementPage() {
     // UI States
     const [showCreateForm, setShowCreateForm] = useState(false)
     const [showMobileFilters, setShowMobileFilters] = useState(false)
+    const [editingLotId, setEditingLotId] = useState<string | null>(null)
 
     // Data for Selection
     const [products, setProducts] = useState<Product[]>([])
     const [suppliers, setSuppliers] = useState<Supplier[]>([])
 
     // New Lot Form State
+    // New Lot Form State
     const [newLotCode, setNewLotCode] = useState('')
     const [newLotNotes, setNewLotNotes] = useState('')
-    const [selectedProductId, setSelectedProductId] = useState('')
     const [selectedSupplierId, setSelectedSupplierId] = useState('')
     const [inboundDate, setInboundDate] = useState('')
     const [batchCode, setBatchCode] = useState('')
-    const [quantity, setQuantity] = useState('')
+    const [lotItems, setLotItems] = useState<LotItemInput[]>([{ productId: '', quantity: 0 }])
 
     // QR Code State
     const [qrLot, setQrLot] = useState<Lot | null>(null)
+
+    const formRef = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
         fetchLots()
@@ -62,7 +75,22 @@ export default function LotManagementPage() {
         setLoading(true)
         const { data, error } = await supabase
             .from('lots')
-            .select('*, products(name, unit, product_code:id), suppliers(name), positions(code)')
+            .select(`
+                *,
+                lot_items (
+                    id,
+                    quantity,
+                    product_id,
+                    products (
+                        name,
+                        unit,
+                        sku,
+                        product_code:id
+                    )
+                ),
+                suppliers (name),
+                positions (code)
+            `)
             .order('created_at', { ascending: false })
 
         if (error) {
@@ -104,48 +132,165 @@ export default function LotManagementPage() {
     const toggleCreateForm = () => {
         if (!showCreateForm) {
             resetForm()
-            generateLotCode()
-            // Set default date to today
-            setInboundDate(new Date().toISOString().split('T')[0])
+            if (!editingLotId) {
+                generateLotCode()
+                // Set default date to today
+                setInboundDate(new Date().toISOString().split('T')[0])
+            }
         }
         setShowCreateForm(!showCreateForm)
+    }
+
+    function handleEditLot(lot: Lot) {
+        setEditingLotId(lot.id)
+        setNewLotCode(lot.code)
+        setNewLotNotes(lot.notes || '')
+
+        // Populate items
+        if (lot.lot_items && lot.lot_items.length > 0) {
+            setLotItems(lot.lot_items.map(item => ({
+                productId: item.product_id,
+                quantity: item.quantity
+            })))
+        } else if (lot.products) {
+            // Fallback for legacy data
+            setLotItems([{
+                productId: (lot as any).product_id, // Accessing raw field if needed, but type says products is joined. 
+                // Wait, type 'Lot' has 'products' object, but need product_id.
+                // The DB row has product_id.
+                // Let's rely on the row data we fetched.
+                quantity: lot.quantity || 0
+            }])
+            // Actually, lot object from Supabase join might not have product_id at top level if we joined?
+            // No, select * includes it.
+            // But my type definition for Lot is: Row & ... 
+            // Row has product_id.
+            const legacyLot = lot as unknown as Database['public']['Tables']['lots']['Row']
+            if (legacyLot.product_id) {
+                setLotItems([{
+                    productId: legacyLot.product_id,
+                    quantity: legacyLot.quantity || 0
+                }])
+            } else {
+                setLotItems([{ productId: '', quantity: 0 }])
+            }
+        } else {
+            setLotItems([{ productId: '', quantity: 0 }])
+        }
+
+        setSelectedSupplierId(lot.supplier_id || '')
+        setInboundDate(lot.inbound_date ? new Date(lot.inbound_date).toISOString().split('T')[0] : '')
+        setBatchCode(lot.batch_code || '')
+
+        setShowCreateForm(true)
+        setTimeout(() => {
+            if (formRef.current) {
+                const y = formRef.current.getBoundingClientRect().top + window.scrollY - 100
+                window.scrollTo({ top: y, behavior: 'smooth' })
+            }
+        }, 100)
     }
 
     async function handleCreateLot() {
         if (!newLotCode.trim()) return
 
-        const { data, error } = await (supabase
-            .from('lots') as any)
-            .insert({
-                code: newLotCode,
-                notes: newLotNotes,
-                product_id: selectedProductId || null,
-                supplier_id: selectedSupplierId || null,
-                inbound_date: inboundDate || null,
-                batch_code: batchCode || null,
-                quantity: quantity ? parseInt(quantity) : 0,
-                status: 'active'
-            })
-            .select('*, products(name, unit), suppliers(name)')
-            .single()
+        // Validate items
+        const validItems = lotItems.filter(item => item.productId && item.quantity > 0)
+        if (validItems.length === 0) {
+            alert('Vui lòng chọn ít nhất một sản phẩm và nhập số lượng.')
+            return
+        }
+
+        // Calculate total quantity for the LOT summary
+        const totalQuantity = validItems.reduce((sum, item) => sum + item.quantity, 0)
+
+        const lotData = {
+            code: newLotCode,
+            notes: newLotNotes,
+            supplier_id: selectedSupplierId || null,
+            inbound_date: inboundDate || null,
+            batch_code: batchCode || null,
+            quantity: totalQuantity, // Legacy/Summary field
+            status: 'active'
+            // product_id is generally null now for multi-product LOTs, 
+            // or we could set it to the first product as primary. Let's leave it null or derived.
+        }
+
+        let lotId = editingLotId
+        let error
+
+        if (editingLotId) {
+            // Update existing lot info
+            const { error: updateError } = await (supabase
+                .from('lots') as any)
+                .update(lotData)
+                .eq('id', editingLotId)
+
+            if (updateError) {
+                error = updateError
+            } else {
+                // Update items: Delete all and re-insert (simplest strategy)
+                const { error: deleteError } = await supabase
+                    .from('lot_items')
+                    .delete()
+                    .eq('lot_id', editingLotId)
+
+                if (deleteError) {
+                    console.error('Error clearing old items', deleteError)
+                    // Continue anyway to try insert
+                }
+            }
+        } else {
+            // Create new lot
+            const { data: newLot, error: createError } = await (supabase
+                .from('lots') as any)
+                .insert(lotData)
+                .select('id')
+                .single()
+
+            if (createError) {
+                error = createError
+            } else if (newLot) {
+                lotId = newLot.id
+            }
+        }
 
         if (error) {
-            alert('Lỗi tạo LOT: ' + error.message)
-        } else if (data) {
-            setLots([data as unknown as Lot, ...lots])
-            resetForm()
-            setShowCreateForm(false)
+            alert(`Lỗi ${editingLotId ? 'cập nhật' : 'tạo'} LOT: ` + error.message)
+            return
+        }
+
+        if (lotId) {
+            // Insert items
+            const itemsToInsert = validItems.map(item => ({
+                lot_id: lotId,
+                product_id: item.productId,
+                quantity: item.quantity
+            }))
+
+            const { error: itemsError } = await supabase
+                .from('lot_items')
+                .insert(itemsToInsert as any) // Type might be tricky if not fully updated in local ts
+
+            if (itemsError) {
+                alert('Lỗi lưu danh sách sản phẩm: ' + itemsError.message)
+            } else {
+                // Refresh data
+                await fetchLots()
+                resetForm()
+                setShowCreateForm(false)
+            }
         }
     }
 
     function resetForm() {
+        setEditingLotId(null)
         setNewLotCode('')
         setNewLotNotes('')
-        setSelectedProductId('')
         setSelectedSupplierId('')
         setInboundDate('')
         setBatchCode('')
-        setQuantity('')
+        setLotItems([{ productId: '', quantity: 0 }])
     }
 
     async function handleDeleteLot(id: string) {
@@ -212,11 +357,11 @@ export default function LotManagementPage() {
             </div>
 
             {/* Collapsible Create Form */}
-            <div className={`transition-all duration-500 ease-in-out overflow-hidden ${showCreateForm ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+            <div ref={formRef} className={`transition-all duration-500 ease-in-out overflow-hidden ${showCreateForm ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
                 <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xl p-6 md:p-8">
                     <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-6 flex items-center gap-2">
                         <Boxes className="text-emerald-600" size={24} />
-                        Thông tin LOT mới
+                        {editingLotId ? 'Cập nhật thông tin LOT' : 'Thông tin LOT mới'}
                     </h3>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -269,44 +414,8 @@ export default function LotManagementPage() {
                             </div>
                         </div>
 
-                        {/* Số lượng */}
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Số lượng nhập
-                            </label>
-                            <input
-                                type="number"
-                                min="0"
-                                value={quantity}
-                                onChange={(e) => setQuantity(e.target.value)}
-                                className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
-                                placeholder="0"
-                            />
-                        </div>
-
-                        {/* Sản phẩm */}
-                        <div className="space-y-2 lg:col-span-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Sản phẩm
-                            </label>
-                            <div className="relative">
-                                <Package className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                <select
-                                    value={selectedProductId}
-                                    onChange={(e) => setSelectedProductId(e.target.value)}
-                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none appearance-none transition-all"
-                                >
-                                    <option value="">-- Chọn sản phẩm --</option>
-                                    {products.map(p => (
-                                        <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
-                                    ))}
-                                </select>
-                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
-                            </div>
-                        </div>
-
                         {/* Nhà cung cấp */}
-                        <div className="space-y-2 lg:col-span-2">
+                        <div className="space-y-2">
                             <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                 Nhà cung cấp
                             </label>
@@ -323,6 +432,83 @@ export default function LotManagementPage() {
                                     ))}
                                 </select>
                                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                            </div>
+                        </div>
+
+                        {/* Danh sách sản phẩm */}
+                        <div className="col-span-1 md:col-span-2 lg:col-span-4 space-y-3">
+                            <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
+                                <span>Danh sách sản phẩm ({lotItems.length})</span>
+                                <button
+                                    onClick={() => setLotItems([...lotItems, { productId: '', quantity: 0 }])}
+                                    className="text-xs flex items-center gap-1 text-emerald-600 hover:text-emerald-700 font-medium px-2 py-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+                                >
+                                    <Plus size={14} />
+                                    Thêm dòng
+                                </button>
+                            </label>
+
+                            <div className="space-y-3">
+                                {lotItems.map((item, index) => (
+                                    <div key={index} className="flex flex-col md:flex-row gap-3 items-start md:items-center bg-zinc-50 dark:bg-zinc-800/50 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                                        <div className="flex-1 w-full space-y-1">
+                                            <div className="relative">
+                                                <Combobox
+                                                    options={products.map(p => ({
+                                                        value: p.id,
+                                                        label: `${p.sku} - ${p.name}`,
+                                                        sku: p.sku,
+                                                        name: p.name
+                                                    }))}
+                                                    value={item.productId}
+                                                    onChange={(val) => {
+                                                        const newItems = [...lotItems]
+                                                        newItems[index].productId = val || ''
+                                                        setLotItems(newItems)
+                                                    }}
+                                                    placeholder="-- Chọn sản phẩm --"
+                                                    className="w-full"
+                                                    renderValue={(option) => (
+                                                        <div className="flex flex-col text-left w-full">
+                                                            <div className="text-[10px] text-stone-500 font-mono mb-0.5">{option.sku}</div>
+                                                            <div className="font-medium text-xs text-stone-900 dark:text-gray-100 line-clamp-2 leading-tight">
+                                                                {option.name}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="w-full md:w-32 space-y-1">
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                placeholder="SL"
+                                                value={item.quantity || ''}
+                                                onChange={(e) => {
+                                                    const newItems = [...lotItems]
+                                                    newItems[index].quantity = parseInt(e.target.value) || 0
+                                                    setLotItems(newItems)
+                                                }}
+                                                className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none text-sm transition-all"
+                                            />
+                                        </div>
+
+                                        {lotItems.length > 1 && (
+                                            <button
+                                                onClick={() => {
+                                                    const newItems = lotItems.filter((_, i) => i !== index)
+                                                    setLotItems(newItems)
+                                                }}
+                                                className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                                title="Xóa dòng"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
                             </div>
                         </div>
 
@@ -353,7 +539,7 @@ export default function LotManagementPage() {
                             disabled={!newLotCode.trim()}
                             className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium shadow-lg shadow-emerald-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            Lưu LOT
+                            {editingLotId ? 'Cập nhật' : 'Lưu LOT'}
                         </button>
                     </div>
                 </div>
@@ -456,23 +642,46 @@ export default function LotManagementPage() {
                                     {lot.code}
                                 </h3>
 
-                                {lot.batch_code && (
-                                    <div className="text-sm font-medium text-zinc-500 mb-3 flex items-center gap-2">
-                                        <span className="opacity-70">Batch:</span>
-                                        <span className="font-mono bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-700 dark:text-zinc-300">{lot.batch_code}</span>
-                                    </div>
-                                )}
+                                <div className="h-6 mb-3 flex items-center">
+                                    {lot.batch_code && (
+                                        <div className="text-sm font-medium text-zinc-500 flex items-center gap-2">
+                                            <span className="opacity-70">Batch:</span>
+                                            <span className="font-mono bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-700 dark:text-zinc-300">{lot.batch_code}</span>
+                                        </div>
+                                    )}
+                                </div>
 
                                 {/* Product Info */}
                                 <div className="mt-3 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50">
-                                    <div className="flex items-center justify-between mb-1">
-                                        <span className="text-xs font-bold text-zinc-400 uppercase">Sản phẩm</span>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-xs font-bold text-zinc-400 uppercase">Sản phẩm ({lot.lot_items?.length || 0})</span>
                                         <span className="text-emerald-600 font-bold text-lg">
-                                            {lot.quantity || 0} <span className="text-xs font-medium text-emerald-500/70">{lot.products?.unit}</span>
+                                            {lot.quantity || 0} <span className="text-xs font-medium text-emerald-500/70">Tổng</span>
                                         </span>
                                     </div>
-                                    <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200 line-clamp-2">
-                                        {lot.products?.name || '---'}
+                                    <div className="space-y-1 max-h-[80px] overflow-y-auto pr-1 custom-scrollbar">
+                                        {lot.lot_items && lot.lot_items.length > 0 ? (
+                                            lot.lot_items.map(item => (
+                                                <div key={item.id} className="text-sm text-zinc-800 dark:text-zinc-200 flex justify-between gap-2">
+                                                    <span className="truncate flex-1" title={item.products?.name}>{item.products?.name}</span>
+                                                    <span className="font-mono text-xs bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300 whitespace-nowrap">
+                                                        {item.quantity} {item.products?.unit}
+                                                    </span>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className="text-sm text-zinc-400 italic">
+                                                {lot.products?.name ? (
+                                                    // Legacy fallback
+                                                    <div className="text-sm text-zinc-800 dark:text-zinc-200 flex justify-between gap-2">
+                                                        <span className="truncate flex-1">{lot.products.name}</span>
+                                                        <span className="font-mono text-xs bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300">
+                                                            {lot.quantity} {lot.products.unit}
+                                                        </span>
+                                                    </div>
+                                                ) : '---'}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -512,6 +721,13 @@ export default function LotManagementPage() {
                                         title="Xem chi tiết"
                                     >
                                         <Filter size={16} className="rotate-90" /> {/* Using Filter as placeholder for Details/Split */}
+                                    </button>
+                                    <button
+                                        onClick={() => handleEditLot(lot)}
+                                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+                                        title="Sửa"
+                                    >
+                                        <Edit size={16} />
                                     </button>
                                     <button
                                         onClick={() => handleDeleteLot(lot.id)}

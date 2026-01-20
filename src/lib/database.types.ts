@@ -506,6 +506,29 @@ export interface Database {
                     status?: string
                 }
             }
+            lot_items: {
+                Row: {
+                    id: string
+                    created_at: string
+                    lot_id: string
+                    product_id: string
+                    quantity: number
+                }
+                Insert: {
+                    id?: string
+                    created_at?: string
+                    lot_id: string
+                    product_id: string
+                    quantity?: number
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    lot_id?: string
+                    product_id?: string
+                    quantity?: number
+                }
+            }
             positions: {
                 Row: {
                     id: string
