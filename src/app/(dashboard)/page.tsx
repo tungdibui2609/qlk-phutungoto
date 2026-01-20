@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Package, TrendingUp, AlertTriangle, Boxes, ArrowUpRight, Sparkles } from 'lucide-react'
+import { useSystem } from '@/contexts/SystemContext'
 
 type Category = Database['public']['Tables']['categories']['Row']
 type Product = Database['public']['Tables']['products']['Row']
@@ -11,15 +12,16 @@ export default function Home() {
     const [categories, setCategories] = useState<Category[]>([])
     const [products, setProducts] = useState<Product[]>([])
     const [loading, setLoading] = useState(true)
+    const { systemType } = useSystem()
 
     useEffect(() => {
         fetchData()
-    }, [])
+    }, [systemType])
 
     async function fetchData() {
         setLoading(true)
-        const { data: cats } = await supabase.from('categories').select('*')
-        const { data: prods } = await supabase.from('products').select('*, categories(name)')
+        const { data: cats } = await supabase.from('categories').select('*').eq('system_type', systemType)
+        const { data: prods } = await supabase.from('products').select('*, categories(name)').eq('system_type', systemType)
 
         if (cats) setCategories(cats)
         if (prods) setProducts(prods as any)

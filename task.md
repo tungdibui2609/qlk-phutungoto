@@ -1,0 +1,34 @@
+# Tasks
+
+- [x] Create separate warehouse types (Frozen, Packaging, Material)
+    - [x] Database: Add `system_type` column (ENUM)
+    - [x] Database: Add `system_type` to core tables
+    - [x] Database: Create SQL migration script
+- [x] Frontend: Context and Selection
+    - [x] Create `SystemContext`
+    - [x] Create `SelectSystemPage`
+    - [x] Fix Build Error: Remove dependency on missing `@/components/ui/card`
+    - [x] Update `Sidebar` to show current system
+    - [x] Redirect to `/select-system` (or `/`) on login
+- [x] Frontend: Data Isolation
+    - [x] Update `products/page.tsx` default filter
+    - [x] Update `api/inventory/route.ts` filter
+    - [x] Update `ProductForm` to include `system_type`
+    - [x] Fix 404 Dashboard Error and Filter Data
+- [x] Navigation & UX
+    - [x] Header: Replace Search with System Switcher
+    - [x] Sidebar: Implement nested menu for Users (Users, Roles, Permissions)
+- [ ] Frontend: Permissions & Roles
+    - [x] Database: Create `permissions` table
+    - [x] Frontend: Create `/users/permissions` page (Raw Permissions List)
+    - [x] Database: Add `allowed_systems` to `user_profiles` (Scope)
+    - [ ] **Frontend: Create `/users/roles` page (Role Management with Permission Checkboxes)**
+    - [ ] Frontend: Update User Management to assign Roles and System Scope
+- [ ] Frontend: Conditional UI
+    - [x] Hide `Supplier` field in ProductForm for Frozen
+    - [ ] Update other forms if necessary (Inbound/Outbound)
+- [ ] Dashboard: General View (Aggregate)
+    - [ ] Create specialized read-only view for "General" system
+- [ ] Verification
+    - [ ] Verify data isolation (Frozen user sees only Frozen data)
+    - [ ] Verify conditional fields

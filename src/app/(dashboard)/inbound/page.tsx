@@ -8,6 +8,7 @@ import { format } from 'date-fns'
 import InboundOrderModal from './InboundOrderModal'
 import InboundOrderDetailModal from './InboundOrderDetailModal'
 import { useToast } from '@/components/ui/ToastProvider'
+import { useSystem } from '@/contexts/SystemContext'
 
 type InboundOrder = Database['public']['Tables']['inbound_orders']['Row'] & {
     supplier: { name: string } | null
@@ -25,9 +26,11 @@ export default function InboundPage() {
     const [editingOrderId, setEditingOrderId] = useState<string | null>(null)
     const { showToast, showConfirm } = useToast()
 
+    const { systemType } = useSystem()
+
     useEffect(() => {
         fetchOrders()
-    }, [])
+    }, [systemType])
 
     async function fetchOrders() {
         setLoading(true)
@@ -38,6 +41,7 @@ export default function InboundPage() {
                 supplier:suppliers(name),
                 items:inbound_order_items(note)
             `)
+            .eq('system_type', systemType)
             .order('created_at', { ascending: false })
 
         if (error) {

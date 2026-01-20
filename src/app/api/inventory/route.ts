@@ -27,6 +27,7 @@ export async function GET(request: Request) {
             }
         )
         const { searchParams } = new URL(request.url)
+        const systemType = cookieStore.get('systemType')?.value || 'FROZEN'
 
         const q = searchParams.get('q')?.toLowerCase()
         const warehouse = searchParams.get('warehouse')
@@ -48,6 +49,7 @@ export async function GET(request: Request) {
                 )
             `)
             .eq('order.status', 'Completed')
+            .eq('order.system_type', systemType)
 
         if (warehouse && warehouse !== 'Tất cả') {
             inboundQuery = inboundQuery.eq('order.warehouse_name', warehouse)
@@ -85,6 +87,7 @@ export async function GET(request: Request) {
                 )
             `)
             .eq('order.status', 'Completed')
+            .eq('order.system_type', systemType)
 
         if (warehouse && warehouse !== 'Tất cả') {
             outboundQuery = outboundQuery.eq('order.warehouse_name', warehouse)

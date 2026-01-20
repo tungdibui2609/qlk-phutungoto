@@ -3,10 +3,11 @@ import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe } from 'lucide-react'
+import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
+import { useSystem } from '@/contexts/SystemContext'
 
 type MenuItem = {
     name: string
@@ -57,7 +58,15 @@ const menuItems: MenuItem[] = [
             { name: 'Công nợ NCC', href: '/reports/supplier-debts', icon: DollarSign },
         ]
     },
-    { name: 'Người dùng', href: '/users', icon: Shield },
+    {
+        name: 'Người dùng',
+        icon: Shield,
+        children: [
+            { name: 'Người dùng', href: '/users', icon: Shield },
+            { name: 'Vai trò', href: '/users/roles', icon: BookUser },
+            { name: 'Phân quyền', href: '/users/permissions', icon: Key },
+        ]
+    },
     { name: 'Cài đặt', href: '/settings', icon: Settings },
 ]
 
@@ -70,6 +79,7 @@ export default function Sidebar() {
     const pathname = usePathname()
     const router = useRouter()
     const { isCollapsed, setCollapsed, isReady } = useSidebar()
+    const { systemName, systemColor, systemType } = useSystem()
     const [expandedMenus, setExpandedMenus] = useState<string[]>(['Quản lý sản phẩm'])
     const sidebarRef = useRef<HTMLElement>(null)
     const [companyInfo, setCompanyInfo] = useState<CompanyInfo>({ name: 'Toàn Thắng', logo_url: null })
@@ -197,7 +207,7 @@ export default function Sidebar() {
                     {isReady && !isCollapsed && (
                         <div>
                             <h1 className="font-bold text-sm text-stone-800 tracking-tight truncate max-w-[150px]">{companyInfo.name}</h1>
-                            <p className="text-[10px] text-stone-500">Quản lý Kho</p>
+                            <p className={`text-[10px] font-semibold text-${systemColor}-600`}>{systemName}</p>
                         </div>
                     )}
                 </div>

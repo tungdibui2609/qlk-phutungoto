@@ -2,8 +2,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { ArrowLeft, Save, Loader2, User, Phone, Mail, Shield, Building } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, User, Phone, Mail, Shield, Building, Warehouse } from 'lucide-react'
 import Link from 'next/link'
+import { SYSTEM_CONFIG } from '@/contexts/SystemContext'
 
 interface Role {
     id: string
@@ -21,6 +22,7 @@ interface UserProfile {
     role_id: string | null
     department: string | null
     is_active: boolean
+    allowed_systems: string[] | null
 }
 
 interface UserFormProps {
@@ -42,6 +44,7 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
         role_id: initialData?.role_id || '',
         department: initialData?.department || '',
         is_active: initialData?.is_active ?? true,
+        allowed_systems: initialData?.allowed_systems || ['FROZEN'],
         // For new user
         password: '',
     })
@@ -92,6 +95,17 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
         }
     }
 
+    const handleSystemChange = (sysId: string) => {
+        setFormData(prev => {
+            const current = prev.allowed_systems || []
+            if (current.includes(sysId)) {
+                return { ...prev, allowed_systems: current.filter(s => s !== sysId) }
+            } else {
+                return { ...prev, allowed_systems: [...current, sysId] }
+            }
+        })
+    }
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         setLoading(true)
@@ -99,6 +113,7 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
         try {
             if (isEditMode && initialData) {
                 // Update existing user profile
+                // @ts-ignore
                 const { error } = await (supabase
                     .from('user_profiles') as any)
                     .update({
@@ -110,6 +125,7 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                         role_id: formData.role_id || null,
                         department: formData.department || null,
                         is_active: formData.is_active,
+                        allowed_systems: formData.allowed_systems,
                     })
                     .eq('id', initialData.id)
 
@@ -147,6 +163,7 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
 
                     if (signUpData.user) {
                         // 2. Create user profile
+                        // @ts-ignore
                         const { error: profileError } = await (supabase
                             .from('user_profiles') as any)
                             .insert([{
@@ -159,12 +176,14 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                                 role_id: formData.role_id || null,
                                 department: formData.department || null,
                                 is_active: formData.is_active,
+                                allowed_systems: formData.allowed_systems,
                             }])
 
                         if (profileError) throw profileError
                     }
                 } else if (authData.user) {
                     // 2. Create user profile
+                    // @ts-ignore
                     const { error: profileError } = await (supabase
                         .from('user_profiles') as any)
                         .insert([{
@@ -177,6 +196,7 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                             role_id: formData.role_id || null,
                             department: formData.department || null,
                             is_active: formData.is_active,
+                            allowed_systems: formData.allowed_systems,
                         }])
 
                     if (profileError) throw profileError
@@ -356,25 +376,56 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
             <div className="bg-white rounded-xl p-5 space-y-4 border border-stone-200">
                 <h2 className="font-semibold text-stone-800 pb-3 border-b border-stone-200 flex items-center gap-2 text-sm">
                     <Shield size={16} className="text-orange-500" />
-                    Phân quyền
+                    Phân quyền & Phạm vi
                 </h2>
 
-                <div>
-                    <label className="block text-xs font-medium text-stone-700 mb-1.5">Vai trò</label>
-                    <select
-                        name="role_id"
-                        value={formData.role_id}
-                        onChange={handleChange}
-                        className={inputClass}
-                    >
-                        <option value="">-- Chọn vai trò --</option>
-                        {roles.map(r => (
-                            <option key={r.id} value={r.id}>{r.name}</option>
-                        ))}
-                    </select>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label className="block text-xs font-medium text-stone-700 mb-1.5">Vai trò hệ thống</label>
+                        <select
+                            name="role_id"
+                            value={formData.role_id}
+                            onChange={handleChange}
+                            className={inputClass}
+                        >
+                            <option value="">-- Chọn vai trò --</option>
+                            {roles.map(r => (
+                                <option key={r.id} value={r.id}>{r.name}</option>
+                            ))}
+                        </select>
+                        <p className="text-[10px] text-stone-400 mt-1">
+                            Quyết định các chức năng được phép sử dụng (Xem, Sửa, Xóa...)
+                        </p>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-medium text-stone-700 mb-2 flex items-center gap-2">
+                            <Warehouse size={14} />
+                            Phạm vi hoạt động (Kho)
+                        </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {Object.entries(SYSTEM_CONFIG).map(([key, config]) => (
+                                <label key={key} className={`
+                                    flex items-center gap-2 cursor-pointer p-2 rounded border transition-colors select-none
+                                    ${(formData.allowed_systems || []).includes(key)
+                                        ? 'bg-orange-50 border-orange-200 text-orange-800'
+                                        : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
+                                    }
+                                `}>
+                                    <input
+                                        type="checkbox"
+                                        checked={(formData.allowed_systems || []).includes(key)}
+                                        onChange={() => handleSystemChange(key)}
+                                        className="w-4 h-4 rounded text-orange-500 focus:ring-orange-400 border-stone-300 accent-orange-500"
+                                    />
+                                    <span className="text-sm font-medium">{config.name}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
                 </div>
 
-                <div className="pt-2">
+                <div className="pt-2 border-t border-stone-100">
                     <label className="flex items-center gap-2 cursor-pointer">
                         <input
                             type="checkbox"

@@ -8,6 +8,7 @@ import { format } from 'date-fns'
 import OutboundOrderModal from './OutboundOrderModal'
 import OutboundOrderDetailModal from './OutboundOrderDetailModal'
 import { useToast } from '@/components/ui/ToastProvider'
+import { useSystem } from '@/contexts/SystemContext'
 
 type OutboundOrder = Database['public']['Tables']['outbound_orders']['Row'] & {
     items?: { note: string | null }[]
@@ -21,10 +22,11 @@ export default function OutboundPage() {
     const [selectedOrder, setSelectedOrder] = useState<OutboundOrder | null>(null)
     const [editingOrderId, setEditingOrderId] = useState<string | null>(null)
     const { showToast, showConfirm } = useToast()
+    const { systemType } = useSystem()
 
     useEffect(() => {
         fetchOrders()
-    }, [])
+    }, [systemType])
 
     async function fetchOrders() {
         setLoading(true)
@@ -34,6 +36,7 @@ export default function OutboundPage() {
                 *,
                 items:outbound_order_items(note)
             `)
+            .eq('system_type', systemType)
             .order('created_at', { ascending: false })
 
         if (error) {

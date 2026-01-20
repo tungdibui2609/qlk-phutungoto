@@ -13,7 +13,7 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false)
     const [message, setMessage] = useState<{ text: string, type: 'error' | 'success' } | null>(null)
     const [companyName, setCompanyName] = useState(COMPANY_INFO.name)
-    const [logoUrl, setLogoUrl] = useState("/logotoanthang.png")
+    const [logoUrl, setLogoUrl] = useState<string | null>(null)
 
     useEffect(() => {
         async function fetchCompanySettings() {
@@ -62,7 +62,7 @@ export default function LoginPage() {
                 password,
             })
             if (error) throw error
-            router.push('/')
+            router.push('/select-system')
         } catch (error: any) {
             setMessage({ text: error.message, type: 'error' })
         } finally {
@@ -121,12 +121,18 @@ export default function LoginPage() {
                             boxShadow: '0 8px 25px rgba(0,0,0, 0.1)',
                         }}
                     >
-                        <Image
-                            src={logoUrl}
-                            alt={companyName}
-                            fill
-                            className="object-contain p-2"
-                        />
+                        {logoUrl ? (
+                            <Image
+                                src={logoUrl}
+                                alt={companyName}
+                                fill
+                                className="object-contain p-2"
+                            />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-stone-50">
+                                <div className="w-8 h-8 rounded-full border-2 border-stone-200 border-t-orange-500 animate-spin" />
+                            </div>
+                        )}
                     </div>
 
                     <h1 className="text-2xl font-bold text-stone-900 mb-2 tracking-tight">

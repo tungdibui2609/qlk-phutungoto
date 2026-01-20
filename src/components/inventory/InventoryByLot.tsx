@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Search, Loader2, MapPin } from 'lucide-react'
 import { Database } from '@/lib/database.types'
+import { useSystem } from '@/contexts/SystemContext'
 
 type Lot = Database['public']['Tables']['lots']['Row'] & {
     lot_items: (Database['public']['Tables']['lot_items']['Row'] & {
@@ -32,6 +33,7 @@ export default function InventoryByLot() {
     const [lots, setLots] = useState<Lot[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
+    const { systemType } = useSystem()
 
     useEffect(() => {
         fetchLots()
@@ -54,12 +56,19 @@ export default function InventoryByLot() {
                         product_code:id
                     )
                 ),
-                products(name, unit, product_code:id, sku),
+                products!inner(name, unit, product_code:id, sku, system_type),
                 suppliers(name),
                 positions(code)
             `)
             .eq('status', 'active')
+            // Use !inner to ensure we only get lots that have a product in the current system
+            // Note: This relies on lots having a product_id. For lot_items, we might need a different strategy or rely on the fact that product creation is scoped.
+            .eq('products.system_type', systemType)
             .order('created_at', { ascending: false })
+
+        // Note: For lots with NO product_id (pure lot_items), this filter might hide them if we use !inner on products.
+        // However, typically lots are created with a main product or we can adjust logic.
+        // Ideally, we should add system_type to lots table. For now, assuming direct product link or manual management.
 
         if (error) {
             console.error('Error fetching lots:', error)

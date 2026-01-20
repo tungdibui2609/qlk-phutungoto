@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { Plus, Search, Filter, Edit, Trash2, Package, Sparkles } from 'lucide-react'
+import { useSystem } from '@/contexts/SystemContext'
+import Protected from '@/components/auth/Protected'
 
 type ProductWithCategory = {
     id: string
@@ -22,6 +24,7 @@ export default function InventoryPage() {
     const [products, setProducts] = useState<ProductWithCategory[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
+    const { systemType } = useSystem()
 
     useEffect(() => {
         fetchProducts()
@@ -32,6 +35,7 @@ export default function InventoryPage() {
         const { data, error } = await supabase
             .from('products')
             .select(`*, categories ( name )`)
+            .eq('system_type', systemType)
             .order('created_at', { ascending: false })
 
         if (error) {
@@ -278,17 +282,19 @@ export default function InventoryPage() {
                     <h1 className="text-2xl font-bold text-stone-800 tracking-tight">Sản phẩm</h1>
                     <p className="text-stone-500 mt-1">Quản lý danh mục và thông tin linh kiện, phụ tùng</p>
                 </div>
-                <Link
-                    href="/products/new"
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
-                    style={{
-                        background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                        boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)',
-                    }}
-                >
-                    <Plus size={20} />
-                    Thêm Sản phẩm
-                </Link>
+                <Protected permission="product.create">
+                    <Link
+                        href="/products/new"
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
+                        style={{
+                            background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                            boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)',
+                        }}
+                    >
+                        <Plus size={20} />
+                        Thêm Sản phẩm
+                    </Link>
+                </Protected>
             </div>
 
             {/* FILTERS & SEARCH */}
@@ -400,12 +406,14 @@ export default function InventoryPage() {
                                                 >
                                                     <Edit size={16} />
                                                 </Link>
-                                                <button
-                                                    onClick={() => handleDelete(item.id)}
-                                                    className="p-2.5 rounded-lg bg-stone-100 text-stone-500 hover:bg-red-100 hover:text-red-600 transition-colors"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
+                                                <Protected permission="product.delete">
+                                                    <button
+                                                        onClick={() => handleDelete(item.id)}
+                                                        className="p-2.5 rounded-lg bg-stone-100 text-stone-500 hover:bg-red-100 hover:text-red-600 transition-colors"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </Protected>
                                             </div>
                                         </td>
                                     </tr>

@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { ArrowLeft, Save, Loader2, Image as ImageIcon, Package, Sparkles, Wrench, DollarSign, Car, Building2, X, Plus, Link as LinkIcon } from 'lucide-react'
 import Link from 'next/link'
+import { useSystem } from '@/contexts/SystemContext'
 
 type Product = Database['public']['Tables']['products']['Row']
 type Category = Database['public']['Tables']['categories']['Row']
@@ -29,6 +30,7 @@ const QUALITY_GRADES = [
 
 export default function ProductForm({ initialData, isEditMode = false }: ProductFormProps) {
     const router = useRouter()
+    const { systemType } = useSystem()
     const [loading, setLoading] = useState(false)
     const [categories, setCategories] = useState<Category[]>([])
     const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -157,6 +159,7 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
 
         const payload = {
             ...formData,
+            system_type: systemType,
             compatible_models: compatible_models_array,
             min_stock_level: Number(formData.min_stock_level),
             cost_price: Number(formData.cost_price),
@@ -651,40 +654,42 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                         )}
                     </div>
 
-                    {/* Supplier Card */}
-                    <div className="bg-white rounded-2xl p-6 space-y-5 border border-stone-200">
-                        <h2 className="font-semibold text-lg text-stone-800 pb-3 border-b border-stone-200 flex items-center gap-2">
-                            <Building2 size={20} className="text-orange-500" />
-                            Nhà cung cấp
-                        </h2>
+                    {/* Supplier Card - Only for PACKAGING and MATERIAL */}
+                    {systemType !== 'FROZEN' && (
+                        <div className="bg-white rounded-2xl p-6 space-y-5 border border-stone-200">
+                            <h2 className="font-semibold text-lg text-stone-800 pb-3 border-b border-stone-200 flex items-center gap-2">
+                                <Building2 size={20} className="text-orange-500" />
+                                Nhà cung cấp
+                            </h2>
 
-                        <div>
-                            <label className="block text-sm font-medium text-stone-700 mb-2">Chọn NCC</label>
-                            <select
-                                name="supplier_id"
-                                value={formData.supplier_id}
-                                onChange={handleChange}
-                                className={inputClass}
-                            >
-                                <option value="">-- Chọn nhà cung cấp --</option>
-                                {suppliers.map(s => (
-                                    <option key={s.id} value={s.id}>{s.code} - {s.name}</option>
-                                ))}
-                            </select>
-                        </div>
+                            <div>
+                                <label className="block text-sm font-medium text-stone-700 mb-2">Chọn NCC</label>
+                                <select
+                                    name="supplier_id"
+                                    value={formData.supplier_id}
+                                    onChange={handleChange}
+                                    className={inputClass}
+                                >
+                                    <option value="">-- Chọn nhà cung cấp --</option>
+                                    {suppliers.map(s => (
+                                        <option key={s.id} value={s.id}>{s.code} - {s.name}</option>
+                                    ))}
+                                </select>
+                            </div>
 
-                        <div>
-                            <label className="block text-sm font-medium text-stone-700 mb-2">Thời gian đặt hàng (ngày)</label>
-                            <input
-                                type="number"
-                                name="lead_time_days"
-                                value={formData.lead_time_days}
-                                onChange={handleChange}
-                                className={inputClass}
-                                min="0"
-                            />
+                            <div>
+                                <label className="block text-sm font-medium text-stone-700 mb-2">Thời gian đặt hàng (ngày)</label>
+                                <input
+                                    type="number"
+                                    name="lead_time_days"
+                                    value={formData.lead_time_days}
+                                    onChange={handleChange}
+                                    className={inputClass}
+                                    min="0"
+                                />
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {/* Warehouse & Status Card */}
                     <div className="bg-white rounded-2xl p-6 space-y-5 border border-stone-200">

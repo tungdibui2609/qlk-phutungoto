@@ -6,6 +6,7 @@ import { Database } from '@/lib/database.types'
 import { X, Calendar, Package, User, FileText, CheckCircle, Printer, ChevronDown, Eye } from 'lucide-react'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/ToastProvider'
+import { useUser } from '@/contexts/UserContext'
 
 interface OutboundOrder {
     id: string
@@ -39,6 +40,7 @@ interface OutboundOrderDetailModalProps {
 
 export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: OutboundOrderDetailModalProps) {
     const { showToast, showConfirm } = useToast()
+    const { hasPermission } = useUser()
     const [items, setItems] = useState<OrderItem[]>([])
     const [loading, setLoading] = useState(false)
     const [showPrintMenu, setShowPrintMenu] = useState(false)
@@ -459,7 +461,7 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                         Đóng
                     </button>
 
-                    {order.status === 'Pending' && (
+                    {order.status === 'Pending' && hasPermission('outbound.approve') && (
                         <button
                             onClick={handleApprove}
                             className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold shadow-lg shadow-green-500/20 transition-all hover:scale-105 active:scale-95"

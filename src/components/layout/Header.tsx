@@ -2,56 +2,97 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { User } from '@supabase/supabase-js'
-import { Bell, Search, Sparkles, LogOut, Key, Camera, ChevronDown } from 'lucide-react'
+import { Bell, Search, Sparkles, LogOut, Key, Camera, ChevronDown, RefreshCw, LayoutGrid, Menu, PanelLeftClose, PanelLeftOpen, ChevronUp } from 'lucide-react'
+import { useSystem, SYSTEM_CONFIG, SystemType } from '@/contexts/SystemContext'
+import { useSidebar } from './SidebarContext'
+import { useUser } from '@/contexts/UserContext'
 import ChangePasswordModal from '@/components/auth/ChangePasswordModal'
 import ChangeAvatarModal from '@/components/auth/ChangeAvatarModal'
 import { useRouter } from 'next/navigation'
+import { useToast } from '@/components/ui/ToastProvider'
 
-export default function Header() {
+export default function Header({ onCollapse }: { onCollapse?: () => void }) {
     const router = useRouter()
-    const [user, setUser] = useState<User | null>(null)
-    const [profile, setProfile] = useState<any>(null)
+    const { isCollapsed, toggleSidebar, isReady } = useSidebar()
+    const { user, profile, hasPermission } = useUser()
     const [isMenuOpen, setIsMenuOpen] = useState(false)
     const [showPasswordModal, setShowPasswordModal] = useState(false)
     const [showAvatarModal, setShowAvatarModal] = useState(false)
-
-    useEffect(() => {
-        async function getUser() {
-            const { data: { user } } = await supabase.auth.getUser()
-            setUser(user)
-            if (user) {
-                const { data } = await supabase
-                    .from('user_profiles')
-                    .select('full_name, avatar_url, roles(name)')
-                    .eq('id', user.id)
-                    .single()
-                setProfile(data)
-            }
-        }
-        getUser()
-    }, [])
+    const { showToast } = useToast()
+    const { systemType, setSystemType, systemName, systemColor } = useSystem()
 
     const handleLogout = async () => {
         await supabase.auth.signOut()
         router.push('/login')
     }
 
+    // Dynamic margin match Sidebar
+    const marginLeft = isReady ? (isCollapsed ? 'ml-16' : 'ml-56') : 'ml-16'
+
     return (
         <header
-            className="h-20 flex items-center justify-between px-8 sticky top-0 z-40 ml-64 bg-white border-b border-stone-200 transition-all duration-300"
+            className={`h-20 flex items-center justify-between px-6 sticky top-0 z-40 bg-white border-b border-stone-200 transition-all duration-300 ${marginLeft}`}
             style={{
                 boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)',
             }}
         >
-            {/* LEFT: SEARCH */}
-            <div className="flex items-center flex-1">
-                <div className="relative w-full max-w-md hidden md:block">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
-                    <input
-                        type="text"
-                        placeholder="Tìm kiếm phụ tùng, mã đơn hàng..."
-                        className="w-full pl-12 pr-4 py-3 rounded-xl text-sm transition-all duration-200 outline-none bg-stone-50 border border-stone-200 text-stone-800 placeholder:text-stone-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                    />
+            {/* LEFT: SYSTEM SWITCHER */}
+            <div className="flex items-center gap-4 flex-1">
+
+
+                {/* HEADER COLLAPSE BUTTON (Replaces Sidebar Toggle Logic or sits nearby? User asked for close button) */}
+                {/* Actually user asked to close the HEADER so we add a ChevronUp here */}
+                {onCollapse && (
+                    <button
+                        onClick={onCollapse}
+                        className="p-2 rounded-lg text-stone-400 hover:text-orange-600 hover:bg-orange-50 transition-colors"
+                        title="Thu gọn Header"
+                    >
+                        <ChevronUp size={20} />
+                    </button>
+                )}
+                <div className="relative">
+                    {/* LEFT: SYSTEM SWITCHER - TABS STYLE */}
+                    <div className="flex items-center flex-1 overflow-x-auto no-scrollbar gap-2 mr-4">
+                        {Object.entries(SYSTEM_CONFIG).map(([key, config]) => {
+                            const isActive = systemType === key
+                            // 3. User Permission Logic
+                            // ALLOW if:
+                            // - User is superuser (handled by hasPermission usually, but checking here explicitly via hasPermission('system.full_access'))
+                            // - OR allowed_systems includes 'ALL' or key
+                            const allowed = profile?.allowed_systems || []
+                            const isAllowed =
+                                hasPermission('system.full_access') ||
+                                allowed.includes('ALL') ||
+                                allowed.includes(key)
+
+                            return (
+                                <button
+                                    key={key}
+                                    onClick={() => {
+                                        if (isAllowed) {
+                                            setSystemType(key as SystemType)
+                                            router.push('/')
+                                        } else {
+                                            showToast(`Bạn không có quyền truy cập vào ${config.name}`, 'error')
+                                        }
+                                    }}
+                                    className={`
+                                        flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all duration-200 whitespace-nowrap
+                                        ${isActive
+                                            ? `bg-${config.color}-50 border-${config.color}-200 text-${config.color}-700 shadow-sm ring-1 ring-${config.color}-100`
+                                            : isAllowed
+                                                ? 'bg-transparent border-transparent text-stone-500 hover:bg-stone-50 hover:text-stone-700'
+                                                : 'bg-stone-50 border-transparent text-stone-300 cursor-not-allowed opacity-60'
+                                        }
+                                    `}
+                                >
+                                    <span className={`w-2 h-2 rounded-full ${isActive ? `bg-${config.color}-500` : isAllowed ? 'bg-stone-300' : 'bg-stone-200'}`} />
+                                    {config.name}
+                                </button>
+                            )
+                        })}
+                    </div>
                 </div>
             </div>
 

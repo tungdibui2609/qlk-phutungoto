@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { Plus, Search, Users, Edit, Trash2, Shield, CheckCircle, XCircle, Mail, Phone } from 'lucide-react'
+import Protected from '@/components/auth/Protected'
 
 interface Role {
     id: string
@@ -210,25 +211,29 @@ export default function UsersPage() {
                                         {user.department || '-'}
                                     </td>
                                     <td className="px-4 py-3 text-center">
-                                        <button
-                                            onClick={() => toggleUserStatus(user.id, user.is_active)}
-                                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${user.is_active
-                                                ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                                                : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
-                                                }`}
-                                        >
-                                            {user.is_active ? <CheckCircle size={12} /> : <XCircle size={12} />}
-                                            {user.is_active ? 'Hoạt động' : 'Vô hiệu'}
-                                        </button>
+                                        <Protected permission="user.manage">
+                                            <button
+                                                onClick={() => toggleUserStatus(user.id, user.is_active)}
+                                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${user.is_active
+                                                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                                    : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
+                                                    }`}
+                                            >
+                                                {user.is_active ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                                                {user.is_active ? 'Hoạt động' : 'Vô hiệu'}
+                                            </button>
+                                        </Protected>
                                     </td>
                                     <td className="px-4 py-3">
                                         <div className="flex items-center justify-center gap-1">
-                                            <Link
-                                                href={`/users/${user.id}`}
-                                                className="p-1.5 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
-                                            >
-                                                <Edit size={14} />
-                                            </Link>
+                                            <Protected permission="user.manage">
+                                                <Link
+                                                    href={`/users/${user.id}`}
+                                                    className="p-1.5 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
+                                                >
+                                                    <Edit size={14} />
+                                                </Link>
+                                            </Protected>
                                         </div>
                                     </td>
                                 </tr>
