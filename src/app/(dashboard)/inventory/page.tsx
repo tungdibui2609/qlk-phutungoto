@@ -3,6 +3,8 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { Search, Loader2, Printer, Warehouse } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import InventoryByLot from '@/components/inventory/InventoryByLot'
+import InventoryReconciliation from '@/components/inventory/InventoryReconciliation'
 
 // Types based on API response
 interface InventoryItem {
@@ -137,9 +139,9 @@ export default function InventoryPage() {
                 <nav className="-mb-px flex space-x-8" aria-label="Tabs">
                     {[
                         { id: 'accounting', name: 'Tồn kho kế toán' },
-                        { id: 'lot', name: 'Tồn kho theo LOT', disabled: true },
+                        { id: 'lot', name: 'Tồn kho theo LOT' },
                         { id: 'tags', name: 'Tồn theo Mã phụ', disabled: true },
-                        { id: 'reconciliation', name: 'Đối chiếu', disabled: true },
+                        { id: 'reconciliation', name: 'Đối chiếu' },
                     ].map((tab) => (
                         <button
                             key={tab.id}
@@ -287,7 +289,16 @@ export default function InventoryPage() {
             )}
 
             {/* Placeholder for other tabs */}
-            {activeTab !== 'accounting' && (
+            {activeTab === 'lot' && (
+                <InventoryByLot />
+            )}
+
+            {activeTab === 'reconciliation' && (
+                <InventoryReconciliation />
+            )}
+
+            {/* Placeholder for other tabs */}
+            {activeTab !== 'accounting' && activeTab !== 'lot' && activeTab !== 'reconciliation' && (
                 <div className="flex flex-col items-center justify-center h-64 border rounded-lg border-dashed border-stone-300 bg-stone-50">
                     <p className="text-stone-500">Tính năng đang phát triển...</p>
                 </div>
