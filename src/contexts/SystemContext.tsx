@@ -3,53 +3,76 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 
-export type SystemType = 'FROZEN' | 'PACKAGING' | 'MATERIAL' | 'GENERAL'
+import { supabase } from '@/lib/supabaseClient'
+
+export type SystemType = string // Was rigid Enum, now string
+
+interface System {
+  code: string
+  name: string
+  description?: string
+  icon?: string
+  bg_color_class?: string
+  text_color_class?: string
+}
 
 interface SystemContextType {
   systemType: SystemType
   setSystemType: (type: SystemType) => void
-  systemName: string
-  systemColor: string
+  systems: System[]
+  currentSystem: System | undefined
 }
 
 const SystemContext = createContext<SystemContextType | undefined>(undefined)
 
-export const SYSTEM_CONFIG: Record<SystemType, { name: string; color: string }> = {
-  FROZEN: { name: 'Kho Đông Lạnh', color: 'blue' },
-  PACKAGING: { name: 'Kho Bao Bì', color: 'amber' },
-  MATERIAL: { name: 'Kho Nguyên Liệu', color: 'emerald' },
-  GENERAL: { name: 'Tổng Hợp', color: 'purple' },
+// Config fallback (optional, or just empty)
+export const SYSTEM_CONFIG: Record<string, { name: string; color: string }> = {
+  // Keep this for backward compatibility if needed, or remove it.
+  // For now, removing it to force dynamic usage.
 }
 
 export function SystemProvider({ children }: { children: React.ReactNode }) {
   const [systemType, setSystemTypeState] = useState<SystemType>('FROZEN')
+  const [systems, setSystems] = useState<System[]>([])
   const router = useRouter()
   const pathname = usePathname()
+
+  // Fetch systems
+  useEffect(() => {
+    async function fetchSystems() {
+      const { data, error } = await supabase.from('systems').select('*').order('created_at', { ascending: true })
+      if (data) {
+        setSystems(data)
+        // If current systemType is invalid, reset to first one
+        // logic can be added here
+      }
+    }
+    fetchSystems()
+  }, [])
 
   useEffect(() => {
     // Load from local storage on mount
     const saved = localStorage.getItem('systemType') as SystemType
-    if (saved && SYSTEM_CONFIG[saved]) {
+    if (saved) {
       setSystemTypeState(saved)
     } else {
-      // If no system selected, redirect to selection page
-      // preventing redirect loop if already on selection page
-      if (pathname !== '/select-system') {
-        router.push('/select-system')
-      }
+      // If no saved, default to FROZEN or first loaded system?
+      // Let's rely on 'FROZEN' default for now or wait for systems to load
     }
-  }, [pathname, router])
+  }, [])
 
   const setSystemType = (type: SystemType) => {
     localStorage.setItem('systemType', type)
     setSystemTypeState(type)
   }
 
+  const currentSystem = systems.find(s => s.code === systemType)
+
   const value = {
     systemType,
     setSystemType,
-    systemName: SYSTEM_CONFIG[systemType].name,
-    systemColor: SYSTEM_CONFIG[systemType].color,
+    systems,
+    currentSystem
   }
 
   return (

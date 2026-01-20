@@ -786,6 +786,38 @@ export interface Database {
                     description?: string | null
                     is_active?: boolean
                 }
+            },
+            systems: {
+                Row: {
+                    code: string
+                    name: string
+                    description: string | null
+                    icon: string | null
+                    bg_color_class: string | null
+                    text_color_class: string | null
+                    is_active: boolean
+                    created_at: string
+                }
+                Insert: {
+                    code: string
+                    name: string
+                    description?: string | null
+                    icon?: string | null
+                    bg_color_class?: string | null
+                    text_color_class?: string | null
+                    is_active?: boolean
+                    created_at?: string
+                }
+                Update: {
+                    code?: string
+                    name?: string
+                    description?: string | null
+                    icon?: string | null
+                    bg_color_class?: string | null
+                    text_color_class?: string | null
+                    is_active?: boolean
+                    created_at?: string
+                }
             }
         }
     }

@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Layers, Plus, Trash2, ChevronRight, ChevronDown, FolderTree, Copy, X, Edit2, Check, Save, FileDown, RotateCcw, CloudUpload, Package, Zap } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
+import { useSystem } from '@/contexts/SystemContext'
 
 // Original DB type
 type DBZone = Database['public']['Tables']['zones']['Row']
@@ -37,6 +38,7 @@ interface ZoneManagerProps {
 
 export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
     const { showToast, showConfirm } = useToast()
+    const { systemType } = useSystem()
 
     // Main state now holds both existing and new/modified zones
     const [zones, setZones] = useState<LocalZone[]>([])
@@ -95,8 +97,9 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
                 created_at: new Date().toISOString(),
                 status: 'active',
                 lot_id: null,
-                _status: 'new'
-            }))
+                _status: 'new',
+                system_type: systemType // Add system_type
+            } as any))
 
             setPositionsMap(prev => {
                 const currentList = prev[addingPositionsTo] || []
@@ -185,8 +188,9 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
                     created_at: new Date().toISOString(),
                     status: 'active',
                     lot_id: null,
-                    _status: 'new' as const
-                }))
+                    _status: 'new' as const,
+                    system_type: systemType // Add system_type
+                } as any))
 
                 const currentList = newPositionsMap[leafZone.id] || []
                 newPositionsMap[leafZone.id] = [...currentList, ...newPositions].sort((a, b) =>
@@ -213,7 +217,7 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
     useEffect(() => {
         fetchZones()
         loadTemplates()
-    }, [])
+    }, [systemType]) // Add dependency
 
     async function loadTemplates() {
         const { data, error } = await supabase
@@ -236,6 +240,7 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
         const { data, error } = await supabase
             .from('zones')
             .select('*')
+            .eq('system_type', systemType) // Filter by systemType
             .order('level', { ascending: true })
             .order('code', { ascending: true })
 
@@ -559,7 +564,8 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
                     code: z.code,
                     name: z.name,
                     parent_id: z.parent_id,
-                    level: z.level
+                    level: z.level,
+                    system_type: systemType // Add system_type
                 }))
                 const { error } = await (supabase.from('zones') as any).insert(cleanZones)
                 if (error) throw error
@@ -593,7 +599,8 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
                         id: p.id,
                         code: p.code,
                         display_order: p.display_order,
-                        batch_name: p.batch_name
+                        batch_name: p.batch_name,
+                        system_type: systemType // Add system_type
                     }))
 
                     const { error: posError } = await (supabase.from('positions') as any).insert(posPayloads)

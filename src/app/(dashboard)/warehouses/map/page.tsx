@@ -7,6 +7,7 @@ import { Map, Settings, Package, MapPin } from 'lucide-react'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
 import LayoutConfigPanel from '@/components/warehouse/LayoutConfigPanel'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
+import { useSystem } from '@/contexts/SystemContext'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -17,9 +18,11 @@ interface PositionWithZone extends Position {
 }
 
 function WarehouseMapContent() {
+    const { systemType } = useSystem() // Get systemType
     const [positions, setPositions] = useState<PositionWithZone[]>([])
     const [zones, setZones] = useState<Zone[]>([])
     const [layouts, setLayouts] = useState<ZoneLayout[]>([])
+    // ... [abbreviated] ...
     const [loading, setLoading] = useState(true)
     // Filter state
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
@@ -88,14 +91,15 @@ function WarehouseMapContent() {
 
     useEffect(() => {
         fetchData()
-    }, [])
+    }, [systemType]) // Add dependency
 
     async function fetchData() {
         setLoading(true)
 
+        // Filter positions and zones by system_type
         const [posRes, zoneRes, zpRes, invRes, layoutRes, lotsRes] = await Promise.all([
-            supabase.from('positions').select('*').order('code'),
-            supabase.from('zones').select('*').order('level').order('code'),
+            supabase.from('positions').select('*').eq('system_type', systemType).order('code'),
+            supabase.from('zones').select('*').eq('system_type', systemType).order('level').order('code'),
             supabase.from('zone_positions').select('*'),
             supabase.from('inventory').select('position_id').gt('quantity', 0),
             supabase.from('zone_layouts').select('*'),

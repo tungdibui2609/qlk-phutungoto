@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Plus, Search, Filter, Edit, Trash2, Package, Sparkles } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import Protected from '@/components/auth/Protected'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 type ProductWithCategory = {
     id: string
@@ -25,6 +26,8 @@ export default function InventoryPage() {
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const { systemType } = useSystem()
+    // Add delete confirmation state
+    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
     useEffect(() => {
         fetchProducts()
@@ -45,8 +48,6 @@ export default function InventoryPage() {
         }
         setLoading(false)
     }
-
-
 
     async function handleSeedData() {
         if (!confirm('Hành động này sẽ thêm dữ liệu mẫu vào danh mục và sản phẩm. Tiếp tục?')) return
@@ -252,15 +253,22 @@ export default function InventoryPage() {
         }
     }
 
-    async function handleDelete(id: string) {
-        if (!confirm('Bạn có chắc chắn muốn xóa sản phẩm này?')) return
+    // Opens confirmation dialog instead of window.confirm
+    function handleDelete(id: string) {
+        setDeleteConfirmId(id)
+    }
 
-        const { error } = await supabase.from('products').delete().eq('id', id)
+    // Actual delete function called by dialog
+    const executeDelete = async () => {
+        if (!deleteConfirmId) return
+
+        const { error } = await supabase.from('products').delete().eq('id', deleteConfirmId)
         if (error) {
             alert('Lỗi khi xóa: ' + error.message)
         } else {
-            setProducts(prev => prev.filter(p => p.id !== id))
+            setProducts(prev => prev.filter(p => p.id !== deleteConfirmId))
         }
+        setDeleteConfirmId(null)
     }
 
     const filteredProducts = products.filter(product =>
@@ -438,6 +446,17 @@ export default function InventoryPage() {
                     </div>
                 </div>
             </div>
+
+            <ConfirmDialog
+                isOpen={!!deleteConfirmId}
+                title="Xóa sản phẩm"
+                message="Bạn có chắc chắn muốn xóa sản phẩm này không? Hành động này không thể hoàn tác."
+                confirmText="Xóa ngay"
+                cancelText="Hủy"
+                variant="danger"
+                onConfirm={executeDelete}
+                onCancel={() => setDeleteConfirmId(null)}
+            />
         </div>
     )
 }

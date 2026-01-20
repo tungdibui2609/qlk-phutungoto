@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { User } from '@supabase/supabase-js'
 import { Bell, Search, Sparkles, LogOut, Key, Camera, ChevronDown, RefreshCw, LayoutGrid, Menu, PanelLeftClose, PanelLeftOpen, ChevronUp } from 'lucide-react'
-import { useSystem, SYSTEM_CONFIG, SystemType } from '@/contexts/SystemContext'
+import { useSystem, SystemType } from '@/contexts/SystemContext'
 import { useSidebar } from './SidebarContext'
 import { useUser } from '@/contexts/UserContext'
 import ChangePasswordModal from '@/components/auth/ChangePasswordModal'
@@ -19,7 +19,7 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
     const [showPasswordModal, setShowPasswordModal] = useState(false)
     const [showAvatarModal, setShowAvatarModal] = useState(false)
     const { showToast } = useToast()
-    const { systemType, setSystemType, systemName, systemColor } = useSystem()
+    const { systemType, setSystemType, systems } = useSystem()
 
     const handleLogout = async () => {
         await supabase.auth.signOut()
@@ -54,41 +54,42 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
                 <div className="relative">
                     {/* LEFT: SYSTEM SWITCHER - TABS STYLE */}
                     <div className="flex items-center flex-1 overflow-x-auto no-scrollbar gap-2 mr-4">
-                        {Object.entries(SYSTEM_CONFIG).map(([key, config]) => {
-                            const isActive = systemType === key
+                        {systems.map((sys) => {
+                            const isActive = systemType === sys.code
                             // 3. User Permission Logic
-                            // ALLOW if:
-                            // - User is superuser (handled by hasPermission usually, but checking here explicitly via hasPermission('system.full_access'))
-                            // - OR allowed_systems includes 'ALL' or key
                             const allowed = profile?.allowed_systems || []
                             const isAllowed =
                                 hasPermission('system.full_access') ||
                                 allowed.includes('ALL') ||
-                                allowed.includes(key)
+                                allowed.includes(sys.code)
+
+                            // Parse color from class or fallback (Rough heuristic or update DB to be simpler)
+                            // DB has 'bg-blue-600'. Let's just use gray/black for generic if dynamic.
+                            // Or standard styles.
 
                             return (
                                 <button
-                                    key={key}
+                                    key={sys.code}
                                     onClick={() => {
                                         if (isAllowed) {
-                                            setSystemType(key as SystemType)
+                                            setSystemType(sys.code)
                                             router.push('/')
                                         } else {
-                                            showToast(`Bạn không có quyền truy cập vào ${config.name}`, 'error')
+                                            showToast(`Bạn không có quyền truy cập vào ${sys.name}`, 'error')
                                         }
                                     }}
                                     className={`
                                         flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all duration-200 whitespace-nowrap
                                         ${isActive
-                                            ? `bg-${config.color}-50 border-${config.color}-200 text-${config.color}-700 shadow-sm ring-1 ring-${config.color}-100`
+                                            ? `bg-orange-50 border-orange-200 text-orange-700 shadow-sm ring-1 ring-orange-100`
                                             : isAllowed
                                                 ? 'bg-transparent border-transparent text-stone-500 hover:bg-stone-50 hover:text-stone-700'
                                                 : 'bg-stone-50 border-transparent text-stone-300 cursor-not-allowed opacity-60'
                                         }
                                     `}
                                 >
-                                    <span className={`w-2 h-2 rounded-full ${isActive ? `bg-${config.color}-500` : isAllowed ? 'bg-stone-300' : 'bg-stone-200'}`} />
-                                    {config.name}
+                                    <span className={`w-2 h-2 rounded-full ${isActive ? `bg-orange-500` : isAllowed ? 'bg-stone-300' : 'bg-stone-200'}`} />
+                                    {sys.name}
                                 </button>
                             )
                         })}

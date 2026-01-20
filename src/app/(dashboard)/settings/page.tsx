@@ -1,10 +1,11 @@
 'use client'
 import { useState } from 'react'
-import { Building2, Settings as SettingsIcon, Store } from 'lucide-react'
+import { Building2, Settings as SettingsIcon, Store, LayoutGrid } from 'lucide-react'
 import CompanyInfoSection from '@/components/settings/CompanyInfoSection'
 import BranchManagerSection from '@/components/settings/BranchManagerSection'
+import SystemManagerSection from '@/components/settings/SystemManagerSection'
 
-type Tab = 'company' | 'branches'
+type Tab = 'company' | 'branches' | 'systems'
 
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState<Tab>('company')
@@ -12,6 +13,7 @@ export default function SettingsPage() {
     const tabs = [
         { id: 'company' as Tab, label: 'Thông tin công ty', icon: Building2 },
         { id: 'branches' as Tab, label: 'Quản lý Chi nhánh', icon: Store },
+        { id: 'systems' as Tab, label: 'Phân hệ Kho', icon: LayoutGrid },
     ]
 
     return (
@@ -59,6 +61,12 @@ export default function SettingsPage() {
                 {activeTab === 'branches' && (
                     <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                         <BranchManagerSection />
+                    </div>
+                )}
+
+                {activeTab === 'systems' && (
+                    <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+                        <SystemManagerSection />
                     </div>
                 )}
             </div>

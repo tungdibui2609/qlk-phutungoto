@@ -1,13 +1,16 @@
-'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { ArrowLeft, Save, Loader2, User, Phone, Mail, Shield, Building, Warehouse } from 'lucide-react'
 import Link from 'next/link'
-import { SYSTEM_CONFIG } from '@/contexts/SystemContext'
 
 interface Role {
     id: string
+    code: string
+    name: string
+}
+
+interface System {
     code: string
     name: string
 }
@@ -34,6 +37,7 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
     const router = useRouter()
     const [loading, setLoading] = useState(false)
     const [roles, setRoles] = useState<Role[]>([])
+    const [systems, setSystems] = useState<System[]>([])
 
     const [formData, setFormData] = useState({
         employee_code: initialData?.employee_code || '',
@@ -51,10 +55,16 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
 
     useEffect(() => {
         fetchRoles()
+        fetchSystems()
         if (!isEditMode) {
             fetchLatestEmployeeCode()
         }
     }, [])
+
+    async function fetchSystems() {
+        const { data } = await supabase.from('systems').select('code, name').order('created_at')
+        if (data) setSystems(data)
+    }
 
     async function fetchLatestEmployeeCode() {
         try {
@@ -404,21 +414,21 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                             Phạm vi hoạt động (Kho)
                         </label>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {Object.entries(SYSTEM_CONFIG).map(([key, config]) => (
-                                <label key={key} className={`
+                            {systems.map((sys) => (
+                                <label key={sys.code} className={`
                                     flex items-center gap-2 cursor-pointer p-2 rounded border transition-colors select-none
-                                    ${(formData.allowed_systems || []).includes(key)
+                                    ${(formData.allowed_systems || []).includes(sys.code)
                                         ? 'bg-orange-50 border-orange-200 text-orange-800'
                                         : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
                                     }
                                 `}>
                                     <input
                                         type="checkbox"
-                                        checked={(formData.allowed_systems || []).includes(key)}
-                                        onChange={() => handleSystemChange(key)}
+                                        checked={(formData.allowed_systems || []).includes(sys.code)}
+                                        onChange={() => handleSystemChange(sys.code)}
                                         className="w-4 h-4 rounded text-orange-500 focus:ring-orange-400 border-stone-300 accent-orange-500"
                                     />
-                                    <span className="text-sm font-medium">{config.name}</span>
+                                    <span className="text-sm font-medium">{sys.name}</span>
                                 </label>
                             ))}
                         </div>

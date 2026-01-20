@@ -79,7 +79,7 @@ export default function Sidebar() {
     const pathname = usePathname()
     const router = useRouter()
     const { isCollapsed, setCollapsed, isReady } = useSidebar()
-    const { systemName, systemColor, systemType } = useSystem()
+    const { currentSystem } = useSystem()
     const [expandedMenus, setExpandedMenus] = useState<string[]>(['Quản lý sản phẩm'])
     const sidebarRef = useRef<HTMLElement>(null)
     const [companyInfo, setCompanyInfo] = useState<CompanyInfo>({ name: 'Toàn Thắng', logo_url: null })
@@ -207,7 +207,7 @@ export default function Sidebar() {
                     {isReady && !isCollapsed && (
                         <div>
                             <h1 className="font-bold text-sm text-stone-800 tracking-tight truncate max-w-[150px]">{companyInfo.name}</h1>
-                            <p className={`text-[10px] font-semibold text-${systemColor}-600`}>{systemName}</p>
+                            <p className="text-[10px] font-semibold text-orange-600">{currentSystem?.name || '...'}</p>
                         </div>
                     )}
                 </div>

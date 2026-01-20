@@ -3,10 +3,13 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Plus, Search, FolderTree, Edit, Trash2, Save, X, Loader2 } from 'lucide-react'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { useSystem } from '@/contexts/SystemContext'
 
 type Category = Database['public']['Tables']['categories']['Row']
 
 export default function CategoriesPage() {
+    const { systemType } = useSystem()
     const [categories, setCategories] = useState<Category[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
@@ -17,6 +20,7 @@ export default function CategoriesPage() {
     const [newName, setNewName] = useState('')
     const [newDescription, setNewDescription] = useState('')
     const [saving, setSaving] = useState(false)
+    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
     useEffect(() => {
         fetchCategories()
@@ -27,6 +31,7 @@ export default function CategoriesPage() {
         const { data, error } = await supabase
             .from('categories')
             .select('*')
+            .eq('system_type', systemType)
             .order('name')
 
         if (data) setCategories(data)
@@ -37,12 +42,10 @@ export default function CategoriesPage() {
         if (!newName.trim()) return
         setSaving(true)
 
-        const slug = newName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
-
         const { error } = await (supabase.from('categories') as any).insert([{
             name: newName.trim(),
             description: newDescription.trim() || null,
-            slug
+            system_type: systemType
         }])
 
         if (error) {
@@ -74,15 +77,20 @@ export default function CategoriesPage() {
         setSaving(false)
     }
 
-    async function deleteCategory(id: string) {
-        if (!confirm('Bạn có chắc muốn xóa danh mục này?')) return
+    function handleDeleteClick(id: string) {
+        setDeleteConfirmId(id)
+    }
 
-        const { error } = await supabase.from('categories').delete().eq('id', id)
+    async function executeDelete() {
+        if (!deleteConfirmId) return
+
+        const { error } = await supabase.from('categories').delete().eq('id', deleteConfirmId)
         if (error) {
             alert('Lỗi: ' + error.message)
         } else {
             fetchCategories()
         }
+        setDeleteConfirmId(null)
     }
 
     const startEdit = (cat: Category) => {
@@ -191,7 +199,6 @@ export default function CategoriesPage() {
                             <tr>
                                 <th className="text-left px-5 py-4 text-sm font-semibold text-stone-600">Tên danh mục</th>
                                 <th className="text-left px-5 py-4 text-sm font-semibold text-stone-600">Mô tả</th>
-                                <th className="text-left px-5 py-4 text-sm font-semibold text-stone-600">Slug</th>
                                 <th className="text-center px-5 py-4 text-sm font-semibold text-stone-600 w-32">Thao tác</th>
                             </tr>
                         </thead>
@@ -225,11 +232,6 @@ export default function CategoriesPage() {
                                         )}
                                     </td>
                                     <td className="px-5 py-4">
-                                        <span className="font-mono text-sm text-stone-500 bg-stone-100 px-2 py-1 rounded">
-                                            {cat.slug || '-'}
-                                        </span>
-                                    </td>
-                                    <td className="px-5 py-4">
                                         <div className="flex items-center justify-center gap-2">
                                             {editingId === cat.id ? (
                                                 <>
@@ -256,7 +258,7 @@ export default function CategoriesPage() {
                                                         <Edit size={16} />
                                                     </button>
                                                     <button
-                                                        onClick={() => deleteCategory(cat.id)}
+                                                        onClick={() => handleDeleteClick(cat.id)}
                                                         className="p-2 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
                                                     >
                                                         <Trash2 size={16} />
@@ -276,6 +278,17 @@ export default function CategoriesPage() {
             <div className="text-sm text-stone-500 text-right">
                 Tổng cộng {filteredCategories.length} danh mục
             </div>
+
+            <ConfirmDialog
+                isOpen={!!deleteConfirmId}
+                title="Xóa danh mục"
+                message="Bạn có chắc muốn xóa danh mục này? Hành động này có thể ảnh hưởng đến các sản phẩm thuộc danh mục."
+                confirmText="Xóa ngay"
+                cancelText="Hủy"
+                variant="danger"
+                onConfirm={executeDelete}
+                onCancel={() => setDeleteConfirmId(null)}
+            />
         </div>
     )
 }
