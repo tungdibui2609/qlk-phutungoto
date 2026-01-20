@@ -4,15 +4,9 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Plus, Search, Pencil, Trash2, X, Save, AlertCircle, Key } from 'lucide-react'
 
-// Define the type locally since database.types.ts might not be updated yet
-type Permission = {
-    id: string
-    code: string
-    name: string
-    description: string | null
-    module: string
-    created_at: string
-}
+import { Database } from '@/lib/database.types'
+
+type Permission = Database['public']['Tables']['permissions']['Row']
 
 export default function PermissionsPage() {
     const [permissions, setPermissions] = useState<Permission[]>([])
@@ -94,8 +88,8 @@ export default function PermissionsPage() {
         try {
             if (editingPermission) {
                 // Update
-                const { error } = await supabase
-                    .from('permissions')
+                const { error } = await (supabase
+                    .from('permissions') as any)
                     .update({
                         code: formData.code,
                         name: formData.name,
@@ -107,8 +101,8 @@ export default function PermissionsPage() {
                 if (error) throw error
             } else {
                 // Create
-                const { error } = await supabase
-                    .from('permissions')
+                const { error } = await (supabase
+                    .from('permissions') as any)
                     .insert([{
                         code: formData.code,
                         name: formData.name,
@@ -134,8 +128,8 @@ export default function PermissionsPage() {
         if (!confirm('Bạn có chắc chắn muốn xóa quyền này không? Hành động này không thể hoàn tác.')) return
 
         try {
-            const { error } = await supabase
-                .from('permissions')
+            const { error } = await (supabase
+                .from('permissions') as any)
                 .delete()
                 .eq('id', id)
 

@@ -797,6 +797,7 @@ export interface Database {
                     text_color_class: string | null
                     is_active: boolean
                     created_at: string
+                    modules: string[] | null
                 }
                 Insert: {
                     code: string
@@ -807,6 +808,7 @@ export interface Database {
                     text_color_class?: string | null
                     is_active?: boolean
                     created_at?: string
+                    modules?: string[] | null
                 }
                 Update: {
                     code?: string
@@ -816,6 +818,33 @@ export interface Database {
                     bg_color_class?: string | null
                     text_color_class?: string | null
                     is_active?: boolean
+                    created_at?: string
+                    modules?: string[] | null
+                }
+            }
+            permissions: {
+                Row: {
+                    id: string
+                    code: string
+                    name: string
+                    module: string
+                    description: string | null
+                    created_at: string
+                }
+                Insert: {
+                    id?: string
+                    code: string
+                    name: string
+                    module: string
+                    description?: string | null
+                    created_at?: string
+                }
+                Update: {
+                    id?: string
+                    code?: string
+                    name?: string
+                    module?: string
+                    description?: string | null
                     created_at?: string
                 }
             }
