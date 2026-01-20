@@ -38,17 +38,35 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
 
-  // Fetch systems
+  // Fetch systems and subscribe to changes
   useEffect(() => {
     async function fetchSystems() {
       const { data, error } = await supabase.from('systems').select('*').order('created_at', { ascending: true })
       if (data) {
         setSystems(data)
-        // If current systemType is invalid, reset to first one
-        // logic can be added here
       }
     }
     fetchSystems()
+
+    // Realtime subscription
+    const channel = supabase
+      .channel('systems_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'systems'
+        },
+        () => {
+          fetchSystems()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   useEffect(() => {

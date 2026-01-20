@@ -41,6 +41,7 @@ export interface Database {
                     lead_time_days: number | null
                     is_active: boolean
                     is_returnable: boolean
+                    packaging_specification: string | null
                 }
                 Insert: {
                     id?: string
@@ -73,6 +74,7 @@ export interface Database {
                     lead_time_days?: number | null
                     is_active?: boolean
                     is_returnable?: boolean
+                    packaging_specification?: string | null
                 }
                 Update: {
                     id?: string
@@ -105,6 +107,7 @@ export interface Database {
                     lead_time_days?: number | null
                     is_active?: boolean
                     is_returnable?: boolean
+                    packaging_specification?: string | null
                 }
             }
             suppliers: {
