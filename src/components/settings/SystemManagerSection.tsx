@@ -44,6 +44,7 @@ interface System {
     icon: string | null
     bg_color_class: string | null
     text_color_class: string | null
+    modules: string[] | null
     is_active: boolean
     created_at: string
 }

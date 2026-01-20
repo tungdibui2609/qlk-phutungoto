@@ -14,6 +14,7 @@ interface System {
   icon?: string
   bg_color_class?: string
   text_color_class?: string
+  modules?: string | string[] // Supports JSON string or array
 }
 
 interface SystemContextType {

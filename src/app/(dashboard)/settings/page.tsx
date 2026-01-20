@@ -4,8 +4,9 @@ import { Building2, Settings as SettingsIcon, Store, LayoutGrid } from 'lucide-r
 import CompanyInfoSection from '@/components/settings/CompanyInfoSection'
 import BranchManagerSection from '@/components/settings/BranchManagerSection'
 import SystemManagerSection from '@/components/settings/SystemManagerSection'
+import ProductConfigSection from '@/components/settings/ProductConfigSection'
 
-type Tab = 'company' | 'branches' | 'systems'
+type Tab = 'company' | 'branches' | 'systems' | 'product_config'
 
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState<Tab>('company')
@@ -14,6 +15,7 @@ export default function SettingsPage() {
         { id: 'company' as Tab, label: 'Thông tin công ty', icon: Building2 },
         { id: 'branches' as Tab, label: 'Quản lý Chi nhánh', icon: Store },
         { id: 'systems' as Tab, label: 'Phân hệ Kho', icon: LayoutGrid },
+        { id: 'product_config' as Tab, label: 'Cấu hình sản phẩm', icon: SettingsIcon },
     ]
 
     return (
@@ -67,6 +69,12 @@ export default function SettingsPage() {
                 {activeTab === 'systems' && (
                     <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                         <SystemManagerSection />
+                    </div>
+                )}
+
+                {activeTab === 'product_config' && (
+                    <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+                        <ProductConfigSection />
                     </div>
                 )}
             </div>

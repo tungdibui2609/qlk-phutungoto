@@ -6,6 +6,7 @@ import { Database } from '@/lib/database.types'
 import { ArrowLeft, Save, Loader2, Image as ImageIcon, Package, Sparkles, Wrench, DollarSign, Car, Building2, X, Plus, Link as LinkIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useSystem } from '@/contexts/SystemContext'
+import { getFieldsForModules, ModuleField } from '@/lib/product-modules'
 
 type Product = Database['public']['Tables']['products']['Row']
 type Category = Database['public']['Tables']['categories']['Row']
@@ -30,7 +31,7 @@ const QUALITY_GRADES = [
 
 export default function ProductForm({ initialData, isEditMode = false }: ProductFormProps) {
     const router = useRouter()
-    const { systemType } = useSystem()
+    const { systemType, currentSystem } = useSystem() // Using currentSystem to get modules
     const [loading, setLoading] = useState(false)
     const [categories, setCategories] = useState<Category[]>([])
     const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -40,6 +41,18 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
     const [selectedVehicles, setSelectedVehicles] = useState<string[]>([])
     const [crossRefs, setCrossRefs] = useState<string[]>(initialData?.cross_reference_numbers || [])
     const [newCrossRef, setNewCrossRef] = useState('')
+
+    // Dynamic Specification State
+    const [specs, setSpecs] = useState<Record<string, any>>((initialData as any)?.specifications || {})
+
+    // Get fields based on current system modules
+    // Parse modules if it's a string (from DB) or use as is if array
+    const systemModules = currentSystem?.modules
+        ? (typeof currentSystem.modules === 'string' ? JSON.parse(currentSystem.modules) : currentSystem.modules)
+        : []
+
+    const dynamicFields = getFieldsForModules(systemModules)
+    const activeGroups = Array.from(new Set(dynamicFields.map(f => f.group)))
 
     const [formData, setFormData] = useState({
         // Basic
@@ -129,6 +142,10 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
         }
     }
 
+    const handleSpecsChange = (key: string, value: any) => {
+        setSpecs(prev => ({ ...prev, [key]: value }))
+    }
+
     const toggleVehicle = (vehicleId: string) => {
         setSelectedVehicles(prev =>
             prev.includes(vehicleId)
@@ -172,6 +189,7 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
             supplier_id: formData.supplier_id || null,
             cross_reference_numbers: crossRefs.length > 0 ? crossRefs : null,
             price: Number(formData.retail_price), // Keep old price field in sync
+            specifications: specs // Add specifications
         }
 
         try {
@@ -361,24 +379,79 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                         </div>
                     </div>
 
+                    {/* Dynamic Field Groups */}
+                    {activeGroups.map(group => {
+                        const groupFields = dynamicFields.filter(f => f.group === group)
+                        if (groupFields.length === 0) return null
+
+                        return (
+                            <div key={group} className="bg-white rounded-2xl p-6 space-y-5 border border-stone-200">
+                                <h2 className="font-semibold text-lg text-stone-800 pb-3 border-b border-stone-200 flex items-center gap-2">
+                                    <Wrench size={20} className="text-orange-500" />
+                                    {group}
+                                </h2>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {groupFields.map(field => (
+                                        <div key={field.key} className={field.type === 'textarea' ? 'md:col-span-2' : ''}>
+                                            <label className="block text-sm font-medium text-stone-700 mb-2">
+                                                {field.label}
+                                                {field.required && <span className="text-red-500"> *</span>}
+                                            </label>
+
+                                            {field.type === 'textarea' ? (
+                                                <textarea
+                                                    value={specs[field.key] || ''}
+                                                    onChange={(e) => handleSpecsChange(field.key, e.target.value)}
+                                                    className={`${inputClass} resize-none`}
+                                                    rows={3}
+                                                    placeholder={field.placeholder}
+                                                />
+                                            ) : field.type === 'select' ? (
+                                                <select
+                                                    value={specs[field.key] || ''}
+                                                    onChange={(e) => handleSpecsChange(field.key, e.target.value)}
+                                                    className={inputClass}
+                                                >
+                                                    <option value="">-- Chọn --</option>
+                                                    {field.options?.map(opt => (
+                                                        <option key={opt} value={opt}>{opt}</option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <div className="relative">
+                                                    <input
+                                                        type={field.type}
+                                                        value={specs[field.key] || ''}
+                                                        onChange={(e) => handleSpecsChange(field.key, e.target.value)}
+                                                        className={`${inputClass} ${field.suffix ? 'pr-10' : ''}`}
+                                                        placeholder={field.placeholder}
+                                                    />
+                                                    {field.suffix && (
+                                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 text-sm">
+                                                            {field.suffix}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )
+                    })}
+
+                    {/* Hardcoded Technical Info Card - Only show if Automotive module is enabled (backward compatibility) */}
+                    {/* If we moved everything to modules, we can remove this block entirely or keep it for legacy data */}
+                    {/* For now, keeping core tech fields that are not covered by modules or as a fallback */}
                     {/* Technical Info Card */}
                     <div className="bg-white rounded-2xl p-6 space-y-5 border border-stone-200">
                         <h2 className="font-semibold text-lg text-stone-800 pb-3 border-b border-stone-200 flex items-center gap-2">
                             <Wrench size={20} className="text-orange-500" />
-                            Thông tin kỹ thuật
+                            Thông tin khác
                         </h2>
 
                         <div className="grid grid-cols-3 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-stone-700 mb-2">Mã OEM</label>
-                                <input
-                                    name="oem_number"
-                                    value={formData.oem_number}
-                                    onChange={handleChange}
-                                    className={`${inputClass} font-mono`}
-                                    placeholder="VD: 04465-33450"
-                                />
-                            </div>
                             <div>
                                 <label className="block text-sm font-medium text-stone-700 mb-2">Xuất xứ</label>
                                 <select
@@ -393,15 +466,11 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                                             <option key={o.id} value={o.name}>{o.name}</option>
                                         ))
                                     ) : (
-                                        // Fallback if no origins in DB yet
                                         <>
                                             <option value="Việt Nam">Việt Nam</option>
                                             <option value="Nhật Bản">Nhật Bản</option>
                                             <option value="Hàn Quốc">Hàn Quốc</option>
                                             <option value="Trung Quốc">Trung Quốc</option>
-                                            <option value="Thái Lan">Thái Lan</option>
-                                            <option value="Đức">Đức</option>
-                                            <option value="Mỹ">Mỹ</option>
                                         </>
                                     )}
                                 </select>
@@ -419,52 +488,6 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                                         <option key={g.value} value={g.value}>{g.label}</option>
                                     ))}
                                 </select>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-4 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-stone-700 mb-2">Hãng SX</label>
-                                <input
-                                    name="manufacturer"
-                                    value={formData.manufacturer}
-                                    onChange={handleChange}
-                                    className={inputClass}
-                                    placeholder="VD: Bosch"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-stone-700 mb-2">Bảo hành (tháng)</label>
-                                <input
-                                    type="number"
-                                    name="warranty_months"
-                                    value={formData.warranty_months}
-                                    onChange={handleChange}
-                                    className={inputClass}
-                                    min="0"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-stone-700 mb-2">Trọng lượng (kg)</label>
-                                <input
-                                    type="number"
-                                    step="0.001"
-                                    name="weight_kg"
-                                    value={formData.weight_kg}
-                                    onChange={handleChange}
-                                    className={inputClass}
-                                    placeholder="0.5"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-stone-700 mb-2">Kích thước</label>
-                                <input
-                                    name="dimensions"
-                                    value={formData.dimensions}
-                                    onChange={handleChange}
-                                    className={inputClass}
-                                    placeholder="20x15x10 cm"
-                                />
                             </div>
                         </div>
                     </div>
