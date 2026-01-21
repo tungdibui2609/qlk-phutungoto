@@ -97,6 +97,10 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
     const [warehouseName, setWarehouseName] = useState('')
     const [description, setDescription] = useState('')
     const [items, setItems] = useState<OrderItem[]>([])
+    // Logistics State
+    const [vehicleNumber, setVehicleNumber] = useState('')
+    const [driverName, setDriverName] = useState('')
+    const [containerNumber, setContainerNumber] = useState('')
 
     const totalAmount = items.reduce((sum, item) => sum + item.quantity * (item.price || 0), 0)
 
@@ -119,6 +123,9 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
             setItems([])
             setDescription('')
             setCustomerName('')
+            setVehicleNumber('')
+            setDriverName('')
+            setContainerNumber('')
         }
     }, [isOpen])
 
@@ -168,6 +175,9 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                 setWarehouseName(branchesData[0].name)
             }
         }
+
+
+
 
         setLoadingData(false)
     }
@@ -303,7 +313,12 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                     description,
                     status: 'Pending',
                     type: 'Sale',
-                    system_code: systemType
+                    system_code: systemType,
+                    metadata: {
+                        vehicleNumber,
+                        driverName,
+                        containerNumber
+                    }
                 })
                 .select()
                 .single()
@@ -346,7 +361,6 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-7xl h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                 {/* Header */}
-                {/* Header */}
                 <div className="p-6 border-b border-stone-200 dark:border-zinc-800 flex justify-between items-center bg-stone-50 dark:bg-zinc-900/50">
                     <div>
                         <h2 className="text-xl font-bold flex items-center gap-2">
@@ -362,334 +376,409 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6 pb-60">
-                    {/* Section 1: Thông tin phiếu */}
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-2 pb-2 border-b border-stone-200 dark:border-zinc-800">
-                            <div className="w-1 h-4 bg-orange-500 rounded-full"></div>
-                            <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Thông tin phiếu</h3>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Mã phiếu</label>
-                                <input
-                                    type="text"
-                                    value={code}
-                                    onChange={e => setCode(e.target.value)}
-                                    className="w-full px-4 py-2.5 bg-stone-100 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg font-mono font-bold text-stone-800 dark:text-white"
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Kho xuất hàng</label>
-                                <select
-                                    value={warehouseName}
-                                    onChange={e => setWarehouseName(e.target.value)}
-                                    className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
-                                >
-                                    {branches.map(b => (
-                                        <option key={b.id} value={b.name}>{b.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-                    </div>
+                    {/* Module Check */}
+                    {(() => {
+                        const outboundModules = currentSystem?.outbound_modules
+                            ? (typeof currentSystem.outbound_modules === 'string' ? JSON.parse(currentSystem.outbound_modules) : currentSystem.outbound_modules)
+                            : []
 
-                    {/* Section 2: Thông tin khách hàng */}
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-2 pb-2 border-b border-stone-200 dark:border-zinc-800">
-                            <div className="w-1 h-4 bg-blue-500 rounded-full"></div>
-                            <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Thông tin khách hàng</h3>
-                            {customerName && (
-                                <span className="ml-auto text-xs text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-full font-medium">
-                                    {customerName}
-                                </span>
-                            )}
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Khách hàng <span className="text-red-500">*</span></label>
-                                <Combobox
-                                    options={customers.map(c => ({ value: c.id, label: c.name }))}
-                                    value={null}
-                                    onChange={(val) => {
-                                        const c = customers.find(cus => cus.id === val)
-                                        if (c) {
-                                            setCustomerName(c.name)
-                                            setCustomerAddress(c.address || '')
-                                            setCustomerPhone(c.phone || '')
-                                        }
-                                    }}
-                                    onSearchChange={(val) => {
-                                        setCustomerName(val)
-                                    }}
-                                    placeholder="Nhập hoặc chọn khách hàng"
-                                    className="w-full"
-                                    allowCustom={true}
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Địa chỉ</label>
-                                <input
-                                    type="text"
-                                    value={customerAddress}
-                                    onChange={e => setCustomerAddress(e.target.value)}
-                                    className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg"
-                                    placeholder="Địa chỉ giao hàng"
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Số điện thoại</label>
-                                <input
-                                    type="text"
-                                    value={customerPhone}
-                                    onChange={e => setCustomerPhone(e.target.value)}
-                                    className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg"
-                                    placeholder="SĐT liên hệ"
-                                />
-                            </div>
-                        </div>
-                    </div>
+                        const hasModule = (moduleId: string) => {
+                            if (!outboundModules || outboundModules.length === 0) return true
+                            return outboundModules.includes(moduleId)
+                        }
 
-                    {/* Section 3: Ghi chú */}
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-2 pb-2 border-b border-stone-200 dark:border-zinc-800">
-                            <div className="w-1 h-4 bg-stone-400 rounded-full"></div>
-                            <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Diễn giải kèm theo / lý do xuất</h3>
-                        </div>
-                        <textarea
-                            value={description}
-                            onChange={e => setDescription(e.target.value)}
-                            className="w-full px-4 py-3 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg h-20 resize-none text-sm"
-                            placeholder="Diễn giải về lô hàng xuất, lý do xuất, thông tin vận chuyển..."
-                        />
-                    </div>
-
-                    {/* Items Table */}
-                    <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                            <h3 className="font-bold text-stone-900 dark:text-white">Chi tiết hàng hóa</h3>
-                        </div>
-
-                        <div className="border border-stone-200 dark:border-zinc-700 rounded-xl overflow-visible">
-                            <table className="w-full text-xs text-left">
-                                <thead className="bg-stone-50 dark:bg-zinc-800/50 text-stone-500 font-medium text-center">
-                                    <tr>
-                                        <th className="px-4 py-3 w-10">#</th>
-                                        <th className="px-4 py-3 min-w-[370px]">Sản phẩm</th>
-                                        <th className="px-4 py-3 w-24">ĐVT</th>
-                                        <th className="px-4 py-3 w-48 text-right">
-                                            <div className="flex flex-col items-center w-fit ml-auto">
-                                                <span>SL</span>
-                                                <span>Thực xuất</span>
-                                            </div>
-                                        </th>
-                                        <th className="px-4 py-3 w-40 text-right">Đơn giá</th>
-                                        <th className="px-4 py-3 w-32 text-right">Thành tiền</th>
-                                        <th className="px-4 py-3">Ghi chú</th>
-                                        <th className="px-4 py-3 w-10"></th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
-                                    {items.map((item, index) => (
-                                        <tr key={item.id} className="group hover:bg-stone-50 dark:hover:bg-zinc-800/30">
-                                            <td className="px-4 py-3 text-stone-400">{index + 1}</td>
-                                            <td className="px-4 py-3 align-top">
-                                                <Combobox
-                                                    options={products.map(p => ({
-                                                        value: p.id,
-                                                        label: `${p.sku} - ${p.name}`,
-                                                        sku: p.sku,
-                                                        name: p.name
-                                                    }))}
-                                                    value={item.productId}
-                                                    onChange={(val) => updateItem(item.id, 'productId', val)}
-                                                    placeholder="-- Chọn SP --"
-                                                    className="w-full"
-                                                    renderValue={(option) => (
-                                                        <div className="flex flex-col text-left w-full">
-                                                            <div className="text-[10px] text-stone-500 font-mono mb-0.5">{option.sku}</div>
-                                                            <div className="font-medium text-xs text-stone-900 dark:text-gray-100 line-clamp-2 leading-tight">
-                                                                {option.name}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                />
-                                            </td>
-                                            <td className="px-4 py-3 text-center">
-                                                {(() => {
-                                                    const product = products.find(p => p.id === item.productId)
-                                                    if (!product) return <span className="text-stone-500">-</span>
-
-                                                    // Prepare options: Base Unit + Alternatives
-                                                    const options = []
-                                                    if (product.unit) {
-                                                        options.push({ value: product.unit, label: product.unit })
-                                                    }
-                                                    if (product.product_units && product.product_units.length > 0) {
-                                                        product.product_units.forEach(pu => {
-                                                            const uName = units.find(u => u.id === pu.unit_id)?.name
-                                                            if (uName) {
-                                                                options.push({ value: uName, label: uName })
-                                                            }
-                                                        })
-                                                    }
-                                                    // Deduplicate just in case
-                                                    const uniqueOptions = Array.from(new Map(options.map(item => [item['value'], item])).values());
-
-                                                    if (uniqueOptions.length <= 1) {
-                                                        return <span className='text-stone-700 font-medium'>{item.unit || product.unit || '-'}</span>
-                                                    }
-
-                                                    return (
-                                                        <select
-                                                            value={item.unit}
-                                                            onChange={(e) => updateItem(item.id, 'unit', e.target.value)}
-                                                            className={`w-full bg-transparent border-none outline-none font-medium text-center focus:ring-0 cursor-pointer hover:bg-stone-100 rounded ${!item.unit ? 'text-orange-500 animate-pulse' : 'text-stone-700'}`}
-                                                        >
-                                                            <option value="" disabled>-- ĐVT --</option>
-                                                            {uniqueOptions.map(opt => (
-                                                                <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                                            ))}
-                                                        </select>
-                                                    )
-                                                })()}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <div className="flex flex-col gap-2">
-                                                    <div className="relative">
-                                                        <input
-                                                            type="text"
-                                                            value={item.quantity ? item.quantity.toLocaleString('vi-VN') : ''}
-                                                            onChange={e => {
-                                                                const val = e.target.value.replace(/\D/g, '')
-                                                                updateItem(item.id, 'quantity', Number(val))
-                                                            }}
-                                                            className="w-full bg-transparent outline-none text-right font-medium pr-6"
-                                                        />
-                                                        <button
-                                                            onClick={() => {
-                                                                const newItems = [...items]
-                                                                newItems[index].isDocQtyVisible = !newItems[index].isDocQtyVisible
-                                                                setItems(newItems)
-                                                            }}
-                                                            className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 rounded-md hover:bg-stone-100"
-                                                            title="Nhập số lượng yêu cầu"
-                                                            tabIndex={-1}
-                                                        >
-                                                            <ChevronDown size={14} className={`transition-transform duration-200 ${item.isDocQtyVisible ? 'rotate-180' : ''}`} />
-                                                        </button>
-                                                    </div>
-
-                                                    {item.isDocQtyVisible && (
-                                                        <div className="relative animate-in slide-in-from-top-2 duration-200">
-                                                            <div className="text-[10px] text-stone-500 text-center mb-0.5">SL yêu cầu</div>
-                                                            <input
-                                                                type="text"
-                                                                value={item.document_quantity ? item.document_quantity.toLocaleString('vi-VN') : ''}
-                                                                onChange={e => {
-                                                                    const val = e.target.value.replace(/\D/g, '')
-                                                                    updateItem(item.id, 'document_quantity', Number(val))
-                                                                }}
-                                                                className="w-full bg-stone-50 border border-stone-200 rounded px-2 py-1 text-right text-xs text-stone-600 outline-none focus:border-blue-500"
-                                                                placeholder="SL yêu cầu"
-                                                            />
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3">
+                        return (
+                            <>
+                                {/* Section 1: Thông tin phiếu (Basic) */}
+                                {(hasModule('outbound_basic') || true) && (
+                                    <div className="space-y-4">
+                                        <div className="flex items-center gap-2 pb-2 border-b border-stone-200 dark:border-zinc-800">
+                                            <div className="w-1 h-4 bg-orange-500 rounded-full"></div>
+                                            <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Thông tin phiếu</h3>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="space-y-1.5">
+                                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Mã phiếu</label>
                                                 <input
                                                     type="text"
-                                                    value={item.price ? item.price.toLocaleString('vi-VN') : ''}
-                                                    onChange={e => {
-                                                        const val = e.target.value.replace(/\D/g, '')
-                                                        updateItem(item.id, 'price', val ? Number(val) : 0)
-                                                    }}
-                                                    className="w-full bg-transparent outline-none text-right font-medium"
-                                                    placeholder="0"
+                                                    value={code}
+                                                    onChange={e => setCode(e.target.value)}
+                                                    className="w-full px-4 py-2.5 bg-stone-100 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg font-mono font-bold text-stone-800 dark:text-white"
                                                 />
-                                            </td>
-                                            <td className="px-4 py-3 text-right font-medium text-stone-700 dark:text-gray-300">
-                                                {(item.quantity * (item.price || 0)).toLocaleString()}
-                                            </td>
-                                            <td className="px-4 py-3 relative">
-                                                <div className="flex items-center justify-center">
-                                                    <button
-                                                        onClick={() => {
-                                                            const newItems = [...items]
-                                                            // Close others
-                                                            newItems.forEach(i => { if (i.id !== item.id) i.isNoteOpen = false })
-                                                            newItems[index].isNoteOpen = !newItems[index].isNoteOpen
-                                                            setItems(newItems)
-                                                        }}
-                                                        className={`p-2 rounded-full transition-colors ${item.note ? 'text-blue-600 bg-blue-50' : 'text-stone-400 hover:text-stone-600 hover:bg-stone-100'}`}
-                                                        title="Ghi chú"
-                                                    >
-                                                        <FilePenLine size={16} />
-                                                    </button>
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Kho xuất hàng</label>
+                                                <select
+                                                    value={warehouseName}
+                                                    onChange={e => setWarehouseName(e.target.value)}
+                                                    className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                                                >
+                                                    {branches.map(b => (
+                                                        <option key={b.id} value={b.name}>{b.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
 
-                                                    {item.isNoteOpen && (
+                                {/* Section 2: Thông tin khách hàng */}
+                                {(hasModule('outbound_basic') || true) && (
+                                    <div className="space-y-4">
+                                        <div className="flex items-center gap-2 pb-2 border-b border-stone-200 dark:border-zinc-800">
+                                            <div className="w-1 h-4 bg-blue-500 rounded-full"></div>
+                                            <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Thông tin khách hàng</h3>
+                                            {customerName && (
+                                                <span className="ml-auto text-xs text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-full font-medium">
+                                                    {customerName}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div className="space-y-1.5">
+                                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Khách hàng <span className="text-red-500">*</span></label>
+                                                <Combobox
+                                                    options={customers.map(c => ({ value: c.id, label: c.name }))}
+                                                    value={null}
+                                                    onChange={(val) => {
+                                                        const c = customers.find(cus => cus.id === val)
+                                                        if (c) {
+                                                            setCustomerName(c.name)
+                                                            setCustomerAddress(c.address || '')
+                                                            setCustomerPhone(c.phone || '')
+                                                        }
+                                                    }}
+                                                    onSearchChange={(val) => {
+                                                        setCustomerName(val)
+                                                    }}
+                                                    placeholder="Nhập hoặc chọn khách hàng"
+                                                    className="w-full"
+                                                    allowCustom={true}
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Địa chỉ</label>
+                                                <input
+                                                    type="text"
+                                                    value={customerAddress}
+                                                    onChange={e => setCustomerAddress(e.target.value)}
+                                                    className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg"
+                                                    placeholder="Địa chỉ giao hàng"
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Số điện thoại</label>
+                                                <input
+                                                    type="text"
+                                                    value={customerPhone}
+                                                    onChange={e => setCustomerPhone(e.target.value)}
+                                                    className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg"
+                                                    placeholder="SĐT liên hệ"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* NEW Module: Logistics */}
+                                {hasModule('outbound_logistics') && (
+                                    <div className="space-y-4 pt-2">
+                                        <div className="flex items-center gap-2 pb-2 border-b border-stone-200 dark:border-zinc-800">
+                                            <div className="w-1 h-4 bg-teal-500 rounded-full"></div>
+                                            <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Vận chuyển & Giao hàng</h3>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                            <div className="space-y-1.5">
+                                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Biển số xe</label>
+                                                <input
+                                                    type="text"
+                                                    value={vehicleNumber}
+                                                    onChange={e => setVehicleNumber(e.target.value)}
+                                                    className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg"
+                                                    placeholder="VD: 29C-123.45"
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Tài xế/Người nhận</label>
+                                                <input
+                                                    type="text"
+                                                    value={driverName}
+                                                    onChange={e => setDriverName(e.target.value)}
+                                                    className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg"
+                                                    placeholder="Tên người nhận hàng"
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Container / Chuyến</label>
+                                                <input
+                                                    type="text"
+                                                    value={containerNumber}
+                                                    onChange={e => setContainerNumber(e.target.value)}
+                                                    className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg"
+                                                    placeholder="Số container..."
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+
+                                {/* Section 3: Ghi chú */}
+                                <div className="space-y-4">
+                                    <div className="flex items-center gap-2 pb-2 border-b border-stone-200 dark:border-zinc-800">
+                                        <div className="w-1 h-4 bg-stone-400 rounded-full"></div>
+                                        <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Diễn giải kèm theo / lý do xuất</h3>
+                                    </div>
+                                    <textarea
+                                        value={description}
+                                        onChange={e => setDescription(e.target.value)}
+                                        className="w-full px-4 py-3 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg h-20 resize-none text-sm"
+                                        placeholder="Diễn giải về lô hàng xuất, lý do xuất, thông tin vận chuyển..."
+                                    />
+                                </div>
+
+                                {/* Items Table */}
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="font-bold text-stone-900 dark:text-white">Chi tiết hàng hóa</h3>
+                                    </div>
+
+                                    <div className="border border-stone-200 dark:border-zinc-700 rounded-xl overflow-visible">
+                                        <table className="w-full text-xs text-left">
+                                            <thead className="bg-stone-50 dark:bg-zinc-800/50 text-stone-500 font-medium text-center">
+                                                <tr>
+                                                    <th className="px-4 py-3 w-10">#</th>
+                                                    <th className="px-4 py-3 min-w-[370px]">Sản phẩm</th>
+                                                    <th className="px-4 py-3 w-24">ĐVT</th>
+                                                    <th className="px-4 py-3 w-48 text-right">
+                                                        <div className="flex flex-col items-center w-fit ml-auto">
+                                                            <span>SL</span>
+                                                            <span>Thực xuất</span>
+                                                        </div>
+                                                    </th>
+
+                                                    {/* Module Financials */}
+                                                    {hasModule('outbound_financials') && (
                                                         <>
-                                                            <div
-                                                                className="fixed inset-0 z-[60]"
-                                                                onClick={() => {
-                                                                    const newItems = [...items]
-                                                                    newItems[index].isNoteOpen = false
-                                                                    setItems(newItems)
-                                                                }}
-                                                            />
-                                                            <div className="absolute right-full top-0 mr-2 z-[70] w-64 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg shadow-xl p-3 animate-in fade-in zoom-in-95 duration-200">
-                                                                <div className="mb-2 font-medium text-sm text-stone-700 dark:text-gray-200">Ghi chú</div>
-                                                                <textarea
-                                                                    value={item.note}
-                                                                    onChange={e => updateItem(item.id, 'note', e.target.value)}
-                                                                    className="w-full h-24 p-2 text-sm border border-stone-200 dark:border-zinc-700 rounded-md bg-stone-50 dark:bg-zinc-900 outline-none focus:border-blue-500 resize-none"
-                                                                    placeholder="Nhập ghi chú..."
-                                                                    autoFocus
-                                                                />
-                                                            </div>
+                                                            <th className="px-4 py-3 w-40 text-right">Đơn giá</th>
+                                                            <th className="px-4 py-3 w-32 text-right">Thành tiền</th>
                                                         </>
                                                     )}
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3 text-center">
-                                                <button
-                                                    onClick={() => removeItem(item.id)}
-                                                    className="text-stone-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                    {items.length === 0 && (
-                                        <tr>
-                                            <td colSpan={10} className="px-4 py-8 text-center text-stone-400">
-                                                Chưa có sản phẩm nào
-                                            </td>
-                                        </tr>
-                                    )}
-                                    {items.length > 0 && (
-                                        <tr className="bg-stone-50 dark:bg-zinc-800/50 font-bold border-t border-stone-200 dark:border-zinc-700">
-                                            <td colSpan={5} className="px-4 py-3 text-right text-stone-900 dark:text-white">
-                                                Tổng cộng:
-                                            </td>
-                                            <td className="px-4 py-3 text-right text-orange-600 text-base">
-                                                {totalAmount.toLocaleString()}
-                                            </td>
-                                            <td colSpan={2} className="px-4 py-3"></td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                            <button
-                                onClick={addItem}
-                                className="w-full py-3 flex items-center justify-center gap-2 text-stone-500 hover:text-orange-600 hover:bg-orange-50 transition-colors border-t border-stone-200 dark:border-zinc-700 font-medium text-sm"
-                            >
-                                <Plus size={16} />
-                                Thêm dòng
-                            </button>
-                        </div>
-                    </div>
+
+                                                    <th className="px-4 py-3">Ghi chú</th>
+                                                    <th className="px-4 py-3 w-10"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
+                                                {items.map((item, index) => (
+                                                    <tr key={item.id} className="group hover:bg-stone-50 dark:hover:bg-zinc-800/30">
+                                                        <td className="px-4 py-3 text-stone-400">{index + 1}</td>
+                                                        <td className="px-4 py-3 align-top">
+                                                            <Combobox
+                                                                options={products.map(p => ({
+                                                                    value: p.id,
+                                                                    label: `${p.sku} - ${p.name}`,
+                                                                    sku: p.sku,
+                                                                    name: p.name
+                                                                }))}
+                                                                value={item.productId}
+                                                                onChange={(val) => updateItem(item.id, 'productId', val)}
+                                                                placeholder="-- Chọn SP --"
+                                                                className="w-full"
+                                                                renderValue={(option) => (
+                                                                    <div className="flex flex-col text-left w-full">
+                                                                        <div className="text-[10px] text-stone-500 font-mono mb-0.5">{option.sku}</div>
+                                                                        <div className="font-medium text-xs text-stone-900 dark:text-gray-100 line-clamp-2 leading-tight">
+                                                                            {option.name}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            />
+                                                        </td>
+                                                        <td className="px-4 py-3 text-center">
+                                                            {(() => {
+                                                                const product = products.find(p => p.id === item.productId)
+                                                                if (!product) return <span className="text-stone-500">-</span>
+
+                                                                // Prepare options: Base Unit + Alternatives
+                                                                const options = []
+                                                                if (product.unit) {
+                                                                    options.push({ value: product.unit, label: product.unit })
+                                                                }
+                                                                if (product.product_units && product.product_units.length > 0) {
+                                                                    product.product_units.forEach(pu => {
+                                                                        const uName = units.find(u => u.id === pu.unit_id)?.name
+                                                                        if (uName) {
+                                                                            options.push({ value: uName, label: uName })
+                                                                        }
+                                                                    })
+                                                                }
+                                                                // Deduplicate just in case
+                                                                const uniqueOptions = Array.from(new Map(options.map(item => [item['value'], item])).values());
+
+                                                                if (uniqueOptions.length <= 1) {
+                                                                    return <span className='text-stone-700 font-medium'>{item.unit || product.unit || '-'}</span>
+                                                                }
+
+                                                                return (
+                                                                    <select
+                                                                        value={item.unit}
+                                                                        onChange={(e) => updateItem(item.id, 'unit', e.target.value)}
+                                                                        className={`w-full bg-transparent border-none outline-none font-medium text-center focus:ring-0 cursor-pointer hover:bg-stone-100 rounded ${!item.unit ? 'text-orange-500 animate-pulse' : 'text-stone-700'}`}
+                                                                    >
+                                                                        <option value="" disabled>-- ĐVT --</option>
+                                                                        {uniqueOptions.map(opt => (
+                                                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                )
+                                                            })()}
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            <div className="flex flex-col gap-2">
+                                                                <div className="relative">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={item.quantity ? item.quantity.toLocaleString('vi-VN') : ''}
+                                                                        onChange={e => {
+                                                                            const val = e.target.value.replace(/\D/g, '')
+                                                                            updateItem(item.id, 'quantity', Number(val))
+                                                                        }}
+                                                                        className="w-full bg-transparent outline-none text-right font-medium pr-6"
+                                                                    />
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            const newItems = [...items]
+                                                                            newItems[index].isDocQtyVisible = !newItems[index].isDocQtyVisible
+                                                                            setItems(newItems)
+                                                                        }}
+                                                                        className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 rounded-md hover:bg-stone-100"
+                                                                        title="Nhập số lượng yêu cầu"
+                                                                        tabIndex={-1}
+                                                                    >
+                                                                        <ChevronDown size={14} className={`transition-transform duration-200 ${item.isDocQtyVisible ? 'rotate-180' : ''}`} />
+                                                                    </button>
+                                                                </div>
+
+                                                                {item.isDocQtyVisible && (
+                                                                    <div className="relative animate-in slide-in-from-top-2 duration-200">
+                                                                        <div className="text-[10px] text-stone-500 text-center mb-0.5">SL yêu cầu</div>
+                                                                        <input
+                                                                            type="text"
+                                                                            value={item.document_quantity ? item.document_quantity.toLocaleString('vi-VN') : ''}
+                                                                            onChange={e => {
+                                                                                const val = e.target.value.replace(/\D/g, '')
+                                                                                updateItem(item.id, 'document_quantity', Number(val))
+                                                                            }}
+                                                                            className="w-full bg-stone-50 border border-stone-200 rounded px-2 py-1 text-right text-xs text-stone-600 outline-none focus:border-blue-500"
+                                                                            placeholder="SL yêu cầu"
+                                                                        />
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        {/* Module Financials */}
+                                                        {hasModule('outbound_financials') && (
+                                                            <>
+                                                                <td className="px-4 py-3">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={item.price ? item.price.toLocaleString('vi-VN') : ''}
+                                                                        onChange={e => {
+                                                                            const val = e.target.value.replace(/\D/g, '')
+                                                                            updateItem(item.id, 'price', val ? Number(val) : 0)
+                                                                        }}
+                                                                        className="w-full bg-transparent outline-none text-right font-medium"
+                                                                        placeholder="0"
+                                                                    />
+                                                                </td>
+                                                                <td className="px-4 py-3 text-right font-medium text-stone-700 dark:text-gray-300">
+                                                                    {(item.quantity * (item.price || 0)).toLocaleString()}
+                                                                </td>
+                                                            </>
+                                                        )}
+                                                        <td className="px-4 py-3 relative">
+                                                            <div className="flex items-center justify-center">
+                                                                <button
+                                                                    onClick={() => {
+                                                                        const newItems = [...items]
+                                                                        // Close others
+                                                                        newItems.forEach(i => { if (i.id !== item.id) i.isNoteOpen = false })
+                                                                        newItems[index].isNoteOpen = !newItems[index].isNoteOpen
+                                                                        setItems(newItems)
+                                                                    }}
+                                                                    className={`p-2 rounded-full transition-colors ${item.note ? 'text-blue-600 bg-blue-50' : 'text-stone-400 hover:text-stone-600 hover:bg-stone-100'}`}
+                                                                    title="Ghi chú"
+                                                                >
+                                                                    <FilePenLine size={16} />
+                                                                </button>
+
+                                                                {item.isNoteOpen && (
+                                                                    <>
+                                                                        <div
+                                                                            className="fixed inset-0 z-[60]"
+                                                                            onClick={() => {
+                                                                                const newItems = [...items]
+                                                                                newItems[index].isNoteOpen = false
+                                                                                setItems(newItems)
+                                                                            }}
+                                                                        />
+                                                                        <div className="absolute right-full top-0 mr-2 z-[70] w-64 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg shadow-xl p-3 animate-in fade-in zoom-in-95 duration-200">
+                                                                            <div className="mb-2 font-medium text-sm text-stone-700 dark:text-gray-200">Ghi chú</div>
+                                                                            <textarea
+                                                                                value={item.note}
+                                                                                onChange={e => updateItem(item.id, 'note', e.target.value)}
+                                                                                className="w-full h-24 p-2 text-sm border border-stone-200 dark:border-zinc-700 rounded-md bg-stone-50 dark:bg-zinc-900 outline-none focus:border-blue-500 resize-none"
+                                                                                placeholder="Nhập ghi chú..."
+                                                                                autoFocus
+                                                                            />
+                                                                        </div>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-center">
+                                                            <button
+                                                                onClick={() => removeItem(item.id)}
+                                                                className="text-stone-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                                {items.length === 0 && (
+                                                    <tr>
+                                                        <td colSpan={10} className="px-4 py-8 text-center text-stone-400">
+                                                            Chưa có sản phẩm nào
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                                {items.length > 0 && hasModule('outbound_financials') && (
+                                                    <tr className="bg-stone-50 dark:bg-zinc-800/50 font-bold border-t border-stone-200 dark:border-zinc-700">
+                                                        <td colSpan={5} className="px-4 py-3 text-right text-stone-900 dark:text-white">
+                                                            Tổng cộng:
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right text-orange-600 text-base">
+                                                            {totalAmount.toLocaleString()}
+                                                        </td>
+                                                        <td colSpan={2} className="px-4 py-3"></td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                        <button
+                                            onClick={addItem}
+                                            className="w-full py-3 flex items-center justify-center gap-2 text-stone-500 hover:text-orange-600 hover:bg-orange-50 transition-colors border-t border-stone-200 dark:border-zinc-700 font-medium text-sm"
+                                        >
+                                            <Plus size={16} />
+                                            Thêm dòng
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
+                        ) // End of Module Checking Function
+                    })()}
                 </div>
 
                 {/* Footer */}

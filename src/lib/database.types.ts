@@ -263,10 +263,10 @@ export interface Database {
                     created_at?: string
                     warehouse_name?: string | null
                     description?: string | null
-                    supplier_address?: string | null
                     supplier_phone?: string | null
                     image_url?: string | null
                     system_code?: string | null
+                    metadata?: Json | null
                 }
                 Update: {
                     id?: string

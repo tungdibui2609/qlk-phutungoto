@@ -4,10 +4,11 @@ import CompanyInfoSection from '@/components/settings/CompanyInfoSection'
 import BranchManagerSection from '@/components/settings/BranchManagerSection'
 import SystemManagerSection from '@/components/settings/SystemManagerSection'
 import ProductConfigSection from '@/components/settings/ProductConfigSection'
+import OrderConfigSection from '@/components/settings/OrderConfigSection'
 import MenuManagerSection from '@/components/settings/MenuManagerSection'
-import { Building2, Settings as SettingsIcon, Store, LayoutGrid, List } from 'lucide-react'
+import { Building2, Settings as SettingsIcon, Store, LayoutGrid, List, FileText } from 'lucide-react'
 
-type Tab = 'company' | 'branches' | 'systems' | 'product_config' | 'menus'
+type Tab = 'company' | 'branches' | 'systems' | 'product_config' | 'order_config' | 'menus'
 
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState<Tab>('company')
@@ -16,7 +17,9 @@ export default function SettingsPage() {
         { id: 'company' as Tab, label: 'Thông tin công ty', icon: Building2 },
         { id: 'branches' as Tab, label: 'Quản lý Chi nhánh', icon: Store },
         { id: 'systems' as Tab, label: 'Phân hệ Kho', icon: LayoutGrid },
+
         { id: 'product_config' as Tab, label: 'Cấu hình sản phẩm', icon: SettingsIcon },
+        { id: 'order_config' as Tab, label: 'Cấu hình phiếu', icon: FileText },
         { id: 'menus' as Tab, label: 'Menu Sidebar', icon: List },
     ]
 
@@ -77,6 +80,12 @@ export default function SettingsPage() {
                 {activeTab === 'product_config' && (
                     <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                         <ProductConfigSection />
+                    </div>
+                )}
+
+                {activeTab === 'order_config' && (
+                    <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+                        <OrderConfigSection />
                     </div>
                 )}
 

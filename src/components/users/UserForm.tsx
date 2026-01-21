@@ -64,7 +64,7 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
     }, [])
 
     async function fetchSystems() {
-        const { data } = await supabase.from('systems').select('code, name').order('created_at')
+        const { data } = await (supabase.from('systems') as any).select('code, name').order('created_at')
         if (data) setSystems(data)
     }
 

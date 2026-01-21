@@ -616,7 +616,7 @@ function OutboundPrintContent() {
                     />
                 </div>
                 <div className="flex items-center">
-                    <span className="text-gray-600 shrink-0">- Địa chỉ (bộ phận):</span>
+                    <span className="text-gray-600 shrink-0">- Địa chỉ ( bộ phận ):</span>
                     <EditableText
                         value={editCustomerAddress}
                         onChange={setEditCustomerAddress}

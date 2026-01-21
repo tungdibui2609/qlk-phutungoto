@@ -15,6 +15,8 @@ interface System {
   bg_color_class?: string
   text_color_class?: string
   modules?: string | string[] // Supports JSON string or array
+  inbound_modules?: string | string[]
+  outbound_modules?: string | string[]
   is_active?: boolean
   sort_order?: number
 }
@@ -43,9 +45,20 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
   // Fetch systems and subscribe to changes
   useEffect(() => {
     async function fetchSystems() {
-      const { data, error } = await supabase.from('systems').select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
-      if (data) {
-        setSystems(data)
+      const { data: systemsData, error: sysError } = await (supabase.from('systems') as any).select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
+      const { data: configsData, error: configError } = await (supabase.from('system_configs') as any).select('*')
+
+      if (systemsData) {
+        // Merge configs into systems
+        const mergedSystems = systemsData.map((sys: any) => {
+          const config = configsData?.find((c: any) => c.system_code === sys.code)
+          return {
+            ...sys,
+            inbound_modules: config?.inbound_modules || [],
+            outbound_modules: config?.outbound_modules || []
+          }
+        })
+        setSystems(mergedSystems)
       }
     }
     fetchSystems()
@@ -59,6 +72,17 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
           event: '*',
           schema: 'public',
           table: 'systems'
+        },
+        () => {
+          fetchSystems()
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'system_configs'
         },
         () => {
           fetchSystems()
