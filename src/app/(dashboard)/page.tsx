@@ -159,9 +159,7 @@ export default function Home() {
                                         <p className="font-semibold text-stone-800">{cat.name}</p>
                                         <p className="text-sm text-stone-500">{cat.description || 'Không có mô tả'}</p>
                                     </div>
-                                    <span className="text-xs px-2 py-1 rounded font-mono bg-stone-100 text-stone-500">
-                                        {cat.slug}
-                                    </span>
+
                                 </div>
                             ))}
                         </div>

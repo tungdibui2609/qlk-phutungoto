@@ -8,7 +8,7 @@ interface Supplier {
     code: string
     name: string
     phone: string | null
-    is_active: boolean
+    is_active: boolean | null
 }
 
 export default function SupplierDebtsPage() {

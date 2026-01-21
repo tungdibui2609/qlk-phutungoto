@@ -11,12 +11,12 @@ import { Combobox } from '@/components/ui/Combobox'
 
 type Lot = Database['public']['Tables']['lots']['Row'] & {
     lot_items: (Database['public']['Tables']['lot_items']['Row'] & {
-        products: { name: string; unit: string; product_code?: string; sku: string } | null
+        products: { name: string; unit: string | null; product_code?: string; sku: string } | null
     })[] | null
     suppliers: { name: string } | null
     positions: { code: string }[] | null
     // Legacy support for display if needed, but we will primarily use lot_items
-    products?: { name: string; unit: string; product_code?: string } | null
+    products?: { name: string; unit: string | null; product_code?: string } | null
 }
 
 interface LotItemInput {

@@ -20,10 +20,10 @@ interface UserProfile {
     avatar_url: string | null
     role_id: string | null
     department: string | null
-    is_active: boolean
+    is_active: boolean | null
     last_login: string | null
-    created_at: string
-    roles?: Role
+    created_at: string | null
+    roles?: Role | null
 }
 
 export default function UsersPage() {
@@ -213,7 +213,7 @@ export default function UsersPage() {
                                     <td className="px-4 py-3 text-center">
                                         <Protected permission="user.manage">
                                             <button
-                                                onClick={() => toggleUserStatus(user.id, user.is_active)}
+                                                onClick={() => toggleUserStatus(user.id, user.is_active ?? false)}
                                                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${user.is_active
                                                     ? 'bg-green-100 text-green-700 hover:bg-green-200'
                                                     : 'bg-stone-100 text-stone-500 hover:bg-stone-200'

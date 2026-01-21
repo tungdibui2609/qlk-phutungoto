@@ -229,7 +229,7 @@ export default function BranchManagerSection() {
                                         type="checkbox"
                                         name="is_active"
                                         id="is_active"
-                                        defaultChecked={editingBranch ? editingBranch.is_active : true}
+                                        defaultChecked={editingBranch ? (editingBranch.is_active ?? true) : true}
                                         className="w-4 h-4 rounded text-orange-500 focus:ring-orange-500"
                                     />
                                     <label htmlFor="is_active" className="text-sm font-medium text-stone-700 select-none">Đang hoạt động</label>
@@ -240,7 +240,7 @@ export default function BranchManagerSection() {
                                         type="checkbox"
                                         name="is_default"
                                         id="is_default"
-                                        defaultChecked={editingBranch ? editingBranch.is_default : false}
+                                        defaultChecked={editingBranch ? (editingBranch.is_default ?? false) : false}
                                         className="w-4 h-4 rounded text-orange-500 focus:ring-orange-500"
                                     />
                                     <label htmlFor="is_default" className="text-sm font-medium text-stone-700 select-none flex items-center gap-1">

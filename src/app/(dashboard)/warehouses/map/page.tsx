@@ -101,7 +101,7 @@ function WarehouseMapContent() {
             supabase.from('positions').select('*').eq('system_type', systemType).order('code'),
             supabase.from('zones').select('*').eq('system_type', systemType).order('level').order('code'),
             supabase.from('zone_positions').select('*'),
-            supabase.from('inventory').select('position_id').gt('quantity', 0),
+            supabase.from('inventory' as any).select('position_id').gt('quantity', 0),
             supabase.from('zone_layouts').select('*'),
             supabase.from('lots').select('id, code, quantity, inbound_date, created_at, products(name, unit, sku)')
         ])
@@ -207,7 +207,7 @@ function WarehouseMapContent() {
     // Convert layouts array to map for easy lookup
     const layoutsMap = useMemo(() => {
         const map: Record<string, ZoneLayout> = {}
-        layouts.forEach(l => { map[l.zone_id] = l })
+        layouts.forEach(l => { if (l.zone_id) map[l.zone_id] = l })
         return map
     }, [layouts])
 

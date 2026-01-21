@@ -302,7 +302,7 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
         let level = 0
         if (parentId) {
             const parent = zones.find(z => z.id === parentId)
-            if (parent) level = parent.level + 1
+            if (parent) level = (parent.level || 0) + 1
         }
 
         const newZones: LocalZone[] = []
@@ -315,7 +315,8 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
                 parent_id: parentId,
                 level,
                 created_at: new Date().toISOString(),
-                _status: 'new'
+                _status: 'new',
+                system_type: systemType
             })
         }
 
@@ -333,7 +334,7 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
         let parentLevel = -1
         if (parentId) {
             const parent = zones.find(z => z.id === parentId)
-            if (parent) parentLevel = parent.level
+            if (parent) parentLevel = parent.level || 0
         }
 
         const newLocalZones: LocalZone[] = []
@@ -347,7 +348,8 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
                 parent_id: pId,
                 level,
                 created_at: new Date().toISOString(),
-                _status: 'new'
+                _status: 'new',
+                system_type: systemType
             })
 
             for (const child of node.children) {
@@ -364,7 +366,8 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
             parent_id: parentId,
             level: parentLevel + 1,
             created_at: new Date().toISOString(),
-            _status: 'new'
+            _status: 'new',
+            system_type: systemType
         })
 
         // Children
@@ -506,7 +509,7 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
             const zonesToDelete = zones.filter(z => z._status === 'deleted' && originalZones.some(oz => oz.id === z.id))
 
             // Sort by level descending (deepest first)
-            zonesToDelete.sort((a, b) => b.level - a.level)
+            zonesToDelete.sort((a, b) => (b.level ?? 0) - (a.level ?? 0))
             const zoneIdsToDelete = zonesToDelete.map(z => z.id)
 
             if (zoneIdsToDelete.length > 0) {
@@ -558,7 +561,7 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
             // 3. Inserts
             const newZones = zones.filter(z => z._status === 'new')
             if (newZones.length > 0) {
-                newZones.sort((a, b) => a.level - b.level)
+                newZones.sort((a, b) => (a.level ?? 0) - (b.level ?? 0))
                 const cleanZones = newZones.map(z => ({
                     id: z.id,
                     code: z.code,

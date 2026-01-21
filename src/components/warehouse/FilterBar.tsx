@@ -33,7 +33,7 @@ export default function FilterBar({
 
     // Get root zones (level 0 or 1, no parent)
     const rootZones = useMemo(() => {
-        return zones.filter(z => !z.parent_id || z.level <= 1).sort((a, b) => a.code.localeCompare(b.code))
+        return zones.filter(z => !z.parent_id || (z.level ?? 0) <= 1).sort((a, b) => a.code.localeCompare(b.code))
     }, [zones])
 
     const updateFilter = <K extends keyof FilterState>(key: K, value: FilterState[K]) => {
@@ -131,7 +131,7 @@ export default function FilterBar({
                                 <option value="">Tất cả zone</option>
                                 {zones.map(z => (
                                     <option key={z.id} value={z.id}>
-                                        {'  '.repeat(z.level)}{z.code} - {z.name}
+                                        {'  '.repeat(z.level || 0)}{z.code} - {z.name}
                                     </option>
                                 ))}
                             </select>
