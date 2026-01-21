@@ -13,8 +13,8 @@ interface Customer {
     phone: string | null
     email: string | null
     address: string | null
-    is_active: boolean
-    created_at: string
+    is_active: boolean | null
+    created_at: string | null
 }
 
 export default function CustomersPage() {
