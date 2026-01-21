@@ -46,6 +46,7 @@ interface System {
     text_color_class: string | null
     modules: string[] | null
     is_active: boolean
+    sort_order: number // Added
     created_at: string
 }
 
@@ -62,7 +63,8 @@ export default function SystemManagerSection() {
         name: '',
         description: '',
         icon: 'Warehouse',
-        colorIdx: 0
+        colorIdx: 0,
+        sort_order: 0
     })
 
     useEffect(() => {
@@ -71,7 +73,7 @@ export default function SystemManagerSection() {
 
     async function fetchSystems() {
         setLoading(true)
-        const { data, error } = await (supabase.from('systems') as any).select('*').order('created_at')
+        const { data, error } = await (supabase.from('systems') as any).select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
         if (error) {
             showToast('Lỗi tải danh sách kho: ' + error.message, 'error')
         } else {
@@ -99,7 +101,8 @@ export default function SystemManagerSection() {
             name: '',
             description: '',
             icon: 'Warehouse',
-            colorIdx: 0
+            colorIdx: 0,
+            sort_order: 0
         })
         setIsModalOpen(true)
     }
@@ -113,7 +116,8 @@ export default function SystemManagerSection() {
             name: sys.name,
             description: sys.description || '',
             icon: sys.icon || 'Warehouse',
-            colorIdx: cIdx >= 0 ? cIdx : 0
+            colorIdx: cIdx >= 0 ? cIdx : 0,
+            sort_order: sys.sort_order || 0
         })
         setIsModalOpen(true)
     }
@@ -130,6 +134,24 @@ export default function SystemManagerSection() {
         }
     }
 
+    const handleToggleActive = async (sys: System) => {
+        const newStatus = !sys.is_active
+        const action = newStatus ? 'kích hoạt' : 'tạm ngưng'
+        if (!confirm(`Bạn có chắc muốn ${action} hệ thống "${sys.name}"?`)) return
+
+        try {
+            const { error } = await (supabase.from('systems') as any)
+                .update({ is_active: newStatus })
+                .eq('code', sys.code)
+
+            if (error) throw error
+            showToast(`Đã ${action} thành công`, 'success')
+            fetchSystems()
+        } catch (error: any) {
+            showToast(`Lỗi: ${error.message}`, 'error')
+        }
+    }
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
 
@@ -141,7 +163,8 @@ export default function SystemManagerSection() {
             icon: formData.icon,
             bg_color_class: color.bg,
             text_color_class: color.text,
-            is_active: true
+            is_active: true,
+            sort_order: formData.sort_order
         }
 
         try {
@@ -154,7 +177,8 @@ export default function SystemManagerSection() {
                         description: payload.description,
                         icon: payload.icon,
                         bg_color_class: payload.bg_color_class,
-                        text_color_class: payload.text_color_class
+                        text_color_class: payload.text_color_class,
+                        sort_order: payload.sort_order
                     })
                     .eq('code', editingSystem.code)
 
@@ -202,31 +226,46 @@ export default function SystemManagerSection() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {systems.map((sys) => {
                         const IconComponent = ICON_OPTIONS.find(i => i.name === sys.icon)?.icon || Warehouse
+                        const isActive = sys.is_active !== false // Default to true if undefined
 
                         return (
-                            <div key={sys.code} className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative group">
-                                <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div key={sys.code} className={`bg-white border rounded-xl p-5 shadow-sm hover:shadow-md transition-all relative group ${isActive ? 'border-gray-200' : 'border-gray-100 bg-gray-50 opacity-75'}`}>
+                                <div className="absolute top-4 right-4 flex gap-2">
+                                    <button
+                                        onClick={() => handleToggleActive(sys)}
+                                        className={`p-1.5 rounded-md ${isActive ? 'text-amber-500 hover:bg-amber-50' : 'text-green-600 hover:bg-green-50'}`}
+                                        title={isActive ? "Tạm ngưng" : "Kích hoạt lại"}
+                                    >
+                                        {isActive ? <span className="text-xs font-bold border border-amber-500 px-1 rounded">⏸</span> : <span className="text-xs font-bold border border-green-600 px-1 rounded">▶</span>}
+                                    </button>
                                     <button
                                         onClick={() => handleEdit(sys)}
                                         className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-md"
+                                        title="Chỉnh sửa"
                                     >
                                         <Edit size={16} />
                                     </button>
-                                    <button
+                                    {/* Disable delete to encourage soft delete/pause */}
+                                    {/* <button
                                         onClick={() => handleDelete(sys.code)}
                                         className="p-1.5 text-red-500 hover:bg-red-50 rounded-md"
                                     >
                                         <Trash2 size={16} />
-                                    </button>
+                                    </button> */}
                                 </div>
 
                                 <div className="flex items-start gap-4">
-                                    <div className={`p-3 rounded-lg ${sys.bg_color_class?.replace('bg-', 'bg-opacity-10 text-') || 'bg-gray-100 text-gray-600'}`}>
-                                        <IconComponent size={32} className={sys.bg_color_class?.replace('bg-', 'text-') || 'text-gray-600'} />
+                                    <div className={`p-3 rounded-lg ${isActive
+                                        ? (sys.bg_color_class?.replace('bg-', 'bg-opacity-10 text-') || 'bg-gray-100 text-gray-600')
+                                        : 'bg-gray-200 text-gray-400'}`}>
+                                        <IconComponent size={32} className={isActive ? (sys.bg_color_class?.replace('bg-', 'text-') || 'text-gray-600') : 'text-gray-400'} />
                                     </div>
                                     <div>
-                                        <h3 className="font-bold text-gray-800">{sys.name}</h3>
-                                        <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">{sys.code}</code>
+                                        <div className="flex items-center gap-2">
+                                            <h3 className={`font-bold ${isActive ? 'text-gray-800' : 'text-gray-500'}`}>{sys.name}</h3>
+                                            {!isActive && <span className="text-[10px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded font-medium">Đã ngưng</span>}
+                                        </div>
+                                        <code className={`text-xs px-1.5 py-0.5 rounded ${isActive ? 'bg-gray-100 text-gray-500' : 'bg-gray-200 text-gray-400'}`}>{sys.code}</code>
                                         <p className="text-sm text-gray-500 mt-2 line-clamp-2">{sys.description}</p>
                                     </div>
                                 </div>
@@ -250,7 +289,7 @@ export default function SystemManagerSection() {
                         </div>
 
                         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
-                            {!editingSystem && (
+                            <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Mã Kho (Tự động tạo)</label>
                                     <input
@@ -260,8 +299,20 @@ export default function SystemManagerSection() {
                                         placeholder="Mã sẽ được tạo từ tên kho..."
                                     />
                                 </div>
-                            )}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Thứ tự hiển thị</label>
+                                    <input
+                                        type="number"
+                                        value={formData.sort_order}
+                                        onChange={e => setFormData({ ...formData, sort_order: parseInt(e.target.value) || 0 })}
+                                        className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                                        placeholder="0"
+                                    />
+                                </div>
+                            </div>
 
+
+                            {/* Name Input */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Tên Kho</label>
                                 <input
@@ -346,8 +397,9 @@ export default function SystemManagerSection() {
                             </div>
                         </form>
                     </div>
-                </div>
-            )}
-        </div>
+                </div >
+            )
+            }
+        </div >
     )
 }

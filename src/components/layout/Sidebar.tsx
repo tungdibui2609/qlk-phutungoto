@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUser } from '@/contexts/UserContext'
 
 type MenuItem = {
     name: string
@@ -79,10 +80,32 @@ export default function Sidebar() {
     const pathname = usePathname()
     const router = useRouter()
     const { isCollapsed, setCollapsed, isReady } = useSidebar()
-    const { currentSystem } = useSystem()
+    const { currentSystem, systemType } = useSystem()
+    const { profile } = useUser() // Get profile to check hidden menus
     const [expandedMenus, setExpandedMenus] = useState<string[]>(['Quản lý sản phẩm'])
+
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+    const [openSubMenus, setOpenSubMenus] = useState<string[]>([])
     const sidebarRef = useRef<HTMLElement>(null)
     const [companyInfo, setCompanyInfo] = useState<CompanyInfo>({ name: 'Toàn Thắng', logo_url: null })
+
+    // Filter menu items based on hidden_menus from profile (System Specific)
+    const visibleMenuItems = menuItems.map(item => {
+        // Get hidden menus for current system
+        const hiddenMenus = profile?.hidden_menus?.[systemType] || []
+
+        // If parent is hidden, don't show
+        if (hiddenMenus.includes(item.name)) return null
+
+        // Filter children
+        if (item.children) {
+            const visibleChildren = item.children.filter(child => !hiddenMenus.includes(child.name))
+            if (visibleChildren.length === 0) return null // Hide parent if all children hidden
+            return { ...item, children: visibleChildren }
+        }
+
+        return item
+    }).filter(Boolean) as MenuItem[] // Remove nulls
 
     // Fetch company info
     useEffect(() => {
@@ -201,6 +224,8 @@ export default function Sidebar() {
                             src={companyInfo.logo_url || "/logotoanthang.png"}
                             alt={companyInfo.name}
                             fill
+                            sizes="36px"
+                            priority
                             className="object-contain p-1"
                         />
                     </div>
@@ -215,7 +240,7 @@ export default function Sidebar() {
 
             {/* NAVIGATION */}
             <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-                {menuItems.map((item) => {
+                {visibleMenuItems.map((item) => {
                     const Icon = item.icon
                     const hasChildren = item.children && item.children.length > 0
                     const showExpanded = isReady && !isCollapsed

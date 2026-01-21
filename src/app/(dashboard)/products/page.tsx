@@ -2,10 +2,15 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
-import { Plus, Search, Filter, Edit, Trash2, Package, Sparkles } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Plus, Search, Filter, Edit, Trash2, Package, Sparkles, Eye } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import Protected from '@/components/auth/Protected'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import ProductDetailModal from '@/components/inventory/ProductDetailModal'
+import { Database } from '@/lib/database.types'
+
+type Product = Database['public']['Tables']['products']['Row']
 
 type ProductWithCategory = {
     id: string
@@ -15,19 +20,40 @@ type ProductWithCategory = {
     part_number: string | null
     image_url: string | null
     min_stock_level: number
+    unit: string | null
     price: number | null
     categories: {
         name: string
     } | null
+    product_media: {
+        url: string
+        type: 'image' | 'video'
+    }[]
+    product_units: {
+        conversion_rate: number
+        unit_id: string
+    }[]
 }
 
 export default function InventoryPage() {
+    const router = useRouter()
     const [products, setProducts] = useState<ProductWithCategory[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const { systemType } = useSystem()
     // Add delete confirmation state
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+    const [unitsMap, setUnitsMap] = useState<Record<string, string>>({})
+
+    // View Modal State
+    const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+    const [isModalOpen, setIsModalOpen] = useState(false)
+
+    const handleViewProduct = (product: ProductWithCategory) => {
+        // Cast as any or specific type if needed since ProductWithCategory has more fields
+        setSelectedProduct(product as any)
+        setIsModalOpen(true)
+    }
 
     useEffect(() => {
         fetchProducts()
@@ -35,18 +61,66 @@ export default function InventoryPage() {
 
     async function fetchProducts() {
         setLoading(true)
+
+        // Fetch Dictionary first
+        const { data: unitsData } = await supabase.from('units').select('id, name')
+        const uMap: Record<string, string> = {}
+        if (unitsData) {
+            unitsData.forEach((u: any) => {
+                uMap[u.id] = u.name
+            })
+            setUnitsMap(uMap)
+        }
+
         const { data, error } = await supabase
             .from('products')
-            .select(`*, categories ( name )`)
+            .select(`*, categories ( name ), product_media ( url, type ), product_units ( conversion_rate, unit_id )`)
             .eq('system_type', systemType)
             .order('created_at', { ascending: false })
 
         if (error) {
             console.error('Error fetching products:', error)
         } else {
+            if (data.length > 0) {
+                // Determine if any processing is needed or leave empty block / remove completely
+            }
             setProducts(data as any)
         }
         setLoading(false)
+    }
+
+    // Helper to get display URL (handles Google Drive)
+    const getDisplayImage = (product: ProductWithCategory) => {
+        let url = product.image_url
+
+        // Prioritize product_media
+        if (product.product_media && product.product_media.length > 0) {
+            // 1. Try to find an explicit image
+            const firstImage = product.product_media.find(m => m.type === 'image')
+            if (firstImage) {
+                url = firstImage.url
+            } else {
+                // 2. If no image, but we have a Google Drive link (video?), try it anyway
+                const firstDriveMedia = product.product_media.find(m => m.url.includes('drive.google.com'))
+                if (firstDriveMedia) {
+                    url = firstDriveMedia.url
+                }
+            }
+        }
+
+        if (!url) return null
+
+        // Google Drive check
+        const idMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/)
+        if (idMatch && idMatch[1]) {
+            const thumbUrl = `https://drive.google.com/thumbnail?id=${idMatch[1]}&sz=w600`
+            if (products.length > 0 && product.id === products[0].id) {
+                console.log('Generated Thumbnail URL:', thumbUrl)
+            }
+            return thumbUrl
+        }
+
+        return url
     }
 
     async function handleSeedData() {
@@ -332,15 +406,13 @@ export default function InventoryPage() {
                                 <th className="p-4 text-xs uppercase tracking-wider text-stone-500 font-semibold w-16">#</th>
                                 <th className="p-4 text-xs uppercase tracking-wider text-stone-500 font-semibold">Thông tin Sản phẩm</th>
                                 <th className="p-4 text-xs uppercase tracking-wider text-stone-500 font-semibold">Danh mục</th>
-                                <th className="p-4 text-xs uppercase tracking-wider text-stone-500 font-semibold">Hãng SX</th>
-                                <th className="p-4 text-xs uppercase tracking-wider text-stone-500 font-semibold text-center">Trạng thái</th>
                                 <th className="p-4 text-xs uppercase tracking-wider text-stone-500 font-semibold text-right">Hành động</th>
                             </tr>
                         </thead>
                         <tbody>
                             {loading ? (
                                 <tr>
-                                    <td colSpan={6} className="p-12 text-center">
+                                    <td colSpan={4} className="p-12 text-center">
                                         <div className="flex flex-col items-center gap-3">
                                             <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
                                             <span className="text-stone-500">Đang tải dữ liệu...</span>
@@ -349,7 +421,7 @@ export default function InventoryPage() {
                                 </tr>
                             ) : filteredProducts.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="p-12 text-center">
+                                    <td colSpan={4} className="p-12 text-center">
                                         <div className="flex flex-col items-center gap-3">
                                             <Package className="text-stone-300" size={48} />
                                             <span className="text-stone-500">Chưa có sản phẩm nào.</span>
@@ -360,7 +432,8 @@ export default function InventoryPage() {
                                 filteredProducts.map((item, index) => (
                                     <tr
                                         key={item.id}
-                                        className="border-b border-stone-100 hover:bg-orange-50/50 transition-colors"
+                                        onClick={() => handleViewProduct(item)}
+                                        className="border-b border-stone-100 hover:bg-orange-50/50 transition-colors cursor-pointer"
                                     >
                                         <td className="p-4 text-stone-400 text-sm font-mono">
                                             {(index + 1).toString().padStart(2, '0')}
@@ -368,8 +441,15 @@ export default function InventoryPage() {
                                         <td className="p-4">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-14 h-14 rounded-xl flex-shrink-0 flex items-center justify-center bg-stone-100 overflow-hidden">
-                                                    {item.image_url ? (
-                                                        <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+                                                    {getDisplayImage(item) ? (
+                                                        <img
+                                                            src={getDisplayImage(item)!}
+                                                            alt={item.name}
+                                                            className="w-full h-full object-cover"
+                                                            onError={(e) => {
+                                                                (e.target as HTMLImageElement).style.display = 'none';
+                                                            }}
+                                                        />
                                                     ) : (
                                                         <Package className="text-stone-400" size={24} />
                                                     )}
@@ -385,11 +465,18 @@ export default function InventoryPage() {
                                                                 {item.part_number}
                                                             </span>
                                                         )}
-                                                        {item.price && (
-                                                            <span className="text-xs px-2 py-0.5 rounded font-mono bg-green-100 text-green-700 border border-green-200">
-                                                                {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.price)}
+                                                        {/* Base Unit */}
+                                                        {item.unit && (
+                                                            <span className="text-xs px-2 py-0.5 rounded font-mono bg-blue-50 text-blue-700 border border-blue-100" title="Đơn vị cơ bản">
+                                                                1 {item.unit}
                                                             </span>
                                                         )}
+                                                        {/* Alternative Units */}
+                                                        {item.product_units?.map((u, idx) => (
+                                                            <span key={idx} className="text-xs px-2 py-0.5 rounded font-mono bg-stone-100 text-stone-600 border border-stone-200" title={`Quy đổi: 1 ${unitsMap[u.unit_id] || '---'} = ${u.conversion_rate} ${item.unit}`}>
+                                                                1 {unitsMap[u.unit_id] || '---'} = {u.conversion_rate} {item.unit}
+                                                            </span>
+                                                        ))}
                                                     </div>
                                                 </div>
                                             </div>
@@ -397,26 +484,31 @@ export default function InventoryPage() {
                                         <td className="p-4 text-sm text-stone-600">
                                             {item.categories?.name || '---'}
                                         </td>
-                                        <td className="p-4 text-sm font-medium text-stone-700">
-                                            {item.manufacturer || '---'}
-                                        </td>
-                                        <td className="p-4 text-center">
-                                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-2" />
-                                                Còn hàng
-                                            </span>
-                                        </td>
                                         <td className="p-4">
                                             <div className="flex justify-end gap-2">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        handleViewProduct(item)
+                                                    }}
+                                                    className="p-2.5 rounded-lg bg-stone-100 text-stone-500 hover:bg-blue-100 hover:text-blue-600 transition-colors"
+                                                    title="Xem chi tiết"
+                                                >
+                                                    <Eye size={16} />
+                                                </button>
                                                 <Link
                                                     href={`/products/${item.id}`}
                                                     className="p-2.5 rounded-lg bg-stone-100 text-stone-500 hover:bg-orange-100 hover:text-orange-600 transition-colors"
+                                                    onClick={(e) => e.stopPropagation()}
                                                 >
                                                     <Edit size={16} />
                                                 </Link>
                                                 <Protected permission="product.delete">
                                                     <button
-                                                        onClick={() => handleDelete(item.id)}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation()
+                                                            handleDelete(item.id)
+                                                        }}
                                                         className="p-2.5 rounded-lg bg-stone-100 text-stone-500 hover:bg-red-100 hover:text-red-600 transition-colors"
                                                     >
                                                         <Trash2 size={16} />
@@ -456,6 +548,12 @@ export default function InventoryPage() {
                 variant="danger"
                 onConfirm={executeDelete}
                 onCancel={() => setDeleteConfirmId(null)}
+            />
+
+            <ProductDetailModal
+                open={isModalOpen}
+                onOpenChange={setIsModalOpen}
+                product={selectedProduct}
             />
         </div>
     )

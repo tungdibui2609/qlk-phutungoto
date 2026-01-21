@@ -15,6 +15,8 @@ interface System {
   bg_color_class?: string
   text_color_class?: string
   modules?: string | string[] // Supports JSON string or array
+  is_active?: boolean
+  sort_order?: number
 }
 
 interface SystemContextType {
@@ -41,7 +43,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
   // Fetch systems and subscribe to changes
   useEffect(() => {
     async function fetchSystems() {
-      const { data, error } = await supabase.from('systems').select('*').order('created_at', { ascending: true })
+      const { data, error } = await supabase.from('systems').select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
       if (data) {
         setSystems(data)
       }

@@ -11,6 +11,7 @@ type UserProfile = {
     avatar_url: string | null
     permissions: string[] | null
     blocked_routes: string[] | null
+    hidden_menus: Record<string, string[]> | null
     allowed_systems: string[] | null
     roles: { name: string } | null
 }
@@ -22,6 +23,7 @@ interface UserContextType {
     hasPermission: (permissionCode: string) => boolean
     isRouteBlocked: (path: string) => boolean
     refreshProfile: () => Promise<void>
+    updateProfileSettings: (updates: Partial<UserProfile>) => Promise<void>
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined)
@@ -39,7 +41,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             if (authUser) {
                 const { data, error } = await supabase
                     .from('user_profiles')
-                    .select('id, full_name, email, avatar_url, permissions, blocked_routes, allowed_systems, roles(name)')
+                    .select('id, full_name, email, avatar_url, permissions, blocked_routes, hidden_menus, allowed_systems, roles(name)')
                     .eq('id', authUser.id)
                     .single()
 
@@ -104,8 +106,29 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         )
     }
 
+    const updateProfileSettings = async (updates: Partial<UserProfile>) => {
+        if (!user) return
+
+        try {
+            const { error } = await (supabase.from('user_profiles') as any)
+                .update(updates)
+                .eq('id', user.id)
+
+            if (!error) {
+                // Optimistic update
+                setProfile(prev => prev ? { ...prev, ...updates } : null)
+                // Or re-fetch
+                await fetchProfile()
+            } else {
+                console.error('Error updating profile:', error)
+            }
+        } catch (error) {
+            console.error('Error in updateProfileSettings:', error)
+        }
+    }
+
     return (
-        <UserContext.Provider value={{ user, profile, isLoading, hasPermission, isRouteBlocked, refreshProfile: fetchProfile }}>
+        <UserContext.Provider value={{ user, profile, isLoading, hasPermission, isRouteBlocked, refreshProfile: fetchProfile, updateProfileSettings }}>
             {children}
         </UserContext.Provider>
     )

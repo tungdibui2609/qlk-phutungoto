@@ -5,11 +5,15 @@ import { supabase } from '@/lib/supabaseClient'
 import ProductForm from '@/components/inventory/ProductForm'
 import { Database } from '@/lib/database.types'
 import { Loader2 } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
 
 type Product = Database['public']['Tables']['products']['Row']
 
 export default function EditProductPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params)
+    const searchParams = useSearchParams()
+    const isViewMode = searchParams.get('view') === 'true'
+
     const [product, setProduct] = useState<Product | null>(null)
     const [loading, setLoading] = useState(true)
 
@@ -44,7 +48,11 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
 
     return (
         <div>
-            <ProductForm initialData={product} isEditMode={true} />
+            <ProductForm
+                initialData={product}
+                isEditMode={true}
+                readOnly={isViewMode}
+            />
         </div>
     )
 }
