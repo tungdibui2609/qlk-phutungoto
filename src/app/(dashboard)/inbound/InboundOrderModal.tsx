@@ -7,6 +7,7 @@ import { X, Plus, Trash2, Save, FileText, ChevronDown, FilePenLine } from 'lucid
 import { Combobox } from '@/components/ui/Combobox'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
+import { ImageUpload } from '@/components/ui/ImageUpload'
 
 type Product = Database['public']['Tables']['products']['Row'] & {
     product_units?: {
@@ -100,6 +101,9 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
     const [vehicleNumber, setVehicleNumber] = useState('')
     const [driverName, setDriverName] = useState('')
     const [containerNumber, setContainerNumber] = useState('')
+    const [orderTypeId, setOrderTypeId] = useState('')
+    // Images State
+    const [images, setImages] = useState<string[]>([])
 
     const totalAmount = items.reduce((sum, item) => sum + item.quantity * item.price, 0)
 
@@ -108,6 +112,7 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
     const [suppliers, setSuppliers] = useState<Supplier[]>([])
     const [branches, setBranches] = useState<any[]>([])
     const [units, setUnits] = useState<Unit[]>([]) // Store all active units
+    const [orderTypes, setOrderTypes] = useState<any[]>([])
     const [loadingData, setLoadingData] = useState(false)
     const [submitting, setSubmitting] = useState(false)
 
@@ -121,26 +126,35 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
             setSupplierId('')
             setSupplierAddress('')
             setSupplierPhone('')
-            setSupplierPhone('')
             setCode('')
             setVehicleNumber('')
             setDriverName('')
             setContainerNumber('')
+            setOrderTypeId('')
+            setImages([])
         }
     }, [isOpen, editOrderId])
 
     async function fetchData() {
         setLoadingData(true)
         try {
-            const [prodRes, suppRes, branchRes, unitRes] = await Promise.all([
+            const [prodRes, suppRes, branchRes, unitRes, typeRes] = await Promise.all([
                 supabase.from('products').select('*, product_units(unit_id, conversion_rate)').eq('system_type', systemType).order('name'),
                 supabase.from('suppliers').select('*').eq('system_code', systemType).order('name'),
                 supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'),
-                supabase.from('units').select('*').eq('is_active', true)
+                supabase.from('units').select('*').eq('is_active', true),
+                (supabase.from('order_types') as any)
+                    .select('*')
+                    .or(`scope.eq.inbound,scope.eq.both`)
+                    .or(`system_code.eq.${systemType},system_code.is.null`)
+                    .eq('is_active', true)
+                    .order('created_at', { ascending: true })
             ])
+
             if (prodRes.data) setProducts(prodRes.data)
             if (suppRes.data) setSuppliers(suppRes.data)
             if (unitRes.data) setUnits(unitRes.data)
+            if (typeRes.data) setOrderTypes(typeRes.data)
 
             const branchesData = branchRes.data as any[] || []
             setBranches(branchesData)
@@ -157,8 +171,8 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
 
             // If Edit Mode
             if (editOrderId) {
-                const { data: orderData, error: orderError } = await supabase
-                    .from('inbound_orders')
+                const { data: orderData, error: orderError } = await (supabase
+                    .from('inbound_orders') as any)
                     .select('*')
                     .eq('id', editOrderId)
                     .single()
@@ -172,8 +186,15 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                     setSupplierAddress(order.supplier_address || '')
                     setSupplierPhone(order.supplier_phone || '')
                     setWarehouseName(order.warehouse_name || '')
-                    setWarehouseName(order.warehouse_name || '')
+                    setOrderTypeId(order.order_type_id || '')
                     setDescription(order.description || '')
+
+                    // Load Images
+                    if (Array.isArray(order.images)) {
+                        setImages(order.images)
+                    } else if (order.image_url) {
+                        setImages([order.image_url])
+                    }
 
                     // Load Metadata
                     const meta = order.metadata || {}
@@ -320,6 +341,8 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                         supplier_phone: supplierPhone,
                         warehouse_name: warehouseName,
                         description,
+                        order_type_id: orderTypeId || null,
+                        images, // Save images array
                         updated_at: new Date().toISOString(),
                         metadata: {
                             vehicleNumber,
@@ -347,6 +370,8 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                         description,
                         status: 'Pending',
                         type: 'Purchase',
+                        order_type_id: orderTypeId || null,
+                        images, // Save images array
                         system_code: systemType,
                         metadata: {
                             vehicleNumber,
@@ -393,19 +418,11 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
 
     if (!isOpen) return null
 
-    if (!isOpen) return null
-
     // Module Checking
     const inboundModules = currentSystem?.inbound_modules
         ? (typeof currentSystem.inbound_modules === 'string' ? JSON.parse(currentSystem.inbound_modules) : currentSystem.inbound_modules)
         : []
 
-    // If no config found, default to SHOW ALL (or fallback behavior). 
-    // However, to force usage of modules, we might default to BASIC only if array is empty?
-    // Let's assume if null/undefined, show all (backward compat). If empty array, show nothing?
-    // User approved "Configure modules", so likely strict mode.
-    // Let's rely on default: if inbound_modules is null/undefined, assume ALL for now or Basic + Financials.
-    // Better: Helper function
     const hasModule = (moduleId: string) => {
         if (!inboundModules || inboundModules.length === 0) return true // Default show all if not configured
         return inboundModules.includes(moduleId)
@@ -464,6 +481,23 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                                             ))}
                                         </select>
                                     </div>
+
+                                    {/* Order Type Selector (New Module: inbound_type) */}
+                                    {hasModule('inbound_type') && (
+                                        <div className="space-y-1.5 sm:col-span-2">
+                                            <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Loại phiếu nhập</label>
+                                            <select
+                                                value={orderTypeId}
+                                                onChange={e => setOrderTypeId(e.target.value)}
+                                                className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                                            >
+                                                <option value="">-- Chọn loại phiếu --</option>
+                                                {orderTypes.map(t => (
+                                                    <option key={t.id} value={t.id}>{t.code} - {t.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -513,6 +547,19 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                             </div>
                         )}
                     </div>
+
+                    {/* NEW Module: Inbound Images */}
+                    {hasModule('inbound_images') && (
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2 pb-2 border-b border-stone-200 dark:border-zinc-800">
+                                <div className="w-1 h-4 bg-purple-500 rounded-full"></div>
+                                <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Hình ảnh hóa đơn / Chứng từ</h3>
+                            </div>
+                            <div className="bg-stone-50 dark:bg-zinc-900/50 p-4 rounded-xl border border-stone-200 dark:border-zinc-700 border-dashed">
+                                <ImageUpload value={images} onChange={setImages} />
+                            </div>
+                        </div>
+                    )}
 
                     {/* NEW Module: Logistics */}
                     {hasModule('inbound_logistics') && (
@@ -784,6 +831,6 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                     </div>
                 </div>
             </div>
-        </div >
+        </div>
     )
 }

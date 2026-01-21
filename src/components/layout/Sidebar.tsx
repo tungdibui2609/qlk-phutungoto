@@ -36,6 +36,7 @@ const menuItems: MenuItem[] = [
             { name: 'Nhà cung cấp', href: '/suppliers', icon: Building2 },
             { name: 'Dòng xe', href: '/vehicles', icon: Car },
             { name: 'Khách hàng', href: '/customers', icon: Users },
+            { name: 'Loại phiếu', href: '/order-types', icon: FileText },
         ]
     },
     {

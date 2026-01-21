@@ -3,11 +3,12 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { X, Plus, Trash2, Save, ShoppingCart, ChevronDown, FilePenLine } from 'lucide-react'
+import { X, Plus, Trash2, Save, ShoppingCart, ChevronDown, FilePenLine, Image } from 'lucide-react'
 import { Combobox } from '@/components/ui/Combobox'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
+import { ImageUpload } from '@/components/ui/ImageUpload'
 
 // Force update
 type Product = Database['public']['Tables']['products']['Row'] & {
@@ -101,6 +102,9 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
     const [vehicleNumber, setVehicleNumber] = useState('')
     const [driverName, setDriverName] = useState('')
     const [containerNumber, setContainerNumber] = useState('')
+    const [orderTypeId, setOrderTypeId] = useState('')
+    // Images State
+    const [images, setImages] = useState<string[]>([])
 
     const totalAmount = items.reduce((sum, item) => sum + item.quantity * (item.price || 0), 0)
 
@@ -109,6 +113,7 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
     const [customers, setCustomers] = useState<Customer[]>([])
     const [branches, setBranches] = useState<any[]>([])
     const [units, setUnits] = useState<Unit[]>([]) // Store all active units
+    const [orderTypes, setOrderTypes] = useState<any[]>([])
     const [loadingData, setLoadingData] = useState(false)
     const [submitting, setSubmitting] = useState(false)
 
@@ -123,20 +128,31 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
             setItems([])
             setDescription('')
             setCustomerName('')
+            setCustomerAddress('')
+            setCustomerPhone('')
             setVehicleNumber('')
             setDriverName('')
             setContainerNumber('')
+            setOrderTypeId('')
+            setImages([])
         }
     }, [isOpen])
 
     async function fetchData() {
         setLoadingData(true)
-        const [prodRes, branchRes, custRes, invRes, unitRes] = await Promise.all([
+        const [prodRes, branchRes, custRes, invRes, unitRes, typeRes] = await Promise.all([
             supabase.from('products').select('*, product_units(unit_id, conversion_rate)').eq('system_type', systemType).order('name'),
             supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'),
             supabase.from('customers').select('*').eq('system_code', systemType).order('name'),
             fetch(`/api/inventory?systemType=${systemType}`).then(res => res.json()),
-            supabase.from('units').select('*').eq('is_active', true)
+            supabase.from('units').select('*').eq('is_active', true),
+            // Fetch Order Types (System specific or Global)
+            (supabase.from('order_types') as any)
+                .select('*')
+                .or(`scope.eq.outbound,scope.eq.both`)
+                .or(`system_code.eq.${systemType},system_code.is.null`)
+                .eq('is_active', true)
+                .order('created_at', { ascending: true })
         ])
 
         if (prodRes.data) {
@@ -162,6 +178,7 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
         }
         if (custRes.data) setCustomers(custRes.data as any)
         if (unitRes.data) setUnits(unitRes.data)
+        if (typeRes.data) setOrderTypes(typeRes.data)
 
         const branchesData = branchRes.data as any[] || []
         setBranches(branchesData)
@@ -175,9 +192,6 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                 setWarehouseName(branchesData[0].name)
             }
         }
-
-
-
 
         setLoadingData(false)
     }
@@ -313,6 +327,8 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                     description,
                     status: 'Pending',
                     type: 'Sale',
+                    order_type_id: orderTypeId || null,
+                    images, // Save images
                     system_code: systemType,
                     metadata: {
                         vehicleNumber,
@@ -389,93 +405,126 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
 
                         return (
                             <>
-                                {/* Section 1: Thông tin phiếu (Basic) */}
-                                {(hasModule('outbound_basic') || true) && (
-                                    <div className="space-y-4">
-                                        <div className="flex items-center gap-2 pb-2 border-b border-stone-200 dark:border-zinc-800">
-                                            <div className="w-1 h-4 bg-orange-500 rounded-full"></div>
-                                            <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Thông tin phiếu</h3>
-                                        </div>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div className="space-y-1.5">
-                                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Mã phiếu</label>
-                                                <input
-                                                    type="text"
-                                                    value={code}
-                                                    onChange={e => setCode(e.target.value)}
-                                                    className="w-full px-4 py-2.5 bg-stone-100 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg font-mono font-bold text-stone-800 dark:text-white"
-                                                />
+                                {/* Grid wrapper for Basic and Customer */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    {/* Section 1: Thông tin phiếu (Basic) */}
+                                    {(hasModule('outbound_basic') || true) && (
+                                        <div className="space-y-4">
+                                            <div className="flex items-center gap-2 pb-2 border-b border-stone-200 dark:border-zinc-800">
+                                                <div className="w-1 h-4 bg-orange-500 rounded-full"></div>
+                                                <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Thông tin phiếu</h3>
                                             </div>
-                                            <div className="space-y-1.5">
-                                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Kho xuất hàng</label>
-                                                <select
-                                                    value={warehouseName}
-                                                    onChange={e => setWarehouseName(e.target.value)}
-                                                    className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
-                                                >
-                                                    {branches.map(b => (
-                                                        <option key={b.id} value={b.name}>{b.name}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-1.5">
+                                                    <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Mã phiếu</label>
+                                                    <input
+                                                        type="text"
+                                                        value={code}
+                                                        onChange={e => setCode(e.target.value)}
+                                                        className="w-full px-4 py-2.5 bg-stone-100 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg font-mono font-bold text-stone-800 dark:text-white"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Kho xuất hàng</label>
+                                                    <select
+                                                        value={warehouseName}
+                                                        onChange={e => setWarehouseName(e.target.value)}
+                                                        className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                                                    >
+                                                        {branches.map(b => (
+                                                            <option key={b.id} value={b.name}>{b.name}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
 
-                                {/* Section 2: Thông tin khách hàng */}
-                                {(hasModule('outbound_basic') || true) && (
+                                                {/* Order Type Selector (New Module: outbound_type) */}
+                                                {hasModule('outbound_type') && (
+                                                    <div className="space-y-1.5 md:col-span-2">
+                                                        <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Loại phiếu xuất</label>
+                                                        <select
+                                                            value={orderTypeId}
+                                                            onChange={e => setOrderTypeId(e.target.value)}
+                                                            className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                                                        >
+                                                            <option value="">-- Chọn loại phiếu --</option>
+                                                            {orderTypes.map(t => (
+                                                                <option key={t.id} value={t.id}>{t.code} - {t.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Section 2: Thông tin khách hàng (Module: outbound_customer) */}
+                                    {hasModule('outbound_customer') && (
+                                        <div className="space-y-4">
+                                            <div className="flex items-center gap-2 pb-2 border-b border-stone-200 dark:border-zinc-800">
+                                                <div className="w-1 h-4 bg-blue-500 rounded-full"></div>
+                                                <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Thông tin khách hàng</h3>
+                                                {customerName && (
+                                                    <span className="ml-auto text-xs text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-full font-medium">
+                                                        {customerName}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-1.5 md:col-span-2">
+                                                    <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Khách hàng <span className="text-red-500">*</span></label>
+                                                    <Combobox
+                                                        options={customers.map(c => ({ value: c.id, label: c.name }))}
+                                                        value={null}
+                                                        onChange={(val) => {
+                                                            const c = customers.find(cus => cus.id === val)
+                                                            if (c) {
+                                                                setCustomerName(c.name)
+                                                                setCustomerAddress(c.address || '')
+                                                                setCustomerPhone(c.phone || '')
+                                                            }
+                                                        }}
+                                                        onSearchChange={(val) => {
+                                                            setCustomerName(val)
+                                                        }}
+                                                        placeholder="Nhập hoặc chọn khách hàng"
+                                                        className="w-full"
+                                                        allowCustom={true}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Địa chỉ</label>
+                                                    <input
+                                                        type="text"
+                                                        value={customerAddress}
+                                                        onChange={e => setCustomerAddress(e.target.value)}
+                                                        className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg"
+                                                        placeholder="Địa chỉ giao hàng"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Số điện thoại</label>
+                                                    <input
+                                                        type="text"
+                                                        value={customerPhone}
+                                                        onChange={e => setCustomerPhone(e.target.value)}
+                                                        className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg"
+                                                        placeholder="SĐT liên hệ"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* NEW Module: Outbound Images */}
+                                {hasModule('outbound_images') && (
                                     <div className="space-y-4">
                                         <div className="flex items-center gap-2 pb-2 border-b border-stone-200 dark:border-zinc-800">
-                                            <div className="w-1 h-4 bg-blue-500 rounded-full"></div>
-                                            <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Thông tin khách hàng</h3>
-                                            {customerName && (
-                                                <span className="ml-auto text-xs text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-full font-medium">
-                                                    {customerName}
-                                                </span>
-                                            )}
+                                            <div className="w-1 h-4 bg-purple-500 rounded-full"></div>
+                                            <h3 className="font-semibold text-stone-800 dark:text-white text-sm">Hình ảnh hóa đơn / Chứng từ</h3>
                                         </div>
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                            <div className="space-y-1.5">
-                                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Khách hàng <span className="text-red-500">*</span></label>
-                                                <Combobox
-                                                    options={customers.map(c => ({ value: c.id, label: c.name }))}
-                                                    value={null}
-                                                    onChange={(val) => {
-                                                        const c = customers.find(cus => cus.id === val)
-                                                        if (c) {
-                                                            setCustomerName(c.name)
-                                                            setCustomerAddress(c.address || '')
-                                                            setCustomerPhone(c.phone || '')
-                                                        }
-                                                    }}
-                                                    onSearchChange={(val) => {
-                                                        setCustomerName(val)
-                                                    }}
-                                                    placeholder="Nhập hoặc chọn khách hàng"
-                                                    className="w-full"
-                                                    allowCustom={true}
-                                                />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Địa chỉ</label>
-                                                <input
-                                                    type="text"
-                                                    value={customerAddress}
-                                                    onChange={e => setCustomerAddress(e.target.value)}
-                                                    className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg"
-                                                    placeholder="Địa chỉ giao hàng"
-                                                />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Số điện thoại</label>
-                                                <input
-                                                    type="text"
-                                                    value={customerPhone}
-                                                    onChange={e => setCustomerPhone(e.target.value)}
-                                                    className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg"
-                                                    placeholder="SĐT liên hệ"
-                                                />
-                                            </div>
+                                        <div className="bg-stone-50 dark:bg-zinc-900/50 p-4 rounded-xl border border-stone-200 dark:border-zinc-700 border-dashed">
+                                            <ImageUpload value={images} onChange={setImages} />
                                         </div>
                                     </div>
                                 )}
@@ -777,14 +826,15 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                     </div>
                                 </div>
                             </>
-                        ) // End of Module Checking Function
+                        )
                     })()}
+
                 </div>
 
                 {/* Footer */}
                 <div className="p-6 border-t border-stone-200 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900/50 flex items-center justify-between gap-4">
                     <div className="text-xs text-stone-500 italic flex items-center gap-1">
-                        * Lưu ý: Nếu <b>SL yêu cầu</b> khác <b>thực xuất</b>, bấm vào mũi tên <ChevronDown size={14} className="inline" /> cạnh ô số lượng để khai báo.
+                        {/* Legend or Info */}
                     </div>
                     <div className="flex items-center gap-3">
                         <button
@@ -797,25 +847,24 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                         <button
                             onClick={handleSubmit}
                             disabled={submitting}
-                            className="flex items-center gap-2 px-6 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-bold shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-lg font-bold shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <Save size={20} />
                             {submitting ? 'Đang lưu...' : 'Lưu Phiếu Xuất'}
                         </button>
                     </div>
                 </div>
-            </div>
 
-            <ConfirmDialog
-                isOpen={confirmDialog.isOpen}
-                title={confirmDialog.title}
-                message={confirmDialog.message}
-                onConfirm={confirmDialog.onConfirm}
-                onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
-                variant="warning"
-                confirmText="Vẫn xuất hàng"
-            />
-        </div >
+                {/* Confirm Dialog */}
+                <ConfirmDialog
+                    isOpen={confirmDialog.isOpen}
+                    onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+                    title={confirmDialog.title}
+                    message={confirmDialog.message}
+                    onConfirm={confirmDialog.onConfirm}
+                    variant="warning"
+                />
+            </div>
+        </div>
     )
 }
-

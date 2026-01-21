@@ -1,5 +1,5 @@
 
-import { DollarSign, FileText, Truck, Calendar, User, ShoppingCart, ShieldCheck, MapPin } from 'lucide-react'
+import { DollarSign, FileText, Truck, Calendar, User, ShoppingCart, ShieldCheck, MapPin, Image } from 'lucide-react'
 
 export interface OrderModule {
     id: string
@@ -25,6 +25,13 @@ export const INBOUND_MODULES: OrderModule[] = [
         type: 'inbound'
     },
     {
+        id: 'inbound_type',
+        name: 'Phân loại phiếu',
+        description: 'Chọn loại phiếu nhập (từ SX, NCC, Chuyển kho...)',
+        icon: FileText,
+        type: 'inbound'
+    },
+    {
         id: 'inbound_financials',
         name: 'Tài chính & Thuế',
         description: 'Đơn giá, Thành tiền, Chiết khấu, VAT',
@@ -46,6 +53,13 @@ export const INBOUND_MODULES: OrderModule[] = [
         type: 'inbound'
     },
     {
+        id: 'inbound_images',
+        name: 'Hình ảnh hóa đơn',
+        description: 'Chụp hoặc tải lên ảnh hóa đơn, chứng từ',
+        icon: Image,
+        type: 'inbound'
+    },
+    {
         id: 'inbound_accounting',
         name: 'Hạch toán Kế toán',
         description: 'Tài khoản Nợ/Có, Diễn giải hạch toán',
@@ -58,8 +72,22 @@ export const OUTBOUND_MODULES: OrderModule[] = [
     {
         id: 'outbound_basic',
         name: 'Thông tin cơ bản (Mặc định)',
-        description: 'Mã phiếu, Khách hàng, Địa chỉ, Số điện thoại',
+        description: 'Mã phiếu, Kho xuất, Diễn giải',
         icon: ShoppingCart,
+        type: 'outbound'
+    },
+    {
+        id: 'outbound_customer',
+        name: 'Thông tin Khách hàng',
+        description: 'Khách hàng, Địa chỉ, Số điện thoại',
+        icon: User,
+        type: 'outbound'
+    },
+    {
+        id: 'outbound_type',
+        name: 'Phân loại phiếu',
+        description: 'Chọn loại phiếu xuất (Xuất bán, Hủy, Chuyển kho...)',
+        icon: FileText,
         type: 'outbound'
     },
     {
@@ -67,6 +95,13 @@ export const OUTBOUND_MODULES: OrderModule[] = [
         name: 'Tài chính & Doanh thu',
         description: 'Đơn giá, Tổng tiền, Chiết khấu thương mại, Thuế',
         icon: DollarSign,
+        type: 'outbound'
+    },
+    {
+        id: 'outbound_images',
+        name: 'Hình ảnh chứng từ',
+        description: 'Chụp hoặc tải lên ảnh phiếu xuất, biên bản',
+        icon: Image,
         type: 'outbound'
     },
     {
