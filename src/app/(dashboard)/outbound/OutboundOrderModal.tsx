@@ -7,10 +7,17 @@ import { X, Plus, Trash2, Save, ShoppingCart, ChevronDown, FilePenLine } from 'l
 import { Combobox } from '@/components/ui/Combobox'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/ToastProvider'
+import { useSystem } from '@/contexts/SystemContext'
 
 // Force update
-type Product = Database['public']['Tables']['products']['Row']
+type Product = Database['public']['Tables']['products']['Row'] & {
+    product_units?: {
+        unit_id: string
+        conversion_rate: number
+    }[]
+}
 type Customer = { id: string, name: string, address?: string | null, phone?: string | null }
+type Unit = Database['public']['Tables']['units']['Row']
 
 interface OutboundOrderModalProps {
     isOpen: boolean
@@ -18,7 +25,21 @@ interface OutboundOrderModalProps {
     onSuccess: () => void
 }
 
-const generateOrderCode = async (type: 'PNK' | 'PXK') => {
+const generateOrderCode = async (type: 'PNK' | 'PXK', systemCode?: string, systemName?: string) => {
+    // Tự động tạo viết tắt từ tên phân hệ kho
+    const getSystemAbbreviation = (code: string, name?: string): string => {
+        if (name) {
+            const nameWithoutKho = name.replace(/^Kho\s+/i, '')
+            return nameWithoutKho
+                .split(' ')
+                .filter(word => word.length > 0)
+                .map(word => word[0])
+                .join('')
+                .toUpperCase()
+        }
+        return code.substring(0, 3).toUpperCase()
+    }
+
     const today = new Date()
     const d = String(today.getDate()).padStart(2, '0')
     const m = String(today.getMonth() + 1).padStart(2, '0')
@@ -42,11 +63,13 @@ const generateOrderCode = async (type: 'PNK' | 'PXK') => {
         console.error('Error counting orders:', error)
         // Fallback to random if error
         const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0')
-        return `${type}-${dateStr}-${random}`
+        const prefix = systemCode ? `${getSystemAbbreviation(systemCode, systemName)}-` : ''
+        return `${prefix}${type}-${dateStr}-${random}`
     }
 
     const stt = String((count || 0) + 1).padStart(3, '0')
-    return `${type}-${dateStr}-${stt}`
+    const prefix = systemCode ? `${getSystemAbbreviation(systemCode, systemName)}-` : ''
+    return `${prefix}${type}-${dateStr}-${stt}`
 }
 
 interface OrderItem {
@@ -64,6 +87,7 @@ interface OrderItem {
 
 export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: OutboundOrderModalProps) {
     const { showToast } = useToast()
+    const { systemType, currentSystem } = useSystem()
 
     // Form State
     const [code, setCode] = useState('')
@@ -80,13 +104,14 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
     const [products, setProducts] = useState<Product[]>([])
     const [customers, setCustomers] = useState<Customer[]>([])
     const [branches, setBranches] = useState<any[]>([])
+    const [units, setUnits] = useState<Unit[]>([]) // Store all active units
     const [loadingData, setLoadingData] = useState(false)
     const [submitting, setSubmitting] = useState(false)
 
     useEffect(() => {
         if (isOpen) {
             // Generate draft code
-            generateOrderCode('PXK').then(newCode => setCode(newCode))
+            generateOrderCode('PXK', systemType, currentSystem?.name).then(newCode => setCode(newCode))
 
             fetchData()
         } else {
@@ -99,11 +124,12 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
 
     async function fetchData() {
         setLoadingData(true)
-        const [prodRes, branchRes, custRes, invRes] = await Promise.all([
-            supabase.from('products').select('*').order('name'),
+        const [prodRes, branchRes, custRes, invRes, unitRes] = await Promise.all([
+            supabase.from('products').select('*, product_units(unit_id, conversion_rate)').eq('system_type', systemType).order('name'),
             supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'),
-            supabase.from('customers').select('*').order('name'),
-            fetch('/api/inventory').then(res => res.json())
+            supabase.from('customers').select('*').eq('system_code', systemType).order('name'),
+            fetch(`/api/inventory?systemType=${systemType}`).then(res => res.json()),
+            supabase.from('units').select('*').eq('is_active', true)
         ])
 
         if (prodRes.data) {
@@ -128,6 +154,7 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
             setProducts(productsWithStock)
         }
         if (custRes.data) setCustomers(custRes.data as any)
+        if (unitRes.data) setUnits(unitRes.data)
 
         const branchesData = branchRes.data as any[] || []
         setBranches(branchesData)
@@ -164,11 +191,22 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
 
             if (field === 'productId') {
                 const prod = products.find(p => p.id === value)
+
+                // Determine initial unit
+                let initialUnit = ''
+                if (prod) {
+                    const hasAlternatives = prod.product_units && prod.product_units.length > 0
+                    // Only auto-select if NO alternatives exist (only base unit)
+                    if (!hasAlternatives && prod.unit) {
+                        initialUnit = prod.unit
+                    }
+                }
+
                 return {
                     ...item,
                     productId: value,
                     productName: prod?.name || '',
-                    unit: prod?.unit || '',
+                    unit: initialUnit,
                     price: prod?.cost_price || 0
                 }
             }
@@ -210,6 +248,13 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
         }
         if (items.length === 0) {
             showToast('Vui lòng thêm ít nhất 1 sản phẩm', 'warning')
+            return
+        }
+
+        // Validate items
+        const invalidItem = items.find(i => !i.productId || !i.unit)
+        if (invalidItem) {
+            showToast('Vui lòng chọn đầy đủ sản phẩm và đơn vị tính', 'warning')
             return
         }
 
@@ -257,7 +302,8 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                     warehouse_name: warehouseName,
                     description,
                     status: 'Pending',
-                    type: 'Sale'
+                    type: 'Sale',
+                    system_code: systemType
                 })
                 .select()
                 .single()
@@ -468,7 +514,45 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                                     )}
                                                 />
                                             </td>
-                                            <td className="px-4 py-3 text-center text-stone-500">{item.unit || '-'}</td>
+                                            <td className="px-4 py-3 text-center">
+                                                {(() => {
+                                                    const product = products.find(p => p.id === item.productId)
+                                                    if (!product) return <span className="text-stone-500">-</span>
+
+                                                    // Prepare options: Base Unit + Alternatives
+                                                    const options = []
+                                                    if (product.unit) {
+                                                        options.push({ value: product.unit, label: product.unit })
+                                                    }
+                                                    if (product.product_units && product.product_units.length > 0) {
+                                                        product.product_units.forEach(pu => {
+                                                            const uName = units.find(u => u.id === pu.unit_id)?.name
+                                                            if (uName) {
+                                                                options.push({ value: uName, label: uName })
+                                                            }
+                                                        })
+                                                    }
+                                                    // Deduplicate just in case
+                                                    const uniqueOptions = Array.from(new Map(options.map(item => [item['value'], item])).values());
+
+                                                    if (uniqueOptions.length <= 1) {
+                                                        return <span className='text-stone-700 font-medium'>{item.unit || product.unit || '-'}</span>
+                                                    }
+
+                                                    return (
+                                                        <select
+                                                            value={item.unit}
+                                                            onChange={(e) => updateItem(item.id, 'unit', e.target.value)}
+                                                            className={`w-full bg-transparent border-none outline-none font-medium text-center focus:ring-0 cursor-pointer hover:bg-stone-100 rounded ${!item.unit ? 'text-orange-500 animate-pulse' : 'text-stone-700'}`}
+                                                        >
+                                                            <option value="" disabled>-- ĐVT --</option>
+                                                            {uniqueOptions.map(opt => (
+                                                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                            ))}
+                                                        </select>
+                                                    )
+                                                })()}
+                                            </td>
                                             <td className="px-4 py-3">
                                                 <div className="flex flex-col gap-2">
                                                     <div className="relative">

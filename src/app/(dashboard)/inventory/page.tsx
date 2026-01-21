@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { Search, Loader2, Printer, Warehouse } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import { useSystem } from '@/contexts/SystemContext'
 import InventoryByLot from '@/components/inventory/InventoryByLot'
 import InventoryReconciliation from '@/components/inventory/InventoryReconciliation'
 
@@ -16,6 +17,7 @@ interface InventoryItem {
     qtyIn: number
     qtyOut: number
     balance: number
+    isUnconvertible?: boolean
 }
 
 interface Branch {
@@ -25,6 +27,7 @@ interface Branch {
 }
 
 export default function InventoryPage() {
+    const { systemType } = useSystem()
     const [activeTab, setActiveTab] = useState<'accounting' | 'lot' | 'tags' | 'reconciliation'>('accounting')
     const [items, setItems] = useState<InventoryItem[]>([])
     const [loading, setLoading] = useState(false)
@@ -37,6 +40,7 @@ export default function InventoryPage() {
     const [q, setQ] = useState('')
     const [dateFrom, setDateFrom] = useState('')
     const [dateTo, setDateTo] = useState('')
+    const [isConvertKg, setIsConvertKg] = useState(false)
 
     // Load Branches
     useEffect(() => {
@@ -88,6 +92,8 @@ export default function InventoryPage() {
             if (dateFrom) params.set('dateFrom', dateFrom)
             if (dateTo) params.set('dateTo', dateTo)
             if (selectedBranch) params.set('warehouse', selectedBranch)
+            if (systemType) params.set('systemType', systemType)
+            if (isConvertKg) params.set('convertToKg', 'true')
 
             const res = await fetch(`/api/inventory?${params.toString()}`)
             const data = await res.json()
@@ -113,7 +119,7 @@ export default function InventoryPage() {
             }
         }, 300)
         return () => clearTimeout(timer)
-    }, [q, dateFrom, dateTo, activeTab, selectedBranch])
+    }, [q, dateFrom, dateTo, activeTab, selectedBranch, systemType, isConvertKg])
 
     // Calculate Totals
     const totals = useMemo(() => {
@@ -165,8 +171,8 @@ export default function InventoryPage() {
             {activeTab === 'accounting' && (
                 <div className="space-y-4">
                     {/* Filters */}
-                    <div className="flex flex-col md:flex-row gap-4 items-end md:items-center bg-white dark:bg-stone-900 p-4 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm">
-                        <div className="flex-1 w-full md:w-auto">
+                    <div className="flex flex-col xl:flex-row gap-4 xl:items-center bg-white dark:bg-stone-900 p-4 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm">
+                        <div className="flex-1 w-full xl:w-auto">
                             <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Tìm kiếm</label>
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
@@ -180,7 +186,7 @@ export default function InventoryPage() {
                             </div>
                         </div>
 
-                        <div className="w-full md:w-48">
+                        <div className="w-full xl:w-48">
                             <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Chi nhánh / Kho</label>
                             <div className="relative">
                                 <Warehouse className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
@@ -197,7 +203,7 @@ export default function InventoryPage() {
                             </div>
                         </div>
 
-                        <div className="w-full md:w-40">
+                        <div className="w-full xl:w-40">
                             <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Từ ngày</label>
                             <input
                                 type="date"
@@ -207,7 +213,7 @@ export default function InventoryPage() {
                             />
                         </div>
 
-                        <div className="w-full md:w-40">
+                        <div className="w-full xl:w-40">
                             <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Đến ngày</label>
                             <input
                                 type="date"
@@ -217,10 +223,39 @@ export default function InventoryPage() {
                             />
                         </div>
 
-                        <div className="flex gap-2">
-                            <button className="p-2 text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-md">
-                                <Printer className="w-5 h-5" />
-                            </button>
+                        <div className="flex items-center gap-4 h-full pt-6">
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id="convertCheck"
+                                    checked={isConvertKg}
+                                    onChange={(e) => setIsConvertKg(e.target.checked)}
+                                    className="w-4 h-4 text-orange-600 rounded border-stone-300 focus:ring-orange-500"
+                                />
+                                <label htmlFor="convertCheck" className="text-sm font-medium text-stone-700 dark:text-stone-300 cursor-pointer select-none">
+                                    Quy đổi sang KG
+                                </label>
+                            </div>
+
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => {
+                                        const params = new URLSearchParams()
+                                        params.set('type', 'accounting')
+                                        if (systemType) params.set('systemType', systemType)
+                                        if (dateFrom) params.set('from', dateFrom)
+                                        if (dateTo) params.set('to', dateTo)
+                                        if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
+                                        if (q) params.set('search', q)
+                                        if (isConvertKg) params.set('convertToKg', 'true')
+                                        window.open(`/print/inventory?${params.toString()}`, '_blank')
+                                    }}
+                                    className="p-2 text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-md"
+                                    title="In báo cáo"
+                                >
+                                    <Printer className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -259,15 +294,30 @@ export default function InventoryPage() {
                                     ) : (
                                         <>
                                             {items.map((item, idx) => (
-                                                <tr key={idx} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
+                                                <tr
+                                                    key={idx}
+                                                    className={`
+                                                        hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors
+                                                        ${item.isUnconvertible ? 'bg-orange-50 dark:bg-orange-950/20' : ''}
+                                                    `}
+                                                >
                                                     <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{item.warehouse}</td>
                                                     <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-400">{item.productCode || 'N/A'}</td>
-                                                    <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">{item.productName}</td>
+                                                    <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100 flex items-center gap-2">
+                                                        {item.productName}
+                                                        {item.isUnconvertible && (
+                                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-600 border border-orange-200">
+                                                                Chưa thể quy đổi
+                                                            </span>
+                                                        )}
+                                                    </td>
                                                     <td className="px-4 py-3 text-right tabular-nums text-stone-600">{item.opening.toLocaleString()}</td>
                                                     <td className="px-4 py-3 text-right tabular-nums text-emerald-600 font-medium">+{item.qtyIn.toLocaleString()}</td>
                                                     <td className="px-4 py-3 text-right tabular-nums text-rose-600 font-medium">-{item.qtyOut.toLocaleString()}</td>
                                                     <td className="px-4 py-3 text-right tabular-nums font-bold text-stone-900 dark:text-stone-100">{item.balance.toLocaleString()}</td>
-                                                    <td className="px-4 py-3 text-center text-stone-500">{item.unit}</td>
+                                                    <td className="px-4 py-3 text-center text-stone-500">
+                                                        {item.unit}
+                                                    </td>
                                                 </tr>
                                             ))}
                                             {/* Summary Row */}

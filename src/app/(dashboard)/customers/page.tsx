@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { Plus, Search, Users, Edit, Trash2, Phone, Mail, Building2 } from 'lucide-react'
+import { useSystem } from '@/contexts/SystemContext'
 
 interface Customer {
     id: string
@@ -18,6 +19,7 @@ interface Customer {
 
 export default function CustomersPage() {
     const [customers, setCustomers] = useState<Customer[]>([])
+    const { systemType } = useSystem()
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('all')
@@ -31,6 +33,7 @@ export default function CustomersPage() {
         const { data, error } = await supabase
             .from('customers')
             .select('*')
+            .eq('system_code', systemType)
             .order('name')
 
         if (data) setCustomers(data)
@@ -101,8 +104,8 @@ export default function CustomersPage() {
                             key={status}
                             onClick={() => setFilterActive(status)}
                             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filterActive === status
-                                    ? 'bg-orange-100 text-orange-600'
-                                    : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                                ? 'bg-orange-100 text-orange-600'
+                                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
                                 }`}
                         >
                             {status === 'all' ? 'Tất cả' : status === 'active' ? 'Hoạt động' : 'Ngừng'}
@@ -161,8 +164,8 @@ export default function CustomersPage() {
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                         <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${customer.is_active
-                                                ? 'bg-green-100 text-green-700'
-                                                : 'bg-stone-100 text-stone-500'
+                                            ? 'bg-green-100 text-green-700'
+                                            : 'bg-stone-100 text-stone-500'
                                             }`}>
                                             {customer.is_active ? 'Hoạt động' : 'Ngừng'}
                                         </span>

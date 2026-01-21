@@ -2,8 +2,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { ArrowLeft, Save, Loader2, User, Phone, Mail, MapPin, FileText } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, User, Phone, Mail, MapPin, FileText, Sparkles } from 'lucide-react'
 import Link from 'next/link'
+import { useSystem } from '@/contexts/SystemContext'
 
 interface Customer {
     id: string
@@ -26,7 +27,9 @@ interface CustomerFormProps {
 
 export default function CustomerForm({ initialData, isEditMode = false }: CustomerFormProps) {
     const router = useRouter()
+    const { systemType, currentSystem } = useSystem()
     const [loading, setLoading] = useState(false)
+    const [generatingCode, setGeneratingCode] = useState(false)
 
     const [formData, setFormData] = useState({
         code: initialData?.code || '',
@@ -47,6 +50,50 @@ export default function CustomerForm({ initialData, isEditMode = false }: Custom
             setFormData(prev => ({ ...prev, [name]: checked }))
         } else {
             setFormData(prev => ({ ...prev, [name]: value }))
+        }
+    }
+
+    // Tự động tạo viết tắt từ tên phân hệ kho
+    const getSystemAbbreviation = (systemCode: string, systemName?: string): string => {
+        // Nếu có tên hệ thống, tạo viết tắt từ tên
+        if (systemName) {
+            // Bỏ chữ "Kho" nếu có ở đầu
+            const nameWithoutKho = systemName.replace(/^Kho\s+/i, '')
+
+            // Lấy chữ cái đầu của mỗi từ
+            return nameWithoutKho
+                .split(' ')
+                .filter(word => word.length > 0)
+                .map(word => word[0])
+                .join('')
+                .toUpperCase()
+        }
+
+        // Fallback: dùng 2-3 ký tự đầu của system code
+        return systemCode.substring(0, 3).toUpperCase()
+    }
+
+    const generateCustomerCode = async () => {
+        setGeneratingCode(true)
+        try {
+            // Lấy số lượng khách hàng hiện có trong phân hệ kho này
+            const { count, error } = await supabase
+                .from('customers')
+                .select('*', { count: 'exact', head: true })
+                .eq('system_code', systemType)
+
+            if (error) throw error
+
+            const nextNumber = (count || 0) + 1
+            const paddedNumber = nextNumber.toString().padStart(3, '0')
+            const abbreviation = getSystemAbbreviation(systemType, currentSystem?.name)
+            const newCode = `${abbreviation}-KH${paddedNumber}`
+
+            setFormData(prev => ({ ...prev, code: newCode }))
+        } catch (error: any) {
+            alert('Lỗi tạo mã: ' + error.message)
+        } finally {
+            setGeneratingCode(false)
         }
     }
 
@@ -74,7 +121,7 @@ export default function CustomerForm({ initialData, isEditMode = false }: Custom
             } else {
                 const { error } = await (supabase
                     .from('customers') as any)
-                    .insert([payload])
+                    .insert([{ ...payload, system_code: systemType }])
                 if (error) throw error
             }
 
@@ -141,14 +188,32 @@ export default function CustomerForm({ initialData, isEditMode = false }: Custom
                         <label className="block text-xs font-medium text-stone-700 mb-1.5">
                             Mã khách hàng <span className="text-red-500">*</span>
                         </label>
-                        <input
-                            name="code"
-                            required
-                            value={formData.code}
-                            onChange={handleChange}
-                            className={`${inputClass} font-mono`}
-                            placeholder="VD: KH001"
-                        />
+                        <div className="flex gap-2">
+                            <input
+                                name="code"
+                                required
+                                value={formData.code}
+                                onChange={handleChange}
+                                className={`${inputClass} font-mono flex-1`}
+                                placeholder="VD: DL-KH001"
+                            />
+                            {!isEditMode && (
+                                <button
+                                    type="button"
+                                    onClick={generateCustomerCode}
+                                    disabled={generatingCode}
+                                    className="px-3 py-2 rounded-lg text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 transition-colors disabled:opacity-50 flex items-center gap-1.5 whitespace-nowrap"
+                                    title="Tự động tạo mã"
+                                >
+                                    {generatingCode ? (
+                                        <Loader2 className="animate-spin" size={14} />
+                                    ) : (
+                                        <Sparkles size={14} />
+                                    )}
+                                    Tạo mã
+                                </button>
+                            )}
+                        </div>
                     </div>
                     <div>
                         <label className="block text-xs font-medium text-stone-700 mb-1.5">

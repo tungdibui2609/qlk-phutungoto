@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Search, Loader2, MapPin } from 'lucide-react'
+import { Search, Loader2, MapPin, Printer } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { useSystem } from '@/contexts/SystemContext'
 
@@ -102,6 +102,21 @@ export default function InventoryByLot() {
                     </div>
                 </div>
                 {/* Add more filters here if needed later (e.g. Warehouse/Branch if LOTs are linked to them) */}
+                <button
+                    onClick={() => {
+                        const params = new URLSearchParams()
+                        params.set('type', 'lot')
+                        if (systemType) params.set('systemType', systemType)
+                        if (searchTerm) params.set('search', searchTerm)
+                        // Add today as 'to' date for consistency in header display
+                        params.set('to', new Date().toISOString().split('T')[0])
+                        window.open(`/print/inventory?${params.toString()}`, '_blank')
+                    }}
+                    className="p-2 text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-md bg-white dark:bg-stone-800"
+                    title="In báo cáo"
+                >
+                    <Printer className="w-5 h-5" />
+                </button>
             </div>
 
             {/* Table */}

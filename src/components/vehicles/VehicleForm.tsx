@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { ArrowLeft, Save, Loader2, Car, Calendar, Sparkles } from 'lucide-react'
 import Link from 'next/link'
+import { useSystem } from '@/contexts/SystemContext'
 
 type Vehicle = Database['public']['Tables']['vehicles']['Row']
 
@@ -33,6 +34,7 @@ const BODY_TYPES = [
 
 export default function VehicleForm({ initialData, isEditMode = false }: VehicleFormProps) {
     const router = useRouter()
+    const { systemType } = useSystem()
     const [loading, setLoading] = useState(false)
 
     const currentYear = new Date().getFullYear()
@@ -73,7 +75,7 @@ export default function VehicleForm({ initialData, isEditMode = false }: Vehicle
             } else {
                 const { error } = await (supabase
                     .from('vehicles') as any)
-                    .insert([payload])
+                    .insert([{ ...payload, system_code: systemType }])
                 if (error) throw error
             }
 

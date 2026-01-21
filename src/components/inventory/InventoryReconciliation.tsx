@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, AlertTriangle, CheckCircle } from 'lucide-react'
+import { Loader2, AlertTriangle, CheckCircle, Printer } from 'lucide-react'
+import { useSystem } from '@/contexts/SystemContext'
 
 // Types
 interface AccountingItem {
@@ -24,28 +25,30 @@ interface ItemReconciliation {
 }
 
 export default function InventoryReconciliation() {
+    const { systemType } = useSystem()
     const [loading, setLoading] = useState(true)
     const [items, setItems] = useState<ItemReconciliation[]>([])
     const [showOnlyDiff, setShowOnlyDiff] = useState(false)
 
     useEffect(() => {
         fetchAndCompare()
-    }, [])
+    }, [systemType])
 
     async function fetchAndCompare() {
         setLoading(true)
         try {
             // 1. Fetch Accounting Inventory (via API to get calculated balances)
             // We fetch all items without filter to compare everything
-            const accRes = await fetch(`/api/inventory?dateTo=${new Date().toISOString().split('T')[0]}`)
+            const accRes = await fetch(`/api/inventory?dateTo=${new Date().toISOString().split('T')[0]}&systemType=${systemType}`)
             const accData = await accRes.json()
             const accountingItems: AccountingItem[] = accData.ok ? accData.items : []
 
             // 2. Fetch LOT Inventory (Active lots)
             const { data: lots, error } = await supabase
                 .from('lots')
-                .select('product_id, quantity, products(name, sku, unit)')
+                .select('product_id, quantity, products!inner(name, sku, unit, system_type)')
                 .eq('status', 'active')
+                .eq('products.system_type', systemType)
 
             if (error) throw error
 
@@ -134,6 +137,20 @@ export default function InventoryReconciliation() {
                         />
                         Chỉ hiện sai lệch
                     </label>
+
+                    <button
+                        onClick={() => {
+                            const params = new URLSearchParams()
+                            params.set('type', 'reconciliation')
+                            if (systemType) params.set('systemType', systemType)
+                            params.set('to', new Date().toISOString().split('T')[0])
+                            window.open(`/print/inventory?${params.toString()}`, '_blank')
+                        }}
+                        className="p-2 text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-md bg-white dark:bg-stone-800"
+                        title="In báo cáo"
+                    >
+                        <Printer className="w-5 h-5" />
+                    </button>
                 </div>
             </div>
 
@@ -204,6 +221,6 @@ export default function InventoryReconciliation() {
             <div className="text-xs text-stone-500 text-right mt-2">
                 * Chênh lệch = Tồn Kế toán - Tổng LOT. Nếu dương (+) tức là Kế toán nhiều hơn LOT thực tế.
             </div>
-        </div>
+        </div >
     )
 }

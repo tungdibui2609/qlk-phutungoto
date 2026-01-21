@@ -59,12 +59,43 @@ export function Combobox({
     )
 
     // Filter options based on search term
+    // Filter and Sort options based on search term
     const filteredOptions = useMemo(() => {
         if (!searchTerm) return options
-        const lowerTerm = searchTerm.toLowerCase()
-        return options.filter(option =>
-            option.label.toLowerCase().includes(lowerTerm)
-        )
+        const lowerTerm = searchTerm.toLowerCase().trim()
+
+        return options
+            .filter(option => {
+                const labelMatch = option.label?.toLowerCase().includes(lowerTerm)
+                const skuMatch = option.sku?.toLowerCase().includes(lowerTerm)
+                const codeMatch = option.code?.toLowerCase().includes(lowerTerm)
+                return labelMatch || skuMatch || codeMatch
+            })
+            .sort((a, b) => {
+                const aLabel = a.label?.toLowerCase() || ''
+                const bLabel = b.label?.toLowerCase() || ''
+                const aSku = a.sku?.toLowerCase() || a.code?.toLowerCase() || ''
+                const bSku = b.sku?.toLowerCase() || b.code?.toLowerCase() || ''
+
+                // 1. Exact SKU Match (Highest Priority)
+                if (aSku === lowerTerm && bSku !== lowerTerm) return -1
+                if (bSku === lowerTerm && aSku !== lowerTerm) return 1
+
+                // 2. SKU Starts With
+                const aSkuStart = aSku.startsWith(lowerTerm)
+                const bSkuStart = bSku.startsWith(lowerTerm)
+                if (aSkuStart && !bSkuStart) return -1
+                if (!aSkuStart && bSkuStart) return 1
+
+                // 3. Label Starts With
+                const aLabelStart = aLabel.startsWith(lowerTerm)
+                const bLabelStart = bLabel.startsWith(lowerTerm)
+                if (aLabelStart && !bLabelStart) return -1
+                if (!aLabelStart && bLabelStart) return 1
+
+                // 4. Fallback to original order (or name length for relevance)
+                return 0
+            })
     }, [options, searchTerm])
 
     const handleSelect = (option: ComboboxOption) => {

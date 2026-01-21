@@ -4,11 +4,13 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Plus, Search, Building2, Phone, Mail, MoreHorizontal, Edit, Trash2, CheckCircle, XCircle } from 'lucide-react'
+import { useSystem } from '@/contexts/SystemContext'
 
 type Supplier = Database['public']['Tables']['suppliers']['Row']
 
 export default function SuppliersPage() {
     const [suppliers, setSuppliers] = useState<Supplier[]>([])
+    const { systemType } = useSystem()
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('all')
@@ -22,6 +24,7 @@ export default function SuppliersPage() {
         const { data, error } = await supabase
             .from('suppliers')
             .select('*')
+            .eq('system_code', systemType)
             .order('name')
 
         if (data) setSuppliers(data)
@@ -90,8 +93,8 @@ export default function SuppliersPage() {
                             key={f}
                             onClick={() => setFilterActive(f)}
                             className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${filterActive === f
-                                    ? 'bg-orange-500 text-white'
-                                    : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                                ? 'bg-orange-500 text-white'
+                                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
                                 }`}
                         >
                             {f === 'all' ? 'Tất cả' : f === 'active' ? 'Hoạt động' : 'Ngừng'}

@@ -4,11 +4,13 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Plus, Search, Car, Edit, Trash2, Calendar, ChevronDown, ChevronRight } from 'lucide-react'
+import { useSystem } from '@/contexts/SystemContext'
 
 type Vehicle = Database['public']['Tables']['vehicles']['Row']
 
 export default function VehiclesPage() {
     const [vehicles, setVehicles] = useState<Vehicle[]>([])
+    const { systemType } = useSystem()
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const [expandedBrands, setExpandedBrands] = useState<Set<string>>(new Set())
@@ -21,6 +23,7 @@ export default function VehiclesPage() {
         setLoading(true)
         const { data, error } = await (supabase.from('vehicles') as any)
             .select('*')
+            .eq('system_code', systemType)
             .order('brand')
             .order('model')
 

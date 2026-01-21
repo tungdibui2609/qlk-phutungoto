@@ -42,6 +42,8 @@ export interface Database {
                     is_active: boolean
                     is_returnable: boolean
                     packaging_specification: string | null
+                    system_type: string | null
+                    system_code: string | null
                 }
                 Insert: {
                     id?: string
@@ -75,6 +77,7 @@ export interface Database {
                     is_active?: boolean
                     is_returnable?: boolean
                     packaging_specification?: string | null
+                    system_code?: string | null
                 }
                 Update: {
                     id?: string
@@ -108,6 +111,7 @@ export interface Database {
                     is_active?: boolean
                     is_returnable?: boolean
                     packaging_specification?: string | null
+                    system_code?: string | null
                 }
             }
             suppliers: {
@@ -126,6 +130,7 @@ export interface Database {
                     notes: string | null
                     status: string | null
                     is_active: boolean
+                    system_code: string | null
                 }
                 Insert: {
                     id?: string
@@ -142,6 +147,7 @@ export interface Database {
                     notes?: string | null
                     status?: string | null
                     is_active?: boolean
+                    system_code?: string | null
                 }
                 Update: {
                     id?: string
@@ -158,6 +164,7 @@ export interface Database {
                     notes?: string | null
                     status?: string | null
                     is_active?: boolean
+                    system_code?: string | null
                 }
             }
             customers: {
@@ -173,6 +180,7 @@ export interface Database {
                     tax_code: string | null
                     notes: string | null
                     is_active: boolean
+                    system_code: string | null
                 }
                 Insert: {
                     id?: string
@@ -186,6 +194,7 @@ export interface Database {
                     tax_code?: string | null
                     notes?: string | null
                     is_active?: boolean
+                    system_code?: string | null
                 }
                 Update: {
                     id?: string
@@ -199,6 +208,7 @@ export interface Database {
                     tax_code?: string | null
                     notes?: string | null
                     is_active?: boolean
+                    system_code?: string | null
                 }
             }
             branches: {
@@ -244,6 +254,7 @@ export interface Database {
                     supplier_address: string | null
                     supplier_phone: string | null
                     image_url: string | null
+                    system_code: string | null
                 }
                 Insert: {
                     id?: string
@@ -255,6 +266,7 @@ export interface Database {
                     supplier_address?: string | null
                     supplier_phone?: string | null
                     image_url?: string | null
+                    system_code?: string | null
                 }
                 Update: {
                     id?: string
@@ -266,6 +278,7 @@ export interface Database {
                     supplier_address?: string | null
                     supplier_phone?: string | null
                     image_url?: string | null
+                    system_code?: string | null
                 }
             }
             outbound_orders: {
@@ -280,6 +293,7 @@ export interface Database {
                     customer_address: string | null
                     customer_phone: string | null
                     image_url: string | null
+                    system_code: string | null
                 }
                 Insert: {
                     id?: string
@@ -292,6 +306,7 @@ export interface Database {
                     customer_address?: string | null
                     customer_phone?: string | null
                     image_url?: string | null
+                    system_code?: string | null
                 }
                 Update: {
                     id?: string
@@ -304,6 +319,7 @@ export interface Database {
                     customer_address?: string | null
                     customer_phone?: string | null
                     image_url?: string | null
+                    system_code?: string | null
                 }
             }
             outbound_order_items: {
@@ -367,6 +383,7 @@ export interface Database {
                     year_from: number | null
                     year_to: number | null
                     engine_type: string | null
+                    system_code: string | null
                 }
                 Insert: {
                     id?: string
@@ -383,6 +400,7 @@ export interface Database {
                     year_from?: number | null
                     year_to?: number | null
                     engine_type?: string | null
+                    system_code?: string | null
                 }
                 Update: {
                     id?: string
@@ -399,6 +417,7 @@ export interface Database {
                     year_from?: number | null
                     year_to?: number | null
                     engine_type?: string | null
+                    system_code?: string | null
                 }
             }
             roles: {
