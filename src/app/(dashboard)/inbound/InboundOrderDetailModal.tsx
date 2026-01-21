@@ -11,7 +11,7 @@ import { useUser } from '@/contexts/UserContext'
 interface InboundOrder {
     id: string
     code: string
-    status: string
+    status: string | null
     created_at: string
     warehouse_name: string | null
     description: string | null
