@@ -9,6 +9,8 @@ export async function GET(request: Request) {
     try {
         const cookieStore = await cookies()
 
+        const authHeader = request.headers.get('Authorization')
+
         const supabase = createServerClient<Database>(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
             process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -24,6 +26,9 @@ export async function GET(request: Request) {
                         cookieStore.set({ name, value: '', ...options })
                     },
                 },
+                global: {
+                    headers: authHeader ? { Authorization: authHeader } : {}
+                }
             }
         )
         const { searchParams } = new URL(request.url)

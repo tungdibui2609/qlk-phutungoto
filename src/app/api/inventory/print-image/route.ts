@@ -65,7 +65,11 @@ export async function GET(req: NextRequest) {
 
         // Ensure specific system params
         params.set('snapshot', '1');
-        params.set('token', token);
+
+        // Use token from session (server-side cookie) OR from params (passed from client)
+        const paramToken = searchParams.get('token');
+        const finalToken = token || paramToken || '';
+        params.set('token', finalToken);
 
         if (companyData) {
             if (companyData.name) params.set('cmp_name', companyData.name);

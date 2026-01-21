@@ -61,6 +61,7 @@ export default function InventoryPrintPage() {
     const searchTerm = searchParams.get('search') || ''
     const convertToKg = searchParams.get('convertToKg') === 'true'
     const isSnapshot = searchParams.get('snapshot') === '1'
+    const token = searchParams.get('token')
 
     // Check for company info in params (from screenshot service)
     const cmpName = searchParams.get('cmp_name')
@@ -140,6 +141,10 @@ export default function InventoryPrintPage() {
     async function fetchData() {
         setLoading(true)
         try {
+            if (token) {
+                await supabase.auth.setSession({ access_token: token, refresh_token: '' })
+            }
+
             if (type === 'accounting') {
                 const params = new URLSearchParams()
                 if (systemType) params.set('systemType', systemType)
@@ -149,7 +154,12 @@ export default function InventoryPrintPage() {
                 if (searchTerm) params.set('q', searchTerm)
                 if (convertToKg) params.set('convertToKg', 'true')
 
-                const res = await fetch(`/api/inventory?${params.toString()}`)
+                if (convertToKg) params.set('convertToKg', 'true')
+
+                const headers: HeadersInit = {}
+                if (token) headers['Authorization'] = `Bearer ${token}`
+
+                const res = await fetch(`/api/inventory?${params.toString()}`, { headers })
                 const data = await res.json()
                 if (data.ok) setAccountingItems(data.items)
             }
@@ -221,7 +231,10 @@ export default function InventoryPrintPage() {
             }
             else if (type === 'reconciliation') {
                 // Fetch Accounting
-                const accRes = await fetch(`/api/inventory?dateTo=${dateTo}&systemType=${systemType}`)
+                const headers: HeadersInit = {}
+                if (token) headers['Authorization'] = `Bearer ${token}`
+
+                const accRes = await fetch(`/api/inventory?dateTo=${dateTo}&systemType=${systemType}`, { headers })
                 const accData = await accRes.json()
                 const accItems: InventoryItem[] = accData.ok ? accData.items : []
 
@@ -320,7 +333,14 @@ export default function InventoryPrintPage() {
             params.set('signTitle3', signTitle3)
             params.set('signPerson1', signPerson1)
             params.set('signPerson2', signPerson2)
+            params.set('signPerson2', signPerson2)
             params.set('signPerson3', signPerson3)
+
+            // Get current session token to pass to the snapshot service
+            const { data: { session } } = await supabase.auth.getSession()
+            if (session?.access_token) {
+                params.set('token', session.access_token)
+            }
 
             const res = await fetch(`/api/inventory/print-image?${params.toString()}`)
             if (!res.ok) {
