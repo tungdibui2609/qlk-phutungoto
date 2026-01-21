@@ -12,6 +12,19 @@ import { useSystem } from '@/contexts/SystemContext'
 
 type OutboundOrder = Database['public']['Tables']['outbound_orders']['Row'] & {
     items?: { note: string | null }[]
+    customer_name?: string | null
+    customer_address?: string | null
+    customer_phone?: string | null
+    warehouse_name?: string | null
+    description?: string | null
+    image_url?: string | null
+    images?: string[] | null
+    metadata?: {
+        vehicleNumber?: string
+        driverName?: string
+        containerNumber?: string
+    } | null
+    order_types?: { name: string } | null
 }
 
 export default function OutboundPage() {
@@ -42,7 +55,7 @@ export default function OutboundPage() {
         if (error) {
             console.error('Error fetching orders:', error)
         } else {
-            setOrders(data || [])
+            setOrders((data || []) as any)
         }
         setLoading(false)
     }

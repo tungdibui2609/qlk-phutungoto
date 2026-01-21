@@ -15,6 +15,16 @@ type InboundOrder = Database['public']['Tables']['inbound_orders']['Row'] & {
     items?: { note: string | null }[]
     description: string | null
     warehouse_name: string | null
+    supplier_address?: string | null
+    supplier_phone?: string | null
+    image_url?: string | null
+    images?: string[] | null
+    metadata?: {
+        vehicleNumber?: string
+        driverName?: string
+        containerNumber?: string
+    } | null
+    order_types?: { name: string } | null
 }
 
 export default function InboundPage() {

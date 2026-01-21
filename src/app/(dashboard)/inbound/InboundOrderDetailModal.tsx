@@ -19,6 +19,13 @@ interface InboundOrder {
     supplier_address: string | null
     supplier_phone: string | null
     image_url?: string | null
+    images?: string[] | null
+    metadata?: {
+        vehicleNumber?: string
+        driverName?: string
+        containerNumber?: string
+    } | null
+    order_types?: { name: string } | null
 }
 
 interface OrderItem {
@@ -74,15 +81,25 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
             setItems(data as any)
         }
 
-        // Fetch order details again to get image_url if not present in prop
-        const { data: orderData } = await supabase
-            .from('inbound_orders')
-            .select('image_url')
+        // Fetch order details again to get extra fields
+        const { data: orderData } = await (supabase
+            .from('inbound_orders') as any)
+            .select('image_url, images, metadata, order_types(name)')
             .eq('id', order.id)
             .single()
 
-        if (orderData && (orderData as any).image_url) {
-            setImageUrl((orderData as any).image_url)
+        if (orderData) {
+            // Merge extra data into the current order object for display
+            Object.assign(order, {
+                image_url: orderData.image_url,
+                images: orderData.images,
+                metadata: orderData.metadata,
+                order_types: orderData.order_types
+            })
+            // Also update local state if needed (though we rely on order prop mostly, but simpler to force update via refetch in parent or just mutate prop for display safely)
+            // Ideally we should have local fullOrder state, but 'order' prop is used.
+            // Let's force a re-render by setting a local state dummy or updating imageUrl separately.
+            if (orderData.image_url) setImageUrl(orderData.image_url)
         }
 
         setLoading(false)
@@ -202,6 +219,11 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                         <p className="text-sm text-stone-500 flex items-center gap-2">
                             <Calendar size={14} />
                             {format(new Date(order.created_at), 'dd/MM/yyyy HH:mm')}
+                            {order.order_types?.name && (
+                                <span className="ml-2 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold border border-blue-100">
+                                    {order.order_types.name}
+                                </span>
+                            )}
                         </p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-stone-200 dark:hover:bg-zinc-800 rounded-lg transition-colors">
@@ -238,6 +260,33 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                     {order.warehouse_name || 'N/A'}
                                 </p>
                             </div>
+
+                            {/* Logistics Info (Metadata) */}
+                            {(order.metadata?.vehicleNumber || order.metadata?.driverName || order.metadata?.containerNumber) && (
+                                <div>
+                                    <label className="text-xs font-semibold text-stone-400 uppercase">Vận chuyển</label>
+                                    <div className="mt-1 space-y-1 text-sm text-stone-700 dark:text-gray-300">
+                                        {order.metadata.vehicleNumber && (
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-stone-500 w-20">Biển số:</span>
+                                                <span className="font-medium bg-stone-100 dark:bg-zinc-700 px-1.5 rounded">{order.metadata.vehicleNumber}</span>
+                                            </div>
+                                        )}
+                                        {order.metadata.driverName && (
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-stone-500 w-20">Tài xế:</span>
+                                                <span className="font-medium">{order.metadata.driverName}</span>
+                                            </div>
+                                        )}
+                                        {order.metadata.containerNumber && (
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-stone-500 w-20">Container:</span>
+                                                <span className="font-medium font-mono">{order.metadata.containerNumber}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                         <div className="space-y-4">
                             <div>
@@ -297,6 +346,20 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                     )}
                                 </div>
                             </div>
+                            {/* Additional Images Grid */}
+                            {order.images && order.images.length > 0 && (
+                                <div className="mt-2 grid grid-cols-3 gap-2">
+                                    {order.images.map((img, idx) => (
+                                        <img
+                                            key={idx}
+                                            src={img}
+                                            alt={`Image ${idx + 1}`}
+                                            className="h-20 w-auto object-cover rounded-lg border border-stone-200 dark:border-zinc-700 cursor-pointer hover:opacity-80 transition-opacity"
+                                            onClick={() => window.open(img, '_blank')}
+                                        />
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -471,6 +534,6 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                     )}
                 </div>
             </div>
-        </div>
+        </div >
     )
 }
