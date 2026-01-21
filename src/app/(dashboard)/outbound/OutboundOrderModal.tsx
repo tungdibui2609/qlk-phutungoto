@@ -12,6 +12,7 @@ import { ImageUpload } from '@/components/ui/ImageUpload'
 
 // Force update
 type Product = Database['public']['Tables']['products']['Row'] & {
+    stock_quantity: number
     product_units?: {
         unit_id: string
         conversion_rate: number
