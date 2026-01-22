@@ -34,6 +34,9 @@ const generateOrderCode = async (type: 'PNK' | 'PXK', systemCode?: string, syste
         if (name) {
             const nameWithoutKho = name.replace(/^Kho\s+/i, '')
             return nameWithoutKho
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/đ/g, "d").replace(/Đ/g, "D")
                 .split(' ')
                 .filter(word => word.length > 0)
                 .map(word => word[0])
@@ -107,6 +110,8 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
     const [orderTypeId, setOrderTypeId] = useState('')
     // Images State
     const [images, setImages] = useState<string[]>([])
+    // Conversion State
+    const [targetUnit, setTargetUnit] = useState<string>('')
 
     const totalAmount = items.reduce((sum, item) => sum + item.quantity * (item.price || 0), 0)
 
@@ -136,7 +141,9 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
             setDriverName('')
             setContainerNumber('')
             setOrderTypeId('')
+            setOrderTypeId('')
             setImages([])
+            setTargetUnit('')
         }
     }, [isOpen])
 
@@ -335,7 +342,8 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                     metadata: {
                         vehicleNumber,
                         driverName,
-                        containerNumber
+                        containerNumber,
+                        targetUnit
                     }
                 })
                 .select()
@@ -387,7 +395,7 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full ${hasModule('outbound_ui_compact') ? 'max-w-3xl' : 'max-w-7xl'} h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200`}>
+            <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full ${hasModule('outbound_ui_compact') ? 'max-w-5xl' : 'max-w-7xl'} h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200`}>
                 {/* Header */}
                 <div className="p-6 border-b border-stone-200 dark:border-zinc-800 flex justify-between items-center bg-stone-50 dark:bg-zinc-900/50">
                     <div>
@@ -397,6 +405,21 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                         </h2>
                         <p className="text-sm text-stone-500">Xuất hàng, bán hàng, chuyển kho</p>
                     </div>
+                    {hasModule('outbound_conversion') && (
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-stone-600 dark:text-stone-400 whitespace-nowrap">Hiển thị quy đổi theo:</span>
+                            <select
+                                value={targetUnit}
+                                onChange={(e) => setTargetUnit(e.target.value)}
+                                className="px-3 py-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-sm text-stone-800 dark:text-gray-100 outline-none focus:ring-2 focus:ring-orange-500"
+                            >
+                                <option value="">-- Không --</option>
+                                {units.map(u => (
+                                    <option key={u.id} value={u.name}>{u.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
                     <button onClick={onClose} className="p-2 hover:bg-stone-200 dark:hover:bg-zinc-800 rounded-lg transition-colors">
                         <X size={24} />
                     </button>
@@ -584,7 +607,7 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                     </div>
 
                                     <div className="border border-stone-200 dark:border-zinc-700 rounded-xl overflow-visible">
-                                        <table className="w-full text-xs text-left">
+                                        <table className={`w-full text-left ${hasModule('outbound_ui_compact') ? 'text-base' : 'text-xs'}`}>
                                             <thead className="bg-stone-50 dark:bg-zinc-800/50 text-stone-500 font-medium text-center">
                                                 <tr>
                                                     <th className="px-4 py-3 w-10">#</th>
@@ -596,6 +619,14 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                                             <span>Thực xuất</span>
                                                         </div>
                                                     </th>
+
+                                                    {/* Conversion Column */}
+                                                    {hasModule('outbound_conversion') && targetUnit && (
+                                                        <th className="px-4 py-3 w-32 text-right text-orange-600">
+                                                            <div>SL Quy đổi</div>
+                                                            <div className="text-[10px] font-normal">({targetUnit})</div>
+                                                        </th>
+                                                    )}
 
                                                     {/* Module Financials */}
                                                     {hasModule('outbound_financials') && (
@@ -686,21 +717,23 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                                                         }}
                                                                         className="w-full bg-transparent outline-none text-right font-medium pr-6"
                                                                     />
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            const newItems = [...items]
-                                                                            newItems[index].isDocQtyVisible = !newItems[index].isDocQtyVisible
-                                                                            setItems(newItems)
-                                                                        }}
-                                                                        className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 rounded-md hover:bg-stone-100"
-                                                                        title="Nhập số lượng yêu cầu"
-                                                                        tabIndex={-1}
-                                                                    >
-                                                                        <ChevronDown size={14} className={`transition-transform duration-200 ${item.isDocQtyVisible ? 'rotate-180' : ''}`} />
-                                                                    </button>
+                                                                    {hasModule('outbound_financials') && (
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                const newItems = [...items]
+                                                                                newItems[index].isDocQtyVisible = !newItems[index].isDocQtyVisible
+                                                                                setItems(newItems)
+                                                                            }}
+                                                                            className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 rounded-md hover:bg-stone-100"
+                                                                            title="Nhập số lượng yêu cầu"
+                                                                            tabIndex={-1}
+                                                                        >
+                                                                            <ChevronDown size={14} className={`transition-transform duration-200 ${item.isDocQtyVisible ? 'rotate-180' : ''}`} />
+                                                                        </button>
+                                                                    )}
                                                                 </div>
 
-                                                                {item.isDocQtyVisible && (
+                                                                {hasModule('outbound_financials') && item.isDocQtyVisible && (
                                                                     <div className="relative animate-in slide-in-from-top-2 duration-200">
                                                                         <div className="text-[10px] text-stone-500 text-center mb-0.5">SL yêu cầu</div>
                                                                         <input
@@ -717,6 +750,55 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                                                 )}
                                                             </div>
                                                         </td>
+
+                                                        {/* Conversion Logic */}
+                                                        {hasModule('outbound_conversion') && targetUnit && (
+                                                            <td className="px-4 py-3 text-right font-medium text-orange-600">
+                                                                {(() => {
+                                                                    if (!item.quantity || !item.unit) return '-'
+
+                                                                    // 1. Convert current unit to base unit
+                                                                    const product = products.find(p => p.id === item.productId)
+                                                                    if (!product) return '-'
+
+                                                                    let baseQty = 0
+                                                                    // Check if current unit is base unit
+                                                                    if (item.unit === product.unit) {
+                                                                        baseQty = item.quantity
+                                                                    } else {
+                                                                        const uConfig = product.product_units?.find(pu => {
+                                                                            const uName = units.find(u => u.id === pu.unit_id)?.name
+                                                                            return uName === item.unit
+                                                                        })
+
+                                                                        if (uConfig) {
+                                                                            baseQty = item.quantity * uConfig.conversion_rate
+                                                                        } else {
+                                                                            return '-' // Cannot convert to base
+                                                                        }
+                                                                    }
+
+                                                                    // 2. Convert base qty to target unit
+                                                                    // If target is base
+                                                                    if (targetUnit === product.unit) {
+                                                                        return Number.isInteger(baseQty) ? baseQty : baseQty.toFixed(2)
+                                                                    }
+
+                                                                    // If target is other unit
+                                                                    const targetConfig = product.product_units?.find(pu => {
+                                                                        const uName = units.find(u => u.id === pu.unit_id)?.name
+                                                                        return uName === targetUnit
+                                                                    })
+
+                                                                    if (targetConfig) {
+                                                                        const result = baseQty / targetConfig.conversion_rate
+                                                                        return Number.isInteger(result) ? result : result.toFixed(2)
+                                                                    }
+
+                                                                    return '-'
+                                                                })()}
+                                                            </td>
+                                                        )}
                                                         {/* Module Financials */}
                                                         {hasModule('outbound_financials') && (
                                                             <>
@@ -794,14 +876,58 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                                         </td>
                                                     </tr>
                                                 )}
-                                                {items.length > 0 && hasModule('outbound_financials') && (
+                                                {items.length > 0 && (
                                                     <tr className="bg-stone-50 dark:bg-zinc-800/50 font-bold border-t border-stone-200 dark:border-zinc-700">
-                                                        <td colSpan={5} className="px-4 py-3 text-right text-stone-900 dark:text-white">
+                                                        <td colSpan={3} className="px-4 py-3 text-right text-stone-900 dark:text-white">
                                                             Tổng cộng:
                                                         </td>
-                                                        <td className="px-4 py-3 text-right text-orange-600 text-base">
-                                                            {totalAmount.toLocaleString()}
+                                                        {/* Total Quantity */}
+                                                        <td className="px-4 py-3 text-right text-stone-900 dark:text-white">
+                                                            {items.reduce((sum, item) => sum + item.quantity, 0).toLocaleString('vi-VN')}
                                                         </td>
+
+                                                        {/* Total Converted */}
+                                                        {hasModule('outbound_conversion') && targetUnit && (
+                                                            <td className="px-4 py-3 text-right text-orange-600">
+                                                                {items.reduce((sum, item) => {
+                                                                    if (!item.quantity || !item.unit) return sum
+                                                                    const product = products.find(p => p.id === item.productId)
+                                                                    if (!product) return sum
+
+                                                                    let baseQty = 0
+                                                                    if (item.unit === product.unit) {
+                                                                        baseQty = item.quantity
+                                                                    } else {
+                                                                        const uConfig = product.product_units?.find(pu => {
+                                                                            const uName = units.find(u => u.id === pu.unit_id)?.name
+                                                                            return uName === item.unit
+                                                                        })
+                                                                        if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
+                                                                    }
+
+                                                                    if (targetUnit === product.unit) return sum + baseQty
+
+                                                                    const targetConfig = product.product_units?.find(pu => {
+                                                                        const uName = units.find(u => u.id === pu.unit_id)?.name
+                                                                        return uName === targetUnit
+                                                                    })
+
+                                                                    if (targetConfig) return sum + (baseQty / targetConfig.conversion_rate)
+                                                                    return sum
+                                                                }, 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}
+                                                            </td>
+                                                        )}
+
+                                                        {/* Financials: Price (Empty) + Amount (Total) */}
+                                                        {hasModule('outbound_financials') && (
+                                                            <>
+                                                                <td className="px-4 py-3"></td>
+                                                                <td className="px-4 py-3 text-right text-blue-600 text-base">
+                                                                    {totalAmount.toLocaleString('vi-VN')}
+                                                                </td>
+                                                            </>
+                                                        )}
+
                                                         <td colSpan={2} className="px-4 py-3"></td>
                                                     </tr>
                                                 )}
@@ -815,7 +941,7 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                             Thêm dòng
                                         </button>
                                     </div>
-                                </div>
+                                </div >
                             </>
                         )
                     })()}
@@ -856,6 +982,6 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                     variant="warning"
                 />
             </div>
-        </div>
+        </div >
     )
 }

@@ -77,7 +77,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             {children}
 
             {/* Toast Container */}
-            <div className="fixed top-4 right-4 z-[100] space-y-2 max-w-sm">
+            <div className="fixed top-4 right-4 z-[9999] space-y-2 max-w-sm">
                 {toasts.map(toast => (
                     <div
                         key={toast.id}
@@ -97,7 +97,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
             {/* Confirm Dialog */}
             {confirmDialog && (
-                <div className="fixed inset-0 z-[101] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in">
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in">
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-6 max-w-md w-full mx-4 animate-in zoom-in-95">
                         <div className="flex items-start gap-4">
                             <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-full">

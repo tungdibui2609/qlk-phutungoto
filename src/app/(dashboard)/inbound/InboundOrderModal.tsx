@@ -32,6 +32,9 @@ const generateOrderCode = async (type: 'PNK' | 'PXK', systemCode?: string, syste
         if (name) {
             const nameWithoutKho = name.replace(/^Kho\s+/i, '')
             return nameWithoutKho
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/đ/g, "d").replace(/Đ/g, "D")
                 .split(' ')
                 .filter(word => word.length > 0)
                 .map(word => word[0])
@@ -105,6 +108,8 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
     const [orderTypeId, setOrderTypeId] = useState('')
     // Images State
     const [images, setImages] = useState<string[]>([])
+    // Conversion State
+    const [targetUnit, setTargetUnit] = useState<string>('')
 
     const totalAmount = items.reduce((sum, item) => sum + item.quantity * item.price, 0)
 
@@ -132,7 +137,9 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
             setDriverName('')
             setContainerNumber('')
             setOrderTypeId('')
+            setOrderTypeId('')
             setImages([])
+            setTargetUnit('')
         }
     }, [isOpen, editOrderId])
 
@@ -201,7 +208,13 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                     const meta = order.metadata || {}
                     setVehicleNumber(meta.vehicleNumber || '')
                     setDriverName(meta.driverName || '')
+                    setVehicleNumber(meta.vehicleNumber || '')
+                    setDriverName(meta.driverName || '')
                     setContainerNumber(meta.containerNumber || '')
+                    if (meta.targetUnit) setTargetUnit(meta.targetUnit)
+                    if (meta.targetUnit) {
+                        setTargetUnit(meta.targetUnit)
+                    }
 
                     // Fetch Items
                     const { data: itemsData, error: itemsError } = await supabase
@@ -348,7 +361,8 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                         metadata: {
                             vehicleNumber,
                             driverName,
-                            containerNumber
+                            containerNumber,
+                            targetUnit
                         }
                     })
                     .eq('id', editOrderId)
@@ -377,7 +391,8 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                         metadata: {
                             vehicleNumber,
                             driverName,
-                            containerNumber
+                            containerNumber,
+                            targetUnit
                         }
                     })
                     .select()
@@ -433,7 +448,7 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full ${hasModule('inbound_ui_compact') ? 'max-w-3xl' : 'max-w-7xl'} h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200`}>
+            <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full ${hasModule('inbound_ui_compact') ? 'max-w-5xl' : 'max-w-7xl'} h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200`}>
                 {/* Header */}
                 <div className="p-6 border-b border-stone-200 dark:border-zinc-800 flex justify-between items-center bg-stone-50 dark:bg-zinc-900/50">
                     <div>
@@ -445,6 +460,21 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                             {currentSystem?.name} - {editOrderId ? 'Cập nhật phiếu' : 'Tạo phiếu mới'}
                         </p>
                     </div>
+                    {hasModule('inbound_conversion') && (
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-stone-600 dark:text-stone-400 whitespace-nowrap">Hiển thị quy đổi theo:</span>
+                            <select
+                                value={targetUnit}
+                                onChange={(e) => setTargetUnit(e.target.value)}
+                                className="px-3 py-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-sm text-stone-800 dark:text-gray-100 outline-none focus:ring-2 focus:ring-orange-500"
+                            >
+                                <option value="">-- Không --</option>
+                                {units.map(u => (
+                                    <option key={u.id} value={u.name}>{u.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
                     <button onClick={onClose} className="p-2 hover:bg-stone-200 dark:hover:bg-zinc-800 rounded-lg transition-colors">
                         <X size={24} />
                     </button>
@@ -627,13 +657,20 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                         </div>
 
                         <div className="border border-stone-200 dark:border-zinc-700 rounded-xl overflow-visible">
-                            <table className="w-full text-xs text-left">
+                            <table className={`w-full text-left ${hasModule('inbound_ui_compact') ? 'text-base' : 'text-xs'}`}>
                                 <thead className="bg-stone-50 dark:bg-zinc-800/50 text-stone-500 font-medium text-center">
                                     <tr>
                                         <th className="px-4 py-3 w-10">#</th>
                                         <th className="px-4 py-3 min-w-[300px]">Sản phẩm</th>
                                         <th className="px-4 py-3 w-24">ĐVT</th>
                                         <th className="px-4 py-3 w-32 text-right">Số lượng</th>
+
+                                        {hasModule('inbound_conversion') && targetUnit && (
+                                            <th className="px-4 py-3 w-32 text-right text-orange-600">
+                                                <div>SL Quy đổi</div>
+                                                <div className="text-[10px] font-normal">({targetUnit})</div>
+                                            </th>
+                                        )}
 
                                         {/* Module Financials */}
                                         {hasModule('inbound_financials') && (
@@ -718,7 +755,7 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                                             {/* Quantity & Document Quantity - Always Show but simplified if Document Module off? */}
                                             <td className="px-4 py-3">
                                                 <div className="flex flex-col gap-2">
-                                                    <div className="relative">
+                                                    <div className="relative group/qty">
                                                         <input
                                                             type="text"
                                                             value={item.quantity ? item.quantity.toLocaleString('vi-VN') : ''}
@@ -726,12 +763,110 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                                                                 const val = e.target.value.replace(/\D/g, '')
                                                                 updateItem(item.id, 'quantity', Number(val))
                                                             }}
-                                                            className="w-full bg-transparent outline-none text-right font-medium pr-2"
+                                                            className="w-full bg-transparent outline-none text-right font-bold pr-2 focus:text-orange-600 transition-colors"
+                                                            placeholder="0"
                                                         />
+
+                                                        {/* Toggle Document Quantity - Only if Financial Module Active */}
+                                                        {hasModule('inbound_financials') && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    // Toggle visibility logic or explicit field
+                                                                    const newVisibility = !item.isDocQtyVisible
+                                                                    // Update item state to track visibility
+                                                                    updateItem(item.id, 'isDocQtyVisible', newVisibility)
+                                                                    // If showing, sync value initially if 0? No, keep as is.
+                                                                }}
+                                                                className={`absolute -right-2 top-1/2 -translate-y-1/2 p-1 rounded-full transition-all ${item.isDocQtyVisible || (item.document_quantity && item.document_quantity !== item.quantity)
+                                                                    ? 'text-blue-500 bg-blue-50 opacity-100'
+                                                                    : 'text-stone-300 opacity-0 group-hover/qty:opacity-100 hover:bg-stone-100 hover:text-stone-500'
+                                                                    }`}
+                                                                title="Nhập số lượng chứng từ (nếu khác thực tế)"
+                                                                tabIndex={-1}
+                                                            >
+                                                                <ChevronDown size={14} className={`transition-transform duration-200 ${item.isDocQtyVisible || (item.document_quantity && item.document_quantity !== item.quantity) ? 'rotate-180' : ''}`} />
+                                                            </button>
+                                                        )}
                                                     </div>
-                                                    {/* Optional Document Quantity based on Module? or keep as is behavior? -> Keep as is for now or wrap in check */}
+
+                                                    {/* Document Quantity Input */}
+                                                    {hasModule('inbound_financials') && (item.isDocQtyVisible || (item.document_quantity && item.document_quantity !== item.quantity)) && (
+                                                        <div className="relative animate-in slide-in-from-top-1 fade-in duration-200">
+                                                            <div className="absolute -left-2 top-1/2 -translate-y-1/2 w-1 h-1 bg-blue-400 rounded-full"></div>
+                                                            <input
+                                                                type="text"
+                                                                value={item.document_quantity ? item.document_quantity.toLocaleString('vi-VN') : ''}
+                                                                onChange={e => {
+                                                                    const val = e.target.value.replace(/\D/g, '')
+                                                                    updateItem(item.id, 'document_quantity', Number(val))
+                                                                }}
+                                                                className="w-full bg-stone-50 dark:bg-zinc-800/50 outline-none text-right text-xs font-mono text-blue-600 dark:text-blue-400 py-1 px-2 rounded border border-blue-100 dark:border-blue-900/30 focus:border-blue-300 transition-colors"
+                                                                placeholder="SL C.Từ"
+                                                                title="Số lượng trên chứng từ"
+                                                            />
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </td>
+
+                                            {/* Conversion Logic */}
+                                            {hasModule('inbound_conversion') && targetUnit && (
+                                                <td className="px-4 py-3 text-right font-medium text-orange-600">
+                                                    {(() => {
+                                                        if (!item.quantity || !item.unit) return '-'
+
+                                                        // 1. Convert current unit to base unit
+                                                        const product = products.find(p => p.id === item.productId)
+                                                        if (!product) return '-'
+
+                                                        let baseQty = 0
+                                                        // Check if current unit is base unit
+                                                        if (item.unit === product.unit) {
+                                                            baseQty = item.quantity
+                                                        } else {
+                                                            // Find conversion rate in product_units
+                                                            // Assuming product_units maps unit_id -> conversion_rate (Quantity * Rate = BaseQty OR BaseQty / Rate = Qty? verify logic)
+                                                            // Usually convention: 1 Box = 20 Pcs. So 2 Box = 40 Pcs. IF base is Pcs.
+                                                            // rate should be "how many base units in this unit".
+                                                            // Let's assume conversion_rate is multiplier to get base unit.
+
+                                                            const uConfig = product.product_units?.find(pu => {
+                                                                const uName = units.find(u => u.id === pu.unit_id)?.name
+                                                                return uName === item.unit
+                                                            })
+
+                                                            if (uConfig) {
+                                                                baseQty = item.quantity * uConfig.conversion_rate
+                                                            } else {
+                                                                return '-' // Cannot convert to base
+                                                            }
+                                                        }
+
+                                                        // 2. Convert base qty to target unit
+                                                        // If target is base
+                                                        if (targetUnit === product.unit) {
+                                                            return Number.isInteger(baseQty) ? baseQty : baseQty.toFixed(2)
+                                                        }
+
+                                                        // If target is other unit
+                                                        // Need to find rate for target unit
+                                                        const targetConfig = product.product_units?.find(pu => {
+                                                            const uName = units.find(u => u.id === pu.unit_id)?.name
+                                                            return uName === targetUnit
+                                                        })
+
+                                                        if (targetConfig) {
+                                                            // 1 TargetUnit = Rate * BaseUnit ?? OR 1 TargetUnit converts to Rate BaseUnits?
+                                                            // Usually conversion_rate is stored as "Multiplier to Base".
+                                                            // So QuantityInTarget = BaseQty / Rate
+                                                            const result = baseQty / targetConfig.conversion_rate
+                                                            return Number.isInteger(result) ? result : result.toFixed(2)
+                                                        }
+
+                                                        return '-'
+                                                    })()}
+                                                </td>
+                                            )}
 
                                             {/* Module Financials */}
                                             {hasModule('inbound_financials') && (
@@ -786,14 +921,58 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
                                     )}
 
                                     {/* Footer Rows for Financials */}
-                                    {items.length > 0 && hasModule('inbound_financials') && (
+                                    {items.length > 0 && (
                                         <tr className="bg-stone-50 dark:bg-zinc-800/50 font-bold border-t border-stone-200 dark:border-zinc-700">
-                                            <td colSpan={5} className="px-4 py-3 text-right text-stone-900 dark:text-white">
+                                            <td colSpan={3} className="px-4 py-3 text-right text-stone-900 dark:text-white">
                                                 Tổng cộng:
                                             </td>
-                                            <td className="px-4 py-3 text-right text-orange-600 text-base">
-                                                {totalAmount.toLocaleString()}
+                                            {/* Total Quantity */}
+                                            <td className="px-4 py-3 text-right text-stone-900 dark:text-white">
+                                                {items.reduce((sum, item) => sum + item.quantity, 0).toLocaleString('vi-VN')}
                                             </td>
+
+                                            {/* Total Converted */}
+                                            {hasModule('inbound_conversion') && targetUnit && (
+                                                <td className="px-4 py-3 text-right text-orange-600">
+                                                    {items.reduce((sum, item) => {
+                                                        if (!item.quantity || !item.unit) return sum
+                                                        const product = products.find(p => p.id === item.productId)
+                                                        if (!product) return sum
+
+                                                        let baseQty = 0
+                                                        if (item.unit === product.unit) {
+                                                            baseQty = item.quantity
+                                                        } else {
+                                                            const uConfig = product.product_units?.find(pu => {
+                                                                const uName = units.find(u => u.id === pu.unit_id)?.name
+                                                                return uName === item.unit
+                                                            })
+                                                            if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
+                                                        }
+
+                                                        if (targetUnit === product.unit) return sum + baseQty
+
+                                                        const targetConfig = product.product_units?.find(pu => {
+                                                            const uName = units.find(u => u.id === pu.unit_id)?.name
+                                                            return uName === targetUnit
+                                                        })
+
+                                                        if (targetConfig) return sum + (baseQty / targetConfig.conversion_rate)
+                                                        return sum
+                                                    }, 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}
+                                                </td>
+                                            )}
+
+                                            {/* Financials: Price (Empty) + Amount (Total) */}
+                                            {hasModule('inbound_financials') && (
+                                                <>
+                                                    <td className="px-4 py-3"></td>
+                                                    <td className="px-4 py-3 text-right text-blue-600 text-base">
+                                                        {totalAmount.toLocaleString('vi-VN')}
+                                                    </td>
+                                                </>
+                                            )}
+
                                             <td colSpan={2} className="px-4 py-3"></td>
                                         </tr>
                                     )}

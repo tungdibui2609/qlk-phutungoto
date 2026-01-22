@@ -36,6 +36,7 @@ interface InboundOrder {
     supplier_address: string | null
     supplier_phone: string | null
     supplier: { name: string } | null
+    metadata?: any
 }
 
 // Editable text component - shows input on screen, shows text when printing
@@ -232,6 +233,19 @@ function InboundPrintContent() {
     const [items, setItems] = useState<OrderItem[]>([])
     const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(initialCompanyInfo)
     const [docQuantities, setDocQuantities] = useState<Record<string, string>>({})
+    const [systemConfig, setSystemConfig] = useState<any>(null)
+    const [unitsMap, setUnitsMap] = useState<Record<string, string>>({})
+
+    // Module helpers
+    const hasModule = (moduleId: string) => {
+        if (!systemConfig) return false
+        const modules = typeof systemConfig.inbound_modules === 'string'
+            ? JSON.parse(systemConfig.inbound_modules)
+            : systemConfig.inbound_modules
+        return Array.isArray(modules) && modules.includes(moduleId)
+    }
+
+    const { targetUnit } = order?.metadata || {} // targetUnit saved in camelCase
 
     // Editable fields
     const [editDay, setEditDay] = useState('')
@@ -295,7 +309,9 @@ function InboundPrintContent() {
                     .from('company_settings')
                     .select('*')
                     .limit(1)
+                    .limit(1)
                     .single()
+
 
                 if (companyData) {
                     setCompanyInfo(companyData as any)
@@ -307,7 +323,8 @@ function InboundPrintContent() {
                     .from('inbound_orders')
                     .select(`
                         *,
-                        supplier:suppliers(name)
+                        supplier:suppliers(name),
+                        system_code
                     `)
                     .eq('id', orderId)
                     .single()
@@ -315,6 +332,16 @@ function InboundPrintContent() {
                 if (orderData) {
                     const o = orderData as any
                     setOrder(o)
+
+                    // Fetch system config based on order's system_code
+                    if (o.system_code) {
+                        const { data: sysData } = await supabase
+                            .from('system_configs')
+                            .select('*')
+                            .eq('system_code', o.system_code)
+                            .single()
+                        if (sysData) setSystemConfig(sysData)
+                    }
 
                     // Set editable fields from order data OR URL params (priority to URL params)
                     const d = new Date(o.created_at)
@@ -357,14 +384,33 @@ function InboundPrintContent() {
                     setCreditAccount(searchParams.get('creditAccount') || '')
                     setEditNote(searchParams.get('editNote') || '')
 
-                    // Fetch items
+                    // Fetch units for conversion map
+                    const { data: unitsData } = await supabase.from('units').select('id, name')
+
+                    // Fetch items with product unit details
                     const { data: itemsData } = await supabase
                         .from('inbound_order_items')
-                        .select('*, products(sku)')
+                        .select(`
+                            *,
+                            products (
+                                sku,
+                                unit,
+                                product_units (
+                                    unit_id,
+                                    conversion_rate
+                                )
+                            )
+                        `)
                         .eq('order_id', orderId)
-                    // ... rest of items fetching
+
                     if (itemsData) {
+                        // Enhance items with conversion logic if needed
                         setItems(itemsData as any)
+                    }
+                    if (unitsData) {
+                        const map: Record<string, string> = {}
+                        unitsData.forEach((u: any) => map[u.id] = u.name)
+                        setUnitsMap(map)
                     }
                 }
             } catch (error) {
@@ -513,7 +559,7 @@ function InboundPrintContent() {
             <div className="relative mb-4">
                 {/* Legal Header - Top Right - Only show for official form */}
                 {!isInternal && (
-                    <div className="absolute top-4 right-0 text-center text-[10px] leading-tight font-bold text-gray-700">
+                    <div className="absolute top-0 right-0 text-center text-[9px] leading-tight font-bold text-gray-700">
                         <div className="text-red-600 font-bold">Mẫu số 01 - VT</div>
                         <div>(Ban hành theo Thông tư số 200/2014/TT-BTC</div>
                         <div>Ngày 22/12/2014 của Bộ Tài chính)</div>
@@ -527,7 +573,7 @@ function InboundPrintContent() {
                             <img
                                 src={companyInfo.logo_url}
                                 alt="Logo"
-                                className={isInternal ? "h-20 w-auto object-contain" : "h-16 w-auto object-contain"}
+                                className={isInternal ? "h-20 w-auto object-contain" : "h-10 w-auto object-contain"}
                             />
                         ) : (
                             <div className={`${isInternal ? 'h-20 w-20 text-2xl' : 'h-14 w-14 text-xl'} bg-orange-500 rounded-lg flex items-center justify-center text-white font-bold`}>
@@ -538,15 +584,15 @@ function InboundPrintContent() {
 
                     {/* Company Info */}
                     <div className="flex flex-col justify-center gap-0.5">
-                        <div className={`text-emerald-700 font-bold uppercase leading-tight ${isInternal ? 'text-base' : 'text-xs'}`}>
+                        <div className={`text-emerald-700 font-bold uppercase leading-tight ${isInternal ? 'text-sm' : 'text-[10px]'} mb-0 whitespace-nowrap`}>
                             {companyInfo?.name || 'CÔNG TY'}
                         </div>
                         {companyInfo?.address && (
-                            <div className={`font-bold text-gray-700 leading-tight ${isInternal ? 'text-sm' : 'text-[11px]'}`}>
+                            <div className={`font-bold text-gray-700 leading-tight ${isInternal ? 'text-sm' : 'text-[8px]'}`}>
                                 Địa chỉ: {companyInfo.address}
                             </div>
                         )}
-                        <div className={`font-bold text-gray-700 leading-tight ${isInternal ? 'text-sm' : 'text-[11px]'}`}>
+                        <div className={`font-bold text-gray-700 leading-tight ${isInternal ? 'text-sm' : 'text-[8px]'}`}>
                             {companyInfo?.email && `Email: ${companyInfo.email}`}
                             {companyInfo?.email && companyInfo?.phone && <span className="mx-1">|</span>}
                             {companyInfo?.phone && `ĐT: ${companyInfo.phone}`}
@@ -556,14 +602,14 @@ function InboundPrintContent() {
             </div>
 
             {/* Title */}
-            <div className="relative text-center mt-8 mb-2">
+            <div className="relative text-center mt-4 mb-1">
                 <h1 className="text-xl font-bold tracking-wide" style={{ fontFamily: "'Times New Roman', Times, serif" }}>
                     PHIẾU NHẬP KHO
                 </h1>
 
                 {/* Nợ/Có on the right - absolute positioned - Only for official form */}
-                {!isInternal && (
-                    <div className="absolute top-8 right-36 text-left">
+                {!isInternal && hasModule('inbound_financials') && (
+                    <div className="absolute top-4 right-36 text-left">
                         {/* Nợ */}
                         <div className="text-sm font-medium text-gray-700">
                             <span className={`print:hidden ${isSnapshot ? 'hidden' : ''}`}>
@@ -765,57 +811,99 @@ function InboundPrintContent() {
                             <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-48">Tên, nhãn hiệu quy cách, phẩm chất vật tư, dụng cụ sản phẩm, hàng hóa</th>
                             <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">Mã số</th>
                             <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-14">Đơn vị tính</th>
-                            <th colSpan={2} className="border border-gray-400 px-2 py-2 text-center">Số lượng</th>
-                            {!isInternal && <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">Đơn giá</th>}
-                            {!isInternal && <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-28">Thành tiền</th>}
+                            <th colSpan={hasModule('inbound_conversion') && targetUnit ? (hasModule('inbound_financials') ? 3 : 2) : (hasModule('inbound_financials') ? 2 : 1)} className="border border-gray-400 px-2 py-2 text-center">Số lượng</th>
+                            {!isInternal && hasModule('inbound_financials') && <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">Đơn giá</th>}
+                            {!isInternal && hasModule('inbound_financials') && <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-28">Thành tiền</th>}
                             {isInternal && <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-32">Ghi chú</th>}
                         </tr>
                         <tr className="bg-gray-100">
-                            <th className="border border-gray-400 px-2 py-2 text-center w-16">Theo chứng từ</th>
-                            <th className="border border-gray-400 px-2 py-2 text-center w-16">Thực nhập</th>
+                            {hasModule('inbound_financials') && <th className="border border-gray-400 px-2 py-2 text-center w-16 align-top">Theo chứng từ</th>}
+                            <th className="border border-gray-400 px-2 py-2 text-center w-16 align-top">Thực nhập</th>
+                            {hasModule('inbound_conversion') && targetUnit && (
+                                <th className="border border-gray-400 px-2 py-2 text-center w-20">Quy đổi<br /><span className="font-normal text-[10px]">({targetUnit})</span></th>
+                            )}
                         </tr>
                         <tr className="bg-gray-100 font-normal">
                             <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">A</th>
                             <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">B</th>
                             <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">C</th>
                             <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">D</th>
-                            <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">1</th>
-                            <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">2</th>
-                            {!isInternal && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">3</th>}
-                            {!isInternal && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">4</th>}
-                            {isInternal && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">3</th>}
+                            {hasModule('inbound_financials') && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">1</th>}
+                            <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('inbound_financials') ? '2' : '1'}</th>
+                            {hasModule('inbound_conversion') && targetUnit && (
+                                <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('inbound_financials') ? '3' : '2'}</th>
+                            )}
+                            {!isInternal && hasModule('inbound_financials') && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('inbound_conversion') && targetUnit ? '4' : '3'}</th>}
+                            {!isInternal && hasModule('inbound_financials') && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('inbound_conversion') && targetUnit ? '5' : '4'}</th>}
+                            {isInternal && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('inbound_conversion') && targetUnit ? (hasModule('inbound_financials') ? '4' : '3') : (hasModule('inbound_financials') ? '3' : '2')}</th>}
                         </tr>
                     </thead>
                     <tbody>
                         {items.map((item, index) => {
                             const unitPrice = item.price || 0
                             const totalPrice = unitPrice * item.quantity
+
+                            // Calculate converted qty
+                            let convertedQty: string | number = '-'
+                            if (hasModule('inbound_conversion') && targetUnit && item.products) {
+                                const product = item.products as any
+                                let baseQty = 0
+                                if (item.unit === product.unit) {
+                                    baseQty = item.quantity
+                                } else {
+                                    const uConfig = product.product_units?.find((pu: any) => {
+                                        return unitsMap[pu.unit_id] === item.unit
+                                    })
+                                    if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
+                                }
+
+                                if (targetUnit === product.unit) {
+                                    convertedQty = baseQty
+                                } else {
+                                    const targetConfig = product.product_units?.find((pu: any) => {
+                                        return unitsMap[pu.unit_id] === targetUnit
+                                    })
+                                    if (targetConfig) convertedQty = baseQty / targetConfig.conversion_rate
+                                }
+
+                                if (typeof convertedQty === 'number') {
+                                    convertedQty = Number.isInteger(convertedQty) ? convertedQty : convertedQty.toFixed(2)
+                                }
+                            }
+
                             return (
-                                <tr key={item.id} className="hover:bg-gray-50">
+                                <tr key={item.id} className="hover:bg-gray-50 font-bold">
                                     <td className="border border-gray-400 px-2 py-1.5 text-center">{index + 1}</td>
                                     <td className="border border-gray-400 px-2 py-1.5">{item.product_name || 'N/A'}</td>
-                                    <td className="border border-gray-400 px-2 py-1.5 text-center font-mono text-xs">
+                                    <td className="border border-gray-400 px-2 py-1.5 text-center">
                                         {item.products?.sku || '-'}
                                     </td>
                                     <td className="border border-gray-400 px-2 py-1.5 text-center">{item.unit || '-'}</td>
-                                    <td className="border border-gray-400 px-2 py-1.5 text-center font-medium">
-                                        <EditableText
-                                            value={docQuantities[item.id] !== undefined ? docQuantities[item.id] : (item.document_quantity || item.quantity).toString()}
-                                            onChange={(val) => setDocQuantities(prev => ({ ...prev, [item.id]: val }))}
-                                            className="text-center font-medium w-full"
-                                            isSnapshot={isSnapshot}
-                                        />
+                                    {hasModule('inbound_financials') && (
+                                        <td className="border border-gray-400 px-2 py-1.5 text-center">
+                                            <EditableText
+                                                value={docQuantities[item.id] !== undefined ? docQuantities[item.id] : (item.document_quantity || item.quantity).toString()}
+                                                onChange={(val) => setDocQuantities(prev => ({ ...prev, [item.id]: val }))}
+                                                className="text-center w-full"
+                                                isSnapshot={isSnapshot}
+                                            />
+                                        </td>
+                                    )}
+                                    <td className="border border-gray-400 px-2 py-1.5 text-center">
+                                        {item.quantity.toLocaleString('vi-VN')}
                                     </td>
-                                    <td className="border border-gray-400 px-2 py-1.5 text-center font-medium">
-                                        {item.quantity}
-                                    </td>
-                                    {!isInternal && (
+                                    {hasModule('inbound_conversion') && targetUnit && (
+                                        <td className="border border-gray-400 px-2 py-1.5 text-center text-orange-600">
+                                            {typeof convertedQty === 'number' ? convertedQty.toLocaleString('vi-VN') : convertedQty}
+                                        </td>
+                                    )}
+                                    {!isInternal && hasModule('inbound_financials') && (
                                         <td className="border border-gray-400 px-2 py-1.5 text-right">
                                             {unitPrice > 0 ? unitPrice.toLocaleString('vi-VN') : '-'}
                                         </td>
                                     )}
-                                    {!isInternal && (
-                                        <td className="border border-gray-400 px-2 py-1.5 text-right font-medium">
+                                    {!isInternal && hasModule('inbound_financials') && (
+                                        <td className="border border-gray-400 px-2 py-1.5 text-right">
                                             {totalPrice > 0 ? totalPrice.toLocaleString('vi-VN') : '-'}
                                         </td>
                                     )}
@@ -829,7 +917,7 @@ function InboundPrintContent() {
                         })}
                         {items.length === 0 && (
                             <tr>
-                                <td colSpan={isInternal ? 7 : 8} className="border border-gray-400 px-2 py-4 text-center text-gray-400">
+                                <td colSpan={15} className="border border-gray-400 px-2 py-4 text-center text-gray-400">
                                     Không có hàng hóa
                                 </td>
                             </tr>
@@ -840,10 +928,34 @@ function InboundPrintContent() {
                             <td className="border border-gray-400 px-2 py-1.5 text-center">Cộng</td>
                             <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
                             <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
+                            {hasModule('inbound_financials') && <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>}
                             <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
-                            <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
-                            {!isInternal && <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>}
-                            {!isInternal && (
+                            {hasModule('inbound_conversion') && targetUnit && (
+                                <td className="border border-gray-400 px-2 py-1.5 text-center text-orange-600">
+                                    {items.reduce((sum, item) => {
+                                        if (!item.products) return sum
+                                        const product = item.products as any
+                                        let baseQty = 0
+                                        if (item.unit === product.unit) {
+                                            baseQty = item.quantity
+                                        } else {
+                                            const uConfig = product.product_units?.find((pu: any) => unitsMap[pu.unit_id] === item.unit)
+                                            if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
+                                        }
+
+                                        let converted = 0
+                                        if (targetUnit === product.unit) {
+                                            converted = baseQty
+                                        } else {
+                                            const targetConfig = product.product_units?.find((pu: any) => unitsMap[pu.unit_id] === targetUnit)
+                                            if (targetConfig) converted = baseQty / targetConfig.conversion_rate
+                                        }
+                                        return sum + converted
+                                    }, 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}
+                                </td>
+                            )}
+                            {!isInternal && hasModule('inbound_financials') && <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>}
+                            {!isInternal && hasModule('inbound_financials') && (
                                 <td className="border border-gray-400 px-2 py-1.5 text-right">
                                     {items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0).toLocaleString('vi-VN')}
                                 </td>
@@ -856,7 +968,7 @@ function InboundPrintContent() {
 
             {/* Summary */}
             <div className="mt-4 text-sm space-y-1">
-                {!isInternal && (
+                {!isInternal && hasModule('inbound_financials') && (
                     <div className="flex items-center">
                         <span className="shrink-0">- Tổng số tiền (viết bằng chữ):</span>
                         <EditableText

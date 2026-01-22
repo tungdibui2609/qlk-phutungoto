@@ -1,5 +1,5 @@
 
-import { DollarSign, FileText, Truck, Calendar, User, ShoppingCart, ShieldCheck, MapPin, Image, Minimize } from 'lucide-react'
+import { DollarSign, FileText, Truck, Calendar, User, ShoppingCart, ShieldCheck, MapPin, Image, Minimize, ArrowRightLeft } from 'lucide-react'
 
 export interface OrderModule {
     id: string
@@ -72,6 +72,13 @@ export const INBOUND_MODULES: OrderModule[] = [
         description: 'Sử dụng màn hình tạo phiếu nhỏ hơn (Compact Mode)',
         icon: Minimize,
         type: 'inbound'
+    },
+    {
+        id: 'inbound_conversion',
+        name: 'Quy đổi đơn vị',
+        description: 'Hiển thị cột quy đổi số lượng theo đơn vị đích (VD: Thùng -> Kg)',
+        icon: ArrowRightLeft,
+        type: 'inbound'
     }
 ]
 
@@ -137,6 +144,13 @@ export const OUTBOUND_MODULES: OrderModule[] = [
         name: 'Giao diện thu gọn',
         description: 'Sử dụng màn hình tạo phiếu nhỏ hơn (Compact Mode)',
         icon: Minimize,
+        type: 'outbound'
+    },
+    {
+        id: 'outbound_conversion',
+        name: 'Quy đổi đơn vị',
+        description: 'Hiển thị cột quy đổi số lượng theo đơn vị đích (VD: Thùng -> Kg)',
+        icon: ArrowRightLeft,
         type: 'outbound'
     }
 ]

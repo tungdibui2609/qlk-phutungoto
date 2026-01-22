@@ -8,7 +8,8 @@ import { format } from 'date-fns'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
 import { useSystem } from '@/contexts/SystemContext'
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/Dialog'
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/Dialog'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 interface InboundOrder {
     id: string
@@ -26,9 +27,12 @@ interface InboundOrder {
         vehicleNumber?: string
         driverName?: string
         containerNumber?: string
+        targetUnit?: string
     } | null
     order_types?: { name: string } | null
 }
+
+type Unit = Database['public']['Tables']['units']['Row']
 
 interface OrderItem {
     id: string
@@ -38,7 +42,14 @@ interface OrderItem {
     document_quantity: number
     price: number
     note: string | null
-    products: { sku: string } | null
+    products: {
+        sku: string
+        unit?: string
+        product_units?: {
+            unit_id: string
+            conversion_rate: number
+        }[]
+    } | null
 }
 
 interface InboundOrderDetailModalProps {
@@ -66,12 +77,16 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
     }
 
     const [items, setItems] = useState<OrderItem[]>([])
+    const [units, setUnits] = useState<Unit[]>([])
     const [loading, setLoading] = useState(false)
     const [showPrintMenu, setShowPrintMenu] = useState(false)
     const [imageUrl, setImageUrl] = useState<string | null>(null)
     const [uploading, setUploading] = useState(false)
     const [visibleNoteId, setVisibleNoteId] = useState<string | null>(null)
+    const [showConfirmApprove, setShowConfirmApprove] = useState(false)
     const fileInputRef = React.useRef<HTMLInputElement>(null)
+
+    const targetUnit = order?.metadata?.targetUnit
 
     useEffect(() => {
         if (order) {
@@ -89,9 +104,15 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
     async function fetchItems() {
         if (!order) return
         setLoading(true)
+
+        // Fetch Units
+        const { data: unitsData } = await supabase.from('units').select('*')
+        if (unitsData) setUnits(unitsData)
+
+        // Fetch Items with Product Units
         const { data, error } = await supabase
             .from('inbound_order_items')
-            .select('*, products(sku)')
+            .select('*, products(sku, unit, product_units(unit_id, conversion_rate))')
             .eq('order_id', order.id)
 
         if (data) {
@@ -190,17 +211,21 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
 
     const handleApprove = async () => {
         if (!order) return
+        setShowConfirmApprove(true)
+    }
 
-        const confirmed = await showConfirm('Xác nhận hoàn thành phiếu nhập này? Hành động này không thể hoàn tác.')
-        if (!confirmed) return
+    const onConfirmApprove = async () => {
+        if (!order) return
 
         try {
-            const { error } = await (supabase
+            const { data, error } = await (supabase
                 .from('inbound_orders') as any)
                 .update({ status: 'Completed' })
                 .eq('id', order.id)
+                .select()
 
             if (error) throw error
+            if (!data || data.length === 0) throw new Error('Không thể cập nhật phiếu (Có thể do phân quyền hoặc phiếu đã bị xóa)')
 
             showToast('Đã xác nhận phiếu nhập thành công!', 'success')
             if (onUpdate) onUpdate()
@@ -219,8 +244,11 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
     return (
         <>
             <Dialog open={!!order} onOpenChange={onClose}>
-                <DialogContent className={`${hasModule('inbound_ui_compact') ? 'max-w-3xl' : 'max-w-7xl'} max-h-[90vh] overflow-y-auto p-0 gap-0 bg-stone-50 dark:bg-zinc-900 border-none shadow-2xl`}>
+                <DialogContent className={`${hasModule('inbound_ui_compact') ? 'max-w-5xl' : 'max-w-7xl'} max-h-[90vh] overflow-y-auto p-0 gap-0 bg-stone-50 dark:bg-zinc-900 border-none shadow-2xl`}>
                     <DialogTitle className="sr-only">Chi tiết phiếu {order.code}</DialogTitle>
+                    <DialogDescription className="sr-only">
+                        Xem chi tiết thông tin phiếu nhập {order.code}
+                    </DialogDescription>
                     {/* Header */}
                     <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 bg-white dark:bg-zinc-800 border-b border-stone-100 dark:border-zinc-700 shadow-sm">
                         <div className="flex items-center gap-3">
@@ -234,7 +262,23 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                 {order.status === 'Pending' ? 'Chờ xử lý' : order.status}
                             </span>
                         </div>
+                        {hasModule('inbound_conversion') && targetUnit && (
+                            <div className="flex items-center gap-2 text-sm">
+                                <span className="text-stone-500">Quy đổi:</span>
+                                <span className="font-bold text-orange-600 px-2 py-0.5 bg-orange-50 rounded border border-orange-100">{targetUnit}</span>
+                            </div>
+                        )}
                     </div>
+
+                    <ConfirmDialog
+                        isOpen={showConfirmApprove}
+                        onCancel={() => setShowConfirmApprove(false)}
+                        onConfirm={onConfirmApprove}
+                        title="Xác nhận hoàn thành"
+                        message="Xác nhận hoàn thành phiếu nhập này? Hành động này không thể hoàn tác."
+                        confirmText="Xác nhận"
+                        variant="warning"
+                    />
 
                     {/* Body */}
                     <div className="flex-1 overflow-y-auto p-6 space-y-8">
@@ -357,14 +401,21 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                 <div className="py-8 text-center text-gray-500">Đang tải chi tiết...</div>
                             ) : (
                                 <div className="border border-gray-200 dark:border-zinc-700 rounded-xl overflow-x-auto">
-                                    <table className="w-full text-xs text-left">
+                                    <table className={`w-full text-left ${hasModule('inbound_ui_compact') ? 'text-base' : 'text-xs'}`}>
                                         <thead className="bg-stone-50 dark:bg-zinc-800/50 text-stone-500 font-medium">
                                             <tr>
                                                 <th className="px-4 py-3 w-10">#</th>
                                                 <th className="px-4 py-3 min-w-[370px]">Sản phẩm</th>
                                                 <th className="px-4 py-3 w-24">ĐVT</th>
                                                 <th className="px-4 py-3 w-24 text-right">SL Thực nhập</th>
-                                                {!hasModule('inbound_ui_compact') && (
+                                                {/* Conversion Column */}
+                                                {hasModule('inbound_conversion') && targetUnit && (
+                                                    <th className="px-4 py-3 w-32 text-right text-orange-600">
+                                                        <div>SL Quy đổi</div>
+                                                        <div className="text-[10px] font-normal">({targetUnit})</div>
+                                                    </th>
+                                                )}
+                                                {hasModule('inbound_financials') && (
                                                     <th className="px-4 py-3 w-24 text-right">SL Chứng từ</th>
                                                 )}
                                                 {hasModule('inbound_financials') && (
@@ -386,7 +437,49 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                                     </td>
                                                     <td className="px-4 py-3 text-stone-500">{item.unit || '-'}</td>
                                                     <td className="px-4 py-3 text-right font-medium">{item.quantity}</td>
-                                                    {!hasModule('inbound_ui_compact') && (
+                                                    {/* Conversion Logic */}
+                                                    {hasModule('inbound_conversion') && targetUnit && (
+                                                        <td className="px-4 py-3 text-right font-medium text-orange-600">
+                                                            {(() => {
+                                                                if (!item.quantity || !item.unit || !item.products) return '-'
+
+                                                                // 1. Convert to base
+                                                                let baseQty = 0
+                                                                if (item.unit === item.products.unit) {
+                                                                    baseQty = item.quantity
+                                                                } else {
+                                                                    const uConfig = item.products.product_units?.find(pu => {
+                                                                        const uName = units.find(u => u.id === pu.unit_id)?.name
+                                                                        return uName === item.unit
+                                                                    })
+                                                                    if (uConfig) {
+                                                                        baseQty = item.quantity * uConfig.conversion_rate
+                                                                    } else {
+                                                                        return '-'
+                                                                    }
+                                                                }
+
+                                                                // 2. Convert to target
+                                                                if (targetUnit === item.products.unit) {
+                                                                    return Number.isInteger(baseQty) ? baseQty : baseQty.toFixed(2)
+                                                                }
+
+                                                                const targetConfig = item.products.product_units?.find(pu => {
+                                                                    const uName = units.find(u => u.id === pu.unit_id)?.name
+                                                                    return uName === targetUnit
+                                                                })
+
+                                                                if (targetConfig) {
+                                                                    const result = baseQty / targetConfig.conversion_rate
+                                                                    return Number.isInteger(result) ? result : result.toFixed(2)
+                                                                }
+
+                                                                return '-'
+                                                            })()}
+                                                        </td>
+                                                    )}
+
+                                                    {hasModule('inbound_financials') && (
                                                         <td className="px-4 py-3 text-right font-medium text-blue-600">{item.document_quantity || item.quantity}</td>
                                                     )}
                                                     {hasModule('inbound_financials') && (
@@ -441,13 +534,64 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                                 </tr>
                                             ))}
                                             {items.length > 0 && (
-                                                <tr className="bg-stone-50 dark:bg-zinc-800/50 font-bold">
-                                                    <td colSpan={6} className="px-4 py-3 text-right text-stone-900 dark:text-white">
+                                                <tr className="bg-stone-50 dark:bg-zinc-800/50 font-bold border-t border-stone-200 dark:border-zinc-700">
+                                                    <td colSpan={3} className="px-4 py-3 text-right text-stone-900 dark:text-white">
                                                         Tổng cộng:
                                                     </td>
-                                                    <td className="px-4 py-3 text-right text-orange-600 text-sm">
-                                                        {totalAmount.toLocaleString()}
+                                                    {/* Total Actual Quantity */}
+                                                    <td className="px-4 py-3 text-right text-stone-900 dark:text-white">
+                                                        {items.reduce((sum, item) => sum + item.quantity, 0).toLocaleString('vi-VN')}
                                                     </td>
+
+                                                    {/* Total Converted */}
+                                                    {hasModule('inbound_conversion') && targetUnit && (
+                                                        <td className="px-4 py-3 text-right text-orange-600">
+                                                            {items.reduce((sum, item) => {
+                                                                if (!item.quantity || !item.unit) return sum
+                                                                const product = item.products
+                                                                if (!product) return sum
+
+                                                                let baseQty = 0
+                                                                if (item.unit === product.unit) {
+                                                                    baseQty = item.quantity
+                                                                } else {
+                                                                    const uConfig = product.product_units?.find(pu => {
+                                                                        const uName = units.find(u => u.id === pu.unit_id)?.name
+                                                                        return uName === item.unit
+                                                                    })
+                                                                    if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
+                                                                }
+
+                                                                if (targetUnit === product.unit) return sum + baseQty
+
+                                                                const targetConfig = product.product_units?.find(pu => {
+                                                                    const uName = units.find(u => u.id === pu.unit_id)?.name
+                                                                    return uName === targetUnit
+                                                                })
+
+                                                                if (targetConfig) return sum + (baseQty / targetConfig.conversion_rate)
+                                                                return sum
+                                                            }, 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}
+                                                        </td>
+                                                    )}
+
+                                                    {/* Document Quantity (If active) */}
+                                                    {hasModule('inbound_financials') && (
+                                                        <td className="px-4 py-3 text-right text-blue-600">
+                                                            {items.reduce((sum, item) => sum + (item.document_quantity || 0), 0).toLocaleString('vi-VN')}
+                                                        </td>
+                                                    )}
+
+                                                    {/* Financials: Price + Amount */}
+                                                    {hasModule('inbound_financials') && (
+                                                        <>
+                                                            <td className="px-4 py-3"></td>
+                                                            <td className="px-4 py-3 text-right text-blue-600 text-base">
+                                                                {totalAmount.toLocaleString('vi-VN')}
+                                                            </td>
+                                                        </>
+                                                    )}
+
                                                     <td className="px-4 py-3"></td>
                                                 </tr>
                                             )}
@@ -529,7 +673,7 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                         )}
                     </div>
                 </DialogContent>
-            </Dialog>
+            </Dialog >
         </>
     )
 }
