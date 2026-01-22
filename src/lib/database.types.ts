@@ -436,6 +436,7 @@ export type Database = {
           inbound_date: string | null
           notes: string | null
           product_id: string | null
+          qc_id: string | null
           quantity: number | null
           status: string | null
           supplier_id: string | null
@@ -448,6 +449,7 @@ export type Database = {
           inbound_date?: string | null
           notes?: string | null
           product_id?: string | null
+          qc_id?: string | null
           quantity?: number | null
           status?: string | null
           supplier_id?: string | null
@@ -460,11 +462,19 @@ export type Database = {
           inbound_date?: string | null
           notes?: string | null
           product_id?: string | null
+          qc_id?: string | null
           quantity?: number | null
           status?: string | null
           supplier_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "lots_qc_id_fkey"
+            columns: ["qc_id"]
+            isOneToOne: false
+            referencedRelation: "qc_info"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "lots_product_id_fkey"
             columns: ["product_id"]
@@ -1039,6 +1049,47 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      qc_info: {
+        Row: {
+          code: string
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          system_code: string | null
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          system_code?: string | null
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          system_code?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qc_info_system_code_fkey"
+            columns: ["system_code"]
+            isOneToOne: false
+            referencedRelation: "systems"
+            referencedColumns: ["code"]
+          },
+        ]
       }
       roles: {
         Row: {

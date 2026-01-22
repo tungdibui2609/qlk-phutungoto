@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { Plus, Search, Boxes, MapPin, Trash2, Calendar, Package, Factory, Hash, Layers, X, ChevronDown, ChevronUp, Filter, QrCode as QrIcon, Printer, Edit } from 'lucide-react'
+import { Plus, Search, Boxes, MapPin, Trash2, Calendar, Package, Factory, Hash, Layers, X, ChevronDown, ChevronUp, Filter, QrCode as QrIcon, Printer, Edit, ShieldCheck } from 'lucide-react'
 import QRCode from "react-qr-code"
 import Link from 'next/link'
 import { Combobox } from '@/components/ui/Combobox'
@@ -15,6 +15,7 @@ type Lot = Database['public']['Tables']['lots']['Row'] & {
         products: { name: string; unit: string | null; product_code?: string; sku: string } | null
     })[] | null
     suppliers: { name: string } | null
+    qc_info: { name: string } | null
     positions: { code: string }[] | null
     // Legacy support for display if needed, but we will primarily use lot_items
     products?: { name: string; unit: string | null; product_code?: string } | null
@@ -27,6 +28,7 @@ interface LotItemInput {
 
 type Product = Database['public']['Tables']['products']['Row']
 type Supplier = Database['public']['Tables']['suppliers']['Row']
+type QCInfo = Database['public']['Tables']['qc_info']['Row']
 
 export default function LotManagementPage() {
     const router = useRouter()
@@ -43,12 +45,14 @@ export default function LotManagementPage() {
     // Data for Selection
     const [products, setProducts] = useState<Product[]>([])
     const [suppliers, setSuppliers] = useState<Supplier[]>([])
+    const [qcList, setQCList] = useState<QCInfo[]>([])
 
     // New Lot Form State
     // New Lot Form State
     const [newLotCode, setNewLotCode] = useState('')
     const [newLotNotes, setNewLotNotes] = useState('')
     const [selectedSupplierId, setSelectedSupplierId] = useState('')
+    const [selectedQCId, setSelectedQCId] = useState('')
     const [inboundDate, setInboundDate] = useState('')
     const [batchCode, setBatchCode] = useState('')
     const [lotItems, setLotItems] = useState<LotItemInput[]>([{ productId: '', quantity: 0 }])
@@ -64,13 +68,15 @@ export default function LotManagementPage() {
     }, [])
 
     async function fetchCommonData() {
-        const [prodRes, suppRes] = await Promise.all([
+        const [prodRes, suppRes, qcRes] = await Promise.all([
             supabase.from('products').select('*').order('name'),
-            supabase.from('suppliers').select('*').order('name')
+            supabase.from('suppliers').select('*').order('name'),
+            supabase.from('qc_info').select('*').order('name')
         ])
 
         if (prodRes.data) setProducts(prodRes.data)
         if (suppRes.data) setSuppliers(suppRes.data)
+        if (qcRes.data) setQCList(qcRes.data)
     }
 
     async function fetchLots() {
@@ -91,6 +97,7 @@ export default function LotManagementPage() {
                     )
                 ),
                 suppliers (name),
+                qc_info (name),
                 positions (code)
             `)
             .order('created_at', { ascending: false })
@@ -200,6 +207,7 @@ export default function LotManagementPage() {
         }
 
         setSelectedSupplierId(lot.supplier_id || '')
+        setSelectedQCId(lot.qc_id || '')
         setInboundDate(lot.inbound_date ? new Date(lot.inbound_date).toISOString().split('T')[0] : '')
         setBatchCode(lot.batch_code || '')
 
@@ -229,6 +237,7 @@ export default function LotManagementPage() {
             code: newLotCode,
             notes: newLotNotes,
             supplier_id: selectedSupplierId || null,
+            qc_id: selectedQCId || null,
             inbound_date: inboundDate || null,
             batch_code: batchCode || null,
             quantity: totalQuantity, // Legacy/Summary field
@@ -309,6 +318,7 @@ export default function LotManagementPage() {
         setNewLotCode('')
         setNewLotNotes('')
         setSelectedSupplierId('')
+        setSelectedQCId('')
         setInboundDate('')
         setBatchCode('')
         setLotItems([{ productId: '', quantity: 0 }])
@@ -450,6 +460,27 @@ export default function LotManagementPage() {
                                     <option value="">-- Chọn nhà cung cấp --</option>
                                     {suppliers.map(s => (
                                         <option key={s.id} value={s.id}>{s.name}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                            </div>
+                        </div>
+
+                        {/* QC Selection */}
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                Nhân viên QC
+                            </label>
+                            <div className="relative">
+                                <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                <select
+                                    value={selectedQCId}
+                                    onChange={(e) => setSelectedQCId(e.target.value)}
+                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none appearance-none transition-all"
+                                >
+                                    <option value="">-- Chọn QC --</option>
+                                    {qcList.map(qc => (
+                                        <option key={qc.id} value={qc.id}>{qc.name}</option>
                                     ))}
                                 </select>
                                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
@@ -634,6 +665,12 @@ export default function LotManagementPage() {
                                     {lot.suppliers && (
                                         <span className="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-bold uppercase tracking-wider truncate max-w-[120px]">
                                             {lot.suppliers.name}
+                                        </span>
+                                    )}
+                                    {lot.qc_info && (
+                                        <span className="px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 text-xs font-bold uppercase tracking-wider truncate max-w-[120px] flex items-center gap-1">
+                                            <ShieldCheck size={12} />
+                                            {lot.qc_info.name}
                                         </span>
                                     )}
                                 </div>
