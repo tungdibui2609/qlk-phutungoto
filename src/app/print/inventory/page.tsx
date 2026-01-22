@@ -650,8 +650,6 @@ export default function InventoryPrintPage() {
                         background: white !important;
                         height: fit-content !important;
                         min-height: 0 !important;
-                        width: 794px !important;
-                        min-width: 794px !important;
                         margin: 0 !important;
                         padding: 0 !important;
                         overflow: hidden !important;
@@ -667,19 +665,20 @@ export default function InventoryPrintPage() {
                         width: 794px !important;
                         height: fit-content !important;
                         padding: 20px !important;
-                        margin: 0 auto !important;
+                        margin: 0 !important;
                         max-width: none !important;
                         box-shadow: none !important;
                         border: none !important;
                         box-sizing: border-box !important;
+                        background: white !important;
                     }
                     /* Ensure table fits */
                     #print-ready table {
                         width: 100% !important;
-                        font-size: 11px !important; /* Slightly smaller font for A4 portrait */
+                        font-size: 11px !important;
                     }
                     #print-ready th, #print-ready td {
-                        padding: 4px 2px !important; /* Tighter padding */
+                        padding: 4px 2px !important;
                     }
                 `}} />
             )}
