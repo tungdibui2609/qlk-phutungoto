@@ -435,6 +435,7 @@ export type Database = {
           id: string
           inbound_date: string | null
           notes: string | null
+          peeling_date: string | null
           product_id: string | null
           qc_id: string | null
           quantity: number | null
@@ -448,6 +449,7 @@ export type Database = {
           id?: string
           inbound_date?: string | null
           notes?: string | null
+          peeling_date?: string | null
           product_id?: string | null
           qc_id?: string | null
           quantity?: number | null
