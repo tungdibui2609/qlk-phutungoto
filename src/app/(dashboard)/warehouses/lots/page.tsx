@@ -105,6 +105,30 @@ export default function LotManagementPage() {
 
         if (error) {
             console.error('Error fetching lots:', error)
+
+            // Diagnostic: Try to identify the broken relationship
+            const runDiagnostics = async () => {
+                console.group('Diagnostic Checks')
+
+                // 1. Check basic lots access
+                const { error: err1 } = await supabase.from('lots').select('id').limit(1)
+                console.log('1. Basic lots access:', err1 ? 'FAILED' : 'OK', err1 || '')
+
+                // 2. Check simple joins
+                const joins = ['suppliers(name)', 'qc_info(name)', 'positions(code)', 'lot_items(id)']
+                for (const join of joins) {
+                    const { error: errJ } = await supabase.from('lots').select(`id, ${join}`).limit(1)
+                    console.log(`Check join ${join}:`, errJ ? 'FAILED' : 'OK', errJ || '')
+                }
+
+                // 3. Check deep join
+                const { error: errDeep } = await supabase.from('lots').select('id, lot_items(products(id))').limit(1)
+                console.log('Check deep join products:', errDeep ? 'FAILED' : 'OK', errDeep || '')
+
+                console.groupEnd()
+            }
+            runDiagnostics()
+
         } else if (data) {
             setLots(data as unknown as Lot[])
         }

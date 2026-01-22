@@ -257,7 +257,8 @@ CREATE TABLE IF NOT EXISTS "public"."lots" (
     "inbound_date" "date" DEFAULT CURRENT_DATE,
     "batch_code" "text",
     "quantity" integer DEFAULT 0,
-    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL
+    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL,
+    "peeling_date" timestamp with time zone
 );
 
 
