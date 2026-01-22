@@ -666,12 +666,20 @@ export default function InventoryPrintPage() {
                     #print-ready {
                         width: 794px !important;
                         height: fit-content !important;
-                        padding: 20px 20px 0 20px !important;
+                        padding: 20px !important;
                         margin: 0 auto !important;
                         max-width: none !important;
                         box-shadow: none !important;
                         border: none !important;
                         box-sizing: border-box !important;
+                    }
+                    /* Ensure table fits */
+                    #print-ready table {
+                        width: 100% !important;
+                        font-size: 11px !important; /* Slightly smaller font for A4 portrait */
+                    }
+                    #print-ready th, #print-ready td {
+                        padding: 4px 2px !important; /* Tighter padding */
                     }
                 `}} />
             )}
