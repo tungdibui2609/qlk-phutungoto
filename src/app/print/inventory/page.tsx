@@ -509,8 +509,8 @@ export default function InventoryPrintPage() {
                         <thead>
                             <tr className="bg-gray-200">
                                 <th className="border border-black p-1 w-10">STT</th>
-                                <th className="border border-black p-1">Mã SP</th>
                                 <th className="border border-black p-1">Tên Sản Phẩm</th>
+                                <th className="border border-black p-1">Mã SP</th>
                                 <th className="border border-black p-1 w-16">ĐVT</th>
                                 <th className="border border-black p-1 text-right w-20">Tồn Đầu</th>
                                 <th className="border border-black p-1 text-right w-20">Nhập</th>
@@ -522,11 +522,11 @@ export default function InventoryPrintPage() {
                             {accountingItems.map((item, idx) => (
                                 <tr key={`${item.id}-${idx}`} className={item.isUnconvertible ? 'bg-orange-100 print:bg-transparent' : ''}>
                                     <td className="border border-black p-1 text-center">{idx + 1}</td>
-                                    <td className="border border-black p-1">{item.productCode}</td>
                                     <td className="border border-black p-1">
                                         {item.productName}
                                         {item.isUnconvertible && <span className="ml-1 text-[10px] italic text-red-600 print:text-black">(*)</span>}
                                     </td>
+                                    <td className="border border-black p-1">{item.productCode}</td>
                                     <td className="border border-black p-1 text-center">{item.unit}</td>
                                     <td className="border border-black p-1 text-right">{item.opening.toLocaleString()}</td>
                                     <td className="border border-black p-1 text-right">{item.qtyIn.toLocaleString()}</td>
