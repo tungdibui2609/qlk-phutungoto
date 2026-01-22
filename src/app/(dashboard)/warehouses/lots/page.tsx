@@ -54,6 +54,7 @@ export default function LotManagementPage() {
     const [selectedSupplierId, setSelectedSupplierId] = useState('')
     const [selectedQCId, setSelectedQCId] = useState('')
     const [inboundDate, setInboundDate] = useState('')
+    const [peelingDate, setPeelingDate] = useState('')
     const [batchCode, setBatchCode] = useState('')
     const [lotItems, setLotItems] = useState<LotItemInput[]>([{ productId: '', quantity: 0 }])
 
@@ -209,6 +210,7 @@ export default function LotManagementPage() {
         setSelectedSupplierId(lot.supplier_id || '')
         setSelectedQCId(lot.qc_id || '')
         setInboundDate(lot.inbound_date ? new Date(lot.inbound_date).toISOString().split('T')[0] : '')
+        setPeelingDate(lot.peeling_date ? new Date(lot.peeling_date).toISOString().split('T')[0] : '')
         setBatchCode(lot.batch_code || '')
 
         setShowCreateForm(true)
@@ -239,6 +241,7 @@ export default function LotManagementPage() {
             supplier_id: selectedSupplierId || null,
             qc_id: selectedQCId || null,
             inbound_date: inboundDate || null,
+            peeling_date: peelingDate || null,
             batch_code: batchCode || null,
             quantity: totalQuantity, // Legacy/Summary field
             status: 'active'
@@ -320,6 +323,7 @@ export default function LotManagementPage() {
         setSelectedSupplierId('')
         setSelectedQCId('')
         setInboundDate('')
+        setPeelingDate('')
         setBatchCode('')
         setLotItems([{ productId: '', quantity: 0 }])
     }
@@ -440,6 +444,22 @@ export default function LotManagementPage() {
                                     type="date"
                                     value={inboundDate}
                                     onChange={(e) => setInboundDate(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Ngày bóc múi */}
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                Ngày bóc múi
+                            </label>
+                            <div className="relative">
+                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                <input
+                                    type="date"
+                                    value={peelingDate}
+                                    onChange={(e) => setPeelingDate(e.target.value)}
                                     className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
                                 />
                             </div>
@@ -752,12 +772,21 @@ export default function LotManagementPage() {
                                         {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : '--/--/----'}
                                     </div>
                                 </div>
-                                <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
-                                    <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày lên kệ</div>
-                                    <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                        {new Date(lot.created_at).toLocaleDateString('vi-VN')}
+                                {lot.peeling_date ? (
+                                    <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
+                                        <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày bóc múi</div>
+                                        <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                                            {new Date(lot.peeling_date).toLocaleDateString('vi-VN')}
+                                        </div>
                                     </div>
-                                </div>
+                                ) : (
+                                    <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
+                                        <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày tạo</div>
+                                        <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                                            {new Date(lot.created_at).toLocaleDateString('vi-VN')}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Actions Footer */}
