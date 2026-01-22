@@ -8,6 +8,7 @@ import { Plus, Search, Boxes, MapPin, Trash2, Calendar, Package, Factory, Hash, 
 import QRCode from "react-qr-code"
 import Link from 'next/link'
 import { Combobox } from '@/components/ui/Combobox'
+import { useSystem } from '@/contexts/SystemContext'
 
 type Lot = Database['public']['Tables']['lots']['Row'] & {
     lot_items: (Database['public']['Tables']['lot_items']['Row'] & {
@@ -29,6 +30,7 @@ type Supplier = Database['public']['Tables']['suppliers']['Row']
 
 export default function LotManagementPage() {
     const router = useRouter()
+    const { currentSystem } = useSystem()
     const [lots, setLots] = useState<Lot[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
@@ -107,7 +109,26 @@ export default function LotManagementPage() {
         const month = String(today.getMonth() + 1).padStart(2, '0') // Month is 0-indexed
         const year = String(today.getFullYear()).slice(-2)
         const dateStr = `${day}${month}${year}`
-        const prefix = `LOT-${dateStr}-`
+
+        let warehousePrefix = ''
+        if (currentSystem?.name) {
+            // Remove "Kho" prefix if present (case insensitive)
+            const cleanName = currentSystem.name.replace(/^Kho\s+/i, '').trim()
+
+            // Get acronym (First letter of each word)
+            const initials = cleanName.split(/\s+/).map(word => word[0]).join('')
+
+            // Normalize Vietnamese to ASCII (remove accents, handle Đ)
+            const normalized = initials
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/đ/g, "d")
+                .replace(/Đ/g, "D")
+
+            warehousePrefix = normalized.toUpperCase().replace(/[^A-Z0-9]/g, '')
+        }
+
+        const prefix = warehousePrefix ? `${warehousePrefix}-LOT-${dateStr}-` : `LOT-${dateStr}-`
 
         const { data, error } = await supabase
             .from('lots')
