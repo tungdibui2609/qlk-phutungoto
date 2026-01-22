@@ -21,6 +21,7 @@ interface ComboboxProps {
     emptyText?: string
     allowCustom?: boolean
     renderValue?: (option: ComboboxOption) => React.ReactNode
+    hideSearchIcon?: boolean
 }
 
 export function Combobox({
@@ -34,7 +35,8 @@ export function Combobox({
     isLoading = false,
     emptyText = 'No results found.',
     allowCustom = false,
-    renderValue
+    renderValue,
+    hideSearchIcon = false
 }: ComboboxProps) {
     const [isOpen, setIsOpen] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
@@ -141,9 +143,11 @@ export function Combobox({
                     }
                 }}
             >
-                <div className="flex items-center pl-3 text-gray-400">
-                    <Search size={16} />
-                </div>
+                {!hideSearchIcon && (
+                    <div className="flex items-center pl-3 text-gray-400">
+                        <Search size={16} />
+                    </div>
+                )}
 
                 {!isOpen && value && selectedOption && renderValue ? (
                     <div className="flex-1 py-1.5 px-2 text-sm cursor-text min-h-[40px] flex items-center">

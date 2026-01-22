@@ -835,8 +835,7 @@ function OutboundPrintContent() {
                             <td className="border border-gray-400 px-2 py-1.5 text-center">Cộng</td>
                             <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
                             <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
-                            <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
-                            <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
+
                             {hasModule('outbound_financials') && <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>}
 
                             {/* Quantity Total */}

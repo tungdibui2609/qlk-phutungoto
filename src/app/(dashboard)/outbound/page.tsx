@@ -262,6 +262,7 @@ export default function OutboundPage() {
 
             {/* Modal Create */}
             <OutboundOrderModal
+                key={systemType}
                 isOpen={isModalOpen}
                 onClose={() => {
                     setIsModalOpen(false)
@@ -272,7 +273,8 @@ export default function OutboundPage() {
                     setIsModalOpen(false)
                     setEditingOrderId(null)
                 }}
-            // editOrderId={editingOrderId} // Add edit support to modal later if needed
+                // editOrderId={editingOrderId} // Add edit support to modal later if needed
+                systemCode={systemType}
             />
 
             {/* Modal Detail */}

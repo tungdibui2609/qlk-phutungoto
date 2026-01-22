@@ -261,6 +261,7 @@ export default function InboundPage() {
 
             {/* Modal Create */}
             <InboundOrderModal
+                key={systemType}
                 isOpen={isModalOpen}
                 onClose={() => {
                     setIsModalOpen(false)
@@ -272,6 +273,7 @@ export default function InboundPage() {
                     setEditingOrderId(null)
                 }}
                 editOrderId={editingOrderId}
+                systemCode={systemType}
             />
 
             {/* Modal Detail */}

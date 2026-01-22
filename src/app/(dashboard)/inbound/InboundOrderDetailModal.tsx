@@ -99,6 +99,10 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
             setItems([])
             setImageUrl(null)
         }
+        // Reset transient UI state
+        setShowConfirmApprove(false)
+        setShowPrintMenu(false)
+        setVisibleNoteId(null)
     }, [order])
 
     async function fetchItems() {

@@ -26,6 +26,7 @@ interface OutboundOrderModalProps {
     isOpen: boolean
     onClose: () => void
     onSuccess: () => void
+    systemCode: string
 }
 
 const generateOrderCode = async (type: 'PNK' | 'PXK', systemCode?: string, systemName?: string) => {
@@ -91,9 +92,9 @@ interface OrderItem {
     isNoteOpen?: boolean
 }
 
-export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: OutboundOrderModalProps) {
+export default function OutboundOrderModal({ isOpen, onClose, onSuccess, systemCode }: OutboundOrderModalProps) {
     const { showToast } = useToast()
-    const { systemType, currentSystem } = useSystem()
+    const { currentSystem } = useSystem()
 
     // Form State
     const [code, setCode] = useState('')
@@ -127,7 +128,7 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
     useEffect(() => {
         if (isOpen) {
             // Generate draft code
-            generateOrderCode('PXK', systemType, currentSystem?.name).then(newCode => setCode(newCode))
+            generateOrderCode('PXK', systemCode, currentSystem?.name).then(newCode => setCode(newCode))
 
             fetchData()
         } else {
@@ -145,21 +146,21 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
             setImages([])
             setTargetUnit('')
         }
-    }, [isOpen])
+    }, [isOpen, systemCode])
 
     async function fetchData() {
         setLoadingData(true)
         const [prodRes, branchRes, custRes, invRes, unitRes, typeRes] = await Promise.all([
-            supabase.from('products').select('*, product_units(unit_id, conversion_rate)').eq('system_type', systemType).order('name'),
+            supabase.from('products').select('*, product_units(unit_id, conversion_rate)').eq('system_type', systemCode).order('name'),
             supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'),
-            supabase.from('customers').select('*').eq('system_code', systemType).order('name'),
-            fetch(`/api/inventory?systemType=${systemType}`).then(res => res.json()),
+            supabase.from('customers').select('*').eq('system_code', systemCode).order('name'),
+            fetch(`/api/inventory?systemType=${systemCode}`).then(res => res.json()),
             supabase.from('units').select('*').eq('is_active', true),
             // Fetch Order Types (System specific or Global)
             (supabase.from('order_types') as any)
                 .select('*')
                 .or(`scope.eq.outbound,scope.eq.both`)
-                .or(`system_code.eq.${systemType},system_code.is.null`)
+                .or(`system_code.eq.${systemCode},system_code.is.null`)
                 .eq('is_active', true)
                 .order('created_at', { ascending: true })
         ])
@@ -338,7 +339,8 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                     type: 'Sale',
                     order_type_id: orderTypeId || null,
                     images, // Save images
-                    system_code: systemType,
+                    system_code: systemCode,
+                    system_type: systemCode,
                     metadata: {
                         vehicleNumber,
                         driverName,
@@ -405,21 +407,7 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                         </h2>
                         <p className="text-sm text-stone-500">Xuất hàng, bán hàng, chuyển kho</p>
                     </div>
-                    {hasModule('outbound_conversion') && (
-                        <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-stone-600 dark:text-stone-400 whitespace-nowrap">Hiển thị quy đổi theo:</span>
-                            <select
-                                value={targetUnit}
-                                onChange={(e) => setTargetUnit(e.target.value)}
-                                className="px-3 py-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-sm text-stone-800 dark:text-gray-100 outline-none focus:ring-2 focus:ring-orange-500"
-                            >
-                                <option value="">-- Không --</option>
-                                {units.map(u => (
-                                    <option key={u.id} value={u.name}>{u.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
+
                     <button onClick={onClose} className="p-2 hover:bg-stone-200 dark:hover:bg-zinc-800 rounded-lg transition-colors">
                         <X size={24} />
                     </button>
@@ -462,7 +450,24 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                                         >
                                                             <option value="">-- Chọn loại phiếu --</option>
                                                             {orderTypes.map(t => (
-                                                                <option key={t.id} value={t.id}>{t.code} - {t.name}</option>
+                                                                <option key={t.id} value={t.id}>{t.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                )}
+
+                                                {/* Conversion Unit Selector */}
+                                                {hasModule('outbound_conversion') && (
+                                                    <div className="space-y-1.5 md:col-span-2">
+                                                        <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Hiển thị quy đổi theo</label>
+                                                        <select
+                                                            value={targetUnit}
+                                                            onChange={(e) => setTargetUnit(e.target.value)}
+                                                            className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                                                        >
+                                                            <option value="">-- Không --</option>
+                                                            {units.map(u => (
+                                                                <option key={u.id} value={u.name}>{u.name}</option>
                                                             ))}
                                                         </select>
                                                     </div>
@@ -488,7 +493,7 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                                     <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Khách hàng <span className="text-red-500">*</span></label>
                                                     <Combobox
                                                         options={customers.map(c => ({ value: c.id, label: c.name }))}
-                                                        value={null}
+                                                        value={customers.find(c => c.name === customerName)?.id || null}
                                                         onChange={(val) => {
                                                             const c = customers.find(cus => cus.id === val)
                                                             if (c) {
@@ -607,12 +612,12 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                     </div>
 
                                     <div className="border border-stone-200 dark:border-zinc-700 rounded-xl overflow-visible">
-                                        <table className={`w-full text-left ${hasModule('outbound_ui_compact') ? 'text-base' : 'text-xs'}`}>
-                                            <thead className="bg-stone-50 dark:bg-zinc-800/50 text-stone-500 font-medium text-center">
-                                                <tr>
+                                        <table className={`w-full text-left ${hasModule('outbound_ui_compact') ? 'text-xs' : 'text-xs'}`}>
+                                            <thead className="bg-stone-50 dark:bg-zinc-800/50 text-stone-500 font-medium text-center text-xs">
+                                                <tr className="align-top">
                                                     <th className="px-4 py-3 w-10">#</th>
-                                                    <th className="px-4 py-3 min-w-[370px]">Sản phẩm</th>
-                                                    <th className="px-4 py-3 w-24">ĐVT</th>
+                                                    <th className="px-4 py-3 min-w-[370px] text-left">Sản phẩm</th>
+                                                    <th className="px-4 py-3 w-32">ĐVT</th>
                                                     <th className="px-4 py-3 w-48 text-right">
                                                         <div className="flex flex-col items-center w-fit ml-auto">
                                                             <span>SL</span>
@@ -622,7 +627,7 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
 
                                                     {/* Conversion Column */}
                                                     {hasModule('outbound_conversion') && targetUnit && (
-                                                        <th className="px-4 py-3 w-32 text-right text-orange-600">
+                                                        <th className="px-4 py-3 w-32 text-center text-orange-600">
                                                             <div>SL Quy đổi</div>
                                                             <div className="text-[10px] font-normal">({targetUnit})</div>
                                                         </th>
@@ -688,20 +693,23 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                                                 const uniqueOptions = Array.from(new Map(options.map(item => [item['value'], item])).values());
 
                                                                 if (uniqueOptions.length <= 1) {
-                                                                    return <span className='text-stone-700 font-medium'>{item.unit || product.unit || '-'}</span>
+                                                                    return <div className='text-center text-sm font-medium text-stone-700'>{item.unit || product.unit || '-'}</div>
                                                                 }
 
                                                                 return (
-                                                                    <select
+                                                                    <Combobox
+                                                                        options={uniqueOptions}
                                                                         value={item.unit}
-                                                                        onChange={(e) => updateItem(item.id, 'unit', e.target.value)}
-                                                                        className={`w-full bg-transparent border-none outline-none font-medium text-center focus:ring-0 cursor-pointer hover:bg-stone-100 rounded ${!item.unit ? 'text-orange-500 animate-pulse' : 'text-stone-700'}`}
-                                                                    >
-                                                                        <option value="" disabled>-- ĐVT --</option>
-                                                                        {uniqueOptions.map(opt => (
-                                                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                                                        ))}
-                                                                    </select>
+                                                                        onChange={(val) => updateItem(item.id, 'unit', val)}
+                                                                        hideSearchIcon={true}
+                                                                        placeholder="-- ĐVT --"
+                                                                        className="w-full"
+                                                                        renderValue={(option) => (
+                                                                            <div className="text-center w-full font-medium text-stone-700 dark:text-gray-200">
+                                                                                {option.label}
+                                                                            </div>
+                                                                        )}
+                                                                    />
                                                                 )
                                                             })()}
                                                         </td>
@@ -753,7 +761,7 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
 
                                                         {/* Conversion Logic */}
                                                         {hasModule('outbound_conversion') && targetUnit && (
-                                                            <td className="px-4 py-3 text-right font-medium text-orange-600">
+                                                            <td className="px-4 py-3 text-center font-medium text-orange-600">
                                                                 {(() => {
                                                                     if (!item.quantity || !item.unit) return '-'
 
@@ -883,12 +891,12 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                                         </td>
                                                         {/* Total Quantity */}
                                                         <td className="px-4 py-3 text-right text-stone-900 dark:text-white">
-                                                            {items.reduce((sum, item) => sum + item.quantity, 0).toLocaleString('vi-VN')}
+                                                            {!hasModule('outbound_ui_compact') && items.reduce((sum, item) => sum + item.quantity, 0).toLocaleString('vi-VN')}
                                                         </td>
 
                                                         {/* Total Converted */}
                                                         {hasModule('outbound_conversion') && targetUnit && (
-                                                            <td className="px-4 py-3 text-right text-orange-600">
+                                                            <td className="px-4 py-3 text-center text-orange-600">
                                                                 {items.reduce((sum, item) => {
                                                                     if (!item.quantity || !item.unit) return sum
                                                                     const product = products.find(p => p.id === item.productId)
