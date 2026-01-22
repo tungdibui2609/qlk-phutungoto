@@ -47,7 +47,8 @@ export default function OutboundPage() {
             .from('outbound_orders')
             .select(`
                 *,
-                items:outbound_order_items(note)
+                items:outbound_order_items(note),
+                order_types(name)
             `)
             .eq('system_type', systemType)
             .order('created_at', { ascending: false })

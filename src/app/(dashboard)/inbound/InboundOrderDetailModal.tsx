@@ -7,6 +7,8 @@ import { X, Calendar, Package, User, FileText, CheckCircle, Clock, Printer, Chev
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
+import { useSystem } from '@/contexts/SystemContext'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/Dialog'
 
 interface InboundOrder {
     id: string
@@ -47,7 +49,22 @@ interface InboundOrderDetailModalProps {
 
 export default function InboundOrderDetailModal({ order, onClose, onUpdate }: InboundOrderDetailModalProps) {
     const { showToast, showConfirm } = useToast()
+    const { currentSystem } = useSystem()
     const { hasPermission } = useUser()
+
+    const hasModule = (moduleId: string) => {
+        if (!currentSystem?.inbound_modules) return false
+
+        // Handle both array and JSON string formats
+        const modules = Array.isArray(currentSystem.inbound_modules)
+            ? currentSystem.inbound_modules
+            : typeof currentSystem.inbound_modules === 'string'
+                ? JSON.parse(currentSystem.inbound_modules)
+                : []
+
+        return Array.isArray(modules) && modules.includes(moduleId)
+    }
+
     const [items, setItems] = useState<OrderItem[]>([])
     const [loading, setLoading] = useState(false)
     const [showPrintMenu, setShowPrintMenu] = useState(false)
@@ -200,12 +217,13 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
     if (!order) return null
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                {/* Header */}
-                <div className="p-6 border-b border-stone-200 dark:border-zinc-800 flex justify-between items-start bg-stone-50 dark:bg-zinc-900/50">
-                    <div>
-                        <div className="flex items-center gap-3 mb-1">
+        <>
+            <Dialog open={!!order} onOpenChange={onClose}>
+                <DialogContent className={`${hasModule('inbound_ui_compact') ? 'max-w-3xl' : 'max-w-7xl'} max-h-[90vh] overflow-y-auto p-0 gap-0 bg-stone-50 dark:bg-zinc-900 border-none shadow-2xl`}>
+                    <DialogTitle className="sr-only">Chi tiết phiếu {order.code}</DialogTitle>
+                    {/* Header */}
+                    <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 bg-white dark:bg-zinc-800 border-b border-stone-100 dark:border-zinc-700 shadow-sm">
+                        <div className="flex items-center gap-3">
                             <h2 className="text-2xl font-bold text-orange-600 dark:text-orange-400 font-mono">
                                 {order.code}
                             </h2>
@@ -216,26 +234,13 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                 {order.status === 'Pending' ? 'Chờ xử lý' : order.status}
                             </span>
                         </div>
-                        <p className="text-sm text-stone-500 flex items-center gap-2">
-                            <Calendar size={14} />
-                            {format(new Date(order.created_at), 'dd/MM/yyyy HH:mm')}
-                            {order.order_types?.name && (
-                                <span className="ml-2 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold border border-blue-100">
-                                    {order.order_types.name}
-                                </span>
-                            )}
-                        </p>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-stone-200 dark:hover:bg-zinc-800 rounded-lg transition-colors">
-                        <X size={24} />
-                    </button>
-                </div>
 
-                {/* Body */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-8">
-                    {/* Info Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-stone-50 dark:bg-zinc-800/50 rounded-xl border border-stone-100 dark:border-zinc-800">
-                        <div className="space-y-4">
+                    {/* Body */}
+                    <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                        {/* Info Grid - 2 columns */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 p-4 bg-stone-50 dark:bg-zinc-800/50 rounded-xl border border-stone-100 dark:border-zinc-800">
+                            {/* Column 1 */}
                             <div>
                                 <label className="text-xs font-semibold text-stone-400 uppercase">Nhà cung cấp</label>
                                 <p className="font-medium text-stone-900 dark:text-gray-200 flex items-center gap-2 mt-1">
@@ -253,6 +258,8 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                     </p>
                                 )}
                             </div>
+
+                            {/* Column 2 */}
                             <div>
                                 <label className="text-xs font-semibold text-stone-400 uppercase">Kho nhập</label>
                                 <p className="font-medium text-stone-900 dark:text-gray-200 flex items-center gap-2 mt-1">
@@ -261,35 +268,56 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                 </p>
                             </div>
 
-                            {/* Logistics Info (Metadata) */}
-                            {(order.metadata?.vehicleNumber || order.metadata?.driverName || order.metadata?.containerNumber) && (
+                            {/* Column 1 */}
+                            {order.order_types?.name && (
                                 <div>
+                                    <label className="text-xs font-semibold text-stone-400 uppercase">Loại phiếu</label>
+                                    <p className="font-medium text-stone-900 dark:text-gray-200 mt-1">
+                                        <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-sm font-semibold border border-blue-100">
+                                            {order.order_types.name}
+                                        </span>
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Column 2 */}
+                            <div>
+                                <label className="text-xs font-semibold text-stone-400 uppercase">Ngày tạo</label>
+                                <p className="font-medium text-stone-900 dark:text-gray-200 flex items-center gap-2 mt-1">
+                                    <Calendar size={16} className="text-orange-500" />
+                                    {format(new Date(order.created_at), 'dd/MM/yyyy HH:mm')}
+                                </p>
+                            </div>
+
+                            {/* Logistics Info - spans if exists */}
+                            {(order.metadata?.vehicleNumber || order.metadata?.driverName || order.metadata?.containerNumber) && (
+                                <div className="md:col-span-2">
                                     <label className="text-xs font-semibold text-stone-400 uppercase">Vận chuyển</label>
-                                    <div className="mt-1 space-y-1 text-sm text-stone-700 dark:text-gray-300">
+                                    <div className="mt-1 flex flex-wrap gap-4 text-sm text-stone-700 dark:text-gray-300">
                                         {order.metadata.vehicleNumber && (
                                             <div className="flex items-center gap-2">
-                                                <span className="text-stone-500 w-20">Biển số:</span>
+                                                <span className="text-stone-500">Biển số:</span>
                                                 <span className="font-medium bg-stone-100 dark:bg-zinc-700 px-1.5 rounded">{order.metadata.vehicleNumber}</span>
                                             </div>
                                         )}
                                         {order.metadata.driverName && (
                                             <div className="flex items-center gap-2">
-                                                <span className="text-stone-500 w-20">Tài xế:</span>
+                                                <span className="text-stone-500">Tài xế:</span>
                                                 <span className="font-medium">{order.metadata.driverName}</span>
                                             </div>
                                         )}
                                         {order.metadata.containerNumber && (
                                             <div className="flex items-center gap-2">
-                                                <span className="text-stone-500 w-20">Container:</span>
+                                                <span className="text-stone-500">Container:</span>
                                                 <span className="font-medium font-mono">{order.metadata.containerNumber}</span>
                                             </div>
                                         )}
                                     </div>
                                 </div>
                             )}
-                        </div>
-                        <div className="space-y-4">
-                            <div>
+
+                            {/* Description - full width */}
+                            <div className="md:col-span-2 border-t border-stone-200 dark:border-zinc-700 pt-4">
                                 <label className="text-xs font-semibold text-stone-400 uppercase">Diễn giải</label>
                                 <p className="font-medium text-stone-900 dark:text-gray-200 flex items-start gap-2 mt-1">
                                     <FileText size={16} className="text-stone-400 mt-0.5" />
@@ -299,241 +327,209 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                 </p>
                             </div>
 
-                            {/* Invoice Image Section */}
-                            <div>
-                                <label className="text-xs font-semibold text-stone-400 uppercase flex items-center justify-between">
-                                    <span>Hình ảnh hóa đơn</span>
-                                    {uploading && <span className="text-orange-500">Đang tải...</span>}
-                                </label>
-                                <div className="mt-2">
-                                    {imageUrl ? (
-                                        <div className="relative group inline-block">
-                                            <img
-                                                src={imageUrl}
-                                                alt="Hóa đơn"
-                                                className="h-32 w-auto object-contain rounded-lg border border-stone-200 dark:border-zinc-700 bg-white"
-                                                onClick={() => window.open(imageUrl, '_blank')}
-                                            />
-                                            <button
-                                                onClick={handleRemoveImage}
-                                                className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
-                                                title="Xóa ảnh"
-                                            >
-                                                <X size={12} />
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div>
-                                            <input
-                                                ref={fileInputRef}
-                                                type="file"
-                                                accept="image/*"
-                                                className="hidden"
-                                                onChange={handleFileSelect}
-                                                disabled={uploading}
-                                            />
-                                            <button
-                                                onClick={() => fileInputRef.current?.click()}
-                                                disabled={uploading}
-                                                className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-600 rounded-lg text-sm text-stone-600 dark:text-gray-300 hover:bg-stone-50 dark:hover:bg-zinc-700 transition-colors border-dashed"
-                                            >
-                                                <div className="w-8 h-8 rounded-full bg-stone-100 dark:bg-zinc-800 flex items-center justify-center">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
-                                                </div>
-                                                Chụp/Tải ảnh hóa đơn
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                            {/* Additional Images Grid */}
+                            {/* Images Grid - full width */}
                             {order.images && order.images.length > 0 && (
-                                <div className="mt-2 grid grid-cols-3 gap-2">
-                                    {order.images.map((img, idx) => (
-                                        <img
-                                            key={idx}
-                                            src={img}
-                                            alt={`Image ${idx + 1}`}
-                                            className="h-20 w-auto object-cover rounded-lg border border-stone-200 dark:border-zinc-700 cursor-pointer hover:opacity-80 transition-opacity"
-                                            onClick={() => window.open(img, '_blank')}
-                                        />
-                                    ))}
+                                <div className="md:col-span-2">
+                                    <label className="text-xs font-semibold text-stone-400 uppercase">Hình ảnh đính kèm</label>
+                                    <div className="mt-2 grid grid-cols-4 gap-2">
+                                        {order.images.map((img, idx) => (
+                                            <img
+                                                key={idx}
+                                                src={img}
+                                                alt={`Image ${idx + 1}`}
+                                                className="h-20 w-auto object-cover rounded-lg border border-stone-200 dark:border-zinc-700 cursor-pointer hover:opacity-80 transition-opacity"
+                                                onClick={() => window.open(img, '_blank')}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Items Table */}
+                        <div>
+                            <h3 className="font-bold text-stone-900 dark:text-white mb-4 flex items-center gap-2">
+                                <span className="w-1 h-6 bg-orange-500 rounded-full"></span>
+                                Chi tiết hàng hóa
+                            </h3>
+
+                            {loading ? (
+                                <div className="py-8 text-center text-gray-500">Đang tải chi tiết...</div>
+                            ) : (
+                                <div className="border border-gray-200 dark:border-zinc-700 rounded-xl overflow-x-auto">
+                                    <table className="w-full text-xs text-left">
+                                        <thead className="bg-stone-50 dark:bg-zinc-800/50 text-stone-500 font-medium">
+                                            <tr>
+                                                <th className="px-4 py-3 w-10">#</th>
+                                                <th className="px-4 py-3 min-w-[370px]">Sản phẩm</th>
+                                                <th className="px-4 py-3 w-24">ĐVT</th>
+                                                <th className="px-4 py-3 w-24 text-right">SL Thực nhập</th>
+                                                {!hasModule('inbound_ui_compact') && (
+                                                    <th className="px-4 py-3 w-24 text-right">SL Chứng từ</th>
+                                                )}
+                                                {hasModule('inbound_financials') && (
+                                                    <>
+                                                        <th className="px-4 py-3 w-32 text-right">Đơn giá</th>
+                                                        <th className="px-4 py-3 w-32 text-right">Thành tiền</th>
+                                                    </>
+                                                )}
+                                                <th className="px-4 py-3">Ghi chú</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
+                                            {items.map((item, index) => (
+                                                <tr key={item.id} className="hover:bg-stone-50 dark:hover:bg-zinc-800/30">
+                                                    <td className="px-4 py-3 text-stone-400">{index + 1}</td>
+                                                    <td className="px-4 py-3 font-medium text-stone-900 dark:text-white">
+                                                        <div className="text-[10px] text-stone-500 font-mono mb-0.5">{item.products?.sku || '-'}</div>
+                                                        <div>{item.product_name || 'N/A'}</div>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-stone-500">{item.unit || '-'}</td>
+                                                    <td className="px-4 py-3 text-right font-medium">{item.quantity}</td>
+                                                    {!hasModule('inbound_ui_compact') && (
+                                                        <td className="px-4 py-3 text-right font-medium text-blue-600">{item.document_quantity || item.quantity}</td>
+                                                    )}
+                                                    {hasModule('inbound_financials') && (
+                                                        <>
+                                                            <td className="px-4 py-3 text-right text-stone-500">
+                                                                {(item.price || 0).toLocaleString()}
+                                                            </td>
+                                                            <td className="px-4 py-3 text-right font-bold text-orange-600">
+                                                                {((item.quantity || 0) * (item.price || 0)).toLocaleString()}
+                                                            </td>
+                                                        </>
+                                                    )}
+                                                    <td className="px-4 py-3 text-center relative pointer-events-none">
+                                                        <div className="pointer-events-auto inline-block">
+                                                            {item.note ? (
+                                                                <div className="relative">
+                                                                    <button
+                                                                        onClick={() => setVisibleNoteId(visibleNoteId === item.id ? null : item.id)}
+                                                                        className="text-red-500 hover:text-red-600 transition-colors relative z-10"
+                                                                        title="Xem ghi chú"
+                                                                    >
+                                                                        <Eye size={18} />
+                                                                    </button>
+
+                                                                    {/* Tooltip content */}
+                                                                    {visibleNoteId === item.id && (
+                                                                        <div className="absolute right-full top-1/2 -translate-y-1/2 mr-4 w-64 bg-white dark:bg-zinc-800 p-4 rounded-xl shadow-2xl border border-stone-200 dark:border-zinc-700 z-50 animate-in fade-in slide-in-from-right-2 zoom-in-95 duration-200">
+                                                                            <h4 className="text-[10px] uppercase tracking-wider font-bold text-stone-400 mb-2 border-b border-stone-100 dark:border-zinc-700 pb-1">
+                                                                                Ghi chú
+                                                                            </h4>
+                                                                            <p className="text-sm text-stone-700 dark:text-stone-300 leading-relaxed text-left">
+                                                                                {item.note}
+                                                                            </p>
+                                                                            {/* Arrow */}
+                                                                            <div className="absolute top-1/2 -right-2 -translate-y-1/2 w-4 h-4 bg-white dark:bg-zinc-800 transform rotate-45 border-t border-r border-stone-200 dark:border-zinc-700"></div>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Click backdrop to close */}
+                                                                    {visibleNoteId === item.id && (
+                                                                        <div
+                                                                            className="fixed inset-0 z-0 bg-transparent"
+                                                                            onClick={() => setVisibleNoteId(null)}
+                                                                        />
+                                                                    )}
+                                                                </div>
+                                                            ) : (
+                                                                <Eye size={18} className="text-stone-300 mx-auto" />
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {items.length > 0 && (
+                                                <tr className="bg-stone-50 dark:bg-zinc-800/50 font-bold">
+                                                    <td colSpan={6} className="px-4 py-3 text-right text-stone-900 dark:text-white">
+                                                        Tổng cộng:
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right text-orange-600 text-sm">
+                                                        {totalAmount.toLocaleString()}
+                                                    </td>
+                                                    <td className="px-4 py-3"></td>
+                                                </tr>
+                                            )}
+                                            {items.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={7} className="px-4 py-8 text-center text-stone-400">
+                                                        Không tìm thấy chi tiết hàng hóa
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    {/* Items Table */}
-                    <div>
-                        <h3 className="font-bold text-stone-900 dark:text-white mb-4 flex items-center gap-2">
-                            <span className="w-1 h-6 bg-orange-500 rounded-full"></span>
-                            Chi tiết hàng hóa
-                        </h3>
+                    {/* Footer */}
+                    <div className="p-6 border-t border-stone-200 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900/50 flex justify-end gap-3">
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowPrintMenu(!showPrintMenu)}
+                                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium shadow-md shadow-blue-500/20 transition-all hover:scale-105 active:scale-95"
+                            >
+                                <Printer size={18} />
+                                In phiếu
+                                <ChevronDown size={16} />
+                            </button>
+                            {showPrintMenu && (
+                                <>
+                                    <div className="fixed inset-0 z-10" onClick={() => setShowPrintMenu(false)} />
+                                    <div className="absolute bottom-full left-0 mb-2 w-56 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-stone-200 dark:border-zinc-700 overflow-hidden z-20">
+                                        <button
+                                            onClick={() => {
+                                                window.open(`/print/inbound?id=${order.id}&type=internal`, '_blank')
+                                                setShowPrintMenu(false)
+                                            }}
+                                            className="w-full px-4 py-3 text-left hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-3 text-stone-700 dark:text-gray-200"
+                                        >
+                                            <Printer size={16} className="text-blue-500" />
+                                            <div>
+                                                <div className="font-medium">Phiếu nội bộ</div>
+                                                <div className="text-xs text-stone-500">Không có đơn giá, thành tiền</div>
+                                            </div>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                window.open(`/print/inbound?id=${order.id}&type=official`, '_blank')
+                                                setShowPrintMenu(false)
+                                            }}
+                                            className="w-full px-4 py-3 text-left hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-3 text-stone-700 dark:text-gray-200 border-t border-stone-100 dark:border-zinc-700"
+                                        >
+                                            <Printer size={16} className="text-orange-500" />
+                                            <div>
+                                                <div className="font-medium">Phiếu theo thông tư</div>
+                                                <div className="text-xs text-stone-500">Mẫu 01-VT đầy đủ</div>
+                                            </div>
+                                        </button>
 
-                        {loading ? (
-                            <div className="py-8 text-center text-gray-500">Đang tải chi tiết...</div>
-                        ) : (
-                            <div className="border border-gray-200 dark:border-zinc-700 rounded-xl overflow-x-auto">
-                                <table className="w-full text-xs text-left">
-                                    <thead className="bg-stone-50 dark:bg-zinc-800/50 text-stone-500 font-medium">
-                                        <tr>
-                                            <th className="px-4 py-3 w-10">#</th>
-                                            <th className="px-4 py-3 min-w-[370px]">Sản phẩm</th>
-                                            <th className="px-4 py-3 w-24">ĐVT</th>
-                                            <th className="px-4 py-3 w-24 text-right">SL Thực nhập</th>
-                                            <th className="px-4 py-3 w-24 text-right">SL Chứng từ</th>
-                                            <th className="px-4 py-3 w-32 text-right">Đơn giá</th>
-                                            <th className="px-4 py-3 w-32 text-right">Thành tiền</th>
-                                            <th className="px-4 py-3">Ghi chú</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
-                                        {items.map((item, index) => (
-                                            <tr key={item.id} className="hover:bg-stone-50 dark:hover:bg-zinc-800/30">
-                                                <td className="px-4 py-3 text-stone-400">{index + 1}</td>
-                                                <td className="px-4 py-3 font-medium text-stone-900 dark:text-white">
-                                                    <div className="text-[10px] text-stone-500 font-mono mb-0.5">{item.products?.sku || '-'}</div>
-                                                    <div>{item.product_name || 'N/A'}</div>
-                                                </td>
-                                                <td className="px-4 py-3 text-stone-500">{item.unit || '-'}</td>
-                                                <td className="px-4 py-3 text-right font-medium">{item.quantity}</td>
-                                                <td className="px-4 py-3 text-right font-medium text-blue-600">{item.document_quantity || item.quantity}</td>
-                                                <td className="px-4 py-3 text-right text-stone-500">
-                                                    {(item.price || 0).toLocaleString()}
-                                                </td>
-                                                <td className="px-4 py-3 text-right font-bold text-orange-600">
-                                                    {((item.quantity || 0) * (item.price || 0)).toLocaleString()}
-                                                </td>
-                                                <td className="px-4 py-3 text-center relative pointer-events-none">
-                                                    <div className="pointer-events-auto inline-block">
-                                                        {item.note ? (
-                                                            <div className="relative">
-                                                                <button
-                                                                    onClick={() => setVisibleNoteId(visibleNoteId === item.id ? null : item.id)}
-                                                                    className="text-red-500 hover:text-red-600 transition-colors relative z-10"
-                                                                    title="Xem ghi chú"
-                                                                >
-                                                                    <Eye size={18} />
-                                                                </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                        <button
+                            onClick={onClose}
+                            className="px-6 py-2.5 bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-600 text-stone-700 dark:text-gray-300 rounded-lg font-medium hover:bg-stone-50 dark:hover:bg-zinc-700 transition-colors"
+                        >
+                            Đóng
+                        </button>
 
-                                                                {/* Tooltip content */}
-                                                                {visibleNoteId === item.id && (
-                                                                    <div className="absolute right-full top-1/2 -translate-y-1/2 mr-4 w-64 bg-white dark:bg-zinc-800 p-4 rounded-xl shadow-2xl border border-stone-200 dark:border-zinc-700 z-50 animate-in fade-in slide-in-from-right-2 zoom-in-95 duration-200">
-                                                                        <h4 className="text-[10px] uppercase tracking-wider font-bold text-stone-400 mb-2 border-b border-stone-100 dark:border-zinc-700 pb-1">
-                                                                            Ghi chú
-                                                                        </h4>
-                                                                        <p className="text-sm text-stone-700 dark:text-stone-300 leading-relaxed text-left">
-                                                                            {item.note}
-                                                                        </p>
-                                                                        {/* Arrow */}
-                                                                        <div className="absolute top-1/2 -right-2 -translate-y-1/2 w-4 h-4 bg-white dark:bg-zinc-800 transform rotate-45 border-t border-r border-stone-200 dark:border-zinc-700"></div>
-                                                                    </div>
-                                                                )}
-
-                                                                {/* Click backdrop to close */}
-                                                                {visibleNoteId === item.id && (
-                                                                    <div
-                                                                        className="fixed inset-0 z-0 bg-transparent"
-                                                                        onClick={() => setVisibleNoteId(null)}
-                                                                    />
-                                                                )}
-                                                            </div>
-                                                        ) : (
-                                                            <Eye size={18} className="text-stone-300 mx-auto" />
-                                                        )}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                        {items.length > 0 && (
-                                            <tr className="bg-stone-50 dark:bg-zinc-800/50 font-bold">
-                                                <td colSpan={6} className="px-4 py-3 text-right text-stone-900 dark:text-white">
-                                                    Tổng cộng:
-                                                </td>
-                                                <td className="px-4 py-3 text-right text-orange-600 text-sm">
-                                                    {totalAmount.toLocaleString()}
-                                                </td>
-                                                <td className="px-4 py-3"></td>
-                                            </tr>
-                                        )}
-                                        {items.length === 0 && (
-                                            <tr>
-                                                <td colSpan={7} className="px-4 py-8 text-center text-stone-400">
-                                                    Không tìm thấy chi tiết hàng hóa
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
+                        {order.status === 'Pending' && hasPermission('inbound.approve') && (
+                            <button
+                                onClick={handleApprove}
+                                className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold shadow-lg shadow-green-500/20 transition-all hover:scale-105 active:scale-95"
+                            >
+                                <CheckCircle size={20} />
+                                Xác nhận Nhập kho
+                            </button>
                         )}
                     </div>
-                </div>
-
-                {/* Footer */}
-                <div className="p-6 border-t border-stone-200 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900/50 flex justify-end gap-3">
-                    <div className="relative">
-                        <button
-                            onClick={() => setShowPrintMenu(!showPrintMenu)}
-                            className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium shadow-md shadow-blue-500/20 transition-all hover:scale-105 active:scale-95"
-                        >
-                            <Printer size={18} />
-                            In phiếu
-                            <ChevronDown size={16} />
-                        </button>
-                        {showPrintMenu && (
-                            <>
-                                <div className="fixed inset-0 z-10" onClick={() => setShowPrintMenu(false)} />
-                                <div className="absolute bottom-full left-0 mb-2 w-56 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-stone-200 dark:border-zinc-700 overflow-hidden z-20">
-                                    <button
-                                        onClick={() => {
-                                            window.open(`/print/inbound?id=${order.id}&type=internal`, '_blank')
-                                            setShowPrintMenu(false)
-                                        }}
-                                        className="w-full px-4 py-3 text-left hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-3 text-stone-700 dark:text-gray-200"
-                                    >
-                                        <Printer size={16} className="text-blue-500" />
-                                        <div>
-                                            <div className="font-medium">Phiếu nội bộ</div>
-                                            <div className="text-xs text-stone-500">Không có đơn giá, thành tiền</div>
-                                        </div>
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            window.open(`/print/inbound?id=${order.id}&type=official`, '_blank')
-                                            setShowPrintMenu(false)
-                                        }}
-                                        className="w-full px-4 py-3 text-left hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-3 text-stone-700 dark:text-gray-200 border-t border-stone-100 dark:border-zinc-700"
-                                    >
-                                        <Printer size={16} className="text-orange-500" />
-                                        <div>
-                                            <div className="font-medium">Phiếu theo thông tư</div>
-                                            <div className="text-xs text-stone-500">Mẫu 01-VT đầy đủ</div>
-                                        </div>
-                                    </button>
-
-                                </div>
-                            </>
-                        )}
-                    </div>
-                    <button
-                        onClick={onClose}
-                        className="px-6 py-2.5 bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-600 text-stone-700 dark:text-gray-300 rounded-lg font-medium hover:bg-stone-50 dark:hover:bg-zinc-700 transition-colors"
-                    >
-                        Đóng
-                    </button>
-
-                    {order.status === 'Pending' && hasPermission('inbound.approve') && (
-                        <button
-                            onClick={handleApprove}
-                            className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold shadow-lg shadow-green-500/20 transition-all hover:scale-105 active:scale-95"
-                        >
-                            <CheckCircle size={20} />
-                            Xác nhận Nhập kho
-                        </button>
-                    )}
-                </div>
-            </div>
-        </div >
+                </DialogContent>
+            </Dialog>
+        </>
     )
 }

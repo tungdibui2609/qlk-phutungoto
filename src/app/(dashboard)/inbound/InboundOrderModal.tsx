@@ -8,6 +8,7 @@ import { Combobox } from '@/components/ui/Combobox'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { ImageUpload } from '@/components/ui/ImageUpload'
+import { Dialog, DialogContent } from '@/components/ui/Dialog'
 
 type Product = Database['public']['Tables']['products']['Row'] & {
     product_units?: {
@@ -428,9 +429,11 @@ export default function InboundOrderModal({ isOpen, onClose, onSuccess, editOrde
         return inboundModules.includes(moduleId)
     }
 
+
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-7xl h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full ${hasModule('inbound_ui_compact') ? 'max-w-3xl' : 'max-w-7xl'} h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200`}>
                 {/* Header */}
                 <div className="p-6 border-b border-stone-200 dark:border-zinc-800 flex justify-between items-center bg-stone-50 dark:bg-zinc-900/50">
                     <div>

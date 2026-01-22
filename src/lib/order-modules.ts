@@ -1,5 +1,5 @@
 
-import { DollarSign, FileText, Truck, Calendar, User, ShoppingCart, ShieldCheck, MapPin, Image } from 'lucide-react'
+import { DollarSign, FileText, Truck, Calendar, User, ShoppingCart, ShieldCheck, MapPin, Image, Minimize } from 'lucide-react'
 
 export interface OrderModule {
     id: string
@@ -65,6 +65,13 @@ export const INBOUND_MODULES: OrderModule[] = [
         description: 'Tài khoản Nợ/Có, Diễn giải hạch toán',
         icon: ShieldCheck,
         type: 'inbound'
+    },
+    {
+        id: 'inbound_ui_compact',
+        name: 'Giao diện thu gọn',
+        description: 'Sử dụng màn hình tạo phiếu nhỏ hơn (Compact Mode)',
+        icon: Minimize,
+        type: 'inbound'
     }
 ]
 
@@ -123,6 +130,13 @@ export const OUTBOUND_MODULES: OrderModule[] = [
         name: 'Hạch toán Kế toán',
         description: 'Tài khoản Nợ/Có, Doanh thu, Giá vốn',
         icon: ShieldCheck,
+        type: 'outbound'
+    },
+    {
+        id: 'outbound_ui_compact',
+        name: 'Giao diện thu gọn',
+        description: 'Sử dụng màn hình tạo phiếu nhỏ hơn (Compact Mode)',
+        icon: Minimize,
         type: 'outbound'
     }
 ]

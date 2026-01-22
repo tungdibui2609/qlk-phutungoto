@@ -9,6 +9,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { ImageUpload } from '@/components/ui/ImageUpload'
+import { Dialog, DialogContent } from '@/components/ui/Dialog'
 
 // Force update
 type Product = Database['public']['Tables']['products']['Row'] & {
@@ -374,9 +375,19 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
 
     if (!isOpen) return null
 
+    // Module Checking
+    const outboundModules = currentSystem?.outbound_modules
+        ? (typeof currentSystem.outbound_modules === 'string' ? JSON.parse(currentSystem.outbound_modules) : currentSystem.outbound_modules)
+        : []
+
+    const hasModule = (moduleId: string) => {
+        if (!outboundModules || outboundModules.length === 0) return true
+        return outboundModules.includes(moduleId)
+    }
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-7xl h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full ${hasModule('outbound_ui_compact') ? 'max-w-3xl' : 'max-w-7xl'} h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200`}>
                 {/* Header */}
                 <div className="p-6 border-b border-stone-200 dark:border-zinc-800 flex justify-between items-center bg-stone-50 dark:bg-zinc-900/50">
                     <div>
@@ -395,15 +406,6 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                 <div className="flex-1 overflow-y-auto p-6 space-y-6 pb-60">
                     {/* Module Check */}
                     {(() => {
-                        const outboundModules = currentSystem?.outbound_modules
-                            ? (typeof currentSystem.outbound_modules === 'string' ? JSON.parse(currentSystem.outbound_modules) : currentSystem.outbound_modules)
-                            : []
-
-                        const hasModule = (moduleId: string) => {
-                            if (!outboundModules || outboundModules.length === 0) return true
-                            return outboundModules.includes(moduleId)
-                        }
-
                         return (
                             <>
                                 {/* Grid wrapper for Basic and Customer */}
@@ -424,18 +426,6 @@ export default function OutboundOrderModal({ isOpen, onClose, onSuccess }: Outbo
                                                         onChange={e => setCode(e.target.value)}
                                                         className="w-full px-4 py-2.5 bg-stone-100 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg font-mono font-bold text-stone-800 dark:text-white"
                                                     />
-                                                </div>
-                                                <div className="space-y-1.5">
-                                                    <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Kho xuất hàng</label>
-                                                    <select
-                                                        value={warehouseName}
-                                                        onChange={e => setWarehouseName(e.target.value)}
-                                                        className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
-                                                    >
-                                                        {branches.map(b => (
-                                                            <option key={b.id} value={b.name}>{b.name}</option>
-                                                        ))}
-                                                    </select>
                                                 </div>
 
                                                 {/* Order Type Selector (New Module: outbound_type) */}

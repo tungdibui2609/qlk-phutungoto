@@ -49,7 +49,8 @@ export default function InboundPage() {
             .select(`
                 *,
                 supplier:suppliers(name),
-                items:inbound_order_items(note)
+                items:inbound_order_items(note),
+                order_types(name)
             `)
             .eq('system_type', systemType)
             .order('created_at', { ascending: false })
