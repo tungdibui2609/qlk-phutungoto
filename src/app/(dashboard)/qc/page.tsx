@@ -43,8 +43,8 @@ export default function QCPage() {
             setLoading(true)
 
             // Fetch QC info for current system OR global (system_code is null)
-            const { data, error } = await (supabase
-                .from('qc_info') as any)
+            const { data, error } = await (supabase as any)
+                .from('qc_info')
                 .select('*')
                 .or(`system_code.eq.${currentSystem?.code},system_code.is.null`)
                 .order('created_at', { ascending: false })
@@ -124,8 +124,8 @@ export default function QCPage() {
             }
 
             if (editingQC) {
-                const { error } = await (supabase
-                    .from('qc_info') as any)
+                const { error } = await (supabase as any)
+                    .from('qc_info')
                     .update(payload)
                     .eq('id', editingQC.id)
                 if (error) throw error
@@ -134,8 +134,8 @@ export default function QCPage() {
                 // Attach current system code for new items
                 payload.system_code = currentSystem?.code
 
-                const { error } = await (supabase
-                    .from('qc_info') as any)
+                const { error } = await (supabase as any)
+                    .from('qc_info')
                     .insert([payload])
                 if (error) throw error
                 showToast('Tạo mới thành công', 'success')
@@ -152,8 +152,8 @@ export default function QCPage() {
         if (!confirm('Bạn có chắc muốn xóa nhân viên QC này?')) return
 
         try {
-            const { error } = await (supabase
-                .from('qc_info') as any)
+            const { error } = await (supabase as any)
+                .from('qc_info')
                 .delete()
                 .eq('id', id)
 
