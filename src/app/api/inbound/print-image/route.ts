@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
 
         // Call external Puppeteer screenshot service
         const serviceBase = (process.env.SCREENSHOT_SERVICE_URL || '').trim() || 'https://chupanh.onrender.com';
-        const screenshotUrl = `${serviceBase.replace(/\/+$/, '')}/screenshot?url=${encodeURIComponent(targetUrl)}`;
+        const screenshotUrl = `${serviceBase.replace(/\/+$/, '')}/screenshot?url=${encodeURIComponent(targetUrl)}&selector=${encodeURIComponent('#print-ready[data-ready="true"]')}&timeout=3000`;
 
         // Set a timeout for the fetch
         const controller = new AbortController();

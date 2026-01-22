@@ -400,19 +400,19 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                                 <div className="py-8 text-center text-gray-500">Đang tải chi tiết...</div>
                             ) : (
                                 <div className="border border-gray-200 dark:border-zinc-700 rounded-xl overflow-x-auto">
-                                    <table className={`w-full text-left ${hasModule('outbound_ui_compact') ? 'text-base' : 'text-xs'}`}>
-                                        <thead className="bg-stone-50 dark:bg-zinc-800/50 text-stone-500 font-medium">
+                                    <table className={`w-full text-left text-xs`}>
+                                        <thead className="bg-stone-50 dark:bg-zinc-800/50 text-stone-500 font-medium align-top">
                                             <tr>
                                                 <th className="px-4 py-3 w-10">#</th>
                                                 <th className="px-4 py-3 min-w-[370px]">Sản phẩm</th>
-                                                <th className="px-4 py-3 w-24">ĐVT</th>
+                                                <th className="px-4 py-3 w-32">ĐVT</th>
                                                 {hasModule('outbound_financials') && (
                                                     <th className="px-4 py-3 w-24 text-right">SL Yêu cầu</th>
                                                 )}
-                                                <th className="px-4 py-3 w-24 text-right">SL Thực xuất</th>
+                                                <th className="px-4 py-3 w-24 text-center">SL Thực xuất</th>
                                                 {/* Conversion Column */}
                                                 {hasModule('outbound_conversion') && targetUnit && (
-                                                    <th className="px-4 py-3 w-32 text-right text-orange-600">
+                                                    <th className="px-4 py-3 w-32 text-center text-orange-600">
                                                         <div>SL Quy đổi</div>
                                                         <div className="text-[10px] font-normal">({targetUnit})</div>
                                                     </th>
@@ -438,11 +438,11 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                                                     {hasModule('outbound_financials') && (
                                                         <td className="px-4 py-3 text-right font-medium text-blue-600">{item.document_quantity || item.quantity}</td>
                                                     )}
-                                                    <td className="px-4 py-3 text-right font-medium">{item.quantity}</td>
+                                                    <td className="px-4 py-3 text-center font-medium">{item.quantity}</td>
 
                                                     {/* Conversion Logic */}
                                                     {hasModule('outbound_conversion') && targetUnit && (
-                                                        <td className="px-4 py-3 text-right font-medium text-orange-600">
+                                                        <td className="px-4 py-3 text-center font-medium text-orange-600">
                                                             {(() => {
                                                                 if (!item.quantity || !item.unit || !item.products) return '-'
 
@@ -539,15 +539,15 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                                                         Tổng cộng:
                                                     </td>
                                                     {/* Total Actual Quantity */}
-                                                    <td className="px-4 py-3 text-right text-stone-900 dark:text-white">
-                                                        <div className="flex flex-col items-end">
-                                                            <span>{items.reduce((sum, item) => sum + item.quantity, 0).toLocaleString('vi-VN')}</span>
+                                                    <td className="px-4 py-3 text-center text-stone-900 dark:text-white">
+                                                        <div className="flex flex-col items-center">
+                                                            <span>{!hasModule('outbound_ui_compact') && items.reduce((sum, item) => sum + item.quantity, 0).toLocaleString('vi-VN')}</span>
                                                         </div>
                                                     </td>
 
                                                     {/* Total Converted */}
                                                     {hasModule('outbound_conversion') && targetUnit && (
-                                                        <td className="px-4 py-3 text-right text-orange-600">
+                                                        <td className="px-4 py-3 text-center text-orange-600">
                                                             {items.reduce((sum, item) => {
                                                                 if (!item.quantity || !item.unit) return sum
                                                                 const product = item.products
