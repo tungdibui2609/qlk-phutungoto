@@ -650,8 +650,8 @@ export default function InventoryPrintPage() {
                         background: white !important;
                         height: fit-content !important;
                         min-height: 0 !important;
-                        width: fit-content !important;
-                        min-width: fit-content !important;
+                        width: 794px !important;
+                        min-width: 794px !important;
                         margin: 0 !important;
                         padding: 0 !important;
                         overflow: hidden !important;
@@ -664,7 +664,7 @@ export default function InventoryPrintPage() {
                         display: none !important;
                     }
                     #print-ready {
-                        width: fit-content !important;
+                        width: 794px !important;
                         height: fit-content !important;
                         padding: 20px 20px 0 20px !important;
                         margin: 0 auto !important;
