@@ -84,6 +84,9 @@ export default function LotManagementPage() {
     // QR Code State
     const [qrLot, setQrLot] = useState<Lot | null>(null)
 
+    // Expand/Collapse Product List State
+    const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
+
     const formRef = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
@@ -987,8 +990,8 @@ export default function LotManagementPage() {
                             <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-emerald-500 to-emerald-400 z-10 transition-opacity"></div>
 
                             {/* Header - Colored */}
-                            <div className="px-5 pt-7 pb-3 bg-emerald-50/50 dark:bg-emerald-900/10 border-b border-emerald-100/50 dark:border-emerald-900/20">
-                                <div className="flex items-start justify-between">
+                            <div className="px-4 pt-5 pb-4 bg-emerald-50/50 dark:bg-emerald-900/10 border-b border-emerald-100/50 dark:border-emerald-900/20">
+                                <div className="flex items-center justify-between">
                                     <div className="flex flex-wrap gap-2">
                                         <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap shadow-sm border border-black/5 dark:border-white/5">
                                             LOT: {lot.code}
@@ -1016,14 +1019,14 @@ export default function LotManagementPage() {
                             </div>
 
                             {/* Main Content */}
-                            <div className="p-5 flex-1 flex flex-col">
+                            <div className="p-3 flex-1 flex flex-col">
                                 {/* Lot Code Removed - Moved to Header */}
 
 
                                 {/* Dates Grid */}
-                                <div className="grid grid-cols-2 gap-3 mb-3">
+                                <div className="grid grid-cols-2 gap-2 mb-2">
                                     {isModuleEnabled('inbound_date') && (
-                                        <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2 border border-zinc-100 dark:border-zinc-800">
                                             <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày nhập kho</div>
                                             <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
                                                 {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : '--/--/----'}
@@ -1032,7 +1035,7 @@ export default function LotManagementPage() {
                                     )}
 
                                     {isModuleEnabled('packaging_date') && (
-                                        <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2 border border-zinc-100 dark:border-zinc-800">
                                             <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày đóng bao bì</div>
                                             <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
                                                 {lot.packaging_date ? new Date(lot.packaging_date).toLocaleDateString('vi-VN') : '--/--/----'}
@@ -1041,7 +1044,7 @@ export default function LotManagementPage() {
                                     )}
 
                                     {isModuleEnabled('peeling_date') && (
-                                        <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2 border border-zinc-100 dark:border-zinc-800">
                                             <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày bóc múi</div>
                                             <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
                                                 {lot.peeling_date ? new Date(lot.peeling_date).toLocaleDateString('vi-VN') : '--/--/----'}
@@ -1050,7 +1053,7 @@ export default function LotManagementPage() {
                                     )}
 
                                     {!isModuleEnabled('packaging_date') && !isModuleEnabled('peeling_date') && !isModuleEnabled('inbound_date') && (
-                                        <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2 border border-zinc-100 dark:border-zinc-800">
                                             <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày tạo</div>
                                             <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
                                                 {new Date(lot.created_at).toLocaleDateString('vi-VN')}
@@ -1123,7 +1126,7 @@ export default function LotManagementPage() {
                                     );
 
                                     return (
-                                        <div className="grid grid-cols-2 gap-3 mb-3">
+                                        <div className="grid grid-cols-2 gap-2 mb-2">
                                             <div className="flex flex-col gap-2">
                                                 {leftItems.map(renderItem)}
                                             </div>
@@ -1135,7 +1138,7 @@ export default function LotManagementPage() {
                                 })()}
 
                                 {/* Product Info */}
-                                <div className="mt-3 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50">
+                                <div className="mt-2 p-2.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-100 dark:border-zinc-800/50">
                                     <div className="flex items-center justify-between mb-2">
                                         <span className="text-xs font-bold text-zinc-400 uppercase">Sản phẩm ({lot.lot_items?.length || 0})</span>
                                         <div className="flex flex-wrap gap-1 justify-end">
@@ -1156,33 +1159,72 @@ export default function LotManagementPage() {
                                             )}
                                         </div>
                                     </div>
-                                    <div className="space-y-1 max-h-[200px] overflow-y-auto pr-1 custom-scrollbar">
-                                        {lot.lot_items && lot.lot_items.length > 0 ? (
-                                            lot.lot_items.map((item, index) => (
-                                                <div key={item.id} className={`text-sm text-zinc-800 dark:text-zinc-200 flex justify-between items-center gap-2 py-1.5 px-2 rounded-lg border-b border-dashed border-zinc-100 dark:border-zinc-800 last:border-0 ${index % 2 === 1 ? 'bg-white/60 dark:bg-white/5' : ''}`}>
-                                                    <div className="flex flex-col flex-1 min-w-0">
-                                                        <span className="font-mono font-bold text-xs text-indigo-600 dark:text-indigo-400 leading-none mb-0.5">{item.products?.sku}</span>
-                                                        <span className="truncate font-medium leading-tight" title={item.products?.name}>{item.products?.name}</span>
-                                                    </div>
-                                                    <span className="font-mono text-xs bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300 whitespace-nowrap">
-                                                        {item.quantity} {(item as any).unit || item.products?.unit}
-                                                    </span>
+                                    {(() => {
+                                        const items = lot.lot_items || [];
+                                        const isExpanded = expandedProducts.has(lot.id);
+                                        const displayItems = isExpanded ? items : items.slice(0, 2);
+                                        const hasMore = items.length > 2;
+
+                                        return (
+                                            <>
+                                                <div className="space-y-0">
+                                                    {displayItems.length > 0 ? (
+                                                        displayItems.map((item, index) => (
+                                                            <div key={item.id} className={`text-sm text-zinc-800 dark:text-zinc-200 flex justify-between items-center gap-2 py-2 px-2 rounded-lg border-b border-dashed border-zinc-100 dark:border-zinc-800 last:border-0 ${index % 2 === 1 ? 'bg-white/60 dark:bg-white/5' : ''}`}>
+                                                                <div className="flex flex-col flex-1 min-w-0">
+                                                                    <span className="font-mono font-bold text-xs text-indigo-600 dark:text-indigo-400 leading-none mb-0.5">{item.products?.sku}</span>
+                                                                    <span className="truncate font-medium leading-tight" title={item.products?.name}>{item.products?.name}</span>
+                                                                </div>
+                                                                <span className="font-mono text-xs bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300 whitespace-nowrap">
+                                                                    {item.quantity} {(item as any).unit || item.products?.unit}
+                                                                </span>
+                                                            </div>
+                                                        ))
+                                                    ) : (
+                                                        <div className="text-sm text-zinc-400 italic">
+                                                            {lot.products?.name ? (
+                                                                <div className="text-sm text-zinc-800 dark:text-zinc-200 flex justify-between gap-2">
+                                                                    <span className="truncate flex-1">{lot.products.name}</span>
+                                                                    <span className="font-mono text-xs bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300">
+                                                                        {lot.quantity} {lot.products.unit}
+                                                                    </span>
+                                                                </div>
+                                                            ) : '---'}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            ))
-                                        ) : (
-                                            <div className="text-sm text-zinc-400 italic">
-                                                {lot.products?.name ? (
-                                                    // Legacy fallback
-                                                    <div className="text-sm text-zinc-800 dark:text-zinc-200 flex justify-between gap-2">
-                                                        <span className="truncate flex-1">{lot.products.name}</span>
-                                                        <span className="font-mono text-xs bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300">
-                                                            {lot.quantity} {lot.products.unit}
-                                                        </span>
-                                                    </div>
-                                                ) : '---'}
-                                            </div>
-                                        )}
-                                    </div>
+
+                                                {hasMore && (
+                                                    <button
+                                                        onClick={() => {
+                                                            setExpandedProducts(prev => {
+                                                                const next = new Set(prev);
+                                                                if (next.has(lot.id)) {
+                                                                    next.delete(lot.id);
+                                                                } else {
+                                                                    next.add(lot.id);
+                                                                }
+                                                                return next;
+                                                            });
+                                                        }}
+                                                        className="w-full mt-2 py-1 flex items-center justify-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+                                                    >
+                                                        {isExpanded ? (
+                                                            <>
+                                                                <ChevronUp size={14} />
+                                                                Thu gọn
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <ChevronDown size={14} />
+                                                                Xem thêm {items.length - 2} sản phẩm
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
                                 </div>
 
                                 {/* Media Preview */}
@@ -1191,7 +1233,7 @@ export default function LotManagementPage() {
 
 
                                 {lot.notes && (
-                                    <div className="mb-3 bg-amber-50 dark:bg-amber-900/10 p-2 rounded-lg border border-amber-100 dark:border-amber-900/20">
+                                    <div className="mt-2 bg-amber-50 dark:bg-amber-900/10 p-1.5 rounded-lg border border-amber-100 dark:border-amber-900/20">
                                         <p className="text-xs text-amber-800 dark:text-amber-300 line-clamp-2">
                                             <span className="font-bold mr-1">Ghi chú:</span>
                                             {lot.notes}
@@ -1205,7 +1247,7 @@ export default function LotManagementPage() {
 
 
                             {/* Actions Footer - Colored */}
-                            <div className="px-5 py-3 bg-zinc-50/80 dark:bg-zinc-900/50 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between mt-auto">
+                            <div className="px-4 py-2.5 bg-zinc-50/80 dark:bg-zinc-900/50 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between mt-auto">
                                 <div className="flex gap-2">
                                     <button
                                         onClick={() => setQrLot(lot)}
