@@ -768,20 +768,30 @@ function OutboundPrintContent() {
                                 if (hasModule('outbound_conversion') && targetUnit && item.products) {
                                     const product = item.products as any
                                     let baseQty = 0
-                                    if (item.unit === product.unit) {
+
+                                    const normalize = (s: string | undefined | null) => s ? s.toLowerCase().trim() : ''
+                                    const itemUnit = normalize(item.unit)
+                                    const prodUnit = normalize(product.unit)
+                                    const tgtUnit = normalize(targetUnit)
+
+                                    if (itemUnit === prodUnit) {
                                         baseQty = item.quantity
                                     } else {
                                         const uConfig = product.product_units?.find((pu: any) => {
-                                            return unitsMap[pu.unit_id] === item.unit
+                                            if (!pu.unit_id) return false
+                                            const mapVal = normalize(unitsMap[pu.unit_id])
+                                            return mapVal === itemUnit
                                         })
                                         if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
                                     }
 
-                                    if (targetUnit === product.unit) {
-                                        convertedQty = baseQty
+                                    if (tgtUnit === prodUnit) {
+                                        if (baseQty > 0) convertedQty = baseQty
                                     } else {
                                         const targetConfig = product.product_units?.find((pu: any) => {
-                                            return unitsMap[pu.unit_id] === targetUnit
+                                            if (!pu.unit_id) return false
+                                            const mapVal = normalize(unitsMap[pu.unit_id])
+                                            return mapVal === tgtUnit
                                         })
                                         if (targetConfig) convertedQty = baseQty / targetConfig.conversion_rate
                                     }
@@ -863,18 +873,31 @@ function OutboundPrintContent() {
                                             if (!item.products) return sum
                                             const product = item.products as any
                                             let baseQty = 0
-                                            if (item.unit === product.unit) {
+                                            const normalize = (s: string | undefined | null) => s ? s.toLowerCase().trim() : ''
+                                            const itemUnit = normalize(item.unit)
+                                            const prodUnit = normalize(product.unit)
+                                            const tgtUnit = normalize(targetUnit)
+
+                                            if (itemUnit === prodUnit) {
                                                 baseQty = item.quantity
                                             } else {
-                                                const uConfig = product.product_units?.find((pu: any) => unitsMap[pu.unit_id] === item.unit)
+                                                const uConfig = product.product_units?.find((pu: any) => {
+                                                    if (!pu.unit_id) return false
+                                                    const mapVal = normalize(unitsMap[pu.unit_id])
+                                                    return mapVal === itemUnit
+                                                })
                                                 if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
                                             }
 
                                             let converted = 0
-                                            if (targetUnit === product.unit) {
-                                                converted = baseQty
+                                            if (tgtUnit === prodUnit) {
+                                                if (baseQty > 0) converted = baseQty
                                             } else {
-                                                const targetConfig = product.product_units?.find((pu: any) => unitsMap[pu.unit_id] === targetUnit)
+                                                const targetConfig = product.product_units?.find((pu: any) => {
+                                                    if (!pu.unit_id) return false
+                                                    const mapVal = normalize(unitsMap[pu.unit_id])
+                                                    return mapVal === tgtUnit
+                                                })
                                                 if (targetConfig) converted = baseQty / targetConfig.conversion_rate
                                             }
                                             return sum + converted
