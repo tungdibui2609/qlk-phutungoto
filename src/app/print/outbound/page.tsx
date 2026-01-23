@@ -1109,14 +1109,15 @@ function OutboundPrintContent() {
                     alt="QR"
                     className="block w-full h-[1px] opacity-0 pointer-events-none"
                 />
-            </>
-            )
+            </div>
+        </>
+    )
 }
 
-            export default function OutboundPrintPage() {
+export default function OutboundPrintPage() {
     return (
-            <React.Suspense fallback={<div className="p-8 text-center">Đang tải...</div>}>
-                <OutboundPrintContent />
-            </React.Suspense>
-            )
+        <React.Suspense fallback={<div className="p-8 text-center">Đang tải...</div>}>
+            <OutboundPrintContent />
+        </React.Suspense>
+    )
 }
