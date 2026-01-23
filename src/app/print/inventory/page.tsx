@@ -82,6 +82,7 @@ export default function InventoryPrintPage() {
 
     const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(initialCompanyInfo)
     const [loading, setLoading] = useState(true)
+    const [error, setError] = useState<string | null>(null)
     const [accountingItems, setAccountingItems] = useState<InventoryItem[]>([])
     const [lotItems, setLotItems] = useState<LotItem[]>([])
     const [reconcileItems, setReconcileItems] = useState<ReconciliationItem[]>([])
@@ -140,6 +141,7 @@ export default function InventoryPrintPage() {
 
     async function fetchData() {
         setLoading(true)
+        setError(null)
         try {
             if (token) {
                 await supabase.auth.setSession({ access_token: token, refresh_token: '' })
@@ -160,8 +162,13 @@ export default function InventoryPrintPage() {
                 if (token) headers['Authorization'] = `Bearer ${token}`
 
                 const res = await fetch(`/api/inventory?${params.toString()}`, { headers })
+                if (!res.ok) {
+                    const errText = await res.text().catch(() => '')
+                    throw new Error(`Fetch failed: ${res.status} ${errText}`)
+                }
                 const data = await res.json()
                 if (data.ok) setAccountingItems(data.items)
+                else throw new Error(data.error || 'Unknown error')
             }
             else if (type === 'lot') {
                 // Fetch Lot Data
@@ -185,6 +192,7 @@ export default function InventoryPrintPage() {
                 }
 
                 const { data, error } = await query
+                if (error) throw error
 
                 if (data) {
                     const mapped: LotItem[] = data.flatMap((lot: any) => {
@@ -235,15 +243,18 @@ export default function InventoryPrintPage() {
                 if (token) headers['Authorization'] = `Bearer ${token}`
 
                 const accRes = await fetch(`/api/inventory?dateTo=${dateTo}&systemType=${systemType}`, { headers })
+                if (!accRes.ok) throw new Error(`Acc Fetch failed: ${accRes.status}`)
                 const accData = await accRes.json()
                 const accItems: InventoryItem[] = accData.ok ? accData.items : []
 
                 // Fetch Lots
-                const { data: lots } = await supabase
+                const { data: lots, error: lotError } = await supabase
                     .from('lots')
                     .select('product_id, quantity, products!inner(name, sku, unit, system_type)')
                     .eq('status', 'active')
                     .eq('products.system_type', systemType) // Filter by system
+
+                if (lotError) throw lotError
 
                 const lotMap = new Map<string, number>()
                 const productDetails = new Map<string, { code: string, name: string, unit: string }>()
@@ -293,8 +304,9 @@ export default function InventoryPrintPage() {
 
                 setReconcileItems(Array.from(comparisonMap.values()))
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error(e)
+            setError(e.message || String(e))
         } finally {
             setLoading(false)
         }
@@ -372,8 +384,10 @@ export default function InventoryPrintPage() {
 
     if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin mr-2" /> Đang tải dữ liệu...</div>
 
+    if (error) return <div id="print-ready" data-ready="true" className="flex h-screen items-center justify-center text-red-600 font-bold">Lỗi tải dữ liệu: {error}</div>
+
     return (
-        <div className="bg-white min-h-screen text-black pt-0 px-6 pb-6 print:p-4 max-w-4xl mx-auto text-[13px]">
+        <div id="print-ready" data-ready={!loading ? "true" : undefined} className="bg-white min-h-screen text-black pt-0 px-6 pb-6 print:p-4 max-w-4xl mx-auto text-[13px]">
             {/* Toolbar */}
             <div className={`fixed top-4 right-4 print:hidden flex gap-2 ${isSnapshot ? 'hidden' : ''}`}>
                 <button

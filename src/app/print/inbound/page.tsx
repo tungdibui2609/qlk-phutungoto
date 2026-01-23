@@ -560,33 +560,7 @@ function InboundPrintContent() {
 
     return (
         <>
-            <div className="print:hidden bg-yellow-100 p-2 text-xs mb-4 border border-yellow-300 text-black mb-10" id="debug-info">
-                <strong>DEBUG INFO:</strong><br />
-                Order ID: {order?.id}<br />
-                HasModule(conv): {hasModule('inbound_conversion') ? 'Yes' : 'No'}<br />
-                TargetUnit: '{targetUnit}'<br />
-                UnitsMap Keys: {Object.keys(unitsMap).join(', ')}<br />
-                UnitsMap Size: {Object.keys(unitsMap).length}<br />
-                <strong>Item 0 Trace:</strong><br />
-                Item Unit: '{items[0]?.unit}'<br />
-                Product Unit: '{(items[0]?.products as any)?.unit}'<br />
-                Product Units Config: {JSON.stringify((items[0]?.products as any)?.product_units)}<br />
-                Trace Lookup:<br />
-                {(() => {
-                    if (!items[0] || !items[0].products || !unitsMap) return 'N/A'
-                    const p = items[0].products as any
-                    if (!p.product_units) return 'No product_units'
 
-                    return p.product_units.map((pu: any) => {
-                        const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
-                        const mapValOriginal = unitsMap[pu.unit_id]
-                        const mapVal = normalize(mapValOriginal)
-                        const itemUnit = normalize(items[0].unit)
-                        const isMatch = mapVal === itemUnit
-                        return `ID ${pu.unit_id.substring(0, 8)}: MapVal='${mapValOriginal}'->'${mapVal}', ItemUnit='${items[0].unit}'->'${itemUnit}', Match=${isMatch}`
-                    }).join('<br/>')
-                })()}<br />
-            </div>
             <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('inbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className="pt-0 px-6 pb-6 print:p-4 max-w-4xl mx-auto bg-white text-black text-[13px] leading-relaxed">
                 {/* Toolbar - Hidden when printing or snapshotting */}
                 <div className={`fixed top-4 right-4 print:hidden z-50 flex items-center gap-2 ${isSnapshot ? 'hidden' : ''}`}>
@@ -966,7 +940,6 @@ function InboundPrintContent() {
                                         {hasModule('inbound_conversion') && targetUnit && (
                                             <td className="border border-gray-400 px-2 py-1.5 text-center text-orange-600">
                                                 {typeof convertedQty === 'number' ? convertedQty.toLocaleString('vi-VN') : convertedQty}
-                                                <span className="text-[8px] font-normal text-gray-400 debug-mark">({baseQty > 0 ? 'OK' : 'Z'})</span>
                                             </td>
                                         )}
                                         {!isInternal && hasModule('inbound_financials') && (
