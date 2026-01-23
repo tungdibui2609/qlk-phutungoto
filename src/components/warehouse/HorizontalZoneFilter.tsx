@@ -22,12 +22,29 @@ export default function HorizontalZoneFilter({
 }: HorizontalZoneFilterProps) {
     const [zones, setZones] = useState<Zone[]>([])
     const [loading, setLoading] = useState(true)
+    const [session, setSession] = useState<any>(null)
 
+    // Track Auth Session
     useEffect(() => {
-        fetchZones()
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setSession(session)
+        })
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setSession(session)
+        })
+        return () => subscription.unsubscribe()
     }, [])
 
+    const accessToken = session?.access_token
+
+    useEffect(() => {
+        if (accessToken) {
+            fetchZones()
+        }
+    }, [accessToken])
+
     async function fetchZones() {
+        if (!accessToken) return
         setLoading(true)
         const { data, error } = await supabase
             .from('zones')

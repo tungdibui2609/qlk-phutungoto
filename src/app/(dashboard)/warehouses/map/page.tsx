@@ -19,12 +19,14 @@ interface PositionWithZone extends Position {
 }
 
 function WarehouseMapContent() {
-    const { systemType } = useSystem() // Get systemType
+    const { systemType } = useSystem()
     const [positions, setPositions] = useState<PositionWithZone[]>([])
     const [zones, setZones] = useState<Zone[]>([])
     const [layouts, setLayouts] = useState<ZoneLayout[]>([])
 
     const [loading, setLoading] = useState(true)
+    const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
     // Filter state
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [searchTerm, setSearchTerm] = useState('')
@@ -39,6 +41,36 @@ function WarehouseMapContent() {
 
     const [selectedPosition, setSelectedPosition] = useState<Position | null>(null)
     const [occupiedIds, setOccupiedIds] = useState<Set<string>>(new Set())
+
+    // Design mode state
+    const [isDesignMode, setIsDesignMode] = useState(false)
+    const [configuringZone, setConfiguringZone] = useState<Zone | null>(null)
+
+    // Collapsed zones
+    const [collapsedZones, setCollapsedZones] = useState<Set<string>>(new Set())
+
+    const [lotInfo, setLotInfo] = useState<Record<string, {
+        code: string,
+        items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags: string[] }>,
+        inbound_date?: string,
+        created_at?: string,
+        packaging_date?: string,
+        peeling_date?: string,
+        tags?: string[]
+    }>>({})
+
+    // Auth Session State
+    const [session, setSession] = useState<any>(null)
+
+    useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setSession(session)
+        })
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setSession(session)
+        })
+        return () => subscription.unsubscribe()
+    }, [])
 
     useEffect(() => {
         if (assignLotId) {
@@ -72,8 +104,7 @@ function WarehouseMapContent() {
 
             if (error) {
                 alert('Lỗi cập nhật vị trí: ' + error.message)
-                // Revert if error (optional, but good practice)
-                fetchData() // Simple revert by refetch
+                fetchData()
             }
         } else {
             // Normal Selection
@@ -81,66 +112,124 @@ function WarehouseMapContent() {
         }
     }
 
-
-    // Design mode state
-    const [isDesignMode, setIsDesignMode] = useState(false)
-    const [configuringZone, setConfiguringZone] = useState<Zone | null>(null)
-
-    // Collapsed zones
-    const [collapsedZones, setCollapsedZones] = useState<Set<string>>(new Set())
-
-    const [lotInfo, setLotInfo] = useState<Record<string, { code: string, product_name: string, unit?: string, sku?: string, inbound_date?: string, created_at?: string, quantity: number, tags?: string[] }>>({})
+    const accessToken = session?.access_token
 
     useEffect(() => {
-        fetchData()
-    }, [systemType]) // Add dependency
+        // Only fetch if we have a valid session and systemType
+        if (accessToken && systemType) {
+            setErrorMsg(null)
+            fetchData()
+        }
+    }, [systemType, accessToken])
 
     async function fetchData() {
+        if (!accessToken || !systemType) return
         setLoading(true)
+        setErrorMsg(null)
 
-        // Filter positions and zones by system_type
-        const [posRes, zoneRes, zpRes, invRes, layoutRes, lotsRes] = await Promise.all([
-            supabase.from('positions').select('*').eq('system_type', systemType).order('code'),
-            supabase.from('zones').select('*').eq('system_type', systemType).order('level').order('code'),
-            supabase.from('zone_positions').select('*'),
-            supabase.from('inventory' as any).select('position_id').gt('quantity', 0),
-            supabase.from('zone_layouts').select('*'),
-            supabase.from('lots').select('id, code, quantity, inbound_date, created_at, products(name, unit, sku), lot_tags(tag)')
-        ])
+        try {
+            const [posRes, zoneRes, zpRes, layoutRes, lotsRes] = await Promise.all([
+                supabase.from('positions').select('*').eq('system_type', systemType).order('code'),
+                supabase.from('zones').select('*').eq('system_type', systemType).order('level').order('code'),
+                supabase.from('zone_positions').select('*'),
+                supabase.from('zone_layouts').select('*'),
+                supabase.from('lots').select('id, code, quantity, inbound_date, created_at, packaging_date, peeling_date, products(name, unit, sku), lot_items(id, product_id, quantity, unit, products(name, unit, sku)), lot_tags(tag, lot_item_id)')
+            ])
 
-        const posData = posRes.data || []
-        const zoneData = zoneRes.data || []
-        const zpData = zpRes.data || []
-        const invData = invRes.data || []
-        const layoutData = layoutRes.data || []
-        const lotsData = lotsRes.data || []
+            if (posRes.error) throw posRes.error
+            if (zoneRes.error) throw zoneRes.error
+            if (lotsRes.error) throw lotsRes.error
 
-        // Map positions with zone_id
-        const posWithZone: PositionWithZone[] = (posData as any[]).map(pos => {
-            const zp = (zpData as any[]).find(zp => zp.position_id === pos.id)
-            return { ...pos, zone_id: zp?.zone_id || null }
-        })
+            const posData = posRes.data || []
+            const zoneData = zoneRes.data || []
+            const zpData = zpRes.data || []
+            const layoutData = layoutRes.data || []
+            const lotsData = lotsRes.data || []
 
-        const lotInfoMap: Record<string, { code: string, product_name: string, unit?: string, sku?: string, inbound_date?: string, created_at?: string, quantity: number, tags?: string[] }> = {};
-        (lotsData as any[]).forEach((l: any) => {
-            lotInfoMap[l.id] = {
-                code: l.code,
-                product_name: l.products?.name,
-                unit: l.products?.unit,
-                sku: l.products?.sku,
-                inbound_date: l.inbound_date,
-                created_at: l.created_at,
-                quantity: l.quantity,
-                tags: l.lot_tags?.map((t: any) => t.tag) || []
+            // Map positions with zone_id
+            const posWithZone: PositionWithZone[] = (posData as any[]).map(pos => {
+                const zp = (zpData as any[]).find(zp => zp.position_id === pos.id)
+                return { ...pos, zone_id: zp?.zone_id || null }
+            })
+
+            const lotInfoMap: Record<string, {
+                code: string,
+                items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags: string[] }>,
+                inbound_date?: string,
+                created_at?: string,
+                packaging_date?: string,
+                peeling_date?: string,
+                tags?: string[]
+            }> = {};
+
+            (lotsData as any[]).forEach((l: any) => {
+                const lotItems = l.lot_items || []
+                const allTags = l.lot_tags || []
+                let items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags: string[] }> = []
+                let accumulatedTags: string[] = [] // Collect all tags for search
+
+                if (lotItems.length > 0) {
+                    items = lotItems.map((item: any) => {
+                        const itemTags = allTags.filter((t: any) => t.lot_item_id === item.id).map((t: any) => t.tag.replace(/@/g, item.products?.sku || ''))
+                        accumulatedTags.push(...itemTags)
+                        return {
+                            product_name: item.products?.name,
+                            sku: item.products?.sku,
+                            unit: item.unit || item.products?.unit,
+                            quantity: item.quantity,
+                            tags: itemTags
+                        }
+                    })
+                } else if (l.products) {
+                    const itemTags = allTags.map((t: any) => t.tag.replace(/@/g, l.products?.sku || ''))
+                    accumulatedTags.push(...itemTags)
+                    items = [{
+                        product_name: l.products.name,
+                        sku: l.products.sku,
+                        unit: l.products.unit,
+                        quantity: l.quantity,
+                        tags: itemTags
+                    }]
+                }
+
+                lotInfoMap[l.id] = {
+                    code: l.code,
+                    items,
+                    inbound_date: l.inbound_date,
+                    created_at: l.created_at,
+                    packaging_date: l.packaging_date,
+                    peeling_date: l.peeling_date,
+                    tags: accumulatedTags // Store tags at top level for easy filtering
+                }
+            })
+
+            setPositions(posWithZone)
+            setZones(zoneData)
+            setLayouts(layoutData)
+            setLotInfo(lotInfoMap)
+
+            const occupied = new Set<string>()
+            posWithZone.forEach(pos => {
+                if (pos.lot_id && lotInfoMap[pos.lot_id]) {
+                    const lot = lotInfoMap[pos.lot_id]
+                    const totalQty = lot.items.reduce((sum, item) => sum + (item.quantity || 0), 0)
+                    if (totalQty > 0) {
+                        occupied.add(pos.id)
+                    }
+                }
+            })
+            setOccupiedIds(occupied)
+
+        } catch (error: any) {
+            console.error('Error fetching warehouse data:', error)
+            if (error.code === 'PGRST301' || error.message?.includes('JWT')) {
+                setErrorMsg("Phiên đăng nhập hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.")
+            } else {
+                setErrorMsg(error.message || "Lỗi không xác định khi tải dữ liệu.")
             }
-        })
-
-        setPositions(posWithZone)
-        setZones(zoneData)
-        setLayouts(layoutData)
-        setLotInfo(lotInfoMap)
-        setOccupiedIds(new Set((invData as any[]).map(i => i.position_id)))
-        setLoading(false)
+        } finally {
+            setLoading(false)
+        }
     }
 
     // Filter positions by all filters
@@ -154,16 +243,19 @@ function WarehouseMapContent() {
                 const posCode = p.code.toLowerCase()
                 const lot = p.lot_id ? lotInfo[p.lot_id] : null
                 const lotCode = lot?.code?.toLowerCase() || ''
-                const productName = lot?.product_name?.toLowerCase() || ''
-                const sku = lot?.sku?.toLowerCase() || ''
+
+                // Search in items
+                const hasItemMatch = lot?.items?.some(item =>
+                    (item.product_name?.toLowerCase() || '').includes(term) ||
+                    (item.sku?.toLowerCase() || '').includes(term)
+                )
 
                 const tags = lot?.tags || []
 
                 return posCode.includes(term) ||
                     lotCode.includes(term) ||
-                    productName.includes(term) ||
-                    sku.includes(term) ||
-                    tags.some(t => t.toUpperCase().includes(term.toUpperCase()))
+                    hasItemMatch ||
+                    tags.some((t: string) => t.toLowerCase().includes(term))
             })
         }
 
@@ -356,9 +448,22 @@ function WarehouseMapContent() {
             </div>
 
             {/* Main Grid */}
-            {loading ? (
+            {errorMsg ? (
+                <div className="flex flex-col items-center justify-center py-20 space-y-4">
+                    <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-xl border border-red-200 dark:border-red-800 max-w-md text-center">
+                        <p className="font-bold mb-1">Đã xảy ra lỗi tải dữ liệu</p>
+                        <p className="text-sm">{errorMsg}</p>
+                    </div>
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors shadow-sm"
+                    >
+                        Tải lại trang
+                    </button>
+                </div>
+            ) : loading ? (
                 <div className="flex items-center justify-center py-20">
-                    <p className="text-gray-400">Đang tải...</p>
+                    <p className="text-gray-400">Đang tải bản đồ...</p>
                 </div>
             ) : (
                 <FlexibleZoneGrid

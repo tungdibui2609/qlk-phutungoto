@@ -39,11 +39,31 @@ export const SYSTEM_CONFIG: Record<string, { name: string; color: string }> = {
 export function SystemProvider({ children }: { children: React.ReactNode }) {
   const [systemType, setSystemTypeState] = useState<SystemType>('FROZEN')
   const [systems, setSystems] = useState<System[]>([])
+  const [session, setSession] = useState<any>(null)
   const router = useRouter()
   const pathname = usePathname()
 
-  // Fetch systems and subscribe to changes
+  // Track session
   useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+    })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // Fetch systems and subscribe to changes
+  const accessToken = session?.access_token
+
+  useEffect(() => {
+    if (!accessToken) return // Wait for valid session
+
     async function fetchSystems() {
       const { data: systemsData, error: sysError } = await (supabase.from('systems') as any).select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
       const { data: configsData, error: configError } = await (supabase.from('system_configs') as any).select('*')
@@ -93,7 +113,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [])
+  }, [accessToken])
 
   useEffect(() => {
     // Load from local storage on mount

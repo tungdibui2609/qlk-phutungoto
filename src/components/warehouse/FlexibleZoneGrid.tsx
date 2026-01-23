@@ -23,7 +23,7 @@ interface FlexibleZoneGridProps {
     onPositionClick: (position: Position) => void
     onConfigureZone?: (zone: Zone) => void
     highlightLotId?: string | null
-    lotInfo?: Record<string, { code: string, product_name: string, unit?: string, sku?: string, inbound_date?: string, created_at?: string, quantity: number }>
+    lotInfo?: Record<string, { code: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>, inbound_date?: string, created_at?: string, packaging_date?: string, peeling_date?: string, tags?: string[] }>
 }
 
 export default function FlexibleZoneGrid({
@@ -457,13 +457,13 @@ export default function FlexibleZoneGrid({
                 style={cellHeight > 0 ? { height: `${cellHeight}px` } : { minHeight: '80px' }} // Increased min-height for content
                 className={`
                     relative cursor-pointer p-1.5 rounded-lg border-2 transition-all
-                    flex flex-col justify-between
+                    flex flex-col justify-between overflow-hidden
                     ${bgClass} ${borderClass} ${ringClass}
                     hover:shadow-lg hover:scale-[1.02] hover:z-10
                 `}
             >
                 {/* Header: Pos Code */}
-                <div className="flex justify-center items-start w-full relative">
+                <div className="flex justify-center items-start w-full relative mb-1 shrink-0">
                     <span className="font-mono text-[10px] items-center text-black dark:text-white font-bold leading-none">
                         {pos.code}
                     </span>
@@ -476,47 +476,77 @@ export default function FlexibleZoneGrid({
                             <div title="Có LOT khác" className="w-2 h-2 rounded-full bg-amber-400" />
                         )}
                         {isOccupied && !hasLot && (
-                            <Package size={10} className="text-green-600" />
+                            <div title="Có hàng" className="w-2 h-2 rounded-full bg-green-500" />
                         )}
                     </div>
                 </div>
 
                 {/* Content: LOT Code & Product */}
                 {lotDetail ? (
-                    <div className="flex flex-col items-center justify-center text-center w-full flex-1 gap-0.5">
-                        <div className={`text-xs font-bold leading-tight ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'}`}>
+                    <div className="flex flex-col items-center w-full flex-1 min-h-0 gap-1">
+                        {/* 1. Mã LOT */}
+                        <div className={`text-xs font-bold leading-tight w-full text-center truncate shrink-0 ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'}`}>
                             {lotDetail.code}
                         </div>
-                        {lotDetail.sku && (
-                            <div className="text-[9px] font-mono text-blue-600 dark:text-blue-400">
-                                {lotDetail.sku}
-                            </div>
-                        )}
-                        {lotDetail.product_name && (
-                            <div className="text-[9px] text-gray-500 dark:text-gray-400 line-clamp-1 leading-none" title={lotDetail.product_name}>
-                                {lotDetail.product_name}
-                            </div>
-                        )}
-                        <div className="flex gap-1 flex-wrap justify-center">
-                            {lotDetail.quantity > 0 && (
-                                <div className="px-1.5 py-0.5 rounded-full bg-white/50 dark:bg-black/20 text-[9px] font-mono font-bold text-gray-700 dark:text-gray-300 border border-black/5 dark:border-white/10">
-                                    {lotDetail.quantity} {lotDetail.unit}
+
+                        {/* List items - Flexible Scrollable Area */}
+                        <div className="w-full flex-col gap-1.5 overflow-y-auto custom-scrollbar flex-1 min-h-0">
+                            {lotDetail.items?.map((item, idx) => (
+                                <div key={idx} className="flex flex-col gap-0.5 w-full text-center border-b border-black/5 dark:border-white/5 last:border-0 pb-1 last:pb-0 shrink-0">
+                                    {/* 2. Tên sản phẩm */}
+                                    {item.product_name && (
+                                        <div className="text-[9px] text-gray-600 dark:text-gray-300 leading-tight line-clamp-2" title={item.product_name}>
+                                            {item.product_name}
+                                        </div>
+                                    )}
+                                    {/* 3. Mã SP : Số lượng Đơn vị */}
+                                    <div className="text-[9px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap">
+                                        {item.sku || '-'} : {item.quantity} {item.unit || '-'}
+                                    </div>
+                                    {/* 4. Tags (Inline for this item) */}
+                                    {item.tags && item.tags.length > 0 && (
+                                        <div className="flex flex-wrap gap-0.5 justify-center mt-0.5">
+                                            {item.tags.map((tag, tIdx) => (
+                                                <span key={tIdx} className="px-1 py-[1px] rounded-[3px] text-[7px] font-bold bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800 leading-none">
+                                                    {tag}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
-                            )}
+                            ))}
                         </div>
-                        <div className="flex flex-col gap-0.5 mt-0.5 w-full px-1">
-                            {lotDetail.inbound_date && (
-                                <div className="flex justify-between text-[8px] text-gray-400">
-                                    <span>Nhập:</span>
-                                    <span>{new Date(lotDetail.inbound_date).toLocaleDateString('vi-VN')}</span>
-                                </div>
-                            )}
-                            {lotDetail.created_at && (
-                                <div className="flex justify-between text-[8px] text-gray-400">
-                                    <span>Đóng:</span>
-                                    <span>{new Date(lotDetail.created_at).toLocaleDateString('vi-VN')}</span>
-                                </div>
-                            )}
+
+                        {/* Removed global tags section since they are now inline */}
+
+                        {/* Dates Footer - Priority: Peeling (B), Packaging (Đ), Inbound (N) */}
+                        <div className="flex justify-center items-center gap-1 w-full px-1 pt-1 opacity-70 text-[8px] text-gray-500 dark:text-gray-400 shrink-0 mt-auto">
+                            {(() => {
+                                const dates = []
+
+                                // Logic: If peeling/packaging exists, show them. Else show inbound. Or show all available?
+                                // User said: "It only has peeling date and packaging date".
+
+                                if (lotDetail.peeling_date) {
+                                    dates.push(`B: ${new Date(lotDetail.peeling_date).toLocaleDateString('vi-VN')}`)
+                                }
+                                if (lotDetail.packaging_date) {
+                                    dates.push(`Đ: ${new Date(lotDetail.packaging_date).toLocaleDateString('vi-VN')}`)
+                                }
+                                // Fallback: If no special dates, show inbound if available
+                                if (lotDetail.inbound_date && !lotDetail.peeling_date && !lotDetail.packaging_date) {
+                                    dates.push(`N: ${new Date(lotDetail.inbound_date).toLocaleDateString('vi-VN')}`)
+                                }
+                                // Fallback 2: Show created_at but label it properly if needed, or just hide if user doesn't want irrelevant dates.
+                                // Default "Đ:" was created_at before. Now "Đ:" is Packaging.
+
+                                return dates.map((d, i) => (
+                                    <React.Fragment key={i}>
+                                        {i > 0 && <span className="text-gray-300 dark:text-gray-600">|</span>}
+                                        <span>{d}</span>
+                                    </React.Fragment>
+                                ))
+                            })()}
                         </div>
                     </div>
                 ) : (
