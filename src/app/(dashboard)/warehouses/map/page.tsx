@@ -3,11 +3,12 @@ import { useState, useEffect, useMemo, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { Map, Settings, Package, MapPin } from 'lucide-react'
+import { Map, Settings, Package, MapPin, Tag } from 'lucide-react'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
 import LayoutConfigPanel from '@/components/warehouse/LayoutConfigPanel'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { useSystem } from '@/contexts/SystemContext'
+import { LotTagModal } from '@/components/lots/LotTagModal'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -22,7 +23,7 @@ function WarehouseMapContent() {
     const [positions, setPositions] = useState<PositionWithZone[]>([])
     const [zones, setZones] = useState<Zone[]>([])
     const [layouts, setLayouts] = useState<ZoneLayout[]>([])
-    // ... [abbreviated] ...
+
     const [loading, setLoading] = useState(true)
     // Filter state
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
@@ -34,6 +35,7 @@ function WarehouseMapContent() {
 
     // LOT Assignment State
     const [assignLot, setAssignLot] = useState<{ id: string, code: string } | null>(null)
+    const [taggingLotId, setTaggingLotId] = useState<string | null>(null)
 
     const [selectedPosition, setSelectedPosition] = useState<Position | null>(null)
     const [occupiedIds, setOccupiedIds] = useState<Set<string>>(new Set())
@@ -87,7 +89,7 @@ function WarehouseMapContent() {
     // Collapsed zones
     const [collapsedZones, setCollapsedZones] = useState<Set<string>>(new Set())
 
-    const [lotInfo, setLotInfo] = useState<Record<string, { code: string, product_name: string, unit?: string, sku?: string, inbound_date?: string, created_at?: string, quantity: number }>>({})
+    const [lotInfo, setLotInfo] = useState<Record<string, { code: string, product_name: string, unit?: string, sku?: string, inbound_date?: string, created_at?: string, quantity: number, tags?: string[] }>>({})
 
     useEffect(() => {
         fetchData()
@@ -103,7 +105,7 @@ function WarehouseMapContent() {
             supabase.from('zone_positions').select('*'),
             supabase.from('inventory' as any).select('position_id').gt('quantity', 0),
             supabase.from('zone_layouts').select('*'),
-            supabase.from('lots').select('id, code, quantity, inbound_date, created_at, products(name, unit, sku)')
+            supabase.from('lots').select('id, code, quantity, inbound_date, created_at, products(name, unit, sku), lot_tags(tag)')
         ])
 
         const posData = posRes.data || []
@@ -119,8 +121,7 @@ function WarehouseMapContent() {
             return { ...pos, zone_id: zp?.zone_id || null }
         })
 
-        // Build Lot Info Map
-        const lotInfoMap: Record<string, { code: string, product_name: string, unit?: string, sku?: string, inbound_date?: string, created_at?: string, quantity: number }> = {};
+        const lotInfoMap: Record<string, { code: string, product_name: string, unit?: string, sku?: string, inbound_date?: string, created_at?: string, quantity: number, tags?: string[] }> = {};
         (lotsData as any[]).forEach((l: any) => {
             lotInfoMap[l.id] = {
                 code: l.code,
@@ -129,7 +130,8 @@ function WarehouseMapContent() {
                 sku: l.products?.sku,
                 inbound_date: l.inbound_date,
                 created_at: l.created_at,
-                quantity: l.quantity
+                quantity: l.quantity,
+                tags: l.lot_tags?.map((t: any) => t.tag) || []
             }
         })
 
@@ -155,10 +157,13 @@ function WarehouseMapContent() {
                 const productName = lot?.product_name?.toLowerCase() || ''
                 const sku = lot?.sku?.toLowerCase() || ''
 
+                const tags = lot?.tags || []
+
                 return posCode.includes(term) ||
                     lotCode.includes(term) ||
                     productName.includes(term) ||
-                    sku.includes(term)
+                    sku.includes(term) ||
+                    tags.some(t => t.toUpperCase().includes(term.toUpperCase()))
             })
         }
 
@@ -409,8 +414,34 @@ function WarehouseMapContent() {
                                 {occupiedIds.has(selectedPosition.id) ? 'Có hàng' : 'Trống'}
                             </span>
                         </div>
+                        {selectedPosition.lot_id && lotInfo[selectedPosition.lot_id] && (
+                            <div className="pt-2 mt-2 border-t border-gray-100 dark:border-gray-700">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-500">LOT:</span>
+                                    <span className="font-mono font-bold">{lotInfo[selectedPosition.lot_id].code}</span>
+                                </div>
+                                <button
+                                    onClick={() => setTaggingLotId(selectedPosition.lot_id || null)}
+                                    className="w-full mt-2 flex items-center justify-center gap-2 py-1.5 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors"
+                                >
+                                    <Tag size={12} />
+                                    Gán mã phụ
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
+            )}
+
+            {taggingLotId && (
+                <LotTagModal
+                    lotId={taggingLotId}
+                    lotCodeDisplay={lotInfo[taggingLotId]?.code}
+                    onClose={() => setTaggingLotId(null)}
+                    onSuccess={() => {
+                        fetchData()
+                    }}
+                />
             )}
         </div>
     )

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Plus, MapPin, X } from 'lucide-react'
 import Link from 'next/link'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
+import { LotTagModal } from '@/components/lots/LotTagModal'
 
 // Modular Components
 import { useLotManagement, Lot } from './_hooks/useLotManagement'
@@ -36,6 +37,7 @@ export default function LotManagementPage() {
     const [editingLot, setEditingLot] = useState<Lot | null>(null)
     const [qrLot, setQrLot] = useState<Lot | null>(null)
     const [viewingLot, setViewingLot] = useState<Lot | null>(null)
+    const [taggingLot, setTaggingLot] = useState<Lot | null>(null)
 
     const toggleCreateForm = () => {
         if (!showCreateForm) {
@@ -130,6 +132,7 @@ export default function LotManagementPage() {
                 onDelete={handleDeleteLot}
                 onView={setViewingLot}
                 onQr={setQrLot}
+                onAssignTag={setTaggingLot}
             />
 
             {/* QR Code Modal */}
@@ -149,6 +152,17 @@ export default function LotManagementPage() {
                     setViewingLot(null);
                 }}
             />
+
+            {taggingLot && (
+                <LotTagModal
+                    lotId={taggingLot.id}
+                    lotCodeDisplay={taggingLot.code}
+                    onClose={() => setTaggingLot(null)}
+                    onSuccess={() => {
+                        fetchLots();
+                    }}
+                />
+            )}
         </section>
     )
 }

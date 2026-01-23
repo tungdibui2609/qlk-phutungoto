@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -27,6 +27,7 @@ const menuItems: MenuItem[] = [
             { name: 'Danh mục', href: '/categories', icon: FolderTree },
             { name: 'Đơn vị', href: '/units', icon: Boxes },
             { name: 'Xuất xứ', href: '/origins', icon: Globe },
+            { name: 'Mã phụ', href: '/warehouses/lot-codes', icon: Tag },
         ]
     },
     {

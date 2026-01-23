@@ -10,9 +10,10 @@ interface LotListProps {
     onDelete: (id: string) => void
     onView: (lot: Lot) => void
     onQr: (lot: Lot) => void
+    onAssignTag: (lot: Lot) => void
 }
 
-export function LotList({ loading, lots, isModuleEnabled, onEdit, onDelete, onView, onQr }: LotListProps) {
+export function LotList({ loading, lots, isModuleEnabled, onEdit, onDelete, onView, onQr, onAssignTag }: LotListProps) {
     if (loading) {
         return (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -45,6 +46,7 @@ export function LotList({ loading, lots, isModuleEnabled, onEdit, onDelete, onVi
                     onDelete={onDelete}
                     onView={onView}
                     onQr={onQr}
+                    onAssignTag={onAssignTag}
                 />
             ))}
         </div>

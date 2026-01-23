@@ -11,8 +11,9 @@ export type Lot = Database['public']['Tables']['lots']['Row'] & {
     suppliers: { name: string } | null
     qc_info: { name: string } | null
     positions: { code: string }[] | null
+    lot_tags?: { tag: string; lot_item_id: string | null }[] | null
     // Legacy support for display if needed
-    products?: { name: string; unit: string | null; product_code?: string } | null
+    products?: { name: string; unit: string | null; product_code?: string; sku?: string } | null
     images?: any
     metadata?: any
 }
@@ -105,7 +106,9 @@ export function useLotManagement() {
                 ),
                 suppliers (name),
                 qc_info (name),
-                positions (code)
+                positions (code),
+                lot_tags (tag, lot_item_id),
+                products (name, unit, sku)
             `)
             .eq('system_code', currentSystem.code)
             .order('created_at', { ascending: false })

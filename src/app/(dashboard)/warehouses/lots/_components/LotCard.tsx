@@ -1,7 +1,8 @@
-import { MapPin, Layers, Truck, ShieldCheck, Info, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2 } from 'lucide-react'
+import { MapPin, Layers, Truck, ShieldCheck, Info, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag } from 'lucide-react'
 import { useState } from 'react'
 import { Lot } from '../_hooks/useLotManagement'
 import { useRouter } from 'next/navigation'
+import { TagDisplay } from '@/components/lots/TagDisplay'
 
 interface LotCardProps {
     lot: Lot
@@ -10,9 +11,10 @@ interface LotCardProps {
     onDelete: (id: string) => void
     onView: (lot: Lot) => void
     onQr: (lot: Lot) => void
+    onAssignTag?: (lot: Lot) => void
 }
 
-export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr }: LotCardProps) {
+export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, onAssignTag }: LotCardProps) {
     const router = useRouter()
     const [isExpanded, setIsExpanded] = useState(false)
 
@@ -196,22 +198,58 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr }
                                 <div className="space-y-0">
                                     {displayItems.length > 0 ? (
                                         displayItems.map((item, index) => (
-                                            <div key={item.id} className={`text-sm text-zinc-800 dark:text-zinc-200 flex justify-between items-center gap-2 py-2 px-2 rounded-lg border-b border-dashed border-zinc-100 dark:border-zinc-800 last:border-0 ${index % 2 === 1 ? 'bg-white/60 dark:bg-white/5' : ''}`}>
+                                            <div key={item.id} className={`text-sm text-zinc-800 dark:text-zinc-200 flex items-center justify-between gap-2 py-2 px-2 rounded-lg border-b border-dashed border-zinc-100 dark:border-zinc-800 last:border-0 ${index % 2 === 1 ? 'bg-white/60 dark:bg-white/5' : ''}`}>
                                                 <div className="flex flex-col flex-1 min-w-0">
-                                                    <span className="font-mono font-bold text-xs text-indigo-600 dark:text-indigo-400 leading-none mb-0.5">{item.products?.sku}</span>
+                                                    <div className="flex items-center gap-2 mb-0.5 min-w-0">
+                                                        <span className="font-mono font-bold text-xs text-indigo-600 dark:text-indigo-400 leading-none shrink-0">{item.products?.sku}</span>
+                                                        <span className="font-mono text-xs text-zinc-400 shrink-0">-</span>
+                                                        <span className="font-mono text-xs bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300 whitespace-nowrap shrink-0">
+                                                            {item.quantity} {(item as any).unit || item.products?.unit}
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Inline Tags */}
+                                                    {lot.lot_tags && (
+                                                        <div className="flex flex-wrap gap-1 mt-0.5">
+                                                            <TagDisplay
+                                                                tags={lot.lot_tags
+                                                                    .filter(t => t.lot_item_id === item.id)
+                                                                    .map(t => t.tag)}
+                                                                placeholderMap={{
+                                                                    '@': item.products?.sku || 'SẢN PHẨM'
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    )}
+
                                                     <span className="truncate font-medium leading-tight" title={item.products?.name}>{item.products?.name}</span>
                                                 </div>
-                                                <span className="font-mono text-xs bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300 whitespace-nowrap">
-                                                    {item.quantity} {(item as any).unit || item.products?.unit}
-                                                </span>
+
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onQr(lot);
+                                                    }}
+                                                    className="w-8 h-8 flex items-center justify-center rounded-full text-zinc-400 hover:text-zinc-800 hover:bg-white dark:hover:bg-zinc-800 shadow-sm transition-all border border-transparent hover:border-zinc-200 shrink-0"
+                                                    title="Mã QR Item"
+                                                >
+                                                    <QrIcon size={14} />
+                                                </button>
                                             </div>
                                         ))
                                     ) : (
                                         <div className="text-sm text-zinc-400 italic">
                                             {lot.products?.name ? (
                                                 <div className="text-sm text-zinc-800 dark:text-zinc-200 flex justify-between gap-2">
-                                                    <span className="truncate flex-1">{lot.products.name}</span>
-                                                    <span className="font-mono text-xs bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="truncate">{lot.products.name}</div>
+                                                        {lot.lot_tags && (
+                                                            <div className="mt-1">
+                                                                <TagDisplay tags={lot.lot_tags.map(t => t.tag)} />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <span className="font-mono text-xs bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300 h-fit">
                                                         {lot.quantity} {lot.products.unit}
                                                     </span>
                                                 </div>
@@ -243,6 +281,18 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr }
                     })()}
                 </div>
 
+                {/* Tags (Unassigned) */}
+                {lot.lot_tags && lot.lot_tags.filter(t => !t.lot_item_id).length > 0 && (
+                    <div className="mt-2 text-xs">
+                        <TagDisplay
+                            tags={lot.lot_tags.filter(t => !t.lot_item_id).map(t => t.tag)}
+                            placeholderMap={{
+                                '@': lot.products?.sku || lot.products?.name || 'SẢN PHẨM'
+                            }}
+                        />
+                    </div>
+                )}
+
                 {lot.notes && (
                     <div className="mt-2 bg-amber-50 dark:bg-amber-900/10 p-1.5 rounded-lg border border-amber-100 dark:border-amber-900/20">
                         <p className="text-xs text-amber-800 dark:text-amber-300 line-clamp-2">
@@ -262,6 +312,13 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr }
                         title="Mã QR"
                     >
                         <QrIcon size={16} />
+                    </button>
+                    <button
+                        onClick={() => onAssignTag?.(lot)}
+                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-zinc-800 transition-all border border-transparent"
+                        title="Gắn mã phụ"
+                    >
+                        <Tag size={16} />
                     </button>
                 </div>
 

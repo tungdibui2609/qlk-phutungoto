@@ -1585,6 +1585,56 @@ export type Database = {
           },
         ]
       }
+      lot_tags: {
+        Row: {
+          added_at: string
+          added_by: string | null
+          id: string
+          lot_id: string
+          tag: string
+        }
+        Insert: {
+          added_at?: string
+          added_by?: string | null
+          id?: string
+          lot_id: string
+          tag: string
+        }
+        Update: {
+          added_at?: string
+          added_by?: string | null
+          id?: string
+          lot_id?: string
+          tag?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lot_tags_lot_id_fkey"
+            columns: ["lot_id"]
+            isOneToOne: false
+            referencedRelation: "lots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      master_tags: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          name: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          name?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
