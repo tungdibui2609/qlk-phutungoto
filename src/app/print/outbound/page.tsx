@@ -392,20 +392,31 @@ function OutboundPrintContent() {
                     }
 
                     // Fetch items
-                    const { data: itemsData } = await supabase
-                        .from('outbound_order_items')
-                        .select(`
-                            *,
-                            products (
-                                sku,
-                                unit,
-                                product_units (
-                                    unit_id,
-                                    conversion_rate
+                    let itemsData: any[] | null = null
+                    const itemsParam = searchParams.get('items_data')
+                    if (itemsParam) {
+                        try {
+                            itemsData = JSON.parse(decodeURIComponent(itemsParam))
+                        } catch (e) { }
+                    }
+
+                    if (!itemsData) {
+                        const { data } = await supabase
+                            .from('outbound_order_items')
+                            .select(`
+                                *,
+                                products (
+                                    sku,
+                                    unit,
+                                    product_units (
+                                        unit_id,
+                                        conversion_rate
+                                    )
                                 )
-                            )
-                        `)
-                        .eq('order_id', orderId)
+                            `)
+                            .eq('order_id', orderId)
+                        itemsData = data
+                    }
 
                     if (itemsData) {
                         setItems(itemsData as any)

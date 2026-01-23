@@ -103,7 +103,28 @@ export async function GET(req: NextRequest) {
             unitsJson = JSON.stringify(minUnits);
         }
 
-        const targetUrl = `${base}/print/outbound?${params.toString()}&modules=${encodeURIComponent(outboundModules)}&units_data=${encodeURIComponent(unitsJson)}`;
+        // Fetch items with product details
+        const { data: itemsData } = await supabase
+            .from('outbound_order_items')
+            .select(`
+                *,
+                products (
+                    sku,
+                    unit,
+                    product_units (
+                        unit_id,
+                        conversion_rate
+                    )
+                )
+            `)
+            .eq('order_id', id);
+
+        let itemsJson = '';
+        if (itemsData) {
+            itemsJson = JSON.stringify(itemsData);
+        }
+
+        const targetUrl = `${base}/print/outbound?${params.toString()}&modules=${encodeURIComponent(outboundModules)}&units_data=${encodeURIComponent(unitsJson)}&items_data=${encodeURIComponent(itemsJson)}`;
 
         // Call external Puppeteer screenshot service
         const serviceBase = (process.env.SCREENSHOT_SERVICE_URL || '').trim() || 'https://chupanh.onrender.com';
