@@ -228,7 +228,6 @@ export default function Sidebar() {
                             alt={companyInfo.name}
                             fill
                             sizes="36px"
-                            priority
                             className="object-contain p-1"
                         />
                     </div>
