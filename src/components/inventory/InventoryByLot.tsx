@@ -146,7 +146,7 @@ export default function InventoryByLot() {
                 })
             } else if (lot.products) {
                 // Legacy
-                processItem(lot.products.sku, lot.products.name, lot.products.unit, lot.quantity, null)
+                processItem(lot.products.sku, lot.products.name, lot.products.unit, lot.quantity || 0, null)
             }
         })
 
