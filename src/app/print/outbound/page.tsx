@@ -769,7 +769,7 @@ function OutboundPrintContent() {
                                     const product = item.products as any
                                     let baseQty = 0
 
-                                    const normalize = (s: string | undefined | null) => s ? s.toLowerCase().trim() : ''
+                                    const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
                                     const itemUnit = normalize(item.unit)
                                     const prodUnit = normalize(product.unit)
                                     const tgtUnit = normalize(targetUnit)
@@ -873,7 +873,7 @@ function OutboundPrintContent() {
                                             if (!item.products) return sum
                                             const product = item.products as any
                                             let baseQty = 0
-                                            const normalize = (s: string | undefined | null) => s ? s.toLowerCase().trim() : ''
+                                            const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
                                             const itemUnit = normalize(item.unit)
                                             const prodUnit = normalize(product.unit)
                                             const tgtUnit = normalize(targetUnit)

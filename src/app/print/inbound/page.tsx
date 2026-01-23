@@ -545,9 +545,12 @@ function InboundPrintContent() {
                     if (!p.product_units) return 'No product_units'
 
                     return p.product_units.map((pu: any) => {
-                        const mapVal = unitsMap[pu.unit_id]
-                        const isMatch = mapVal === items[0].unit
-                        return `ID ${pu.unit_id.substring(0, 8)}: MapVal='${mapVal}', ItemUnit='${items[0].unit}', Match=${isMatch}`
+                        const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
+                        const mapValOriginal = unitsMap[pu.unit_id]
+                        const mapVal = normalize(mapValOriginal)
+                        const itemUnit = normalize(items[0].unit)
+                        const isMatch = mapVal === itemUnit
+                        return `ID ${pu.unit_id.substring(0, 8)}: MapVal='${mapValOriginal}'->'${mapVal}', ItemUnit='${items[0].unit}'->'${itemUnit}', Match=${isMatch}`
                     }).join('<br/>')
                 })()}<br />
             </div>
@@ -874,7 +877,7 @@ function InboundPrintContent() {
                                     const product = item.products as any
                                     let baseQty = 0
 
-                                    const normalize = (s: string | undefined | null) => s ? s.toLowerCase().trim() : ''
+                                    const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
                                     const itemUnit = normalize(item.unit)
                                     const prodUnit = normalize(product.unit)
                                     const tgtUnit = normalize(targetUnit)
@@ -971,7 +974,7 @@ function InboundPrintContent() {
                                             if (!item.products) return sum
                                             const product = item.products as any
                                             let baseQty = 0
-                                            const normalize = (s: string | undefined | null) => s ? s.toLowerCase().trim() : ''
+                                            const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
                                             const itemUnit = normalize(item.unit)
                                             const prodUnit = normalize(product.unit)
                                             const tgtUnit = normalize(targetUnit)
