@@ -5,6 +5,7 @@ import { Search, Loader2, Printer, Warehouse } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import InventoryByLot from '@/components/inventory/InventoryByLot'
+import InventoryByTag from '@/components/inventory/InventoryByTag'
 import InventoryReconciliation from '@/components/inventory/InventoryReconciliation'
 
 // Types based on API response
@@ -143,12 +144,14 @@ export default function InventoryPage() {
             {/* Tabs */}
             <div className="border-b border-stone-200 dark:border-stone-800">
                 <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-                    {[
-                        { id: 'accounting', name: 'Tồn kho kế toán' },
-                        { id: 'lot', name: 'Tồn kho theo LOT' },
-                        { id: 'tags', name: 'Tồn theo Mã phụ', disabled: true },
-                        { id: 'reconciliation', name: 'Đối chiếu' },
-                    ].map((tab) => (
+                    {(
+                        [
+                            { id: 'accounting', name: 'Tồn kho kế toán' },
+                            { id: 'lot', name: 'Tồn kho theo LOT' },
+                            { id: 'tags', name: 'Tồn theo Mã phụ' },
+                            { id: 'reconciliation', name: 'Đối chiếu' },
+                        ] as { id: string; name: string; disabled?: boolean }[]
+                    ).map((tab) => (
                         <button
                             key={tab.id}
                             disabled={tab.disabled}
@@ -341,6 +344,10 @@ export default function InventoryPage() {
             {/* Placeholder for other tabs */}
             {activeTab === 'lot' && (
                 <InventoryByLot />
+            )}
+
+            {activeTab === 'tags' && (
+                <InventoryByTag />
             )}
 
             {activeTab === 'reconciliation' && (

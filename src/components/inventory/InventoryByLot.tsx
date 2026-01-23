@@ -1,32 +1,34 @@
+
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Search, Loader2, MapPin, Printer } from 'lucide-react'
+import { Search, Loader2, Printer, ChevronRight, ChevronDown } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { useSystem } from '@/contexts/SystemContext'
+import { TagDisplay } from '../lots/TagDisplay'
 
 type Lot = Database['public']['Tables']['lots']['Row'] & {
     lot_items: (Database['public']['Tables']['lot_items']['Row'] & {
-        products: { name: string; unit: string; product_code?: string; sku: string } | null
+        unit: string | null
+        products: { name: string; unit: string; product_code?: string; sku: string; system_type: string } | null
     })[] | null
     suppliers: { name: string } | null
     positions: { code: string }[] | null
+    lot_tags: { tag: string; lot_item_id: string | null }[] | null
     // Legacy support
-    products: { name: string; unit: string; product_code?: string; sku: string } | null
+    products: { name: string; unit: string; product_code?: string; sku: string; system_type: string } | null
 }
 
-interface FlattenedLotItem {
-    id: string
-    lotCode: string
+interface GroupedProduct {
+    key: string
     productSku: string
+    productCode: string
     productName: string
-    productUnit: string
-    quantity: number
-    batchCode: string
-    inboundDate: string | null
-    positions: { code: string }[] | null
-    supplierName: string
+    unit: string
+    totalQuantity: number
+    variants: Map<string, number> // CompositeTag -> Quantity
+    lotCodes: string[]
 }
 
 export default function InventoryByLot() {
@@ -34,6 +36,7 @@ export default function InventoryByLot() {
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const { systemType } = useSystem()
+    const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
 
     useEffect(() => {
         fetchLots()
@@ -48,41 +51,125 @@ export default function InventoryByLot() {
                 lot_items (
                     id,
                     quantity,
+                    unit,
                     product_id,
                     products (
                         name,
                         unit,
                         sku,
-                        product_code:id
+                        product_code:id,
+                        system_type
                     )
                 ),
-                products!inner(name, unit, product_code:id, sku, system_type),
+                products (name, unit, product_code:id, sku, system_type),
                 suppliers(name),
-                positions(code)
+                positions(code),
+                lot_tags(tag, lot_item_id)
             `)
             .eq('status', 'active')
-            // Use !inner to ensure we only get lots that have a product in the current system
-            // Note: This relies on lots having a product_id. For lot_items, we might need a different strategy or rely on the fact that product creation is scoped.
-            .eq('products.system_type', systemType)
             .order('created_at', { ascending: false })
-
-        // Note: For lots with NO product_id (pure lot_items), this filter might hide them if we use !inner on products.
-        // However, typically lots are created with a main product or we can adjust logic.
-        // Ideally, we should add system_type to lots table. For now, assuming direct product link or manual management.
 
         if (error) {
             console.error('Error fetching lots:', error)
         } else if (data) {
-            setLots(data as unknown as Lot[])
+            // Filter by systemType in memory
+            const filtered = (data as any[]).filter(lot => {
+                if (systemType) {
+                    // Check main product
+                    if (lot.products && lot.products.system_type === systemType) return true;
+                    // Check items
+                    if (lot.lot_items && lot.lot_items.some((item: any) => item.products?.system_type === systemType)) return true;
+                    return false;
+                }
+                return true;
+            });
+            setLots(filtered as unknown as Lot[])
         }
         setLoading(false)
     }
 
-    const filteredLots = lots.filter(lot =>
-        lot.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (lot.products?.name && lot.products.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (lot.batch_code && lot.batch_code.toLowerCase().includes(searchTerm.toLowerCase()))
-    )
+    const groupedInventory = useMemo(() => {
+        const groups = new Map<string, GroupedProduct>()
+
+        lots.forEach(lot => {
+            // Helper to process a single item logic
+            const processItem = (
+                sku: string,
+                name: string,
+                unit: string,
+                qty: number,
+                itemId: string | null
+            ) => {
+                const key = `${sku}__${unit}`
+                if (!groups.has(key)) {
+                    groups.set(key, {
+                        key,
+                        productSku: sku,
+                        productCode: sku, // Using SKU as code for display
+                        productName: name,
+                        unit: unit,
+                        totalQuantity: 0,
+                        variants: new Map(),
+                        lotCodes: []
+                    })
+                }
+                const group = groups.get(key)!
+                group.totalQuantity += qty
+                if (!group.lotCodes.includes(lot.code)) group.lotCodes.push(lot.code)
+
+                // Determine Tag/Variant
+                let tags: string[] = []
+                if (lot.lot_tags) {
+                    // Item specific tags
+                    const itemTags = lot.lot_tags.filter(t => t.lot_item_id === itemId).map(t => t.tag)
+                    // General tags (assume apply to all items)
+                    const generalTags = lot.lot_tags.filter(t => !t.lot_item_id).map(t => t.tag)
+                    tags = [...new Set([...itemTags, ...generalTags])].sort()
+                }
+
+                const compositeTag = tags.length > 0 ? tags.join('; ') : 'Không có mã phụ' // Or 'Chưa phân loại'
+
+                // Aggregate into variant
+                const currentVariantQty = group.variants.get(compositeTag) || 0
+                group.variants.set(compositeTag, currentVariantQty + qty)
+            }
+
+            if (lot.lot_items && lot.lot_items.length > 0) {
+                lot.lot_items.forEach(item => {
+                    // Filter item by system type if needed (double check against page filter logic)
+                    // Ideally we used the page logic filtered list so valid items are here.
+                    if (item.products) {
+                        const itemUnit = item.unit || item.products.unit
+                        const qty = item.quantity || 0
+                        processItem(item.products.sku, item.products.name, itemUnit, qty, item.id)
+                    }
+                })
+            } else if (lot.products) {
+                // Legacy
+                processItem(lot.products.sku, lot.products.name, lot.products.unit, lot.quantity, null)
+            }
+        })
+
+        // Search Filter
+        const searchLower = searchTerm.toLowerCase()
+        const result = Array.from(groups.values()).filter(g =>
+            g.productSku.toLowerCase().includes(searchLower) ||
+            g.productName.toLowerCase().includes(searchLower) ||
+            Array.from(g.variants.keys()).some(k => k.toLowerCase().includes(searchLower))
+        )
+
+        // Sort by SKU
+        return result.sort((a, b) => a.productSku.localeCompare(b.productSku))
+
+    }, [lots, searchTerm])
+
+
+    const toggleExpand = (key: string) => {
+        const newSet = new Set(expandedProducts)
+        if (newSet.has(key)) newSet.delete(key)
+        else newSet.add(key)
+        setExpandedProducts(newSet)
+    }
 
     return (
         <div className="space-y-4">
@@ -96,19 +183,17 @@ export default function InventoryByLot() {
                             type="text"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
-                            placeholder="Mã LOT, Tên hàng, Batch..."
+                            placeholder="Mã hàng, Tên hàng, Mã phụ..."
                             className="w-full pl-9 pr-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                     </div>
                 </div>
-                {/* Add more filters here if needed later (e.g. Warehouse/Branch if LOTs are linked to them) */}
                 <button
                     onClick={() => {
                         const params = new URLSearchParams()
                         params.set('type', 'lot')
                         if (systemType) params.set('systemType', systemType)
                         if (searchTerm) params.set('search', searchTerm)
-                        // Add today as 'to' date for consistency in header display
                         params.set('to', new Date().toISOString().split('T')[0])
                         window.open(`/print/inventory?${params.toString()}`, '_blank')
                     }}
@@ -125,12 +210,8 @@ export default function InventoryByLot() {
                     <table className="w-full text-sm text-left">
                         <thead className="bg-stone-50 dark:bg-stone-800/50 text-stone-500 dark:text-stone-400 font-medium">
                             <tr>
-                                <th className="px-4 py-3">Mã LOT</th>
-                                <th className="px-4 py-3">Mã hàng</th>
-                                <th className="px-4 py-3">Tên hàng</th>
-                                <th className="px-4 py-3">Batch (NCC)</th>
-                                <th className="px-4 py-3">Vị trí</th>
-                                <th className="px-4 py-3">Ngày nhập</th>
+                                <th className="px-4 py-3">Mã SP</th>
+                                <th className="px-4 py-3">Tên sản phẩm</th>
                                 <th className="px-4 py-3 text-right">Số lượng</th>
                                 <th className="px-4 py-3 text-center">ĐVT</th>
                             </tr>
@@ -138,88 +219,98 @@ export default function InventoryByLot() {
                         <tbody className="divide-y divide-stone-200 dark:divide-stone-800">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={8} className="px-4 py-8 text-center text-stone-500">
+                                    <td colSpan={4} className="px-4 py-8 text-center text-stone-500">
                                         <div className="flex items-center justify-center gap-2">
                                             <Loader2 className="w-4 h-4 animate-spin" />
                                             <span>Đang tải dữ liệu...</span>
                                         </div>
                                     </td>
                                 </tr>
-                            ) : filteredLots.length === 0 ? (
+                            ) : groupedInventory.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8} className="px-4 py-8 text-center text-stone-500">
-                                        Không tìm thấy tồn kho theo LOT nào.
+                                    <td colSpan={4} className="px-4 py-8 text-center text-stone-500">
+                                        Không tìm thấy dữ liệu.
                                     </td>
                                 </tr>
                             ) : (
-                                filteredLots.flatMap(lot => {
-                                    // If we have lot_items, map them. Otherwise check for legacy product.
-                                    if (lot.lot_items && lot.lot_items.length > 0) {
-                                        return lot.lot_items.map((item, idx) => ({
-                                            id: item.id || `${lot.id}-item-${idx}`,
-                                            lotCode: lot.code,
-                                            productSku: item.products?.sku || 'N/A',
-                                            productName: item.products?.name || 'Unknown',
-                                            productUnit: item.products?.unit || '-',
-                                            quantity: item.quantity,
-                                            batchCode: lot.batch_code || '-',
-                                            inboundDate: lot.inbound_date,
-                                            positions: lot.positions,
-                                            supplierName: lot.suppliers?.name || '-'
-                                        }))
-                                    } else if (lot.products) {
-                                        // Legacy fallback
-                                        return [{
-                                            id: lot.id,
-                                            lotCode: lot.code,
-                                            productSku: lot.products.sku || 'N/A',
-                                            productName: lot.products.name,
-                                            productUnit: lot.products.unit,
-                                            quantity: lot.quantity,
-                                            batchCode: lot.batch_code || '-',
-                                            inboundDate: lot.inbound_date,
-                                            positions: lot.positions,
-                                            supplierName: lot.suppliers?.name || '-'
-                                        }]
-                                    }
-                                    return []
-                                }).map((item, idx) => (
-                                    <tr key={`${item.id}-${idx}`} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
-                                        <td className="px-4 py-3 font-mono text-emerald-600 font-medium">{item.lotCode}</td>
-                                        <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-400">{item.productSku}</td>
-                                        <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">{item.productName}</td>
-                                        <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{item.batchCode}</td>
-                                        <td className="px-4 py-3">
-                                            {item.positions && item.positions.length > 0 ? (
-                                                <div className="flex flex-wrap gap-1">
-                                                    {item.positions.map((pos, pIdx) => (
-                                                        <span key={pIdx} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-100 dark:border-blue-800">
-                                                            <MapPin className="w-3 h-3 mr-1" />
-                                                            {pos.code}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <span className="text-stone-400 italic">Chưa xếp</span>
+                                groupedInventory.map((item) => {
+                                    const isExpanded = expandedProducts.has(item.key)
+                                    const hasVariants = item.variants.size > 0
+                                    // Count distinct variant tags (excluding 'No tag' perhaps, or just count keys)
+                                    const variantCount = item.variants.size
+
+                                    return (
+                                        <React.Fragment key={item.key}>
+                                            <tr
+                                                className={`hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors cursor-pointer ${isExpanded ? 'bg-stone-50 dark:bg-stone-800/50' : ''}`}
+                                                onClick={() => toggleExpand(item.key)}
+                                            >
+                                                <td className="px-4 py-3 font-mono text-emerald-600 font-medium">
+                                                    <div className="flex items-center gap-2">
+                                                        {item.productSku}
+                                                        {hasVariants && (
+                                                            <span
+                                                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold transition ${isExpanded
+                                                                    ? 'bg-emerald-600 text-white'
+                                                                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                                                    }`}
+                                                            >
+                                                                {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                                                {variantCount}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">{item.productName}</td>
+                                                <td className="px-4 py-3 text-right font-bold text-stone-900 dark:text-stone-100">
+                                                    {item.totalQuantity.toLocaleString()}
+                                                </td>
+                                                <td className="px-4 py-3 text-center text-stone-500">{item.unit}</td>
+                                            </tr>
+                                            {/* Expanded Variants */}
+                                            {isExpanded && (
+                                                <tr className="bg-stone-50/50 dark:bg-stone-900/50">
+                                                    <td colSpan={4} className="p-0">
+                                                        <div className="border-t border-dashed border-stone-200 dark:border-stone-800">
+                                                            {Array.from(item.variants.entries()).sort((a, b) => b[1] - a[1]).map(([tag, qty], idx) => {
+                                                                // If tag is 'Không có mã phụ', maybe show it differently?
+                                                                const isNoTag = tag === 'Không có mã phụ';
+
+                                                                return (
+                                                                    <div key={idx} className="flex items-center justify-between px-4 py-2 pl-12 border-b border-dashed border-stone-200 dark:border-stone-800 last:border-0 hover:bg-white dark:hover:bg-stone-900 transition-colors">
+                                                                        <div className="flex items-center gap-2 text-sm">
+                                                                            <ChevronRight size={14} className="text-stone-400" />
+                                                                            {/* If we have TagDisplay, use it? Or simple text. QLK uses styled text. */}
+                                                                            {isNoTag ? (
+                                                                                <span className="italic text-stone-400">{tag}</span>
+                                                                            ) : (
+                                                                                <TagDisplay
+                                                                                    tags={[tag]}
+                                                                                    placeholderMap={{ '@': item.productSku }}
+                                                                                />
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="flex items-center gap-4 text-sm">
+                                                                            <span className="font-medium text-stone-700 dark:text-stone-300">{qty.toLocaleString()}</span>
+                                                                            <span className="text-stone-500 w-8 text-center">{item.unit}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                )
+                                                            })}
+                                                        </div>
+                                                    </td>
+                                                </tr>
                                             )}
-                                        </td>
-                                        <td className="px-4 py-3 text-stone-600 dark:text-stone-400">
-                                            {item.inboundDate ? new Date(item.inboundDate).toLocaleDateString('vi-VN') : '-'}
-                                        </td>
-                                        <td className="px-4 py-3 text-right font-bold text-stone-900 dark:text-stone-100">
-                                            {item.quantity?.toLocaleString() || 0}
-                                        </td>
-                                        <td className="px-4 py-3 text-center text-stone-500">{item.productUnit}</td>
-                                    </tr>
-                                ))
+                                        </React.Fragment>
+                                    )
+                                })
                             )}
                         </tbody>
                     </table>
                 </div>
             </div>
-
             <div className="text-xs text-stone-500 text-right mt-2">
-                * Chỉ hiển thị các LOT đang có trạng thái "active".
+                * Dữ liệu được nhóm theo Sản phẩm và Mã phụ
             </div>
         </div>
     )
