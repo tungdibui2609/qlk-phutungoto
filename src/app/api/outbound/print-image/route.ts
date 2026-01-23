@@ -70,7 +70,40 @@ export async function GET(req: NextRequest) {
             if (companyData.short_name) params.set('cmp_short', companyData.short_name);
         }
 
-        const targetUrl = `${base}/print/outbound?${params.toString()}`;
+        // Fetch order to get system_code
+        const { data: orderData } = await supabase
+            .from('outbound_orders')
+            .select('system_code')
+            .eq('id', id)
+            .single();
+
+        let outboundModules = '';
+        if (orderData?.system_code) {
+            const { data: sysData } = await supabase
+                .from('system_configs')
+                .select('outbound_modules')
+                .eq('system_code', orderData.system_code)
+                .single();
+            if (sysData?.outbound_modules) {
+                const modules = typeof sysData.outbound_modules === 'string'
+                    ? JSON.parse(sysData.outbound_modules)
+                    : sysData.outbound_modules;
+                if (Array.isArray(modules)) outboundModules = modules.join(',');
+            }
+        }
+
+        // Fetch units map to pass to client
+        const { data: unitsData } = await supabase
+            .from('units')
+            .select('id, name');
+
+        let unitsJson = '';
+        if (unitsData) {
+            const minUnits = unitsData.map(u => ({ i: u.id, n: u.name }));
+            unitsJson = JSON.stringify(minUnits);
+        }
+
+        const targetUrl = `${base}/print/outbound?${params.toString()}&modules=${encodeURIComponent(outboundModules)}&units_data=${encodeURIComponent(unitsJson)}`;
 
         // Call external Puppeteer screenshot service
         const serviceBase = (process.env.SCREENSHOT_SERVICE_URL || '').trim() || 'https://chupanh.onrender.com';

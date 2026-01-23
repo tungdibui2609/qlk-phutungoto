@@ -392,7 +392,20 @@ function InboundPrintContent() {
                     setEditNote(searchParams.get('editNote') || '')
 
                     // Fetch units for conversion map
-                    const { data: unitsData } = await supabase.from('units').select('id, name')
+                    let unitsData: { id: string, name: string }[] | null = null
+
+                    const unitsParam = searchParams.get('units_data')
+                    if (unitsParam) {
+                        try {
+                            const parsed = JSON.parse(decodeURIComponent(unitsParam))
+                            unitsData = parsed.map((u: any) => ({ id: u.i, name: u.n }))
+                        } catch (e) { }
+                    }
+
+                    if (!unitsData) {
+                        const { data } = await supabase.from('units').select('id, name')
+                        unitsData = data
+                    }
 
                     // Fetch items with product unit details
                     const { data: itemsData } = await supabase
