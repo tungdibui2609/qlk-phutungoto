@@ -642,6 +642,46 @@ export default function InventoryPrintPage() {
                     </div>
                 </div>
             </div>
+            {/* Snapshot Specific Styles - Fixes height and width issue */}
+            {isSnapshot && (
+                <style dangerouslySetInnerHTML={{
+                    __html: `
+                    html, body {
+                        background: white !important;
+                        height: fit-content !important;
+                        min-height: 0 !important;
+                        width: 1240px !important;
+                        min-width: 1240px !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        overflow: hidden !important;
+                    }
+                    .min-h-screen {
+                        min-height: 0 !important;
+                        height: auto !important;
+                    }
+                    body::before {
+                        display: none !important;
+                    }
+                    #print-ready {
+                        width: 1240px !important;
+                        height: fit-content !important;
+                        padding: 30px 30px 0 30px !important;
+                        margin: 0 auto !important;
+                        max-width: none !important;
+                        box-shadow: none !important;
+                        border: none !important;
+                        box-sizing: border-box !important;
+                    }
+                `}} />
+            )}
+
+            {/* Dummy QR for screenshot service cropping */}
+            <img
+                src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+                alt="QR"
+                className="block w-full h-[1px] opacity-0 pointer-events-none"
+            />
         </div>
     )
 }
