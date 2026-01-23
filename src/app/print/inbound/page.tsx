@@ -527,12 +527,24 @@ function InboundPrintContent() {
 
     return (
         <>
-            <div className="hidden print:hidden" id="debug-info">
-                UnitsMap: {JSON.stringify(unitsMap)}
-                Item0Products: {items[0]?.products ? JSON.stringify(items[0].products) : 'N/A'}
-                ItemsCount: {items.length}
-                TargetUnit: {targetUnit}
-                HasConversion: {hasModule('inbound_conversion') ? 'Yes' : 'No'}
+            <div className="print:hidden bg-yellow-100 p-2 text-xs mb-4 border border-yellow-300 text-black mb-10" id="debug-info">
+                <strong>DEBUG INFO:</strong><br />
+                Order ID: {order?.id}<br />
+                HasModule(conv): {hasModule('inbound_conversion') ? 'Yes' : 'No'}<br />
+                TargetUnit: '{targetUnit}'<br />
+                UnitsMap Keys: {Object.keys(unitsMap).join(', ')}<br />
+                UnitsMap Size: {Object.keys(unitsMap).length}<br />
+                <strong>Item 0 Trace:</strong><br />
+                Item Unit: '{items[0]?.unit}'<br />
+                Product Unit: '{(items[0]?.products as any)?.unit}'<br />
+                Product Units Config: {JSON.stringify((items[0]?.products as any)?.product_units)}<br />
+                Conversion Rate Found: {(() => {
+                    if (!items[0] || !items[0].products || !unitsMap) return 'N/A'
+                    const p = items[0].products as any
+                    // Trace logic similar to render
+                    // ...
+                    return 'Check logic below'
+                })()}
             </div>
             <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('inbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className="pt-0 px-6 pb-6 print:p-4 max-w-4xl mx-auto bg-white text-black text-[13px] leading-relaxed">
                 {/* Toolbar - Hidden when printing or snapshotting */}
