@@ -404,7 +404,7 @@ export default function InventoryPrintPage() {
     if (error) return <div id="print-ready" data-ready="true" className="flex h-screen items-center justify-center text-red-600 font-bold">Lỗi tải dữ liệu: {error}</div>
 
     return (
-        <div id="print-ready" data-ready={!loading ? "true" : undefined} className="bg-white min-h-screen text-black pt-0 px-6 pb-6 print:p-4 max-w-4xl mx-auto text-[13px]">
+        <div id="print-ready" data-ready={!loading ? "true" : undefined} className="bg-white text-black pt-0 px-6 pb-6 print:p-4 max-w-4xl mx-auto text-[13px]">
             {/* Toolbar */}
             <div className={`fixed top-4 right-4 print:hidden flex gap-2 ${isSnapshot ? 'hidden' : ''}`}>
                 <button
