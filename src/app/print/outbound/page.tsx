@@ -510,6 +510,44 @@ function OutboundPrintContent() {
                 Item Unit: '{items[0]?.unit}'<br />
                 Product Unit: '{(items[0]?.products as any)?.unit}'<br />
                 Product Units Config: {JSON.stringify((items[0]?.products as any)?.product_units)}<br />
+                <strong>Calculation Trace:</strong><br />
+                {(() => {
+                    if (!items[0] || !items[0].products || !unitsMap) return 'N/A'
+                    const product = items[0].products as any
+                    const item = items[0]
+                    const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
+
+                    const itemUnit = normalize(item.unit)
+                    const prodUnit = normalize(product.unit)
+                    const tgtUnit = normalize(targetUnit)
+
+                    let baseQty = 0
+                    let log = []
+
+                    if (itemUnit === prodUnit) {
+                        baseQty = item.quantity
+                        log.push(`ItemUnit == ProdUnit. BaseQty=${baseQty}`)
+                    } else {
+                        const uConfig = product.product_units?.find((pu: any) => {
+                            if (!pu.unit_id) return false
+                            return normalize(unitsMap[pu.unit_id]) === itemUnit
+                        })
+                        if (uConfig) {
+                            baseQty = item.quantity * uConfig.conversion_rate
+                            log.push(`Found Config. Rate=${uConfig.conversion_rate}. BaseQty=${item.quantity}*${uConfig.conversion_rate}=${baseQty}`)
+                        } else {
+                            log.push(`No Config Found for ItemUnit '${itemUnit}'`)
+                        }
+                    }
+
+                    if (tgtUnit === prodUnit) {
+                        log.push(`TgtUnit '${tgtUnit}' == ProdUnit '${prodUnit}'. Result=${baseQty}`)
+                    } else {
+                        log.push(`Tgt '${tgtUnit}' != Prod '${prodUnit}'. Looking for target config...`)
+                    }
+
+                    return log.join('<br/>')
+                })()}
             </div>
             <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('outbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className="pt-0 px-6 pb-6 print:p-4 max-w-4xl mx-auto bg-white text-black text-[13px] leading-relaxed">
                 {/* Toolbar - Hidden when printing or snapshotting */}
