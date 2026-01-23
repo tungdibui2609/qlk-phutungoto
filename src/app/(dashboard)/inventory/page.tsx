@@ -354,12 +354,7 @@ export default function InventoryPage() {
                 <InventoryReconciliation />
             )}
 
-            {/* Placeholder for other tabs */}
-            {activeTab !== 'accounting' && activeTab !== 'lot' && activeTab !== 'reconciliation' && (
-                <div className="flex flex-col items-center justify-center h-64 border rounded-lg border-dashed border-stone-300 bg-stone-50">
-                    <p className="text-stone-500">Tính năng đang phát triển...</p>
-                </div>
-            )}
+
         </div>
     )
 }
