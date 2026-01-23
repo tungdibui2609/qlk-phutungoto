@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { Plus, Search, Boxes, MapPin, Trash2, Calendar, Package, Factory, Hash, Layers, X, ChevronDown, ChevronUp, Filter, QrCode as QrIcon, Printer, Edit, ShieldCheck } from 'lucide-react'
+import { Plus, Search, Boxes, MapPin, Trash2, Calendar, Package, Factory, Hash, Layers, X, ChevronDown, ChevronUp, Filter, QrCode as QrIcon, Printer, Edit, ShieldCheck, Truck, Info } from 'lucide-react'
 import QRCode from "react-qr-code"
 import Link from 'next/link'
 import { Combobox } from '@/components/ui/Combobox'
@@ -982,76 +982,186 @@ export default function LotManagementPage() {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {filteredLots.map(lot => (
-                        <div key={lot.id} className="group bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 p-5 shadow-sm hover:shadow-xl hover:border-emerald-500/30 transition-all duration-300 flex flex-col justify-between relative overflow-hidden">
+                        <div key={lot.id} className="group bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-xl hover:border-emerald-500/30 transition-all duration-300 flex flex-col justify-between relative overflow-hidden">
                             {/* Decorative Top Bar */}
-                            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-emerald-500 to-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-emerald-500 to-emerald-400 z-10 transition-opacity"></div>
 
-                            {/* Header */}
-                            <div className="flex items-start justify-between mb-4">
-                                <div className="flex flex-wrap gap-2">
-                                    <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">
-                                        LOT: {lot.code}
-                                    </span>
-
-                                    {lot.qc_info && isModuleEnabled('qc_info') && (
-                                        <span className="px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 text-xs font-bold uppercase tracking-wider truncate max-w-[120px] flex items-center gap-1">
-                                            <ShieldCheck size={12} />
-                                            {lot.qc_info.name}
+                            {/* Header - Colored */}
+                            <div className="px-5 pt-7 pb-3 bg-emerald-50/50 dark:bg-emerald-900/10 border-b border-emerald-100/50 dark:border-emerald-900/20">
+                                <div className="flex items-start justify-between">
+                                    <div className="flex flex-wrap gap-2">
+                                        <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap shadow-sm border border-black/5 dark:border-white/5">
+                                            LOT: {lot.code}
                                         </span>
-                                    )}
-                                    {lot.suppliers && isModuleEnabled('supplier_info') && (
-                                        <span className="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-bold uppercase tracking-wider truncate max-w-[120px]">
-                                            {lot.suppliers.name}
-                                        </span>
+                                    </div>
+                                    {lot.positions && lot.positions.length > 0 ? (
+                                        <button
+                                            onClick={() => router.push(`/warehouses/map?assignLotId=${lot.id}`)}
+                                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-200 dark:hover:bg-emerald-900/60 transition-colors shadow-sm"
+                                        >
+                                            <MapPin size={12} />
+                                            {lot.positions[0].code}
+                                            {lot.positions.length > 1 && <span className="ml-1 text-[10px] opacity-70">+{lot.positions.length - 1}</span>}
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => router.push(`/warehouses/map?assignLotId=${lot.id}`)}
+                                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white dark:bg-zinc-800 text-zinc-400 text-[10px] font-bold border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
+                                        >
+                                            <MapPin size={12} />
+                                            Chưa gán
+                                        </button>
                                     )}
                                 </div>
-                                {lot.positions && lot.positions.length > 0 ? (
-                                    <button
-                                        onClick={() => router.push(`/warehouses/map?assignLotId=${lot.id}`)}
-                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold border border-emerald-100 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
-                                    >
-                                        <MapPin size={12} />
-                                        {lot.positions[0].code}
-                                        {lot.positions.length > 1 && <span className="ml-1 text-[10px] opacity-70">+{lot.positions.length - 1}</span>}
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={() => router.push(`/warehouses/map?assignLotId=${lot.id}`)}
-                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800/50 text-zinc-400 text-[10px] font-bold border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
-                                    >
-                                        <MapPin size={12} />
-                                        Chưa gán
-                                    </button>
-                                )}
                             </div>
 
                             {/* Main Content */}
-                            <div className="mb-6">
+                            <div className="p-5 flex-1 flex flex-col">
                                 {/* Lot Code Removed - Moved to Header */}
 
-                                <div className="h-6 mb-3 flex items-center">
-                                    {lot.batch_code && isModuleEnabled('batch_code') && (
-                                        <div className="text-sm font-medium text-zinc-500 flex items-center gap-2">
-                                            <span className="opacity-70">Batch:</span>
-                                            <span className="font-mono bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-700 dark:text-zinc-300">{lot.batch_code}</span>
+
+                                {/* Dates Grid */}
+                                <div className="grid grid-cols-2 gap-3 mb-3">
+                                    {isModuleEnabled('inbound_date') && (
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
+                                            <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày nhập kho</div>
+                                            <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                                                {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {isModuleEnabled('packaging_date') && (
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
+                                            <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày đóng bao bì</div>
+                                            <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                                                {lot.packaging_date ? new Date(lot.packaging_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {isModuleEnabled('peeling_date') && (
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
+                                            <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày bóc múi</div>
+                                            <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                                                {lot.peeling_date ? new Date(lot.peeling_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {!isModuleEnabled('packaging_date') && !isModuleEnabled('peeling_date') && !isModuleEnabled('inbound_date') && (
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
+                                            <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày tạo</div>
+                                            <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                                                {new Date(lot.created_at).toLocaleDateString('vi-VN')}
+                                            </div>
                                         </div>
                                     )}
                                 </div>
+
+
+
+
+                                {/* Info Row: 2 Columns - Dynamic Distribution */}
+                                {(() => {
+                                    // Collect all available info items
+                                    const infoItems: Array<{ key: string; icon: React.ReactNode; label: string; colorClass: string }> = [];
+
+                                    if (lot.batch_code && isModuleEnabled('batch_code')) {
+                                        infoItems.push({
+                                            key: 'batch',
+                                            icon: <Layers size={14} />,
+                                            label: lot.batch_code,
+                                            colorClass: 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400'
+                                        });
+                                    }
+
+                                    if (lot.suppliers && isModuleEnabled('supplier_info')) {
+                                        infoItems.push({
+                                            key: 'supplier',
+                                            icon: <Truck size={14} />,
+                                            label: lot.suppliers.name,
+                                            colorClass: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                                        });
+                                    }
+
+                                    if (lot.qc_info && isModuleEnabled('qc_info')) {
+                                        infoItems.push({
+                                            key: 'qc',
+                                            icon: <ShieldCheck size={14} />,
+                                            label: lot.qc_info.name,
+                                            colorClass: 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400'
+                                        });
+                                    }
+
+                                    if (isModuleEnabled('extra_info')) {
+                                        const extraInfo = lot.metadata && (lot.metadata as any).extra_info;
+                                        infoItems.push({
+                                            key: 'extra',
+                                            icon: <Info size={14} />,
+                                            label: extraInfo || '',
+                                            colorClass: extraInfo ? 'bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
+                                        });
+                                    }
+
+                                    if (infoItems.length === 0) return null;
+
+                                    // Split items evenly between left and right columns
+                                    const midpoint = Math.ceil(infoItems.length / 2);
+                                    const leftItems = infoItems.slice(0, midpoint);
+                                    const rightItems = infoItems.slice(midpoint);
+
+                                    const renderItem = (item: typeof infoItems[0]) => (
+                                        <div key={item.key} className={`flex items-center gap-2 ${!item.label && item.key === 'extra' ? 'opacity-50 select-none' : ''}`} title={item.label}>
+                                            <span className={`${item.colorClass} p-1.5 rounded-lg shrink-0`}>
+                                                {item.icon}
+                                            </span>
+                                            <span className={`text-xs font-bold uppercase truncate ${!item.label && item.key === 'extra' ? 'text-zinc-400 italic' : 'text-zinc-700 dark:text-zinc-300'}`}>
+                                                {item.label || 'No info'}
+                                            </span>
+                                        </div>
+                                    );
+
+                                    return (
+                                        <div className="grid grid-cols-2 gap-3 mb-3">
+                                            <div className="flex flex-col gap-2">
+                                                {leftItems.map(renderItem)}
+                                            </div>
+                                            <div className="flex flex-col gap-2">
+                                                {rightItems.map(renderItem)}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
 
                                 {/* Product Info */}
                                 <div className="mt-3 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50">
                                     <div className="flex items-center justify-between mb-2">
                                         <span className="text-xs font-bold text-zinc-400 uppercase">Sản phẩm ({lot.lot_items?.length || 0})</span>
-                                        <span className="text-emerald-600 font-bold text-lg">
-                                            {lot.quantity || 0} <span className="text-xs font-medium text-emerald-500/70">Tổng</span>
-                                        </span>
+                                        <div className="flex flex-wrap gap-1 justify-end">
+                                            {lot.lot_items && lot.lot_items.length > 0 ? (
+                                                Object.entries(
+                                                    lot.lot_items.reduce((acc: Record<string, number>, item: any) => {
+                                                        const unit = (item as any).unit || item.products?.unit || 'Đơn vị';
+                                                        acc[unit] = (acc[unit] || 0) + (item.quantity || 0);
+                                                        return acc;
+                                                    }, {})
+                                                ).map(([unit, total]) => (
+                                                    <span key={unit} className="text-emerald-600 font-bold text-sm bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30">
+                                                        {total} <span className="text-[10px] font-medium text-emerald-500/70">{unit}</span>
+                                                    </span>
+                                                ))
+                                            ) : (
+                                                <span className="text-zinc-400 text-xs italic">--</span>
+                                            )}
+                                        </div>
                                     </div>
-                                    <div className="space-y-1 max-h-[80px] overflow-y-auto pr-1 custom-scrollbar">
+                                    <div className="space-y-1 max-h-[200px] overflow-y-auto pr-1 custom-scrollbar">
                                         {lot.lot_items && lot.lot_items.length > 0 ? (
-                                            lot.lot_items.map(item => (
-                                                <div key={item.id} className="text-sm text-zinc-800 dark:text-zinc-200 flex justify-between items-center gap-2">
+                                            lot.lot_items.map((item, index) => (
+                                                <div key={item.id} className={`text-sm text-zinc-800 dark:text-zinc-200 flex justify-between items-center gap-2 py-1.5 px-2 rounded-lg border-b border-dashed border-zinc-100 dark:border-zinc-800 last:border-0 ${index % 2 === 1 ? 'bg-white/60 dark:bg-white/5' : ''}`}>
                                                     <div className="flex flex-col flex-1 min-w-0">
-                                                        <span className="font-mono font-bold text-[10px] text-indigo-600 dark:text-indigo-400 leading-none mb-0.5">{item.products?.sku}</span>
+                                                        <span className="font-mono font-bold text-xs text-indigo-600 dark:text-indigo-400 leading-none mb-0.5">{item.products?.sku}</span>
                                                         <span className="truncate font-medium leading-tight" title={item.products?.name}>{item.products?.name}</span>
                                                     </div>
                                                     <span className="font-mono text-xs bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300 whitespace-nowrap">
@@ -1076,23 +1186,15 @@ export default function LotManagementPage() {
                                 </div>
 
                                 {/* Media Preview */}
-                                {isModuleEnabled('lot_images') && lot.images && Array.isArray(lot.images) && lot.images.length > 0 && (
-                                    <div className="mb-3">
-                                        <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                                            {(lot.images as string[]).map((img, idx) => (
-                                                <div key={idx} className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700">
-                                                    <img src={img} alt="lot-media" className="w-full h-full object-cover" />
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
 
-                                {isModuleEnabled('extra_info') && lot.metadata && (lot.metadata as any).extra_info && (
-                                    <div className="mb-3 bg-blue-50 dark:bg-blue-900/10 p-2 rounded-lg border border-blue-100 dark:border-blue-900/20">
-                                        <p className="text-xs text-blue-800 dark:text-blue-300 line-clamp-2">
-                                            <span className="font-bold mr-1">Info:</span>
-                                            {(lot.metadata as any).extra_info}
+
+
+
+                                {lot.notes && (
+                                    <div className="mb-3 bg-amber-50 dark:bg-amber-900/10 p-2 rounded-lg border border-amber-100 dark:border-amber-900/20">
+                                        <p className="text-xs text-amber-800 dark:text-amber-300 line-clamp-2">
+                                            <span className="font-bold mr-1">Ghi chú:</span>
+                                            {lot.notes}
                                         </p>
                                     </div>
                                 )}
@@ -1100,50 +1202,14 @@ export default function LotManagementPage() {
 
                             {/* Dates Grid */}
                             {/* Dates Grid */}
-                            <div className="grid grid-cols-2 gap-3 mb-5">
-                                {isModuleEnabled('peeling_date') && (
-                                    <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
-                                        <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày bóc múi</div>
-                                        <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                            {lot.peeling_date ? new Date(lot.peeling_date).toLocaleDateString('vi-VN') : '--/--/----'}
-                                        </div>
-                                    </div>
-                                )}
 
-                                {isModuleEnabled('packaging_date') && (
-                                    <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
-                                        <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày đóng bao bì</div>
-                                        <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                            {lot.packaging_date ? new Date(lot.packaging_date).toLocaleDateString('vi-VN') : '--/--/----'}
-                                        </div>
-                                    </div>
-                                )}
 
-                                {isModuleEnabled('inbound_date') && (
-                                    <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
-                                        <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày nhập kho</div>
-                                        <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                            {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : '--/--/----'}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {!isModuleEnabled('packaging_date') && !isModuleEnabled('peeling_date') && !isModuleEnabled('inbound_date') && (
-                                    <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
-                                        <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày tạo</div>
-                                        <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                            {new Date(lot.created_at).toLocaleDateString('vi-VN')}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Actions Footer */}
-                            <div className="flex items-center justify-between pt-4 border-t border-zinc-100 dark:border-zinc-800 mt-auto">
+                            {/* Actions Footer - Colored */}
+                            <div className="px-5 py-3 bg-zinc-50/80 dark:bg-zinc-900/50 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between mt-auto">
                                 <div className="flex gap-2">
                                     <button
                                         onClick={() => setQrLot(lot)}
-                                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-zinc-800 hover:bg-white dark:hover:bg-zinc-800 shadow-sm transition-all border border-transparent hover:border-zinc-200"
                                         title="Mã QR"
                                     >
                                         <QrIcon size={16} />
@@ -1175,49 +1241,52 @@ export default function LotManagementPage() {
                                 </div>
                             </div>
                         </div>
-                    ))}
-                </div>
+                    ))
+                    }
+                </div >
             )}
             {/* QR Code Modal */}
-            {qrLot && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-zinc-900 rounded-3xl p-8 max-w-sm w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200 border border-zinc-200 dark:border-zinc-800 relative">
-                        <button
-                            onClick={() => setQrLot(null)}
-                            className="absolute top-4 right-4 p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-600 transition-colors"
-                        >
-                            <X size={20} />
-                        </button>
-
-                        <div className="flex flex-col items-center text-center space-y-6">
-                            <div className="space-y-1">
-                                <h3 className="text-xl font-bold text-zinc-900 dark:text-white">
-                                    Mã QR LOT
-                                </h3>
-                                <p className="text-sm text-zinc-500 font-mono">
-                                    {qrLot.code}
-                                </p>
-                            </div>
-
-                            <div className="p-4 bg-white rounded-2xl shadow-inner border border-zinc-100">
-                                <QRCode
-                                    value={qrLot.code}
-                                    size={200}
-                                    className="h-auto w-full max-w-[200px]"
-                                />
-                            </div>
-
+            {
+                qrLot && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                        <div className="bg-white dark:bg-zinc-900 rounded-3xl p-8 max-w-sm w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200 border border-zinc-200 dark:border-zinc-800 relative">
                             <button
-                                onClick={() => window.print()}
-                                className="flex items-center gap-2 px-5 py-2.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl font-medium hover:opacity-90 transition-opacity"
+                                onClick={() => setQrLot(null)}
+                                className="absolute top-4 right-4 p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-600 transition-colors"
                             >
-                                <Printer size={18} />
-                                In tem mã vạch
+                                <X size={20} />
                             </button>
+
+                            <div className="flex flex-col items-center text-center space-y-6">
+                                <div className="space-y-1">
+                                    <h3 className="text-xl font-bold text-zinc-900 dark:text-white">
+                                        Mã QR LOT
+                                    </h3>
+                                    <p className="text-sm text-zinc-500 font-mono">
+                                        {qrLot.code}
+                                    </p>
+                                </div>
+
+                                <div className="p-4 bg-white rounded-2xl shadow-inner border border-zinc-100">
+                                    <QRCode
+                                        value={qrLot.code}
+                                        size={200}
+                                        className="h-auto w-full max-w-[200px]"
+                                    />
+                                </div>
+
+                                <button
+                                    onClick={() => window.print()}
+                                    className="flex items-center gap-2 px-5 py-2.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl font-medium hover:opacity-90 transition-opacity"
+                                >
+                                    <Printer size={18} />
+                                    In tem mã vạch
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </section>
+                )
+            }
+        </section >
     )
 }
