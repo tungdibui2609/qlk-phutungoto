@@ -480,14 +480,15 @@ function InboundPrintContent() {
             params.set('debitAccount', debitAccount)
             params.set('creditAccount', creditAccount)
             params.set('editNote', editNote)
+            params.set('t', Date.now().toString())
 
-            const res = await fetch(`/api/inbound/print-image?${params.toString()}`)
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({}))
+            const response = await fetch(`/api/inbound/print-image?${params.toString()}`)
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}))
                 throw new Error(errData.details || errData.error || 'Failed to generate image')
             }
 
-            const blob = await res.blob()
+            const blob = await response.blob()
             const url = window.URL.createObjectURL(blob)
             const a = document.createElement('a')
             a.href = url
