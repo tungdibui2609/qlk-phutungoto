@@ -9,9 +9,10 @@ interface ImageUploadProps {
     onChange: (value: string[]) => void
     maxFiles?: number
     disabled?: boolean
+    folder?: string
 }
 
-export function ImageUpload({ value = [], onChange, maxFiles = 5, disabled = false }: ImageUploadProps) {
+export function ImageUpload({ value = [], onChange, maxFiles = 5, disabled = false, folder }: ImageUploadProps) {
     const { showToast } = useToast()
     const [uploading, setUploading] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -47,6 +48,7 @@ export function ImageUpload({ value = [], onChange, maxFiles = 5, disabled = fal
                 const formData = new FormData()
                 formData.append('file', file)
                 formData.append('filename', file.name)
+                if (folder) formData.append('folder', folder)
 
                 const res = await fetch('/api/upload', {
                     method: 'POST',

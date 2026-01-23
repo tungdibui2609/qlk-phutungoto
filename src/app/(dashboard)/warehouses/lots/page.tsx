@@ -9,8 +9,10 @@ import QRCode from "react-qr-code"
 import Link from 'next/link'
 import { Combobox } from '@/components/ui/Combobox'
 import { useSystem } from '@/contexts/SystemContext'
+import { ImageUpload } from '@/components/ui/ImageUpload'
 
 type Lot = Database['public']['Tables']['lots']['Row'] & {
+    system_code?: string
     lot_items: (Database['public']['Tables']['lot_items']['Row'] & {
         products: { name: string; unit: string | null; product_code?: string; sku: string } | null
     })[] | null
@@ -19,16 +21,23 @@ type Lot = Database['public']['Tables']['lots']['Row'] & {
     positions: { code: string }[] | null
     // Legacy support for display if needed, but we will primarily use lot_items
     products?: { name: string; unit: string | null; product_code?: string } | null
+    images?: any
+    metadata?: any
 }
 
-interface LotItemInput {
-    productId: string
-    quantity: number
-}
+
 
 type Product = Database['public']['Tables']['products']['Row']
 type Supplier = Database['public']['Tables']['suppliers']['Row']
 type QCInfo = Database['public']['Tables']['qc_info']['Row']
+type Unit = Database['public']['Tables']['units']['Row']
+type ProductUnit = Database['public']['Tables']['product_units']['Row']
+
+interface LotItemInput {
+    productId: string
+    quantity: number
+    unit: string
+}
 
 export default function LotManagementPage() {
     const router = useRouter()
@@ -45,7 +54,15 @@ export default function LotManagementPage() {
     // Data for Selection
     const [products, setProducts] = useState<Product[]>([])
     const [suppliers, setSuppliers] = useState<Supplier[]>([])
+
     const [qcList, setQCList] = useState<QCInfo[]>([])
+    const [units, setUnits] = useState<Unit[]>([])
+    const [productUnits, setProductUnits] = useState<ProductUnit[]>([])
+
+    const [branches, setBranches] = useState<any[]>([])
+
+    // Module Configuration
+    const [lotModules, setLotModules] = useState<string[] | null>(null) // null means loading or not set
 
     // New Lot Form State
     // New Lot Form State
@@ -55,8 +72,14 @@ export default function LotManagementPage() {
     const [selectedQCId, setSelectedQCId] = useState('')
     const [inboundDate, setInboundDate] = useState('')
     const [peelingDate, setPeelingDate] = useState('')
+    const [packagingDate, setPackagingDate] = useState('')
+    const [warehouseName, setWarehouseName] = useState('') // Add warehouseName state
     const [batchCode, setBatchCode] = useState('')
-    const [lotItems, setLotItems] = useState<LotItemInput[]>([{ productId: '', quantity: 0 }])
+
+    const [images, setImages] = useState<string[]>([])
+    const [extraInfo, setExtraInfo] = useState('') // Stored in metadata.extra_info
+
+    const [lotItems, setLotItems] = useState<LotItemInput[]>([{ productId: '', quantity: 0, unit: '' }])
 
     // QR Code State
     const [qrLot, setQrLot] = useState<Lot | null>(null)
@@ -64,28 +87,69 @@ export default function LotManagementPage() {
     const formRef = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
-        fetchLots()
+        if (currentSystem?.code) {
+            fetchLots()
+        }
         fetchCommonData()
-    }, [])
+    }, [currentSystem])
 
     async function fetchCommonData() {
-        const [prodRes, suppRes, qcRes] = await Promise.all([
-            supabase.from('products').select('*').order('name'),
-            supabase.from('suppliers').select('*').order('name'),
-            supabase.from('qc_info').select('*').order('name')
+        if (!currentSystem?.code) return
+
+        const [prodRes, suppRes, qcRes, branchRes, unitRes, pUnitRes, sysConfigRes] = await Promise.all([
+            // Match InboundOrderModal logic: Filter products by system_type
+            supabase.from('products').select('*').eq('system_type', currentSystem.code).order('name'),
+            // Match InboundOrderModal logic: Filter suppliers by system_code
+            supabase.from('suppliers').select('*').eq('system_code', currentSystem.code).order('name'),
+            supabase.from('qc_info').select('*').eq('system_code', currentSystem.code).order('name'),
+            supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'), // Fetch branches
+            supabase.from('units').select('*'),
+            supabase.from('product_units').select('*'),
+            supabase.from('system_configs').select('lot_modules').eq('system_code', currentSystem.code).single()
         ])
 
         if (prodRes.data) setProducts(prodRes.data)
         if (suppRes.data) setSuppliers(suppRes.data)
         if (qcRes.data) setQCList(qcRes.data)
+        if (branchRes.data) {
+            setBranches(branchRes.data) // Set branches
+            // Auto-select first branch if available
+            if (branchRes.data.length > 0 && !warehouseName) {
+                setWarehouseName(branchRes.data[0].name)
+            }
+        }
+        if (unitRes.data) setUnits(unitRes.data)
+        if (pUnitRes.data) setProductUnits(pUnitRes.data)
+
+        // Handle config
+        const config = (sysConfigRes.data as any)
+        let mods: string[] = []
+        if (config && config.lot_modules) {
+            if (Array.isArray(config.lot_modules)) mods = config.lot_modules
+            else if (typeof config.lot_modules === 'string') {
+                try { mods = JSON.parse(config.lot_modules) } catch (e) { mods = [] }
+            }
+        }
+        setLotModules(mods)
+    }
+
+    const isModuleEnabled = (moduleId: string) => {
+        if (!lotModules) return true // Default enabled if no config
+        return lotModules.includes(moduleId)
     }
 
     async function fetchLots() {
+        if (!currentSystem?.code) return;
+
         setLoading(true)
         const { data, error } = await supabase
             .from('lots')
             .select(`
                 *,
+                packaging_date,
+                warehouse_name,
+                images,
+                metadata,
                 lot_items (
                     id,
                     quantity,
@@ -95,12 +159,14 @@ export default function LotManagementPage() {
                         unit,
                         sku,
                         product_code:id
-                    )
+                    ),
+                    unit
                 ),
                 suppliers (name),
                 qc_info (name),
                 positions (code)
             `)
+            .eq('system_code', currentSystem.code) // Filter by system
             .order('created_at', { ascending: false })
 
         if (error) {
@@ -189,6 +255,18 @@ export default function LotManagementPage() {
                 generateLotCode()
                 // Set default date to today
                 setInboundDate(new Date().toISOString().split('T')[0])
+                setPeelingDate(new Date().toISOString().split('T')[0]) // Optional default
+                setPackagingDate(new Date().toISOString().split('T')[0]) // Optional default
+
+                // Set default warehouse
+                if (branches.length > 0) {
+                    const defaultBranch = branches.find(b => b.is_default)
+                    if (defaultBranch) {
+                        setWarehouseName(defaultBranch.name)
+                    } else {
+                        setWarehouseName(branches[0].name)
+                    }
+                }
             }
         }
         setShowCreateForm(!showCreateForm)
@@ -203,7 +281,8 @@ export default function LotManagementPage() {
         if (lot.lot_items && lot.lot_items.length > 0) {
             setLotItems(lot.lot_items.map(item => ({
                 productId: item.product_id,
-                quantity: item.quantity
+                quantity: item.quantity,
+                unit: (item as any).unit || '' // Handle fetched unit
             })))
         } else if (lot.products) {
             // Fallback for legacy data
@@ -212,7 +291,8 @@ export default function LotManagementPage() {
                 // Wait, type 'Lot' has 'products' object, but need product_id.
                 // The DB row has product_id.
                 // Let's rely on the row data we fetched.
-                quantity: lot.quantity || 0
+                quantity: lot.quantity || 0,
+                unit: ''
             }])
             // Actually, lot object from Supabase join might not have product_id at top level if we joined?
             // No, select * includes it.
@@ -222,20 +302,40 @@ export default function LotManagementPage() {
             if (legacyLot.product_id) {
                 setLotItems([{
                     productId: legacyLot.product_id,
-                    quantity: legacyLot.quantity || 0
+                    quantity: legacyLot.quantity || 0,
+                    unit: lot.products?.unit || '' // Use joined product unit
                 }])
             } else {
-                setLotItems([{ productId: '', quantity: 0 }])
+                setLotItems([{ productId: '', quantity: 0, unit: '' }])
             }
         } else {
-            setLotItems([{ productId: '', quantity: 0 }])
+            setLotItems([{ productId: '', quantity: 0, unit: '' }])
         }
 
         setSelectedSupplierId(lot.supplier_id || '')
         setSelectedQCId(lot.qc_id || '')
         setInboundDate(lot.inbound_date ? new Date(lot.inbound_date).toISOString().split('T')[0] : '')
         setPeelingDate(lot.peeling_date ? new Date(lot.peeling_date).toISOString().split('T')[0] : '')
+        setPackagingDate(lot.packaging_date ? new Date(lot.packaging_date).toISOString().split('T')[0] : '')
+        setWarehouseName(lot.warehouse_name || '') // Set warehouse name
+        setWarehouseName(lot.warehouse_name || '') // Set warehouse name
         setBatchCode(lot.batch_code || '')
+
+        // Handle images
+        let imgs: string[] = []
+        if (Array.isArray(lot.images)) imgs = lot.images
+        else if (typeof lot.images === 'string') {
+            try { imgs = JSON.parse(lot.images) } catch (e) { imgs = [] }
+        }
+        setImages(imgs)
+
+        // Handle metadata
+        let meta: any = {}
+        if (lot.metadata && typeof lot.metadata === 'object') meta = lot.metadata
+        else if (typeof lot.metadata === 'string') {
+            try { meta = JSON.parse(lot.metadata) } catch (e) { meta = {} }
+        }
+        setExtraInfo(meta.extra_info || '')
 
         setShowCreateForm(true)
         setTimeout(() => {
@@ -251,10 +351,12 @@ export default function LotManagementPage() {
 
         // Validate items
         const validItems = lotItems.filter(item => item.productId && item.quantity > 0)
-        if (validItems.length === 0) {
-            alert('Vui lòng chọn ít nhất một sản phẩm và nhập số lượng.')
-            return
-        }
+
+        // Allow creating LOT without items (User Request)
+        // if (validItems.length === 0) {
+        //     alert('Vui lòng chọn ít nhất một sản phẩm và nhập số lượng.')
+        //     return
+        // }
 
         // Calculate total quantity for the LOT summary
         const totalQuantity = validItems.reduce((sum, item) => sum + item.quantity, 0)
@@ -266,9 +368,14 @@ export default function LotManagementPage() {
             qc_id: selectedQCId || null,
             inbound_date: inboundDate || null,
             peeling_date: peelingDate || null,
+            packaging_date: packagingDate || null,
+            warehouse_name: warehouseName || null,
             batch_code: batchCode || null,
             quantity: totalQuantity, // Legacy/Summary field
-            status: 'active'
+            status: 'active',
+            system_code: currentSystem?.code,
+            images: images,
+            metadata: { extra_info: extraInfo }
             // product_id is generally null now for multi-product LOTs, 
             // or we could set it to the first product as primary. Let's leave it null or derived.
         }
@@ -317,12 +424,13 @@ export default function LotManagementPage() {
             return
         }
 
-        if (lotId) {
-            // Insert items
+        if (lotId && validItems.length > 0) {
+            // Insert items only if there are valid items
             const itemsToInsert = validItems.map(item => ({
                 lot_id: lotId,
                 product_id: item.productId,
-                quantity: item.quantity
+                quantity: item.quantity,
+                unit: item.unit // Save selected unit
             }))
 
             const { error: itemsError } = await supabase
@@ -337,6 +445,11 @@ export default function LotManagementPage() {
                 resetForm()
                 setShowCreateForm(false)
             }
+        } else {
+            // Refresh data even if no items inserted
+            await fetchLots()
+            resetForm()
+            setShowCreateForm(false)
         }
     }
 
@@ -348,8 +461,12 @@ export default function LotManagementPage() {
         setSelectedQCId('')
         setInboundDate('')
         setPeelingDate('')
+        setPackagingDate('')
+        setWarehouseName('') // Reset warehouse name
         setBatchCode('')
-        setLotItems([{ productId: '', quantity: 0 }])
+        setImages([])
+        setExtraInfo('')
+        setLotItems([{ productId: '', quantity: 0, unit: '' }])
     }
 
     async function handleDeleteLot(id: string) {
@@ -441,94 +558,200 @@ export default function LotManagementPage() {
                         </div>
 
                         {/* Batch NCC */}
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Số Batch/Lô (NCC)
-                            </label>
-                            <div className="relative">
-                                <Layers className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                <input
-                                    type="text"
-                                    value={batchCode}
-                                    onChange={(e) => setBatchCode(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
-                                    placeholder="VD: BATCH-01"
-                                />
+                        {isModuleEnabled('batch_code') && (
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                    Số Batch/Lô (NCC)
+                                </label>
+                                <div className="relative">
+                                    <Layers className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                    <input
+                                        type="text"
+                                        value={batchCode}
+                                        onChange={(e) => setBatchCode(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                                        placeholder="VD: BATCH-01"
+                                    />
+                                </div>
                             </div>
-                        </div>
+                        )}
 
                         {/* Ngày nhập */}
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Ngày nhập kho
-                            </label>
-                            <div className="relative">
-                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                <input
-                                    type="date"
-                                    value={inboundDate}
-                                    onChange={(e) => setInboundDate(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
-                                />
+                        {isModuleEnabled('inbound_date') && (
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                    Ngày nhập kho
+                                </label>
+                                <div className="relative">
+                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                    <input
+                                        type="date"
+                                        value={inboundDate}
+                                        onChange={(e) => setInboundDate(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                                    />
+                                </div>
                             </div>
-                        </div>
+                        )}
 
                         {/* Ngày bóc múi */}
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Ngày bóc múi
-                            </label>
-                            <div className="relative">
-                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                <input
-                                    type="date"
-                                    value={peelingDate}
-                                    onChange={(e) => setPeelingDate(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
-                                />
+                        {isModuleEnabled('peeling_date') && (
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                    Ngày bóc múi
+                                </label>
+                                <div className="relative">
+                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                    <input
+                                        type="date"
+                                        value={peelingDate}
+                                        onChange={(e) => setPeelingDate(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                                    />
+                                </div>
                             </div>
-                        </div>
+                        )}
+
+                        {/* Ngày đóng bao bì */}
+                        {isModuleEnabled('packaging_date') && (
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                    Ngày đóng bao bì
+                                </label>
+                                <div className="relative">
+                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                    <input
+                                        type="date"
+                                        value={packagingDate}
+                                        onChange={(e) => setPackagingDate(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Kho nhập hàng */}
+                        {isModuleEnabled('warehouse_name') && (
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                    Kho nhập hàng
+                                </label>
+                                <div className="relative">
+                                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                    <select
+                                        value={warehouseName}
+                                        onChange={(e) => setWarehouseName(e.target.value)}
+                                        className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none appearance-none transition-all"
+                                    >
+                                        <option value="">-- Chọn kho hàng --</option>
+                                        {branches.map(b => (
+                                            <option key={b.id} value={b.name}>{b.name}</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                                </div>
+                            </div>
+                        )}
 
                         {/* Nhà cung cấp */}
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Nhà cung cấp
-                            </label>
-                            <div className="relative">
-                                <Factory className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                <select
-                                    value={selectedSupplierId}
-                                    onChange={(e) => setSelectedSupplierId(e.target.value)}
-                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none appearance-none transition-all"
-                                >
-                                    <option value="">-- Chọn nhà cung cấp --</option>
-                                    {suppliers.map(s => (
-                                        <option key={s.id} value={s.id}>{s.name}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                        {isModuleEnabled('supplier_info') && (
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                    Nhà cung cấp
+                                </label>
+                                <div className="relative">
+                                    <Factory className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                    <select
+                                        value={selectedSupplierId}
+                                        onChange={(e) => setSelectedSupplierId(e.target.value)}
+                                        className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none appearance-none transition-all"
+                                    >
+                                        <option value="">-- Chọn nhà cung cấp --</option>
+                                        {suppliers.map(s => (
+                                            <option key={s.id} value={s.id}>{s.name}</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                                </div>
                             </div>
-                        </div>
+                        )}
 
                         {/* QC Selection */}
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Nhân viên QC
-                            </label>
-                            <div className="relative">
-                                <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                <select
-                                    value={selectedQCId}
-                                    onChange={(e) => setSelectedQCId(e.target.value)}
-                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none appearance-none transition-all"
-                                >
-                                    <option value="">-- Chọn QC --</option>
-                                    {qcList.map(qc => (
-                                        <option key={qc.id} value={qc.id}>{qc.name}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                        {isModuleEnabled('qc_info') && (
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                    Nhân viên QC
+                                </label>
+                                <div className="relative">
+                                    <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                    <select
+                                        value={selectedQCId}
+                                        onChange={(e) => setSelectedQCId(e.target.value)}
+                                        className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none appearance-none transition-all"
+                                    >
+                                        <option value="">-- Chọn QC --</option>
+                                        {qcList.map(qc => (
+                                            <option key={qc.id} value={qc.id}>{qc.name}</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                                </div>
                             </div>
+                        )}
+
+                        {/* Media & Extra Info */}
+                        {(isModuleEnabled('lot_images') || isModuleEnabled('extra_info')) && (
+                            <div className="md:col-span-2 lg:col-span-4 space-y-4 border-b border-zinc-100 dark:border-zinc-800 pb-4 mb-4">
+                                <h4 className="text-sm font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+                                    <Package size={16} className="text-emerald-600" />
+                                    Hình ảnh & Thông tin phụ
+                                </h4>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {isModuleEnabled('lot_images') && (
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                                Hình ảnh chứng từ / lot
+                                            </label>
+                                            <ImageUpload
+                                                value={images}
+                                                onChange={setImages}
+                                                maxFiles={5}
+                                                folder="img-lot"
+                                            />
+                                        </div>
+                                    )}
+
+                                    {isModuleEnabled('extra_info') && (
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                                Thông tin bổ sung
+                                            </label>
+                                            <textarea
+                                                value={extraInfo}
+                                                onChange={(e) => setExtraInfo(e.target.value)}
+                                                className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all resize-none font-mono text-sm"
+                                                rows={5}
+                                                placeholder="Nhập các thông tin phụ khác..."
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Ghi chú */}
+                        <div className="space-y-2 lg:col-span-4 mb-4">
+                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                Ghi chú
+                            </label>
+                            <textarea
+                                value={newLotNotes}
+                                onChange={(e) => setNewLotNotes(e.target.value)}
+                                className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all resize-none"
+                                rows={2}
+                                placeholder="Ghi chú thêm..."
+                            />
                         </div>
 
                         {/* Danh sách sản phẩm */}
@@ -536,7 +759,7 @@ export default function LotManagementPage() {
                             <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
                                 <span>Danh sách sản phẩm ({lotItems.length})</span>
                                 <button
-                                    onClick={() => setLotItems([...lotItems, { productId: '', quantity: 0 }])}
+                                    onClick={() => setLotItems([...lotItems, { productId: '', quantity: 0, unit: '' }])}
                                     className="text-xs flex items-center gap-1 text-emerald-600 hover:text-emerald-700 font-medium px-2 py-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
                                 >
                                     <Plus size={14} />
@@ -560,6 +783,13 @@ export default function LotManagementPage() {
                                                     onChange={(val) => {
                                                         const newItems = [...lotItems]
                                                         newItems[index].productId = val || ''
+
+                                                        // Auto select base unit
+                                                        const product = products.find(p => p.id === val)
+                                                        if (product) {
+                                                            newItems[index].unit = product.unit || ''
+                                                        }
+
                                                         setLotItems(newItems)
                                                     }}
                                                     placeholder="-- Chọn sản phẩm --"
@@ -591,6 +821,38 @@ export default function LotManagementPage() {
                                             />
                                         </div>
 
+                                        {/* Unit Selection */}
+                                        <div className="w-full md:w-28 space-y-1">
+                                            <select
+                                                value={item.unit}
+                                                onChange={(e) => {
+                                                    const newItems = [...lotItems]
+                                                    newItems[index].unit = e.target.value
+                                                    setLotItems(newItems)
+                                                }}
+                                                className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none text-sm transition-all"
+                                            >
+                                                {(() => {
+                                                    const product = products.find(p => p.id === item.productId)
+                                                    if (!product) return <option value="">Đơn vị</option>
+
+                                                    const availableUnits = new Set<string>()
+                                                    if (product.unit) availableUnits.add(product.unit)
+
+                                                    productUnits
+                                                        .filter(pu => pu.product_id === item.productId)
+                                                        .forEach(pu => {
+                                                            const u = units.find(u => u.id === pu.unit_id)
+                                                            if (u) availableUnits.add(u.name)
+                                                        })
+
+                                                    return Array.from(availableUnits).map(u => (
+                                                        <option key={u} value={u}>{u}</option>
+                                                    ))
+                                                })()}
+                                            </select>
+                                        </div>
+
                                         {lotItems.length > 1 && (
                                             <button
                                                 onClick={() => {
@@ -608,19 +870,43 @@ export default function LotManagementPage() {
                             </div>
                         </div>
 
-                        {/* Ghi chú */}
-                        <div className="space-y-2 lg:col-span-4">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Ghi chú
-                            </label>
-                            <textarea
-                                value={newLotNotes}
-                                onChange={(e) => setNewLotNotes(e.target.value)}
-                                className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all resize-none"
-                                rows={2}
-                                placeholder="Ghi chú thêm..."
-                            />
-                        </div>
+                        {/* Media & Extra Info */}
+                        {false && (
+                            <div className="md:col-span-2 lg:col-span-4 space-y-4 border-t border-zinc-100 dark:border-zinc-800 pt-4 mt-2">
+                                <h4 className="text-sm font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+                                    <Package size={16} className="text-emerald-600" />
+                                    Hình ảnh & Thông tin phụ
+                                </h4>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                            Hình ảnh chứng từ / lot
+                                        </label>
+                                        <ImageUpload
+                                            value={images}
+                                            onChange={setImages}
+                                            maxFiles={5}
+                                            folder="img-lot"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                            Thông tin bổ sung
+                                        </label>
+                                        <textarea
+                                            value={extraInfo}
+                                            onChange={(e) => setExtraInfo(e.target.value)}
+                                            className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all resize-none font-mono text-sm"
+                                            rows={5}
+                                            placeholder="Nhập các thông tin phụ khác..."
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+
                     </div>
 
                     <div className="flex items-center justify-end gap-3 mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800">
@@ -703,25 +989,26 @@ export default function LotManagementPage() {
                             {/* Header */}
                             <div className="flex items-start justify-between mb-4">
                                 <div className="flex flex-wrap gap-2">
-                                    <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 text-xs font-bold uppercase tracking-wider">
-                                        LOT
+                                    <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">
+                                        LOT: {lot.code}
                                     </span>
-                                    {lot.suppliers && (
-                                        <span className="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-bold uppercase tracking-wider truncate max-w-[120px]">
-                                            {lot.suppliers.name}
-                                        </span>
-                                    )}
-                                    {lot.qc_info && (
+
+                                    {lot.qc_info && isModuleEnabled('qc_info') && (
                                         <span className="px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 text-xs font-bold uppercase tracking-wider truncate max-w-[120px] flex items-center gap-1">
                                             <ShieldCheck size={12} />
                                             {lot.qc_info.name}
+                                        </span>
+                                    )}
+                                    {lot.suppliers && isModuleEnabled('supplier_info') && (
+                                        <span className="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-bold uppercase tracking-wider truncate max-w-[120px]">
+                                            {lot.suppliers.name}
                                         </span>
                                     )}
                                 </div>
                                 {lot.positions && lot.positions.length > 0 ? (
                                     <button
                                         onClick={() => router.push(`/warehouses/map?assignLotId=${lot.id}`)}
-                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold border border-emerald-100 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold border border-emerald-100 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
                                     >
                                         <MapPin size={12} />
                                         {lot.positions[0].code}
@@ -730,7 +1017,7 @@ export default function LotManagementPage() {
                                 ) : (
                                     <button
                                         onClick={() => router.push(`/warehouses/map?assignLotId=${lot.id}`)}
-                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800/50 text-zinc-400 text-xs font-bold border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800/50 text-zinc-400 text-[10px] font-bold border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
                                     >
                                         <MapPin size={12} />
                                         Chưa gán
@@ -740,12 +1027,10 @@ export default function LotManagementPage() {
 
                             {/* Main Content */}
                             <div className="mb-6">
-                                <h3 className="text-2xl font-bold text-zinc-900 dark:text-white mb-2 tracking-tight group-hover:text-emerald-600 transition-colors">
-                                    {lot.code}
-                                </h3>
+                                {/* Lot Code Removed - Moved to Header */}
 
                                 <div className="h-6 mb-3 flex items-center">
-                                    {lot.batch_code && (
+                                    {lot.batch_code && isModuleEnabled('batch_code') && (
                                         <div className="text-sm font-medium text-zinc-500 flex items-center gap-2">
                                             <span className="opacity-70">Batch:</span>
                                             <span className="font-mono bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-700 dark:text-zinc-300">{lot.batch_code}</span>
@@ -764,10 +1049,13 @@ export default function LotManagementPage() {
                                     <div className="space-y-1 max-h-[80px] overflow-y-auto pr-1 custom-scrollbar">
                                         {lot.lot_items && lot.lot_items.length > 0 ? (
                                             lot.lot_items.map(item => (
-                                                <div key={item.id} className="text-sm text-zinc-800 dark:text-zinc-200 flex justify-between gap-2">
-                                                    <span className="truncate flex-1" title={item.products?.name}>{item.products?.name}</span>
+                                                <div key={item.id} className="text-sm text-zinc-800 dark:text-zinc-200 flex justify-between items-center gap-2">
+                                                    <div className="flex flex-col flex-1 min-w-0">
+                                                        <span className="font-mono font-bold text-[10px] text-indigo-600 dark:text-indigo-400 leading-none mb-0.5">{item.products?.sku}</span>
+                                                        <span className="truncate font-medium leading-tight" title={item.products?.name}>{item.products?.name}</span>
+                                                    </div>
                                                     <span className="font-mono text-xs bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300 whitespace-nowrap">
-                                                        {item.quantity} {item.products?.unit}
+                                                        {item.quantity} {(item as any).unit || item.products?.unit}
                                                     </span>
                                                 </div>
                                             ))
@@ -786,24 +1074,61 @@ export default function LotManagementPage() {
                                         )}
                                     </div>
                                 </div>
+
+                                {/* Media Preview */}
+                                {isModuleEnabled('lot_images') && lot.images && Array.isArray(lot.images) && lot.images.length > 0 && (
+                                    <div className="mb-3">
+                                        <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                                            {(lot.images as string[]).map((img, idx) => (
+                                                <div key={idx} className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700">
+                                                    <img src={img} alt="lot-media" className="w-full h-full object-cover" />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {isModuleEnabled('extra_info') && lot.metadata && (lot.metadata as any).extra_info && (
+                                    <div className="mb-3 bg-blue-50 dark:bg-blue-900/10 p-2 rounded-lg border border-blue-100 dark:border-blue-900/20">
+                                        <p className="text-xs text-blue-800 dark:text-blue-300 line-clamp-2">
+                                            <span className="font-bold mr-1">Info:</span>
+                                            {(lot.metadata as any).extra_info}
+                                        </p>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Dates Grid */}
+                            {/* Dates Grid */}
                             <div className="grid grid-cols-2 gap-3 mb-5">
-                                <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
-                                    <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày nhập kho</div>
-                                    <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                        {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : '--/--/----'}
-                                    </div>
-                                </div>
-                                {lot.peeling_date ? (
+                                {isModuleEnabled('peeling_date') && (
                                     <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
                                         <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày bóc múi</div>
                                         <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                            {new Date(lot.peeling_date).toLocaleDateString('vi-VN')}
+                                            {lot.peeling_date ? new Date(lot.peeling_date).toLocaleDateString('vi-VN') : '--/--/----'}
                                         </div>
                                     </div>
-                                ) : (
+                                )}
+
+                                {isModuleEnabled('packaging_date') && (
+                                    <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
+                                        <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày đóng bao bì</div>
+                                        <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                                            {lot.packaging_date ? new Date(lot.packaging_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {isModuleEnabled('inbound_date') && (
+                                    <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
+                                        <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày nhập kho</div>
+                                        <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                                            {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {!isModuleEnabled('packaging_date') && !isModuleEnabled('peeling_date') && !isModuleEnabled('inbound_date') && (
                                     <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800">
                                         <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày tạo</div>
                                         <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">

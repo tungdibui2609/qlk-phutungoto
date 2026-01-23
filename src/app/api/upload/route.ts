@@ -55,13 +55,14 @@ export async function POST(req: NextRequest) {
         const form = await req.formData();
         const file = form.get("file");
         const preferredName = (form.get("filename") || "").toString();
+        const customFolder = (form.get("folder") || "").toString();
 
         if (!(file instanceof File)) {
             return NextResponse.json({ error: "FILE_REQUIRED" }, { status: 400 });
         }
 
         const buf = Buffer.from(await file.arrayBuffer());
-        const folder = (process.env.CLOUDINARY_NOTE_FOLDER || 'uploads').toString();
+        const folder = customFolder || (process.env.CLOUDINARY_NOTE_FOLDER || 'uploads').toString();
         const opts: any = { folder, resource_type: 'image' };
         if (preferredName) {
             opts.public_id = toPublicId(preferredName);
