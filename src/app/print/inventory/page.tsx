@@ -143,6 +143,23 @@ export default function InventoryPrintPage() {
         setLoading(true)
         setError(null)
         try {
+            // Check for pre-fetched data in URL (passed from print-image API)
+            const preFetchedDataStr = searchParams.get('data')
+            if (preFetchedDataStr) {
+                try {
+                    const data = JSON.parse(preFetchedDataStr)
+                    if (data.ok) {
+                        if (data.items) setAccountingItems(data.items)
+                        if (data.lotItems) setLotItems(data.lotItems)
+                        if (data.reconcileItems) setReconcileItems(data.reconcileItems)
+                        setLoading(false)
+                        return // Skip network fetch
+                    }
+                } catch (e) {
+                    console.error('Failed to parse pre-fetched data', e)
+                }
+            }
+
             if (token) {
                 await supabase.auth.setSession({ access_token: token, refresh_token: '' })
             }
