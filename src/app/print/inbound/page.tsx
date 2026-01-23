@@ -238,6 +238,13 @@ function InboundPrintContent() {
 
     // Module helpers
     const hasModule = (moduleId: string) => {
+        // Check URL params first (passed from API for screenshot service)
+        const paramModules = searchParams.get('modules')
+        if (paramModules) {
+            const modules = decodeURIComponent(paramModules).split(',')
+            return modules.includes(moduleId)
+        }
+
         if (!systemConfig) return false
         const modules = typeof systemConfig.inbound_modules === 'string'
             ? JSON.parse(systemConfig.inbound_modules)
@@ -874,9 +881,9 @@ function InboundPrintContent() {
 
                                 // Calculate converted qty
                                 let convertedQty: string | number = '-'
+                                let baseQty = 0
                                 if (hasModule('inbound_conversion') && targetUnit && item.products) {
                                     const product = item.products as any
-                                    let baseQty = 0
 
                                     const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
                                     const itemUnit = normalize(item.unit)
@@ -934,6 +941,7 @@ function InboundPrintContent() {
                                         {hasModule('inbound_conversion') && targetUnit && (
                                             <td className="border border-gray-400 px-2 py-1.5 text-center text-orange-600">
                                                 {typeof convertedQty === 'number' ? convertedQty.toLocaleString('vi-VN') : convertedQty}
+                                                <span className="text-[8px] font-normal text-gray-400 debug-mark">({baseQty > 0 ? 'OK' : 'Z'})</span>
                                             </td>
                                         )}
                                         {!isInternal && hasModule('inbound_financials') && (

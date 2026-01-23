@@ -80,11 +80,33 @@ export async function GET(req: NextRequest) {
             if (companyData.short_name) params.set('cmp_short', companyData.short_name);
         }
 
-        const targetUrl = `${base}/print/inbound?${params.toString()}`;
+        // Fetch order to get system_code
+        const { data: orderData } = await supabase
+            .from('inbound_orders')
+            .select('system_code')
+            .eq('id', id)
+            .single();
+
+        let inboundModules = '';
+        if (orderData?.system_code) {
+            const { data: sysData } = await supabase
+                .from('system_configs')
+                .select('inbound_modules')
+                .eq('system_code', orderData.system_code)
+                .single();
+            if (sysData?.inbound_modules) {
+                const modules = typeof sysData.inbound_modules === 'string'
+                    ? JSON.parse(sysData.inbound_modules)
+                    : sysData.inbound_modules;
+                if (Array.isArray(modules)) inboundModules = modules.join(',');
+            }
+        }
+
+        const targetUrl = `${base}/print/inbound?${params.toString()}&modules=${encodeURIComponent(inboundModules)}`;
 
         // Call external Puppeteer screenshot service
         const serviceBase = (process.env.SCREENSHOT_SERVICE_URL || '').trim() || 'https://chupanh.onrender.com';
-        const screenshotUrl = `${serviceBase.replace(/\/+$/, '')}/screenshot?url=${encodeURIComponent(targetUrl)}&selector=${encodeURIComponent('#print-ready[data-ready="true"]')}&timeout=3000`;
+        const screenshotUrl = `${serviceBase.replace(/\/+$/, '')}/screenshot?url=${encodeURIComponent(targetUrl)}&selector=${encodeURIComponent('#print-ready[data-ready="true"]')}&timeout=30000`;
 
         // Set a timeout for the fetch
         const controller = new AbortController();

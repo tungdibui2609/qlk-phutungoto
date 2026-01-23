@@ -231,6 +231,13 @@ function OutboundPrintContent() {
 
     // Module helpers
     const hasModule = (moduleId: string) => {
+        // Check URL params first (passed from API for screenshot service)
+        const paramModules = searchParams.get('modules')
+        if (paramModules) {
+            const modules = decodeURIComponent(paramModules).split(',')
+            return modules.includes(moduleId)
+        }
+
         if (!systemConfig) return false
         const modules = typeof systemConfig.outbound_modules === 'string'
             ? JSON.parse(systemConfig.outbound_modules)
@@ -455,6 +462,7 @@ function OutboundPrintContent() {
             params.set('debitAccount', debitAccount)
             params.set('creditAccount', creditAccount)
             params.set('editNote', editNote)
+            params.set('t', Date.now().toString())
 
             const res = await fetch(`/api/outbound/print-image?${params.toString()}`)
             if (!res.ok) {
