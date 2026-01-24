@@ -5,6 +5,7 @@ import { Plus, MapPin, X } from 'lucide-react'
 import Link from 'next/link'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { LotTagModal } from '@/components/lots/LotTagModal'
+import { LotMergeModal } from '@/components/warehouse/lots/LotMergeModal'
 
 // Modular Components
 import { useLotManagement, Lot } from '../_hooks/useLotManagement'
@@ -38,6 +39,7 @@ export function LotPageManager() {
     const [qrLot, setQrLot] = useState<Lot | null>(null)
     const [viewingLot, setViewingLot] = useState<Lot | null>(null)
     const [taggingLot, setTaggingLot] = useState<Lot | null>(null)
+    const [mergingLot, setMergingLot] = useState<Lot | null>(null)
 
     const toggleCreateForm = () => {
         if (!showCreateForm) {
@@ -59,8 +61,7 @@ export function LotPageManager() {
 
     // Handlers for new actions
     const handleMerge = (lot: Lot) => {
-        console.log('Merge lot:', lot)
-        alert('Chức năng gộp lot đang phát triển')
+        setMergingLot(lot)
     }
 
     const handleSplit = (lot: Lot) => {
@@ -179,6 +180,18 @@ export function LotPageManager() {
                     lotCodeDisplay={taggingLot.code}
                     onClose={() => setTaggingLot(null)}
                     onSuccess={() => {
+                        fetchLots();
+                    }}
+                />
+            )}
+
+            {mergingLot && (
+                <LotMergeModal
+                    sourceLot={mergingLot}
+                    lots={lots}
+                    onClose={() => setMergingLot(null)}
+                    onSuccess={() => {
+                        setMergingLot(null);
                         fetchLots();
                     }}
                 />
