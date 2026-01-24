@@ -222,7 +222,8 @@ function WarehouseMapContent() {
                         id, quantity, unit,
                         products (name, sku, unit)
                     ),
-                    positions (code)
+                    positions (code),
+                    lot_tags (tag, lot_item_id)
                 `)
                 .eq('id', lotId)
                 .single()
