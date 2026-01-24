@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react'
 import { X, ArrowRight, Check, AlertCircle } from 'lucide-react'
 import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { supabase } from '@/lib/supabaseClient'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 interface LotMergeModalProps {
     sourceLot: Lot
@@ -17,6 +18,11 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ sourceLot, lots, o
     const [selectedItems, setSelectedItems] = useState<Record<string, number>>({}) // itemId -> quantity to merge
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
+
+    // Confirm Dialog State
+    const [showConfirm, setShowConfirm] = useState(false)
+    const [confirmTitle, setConfirmTitle] = useState('')
+    const [confirmMessage, setConfirmMessage] = useState('')
 
     // Filter potential targets (exclude self)
     const availableTargets = useMemo(() => {
@@ -48,7 +54,21 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ sourceLot, lots, o
         setSelectedItems(newSelected)
     }
 
-    const handleSubmit = async () => {
+    const checkFullMerge = () => {
+        if (!sourceLot.lot_items) return false
+
+        // Must select all items
+        if (Object.keys(selectedItems).length !== sourceLot.lot_items.length) return false
+
+        // Must select full quantity for each item
+        for (const item of sourceLot.lot_items) {
+            if (selectedItems[item.id] !== item.quantity) return false
+        }
+
+        return true
+    }
+
+    const handlePreSubmit = () => {
         if (!targetLotId) {
             setError('Vui lòng chọn Lot đích')
             return
@@ -58,8 +78,23 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ sourceLot, lots, o
             return
         }
 
+        const isFullMerge = checkFullMerge()
+        const hasPositions = sourceLot.positions && sourceLot.positions.length > 0
+
+        if (isFullMerge && hasPositions) {
+            const posCodes = sourceLot.positions?.map(p => p.code).join(', ')
+            setConfirmTitle('Cảnh báo giải phóng vị trí')
+            setConfirmMessage(`Bạn đang thực hiện gộp TOÀN BỘ sản phẩm trong Lot này.\n\nVị trí hiện tại của Lot (${posCodes}) sẽ được GIẢI PHÓNG (trống).\n\nBạn có chắc chắn muốn tiếp tục?`)
+            setShowConfirm(true)
+        } else {
+            executeMerge()
+        }
+    }
+
+    const executeMerge = async () => {
         setLoading(true)
         setError(null)
+        setShowConfirm(false)
 
         try {
             const itemsToMerge = Object.entries(selectedItems).map(([itemId, qty]) => ({ itemId, qty }));
@@ -67,8 +102,6 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ sourceLot, lots, o
             for (const item of itemsToMerge) {
                  const sourceItem = sourceLot.lot_items?.find(i => i.id === item.itemId);
                  if (!sourceItem) continue;
-
-                 console.log('Merging item:', sourceItem);
 
                  // 1. Decrement Source
                  if (item.qty >= sourceItem.quantity) {
@@ -87,14 +120,9 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ sourceLot, lots, o
                  }).select().single();
 
                  if (insertError) {
-                     console.error('Insert error', insertError)
-                     // If unique constraint fails, we might need to update existing.
-                     // But for now, let's assume it works or throw.
                      throw new Error('Lỗi khi thêm sản phẩm vào Lot đích: ' + insertError.message);
                  } else if (newItem) {
                      // 3. Add Tag
-                     // Check if lot_tags has lot_item_id column.
-                     // Based on useLotManagement, it does.
                      await supabase.from('lot_tags').insert({
                          lot_id: targetLotId,
                          lot_item_id: newItem.id,
@@ -126,6 +154,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ sourceLot, lots, o
     }
 
     return (
+        <>
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
                 <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
@@ -212,7 +241,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ sourceLot, lots, o
                 <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3">
                     <button onClick={onClose} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800">Hủy</button>
                     <button
-                        onClick={handleSubmit}
+                        onClick={handlePreSubmit}
                         disabled={loading}
                         className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 disabled:opacity-50 flex items-center gap-2"
                     >
@@ -226,5 +255,15 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ sourceLot, lots, o
                 </div>
             </div>
         </div>
+
+        <ConfirmDialog
+            isOpen={showConfirm}
+            title={confirmTitle}
+            message={confirmMessage}
+            onConfirm={executeMerge}
+            onCancel={() => setShowConfirm(false)}
+            variant="warning"
+        />
+        </>
     )
 }
