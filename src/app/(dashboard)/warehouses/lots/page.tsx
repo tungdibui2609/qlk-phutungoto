@@ -151,6 +151,7 @@ export default function LotManagementPage() {
                     setQrLot(lot as any);
                     setViewingLot(null);
                 }}
+                isModuleEnabled={isModuleEnabled}
             />
 
             {taggingLot && (

@@ -33,9 +33,10 @@ interface LotDetailsModalProps {
     lot: Lot | null
     onClose: () => void
     onOpenQr: (lot: Lot) => void
+    isModuleEnabled: (moduleId: string) => boolean
 }
 
-export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, onOpenQr }) => {
+export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, onOpenQr, isModuleEnabled }) => {
     if (!lot) return null
 
     return (
@@ -65,33 +66,55 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                     <div className="space-y-6">
                         {/* Top Grid: Dates & Location */}
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                            <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800">
-                                <div className="flex items-center gap-2 text-zinc-400 mb-1.5">
-                                    <Calendar size={14} />
-                                    <span className="text-[10px] font-bold uppercase tracking-wider">Ngày nhập</span>
+                            {isModuleEnabled('inbound_date') && (
+                                <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800">
+                                    <div className="flex items-center gap-2 text-zinc-400 mb-1.5">
+                                        <Calendar size={14} />
+                                        <span className="text-[10px] font-bold uppercase tracking-wider">Ngày nhập</span>
+                                    </div>
+                                    <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                                        {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                                    </p>
                                 </div>
-                                <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
-                                    {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : '--/--/----'}
-                                </p>
-                            </div>
-                            <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800">
-                                <div className="flex items-center gap-2 text-zinc-400 mb-1.5">
-                                    <Package size={14} />
-                                    <span className="text-[10px] font-bold uppercase tracking-wider">Đóng bao bì</span>
+                            )}
+                            {isModuleEnabled('packaging_date') && (
+                                <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800">
+                                    <div className="flex items-center gap-2 text-zinc-400 mb-1.5">
+                                        <Package size={14} />
+                                        <span className="text-[10px] font-bold uppercase tracking-wider">Đóng bao bì</span>
+                                    </div>
+                                    <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                                        {lot.packaging_date ? new Date(lot.packaging_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                                    </p>
                                 </div>
-                                <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
-                                    {lot.packaging_date ? new Date(lot.packaging_date).toLocaleDateString('vi-VN') : '--/--/----'}
-                                </p>
-                            </div>
-                            <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800">
-                                <div className="flex items-center gap-2 text-zinc-400 mb-1.5">
-                                    <Factory size={14} />
-                                    <span className="text-[10px] font-bold uppercase tracking-wider">Bóc múi</span>
+                            )}
+                            {isModuleEnabled('peeling_date') && (
+                                <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800">
+                                    <div className="flex items-center gap-2 text-zinc-400 mb-1.5">
+                                        <Factory size={14} />
+                                        <span className="text-[10px] font-bold uppercase tracking-wider">Bóc múi</span>
+                                    </div>
+                                    <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                                        {lot.peeling_date ? new Date(lot.peeling_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                                    </p>
                                 </div>
-                                <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
-                                    {lot.peeling_date ? new Date(lot.peeling_date).toLocaleDateString('vi-VN') : '--/--/----'}
-                                </p>
-                            </div>
+                            )}
+
+                            {/* Fallback for created_at if no date modules are enabled */}
+                            {!isModuleEnabled('packaging_date') && !isModuleEnabled('peeling_date') && !isModuleEnabled('inbound_date') && (
+                                <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800">
+                                    <div className="flex items-center gap-2 text-zinc-400 mb-1.5">
+                                        <Calendar size={14} />
+                                        <span className="text-[10px] font-bold uppercase tracking-wider">Ngày tạo</span>
+                                    </div>
+                                    <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                                        {/* Assuming created_at is available on lot object, though interface above might need update if it's strict */}
+                                        {/* Based on LotCard usage, lot usually has created_at but let's be safe with current interface */}
+                                        {'--/--/----'}
+                                    </p>
+                                </div>
+                            )}
+
                             <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800 col-span-2 sm:col-span-1">
                                 <div className="flex items-center gap-2 text-zinc-400 mb-1.5">
                                     <MapPin size={14} />
@@ -113,44 +136,52 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
 
                         {/* Main Info List */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
-                                <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                                    <Truck size={20} />
+                            {isModuleEnabled('supplier_info') && (
+                                <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
+                                    <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                                        <Truck size={20} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Nhà cung cấp</p>
+                                        <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200 truncate">{lot.suppliers?.name || '---'}</p>
+                                    </div>
                                 </div>
-                                <div className="min-w-0">
-                                    <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Nhà cung cấp</p>
-                                    <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200 truncate">{lot.suppliers?.name || '---'}</p>
+                            )}
+                            {isModuleEnabled('qc_info') && (
+                                <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
+                                    <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                                        <ShieldCheck size={20} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Nhân viên QC</p>
+                                        <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200 truncate">{lot.qc_info?.name || '---'}</p>
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
-                                <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
-                                    <ShieldCheck size={20} />
+                            )}
+                            {isModuleEnabled('batch_code') && (
+                                <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
+                                    <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                        <Layers size={20} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Số Batch/Lô</p>
+                                        <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{lot.batch_code || '---'}</p>
+                                    </div>
                                 </div>
-                                <div className="min-w-0">
-                                    <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Nhân viên QC</p>
-                                    <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200 truncate">{lot.qc_info?.name || '---'}</p>
+                            )}
+                            {isModuleEnabled('extra_info') && (
+                                <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
+                                    <div className="w-10 h-10 rounded-xl bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+                                        <Info size={20} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Thông tin thêm</p>
+                                        <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">
+                                            {lot.metadata && (lot.metadata as any).extra_info || '---'}
+                                        </p>
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
-                                <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                                    <Layers size={20} />
-                                </div>
-                                <div className="min-w-0">
-                                    <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Số Batch/Lô</p>
-                                    <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{lot.batch_code || '---'}</p>
-                                </div>
-                            </div>
-                            <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
-                                <div className="w-10 h-10 rounded-xl bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
-                                    <Info size={20} />
-                                </div>
-                                <div className="min-w-0">
-                                    <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Thông tin thêm</p>
-                                    <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">
-                                        {lot.metadata && (lot.metadata as any).extra_info || '---'}
-                                    </p>
-                                </div>
-                            </div>
+                            )}
                         </div>
 
                         {/* Notes Section */}

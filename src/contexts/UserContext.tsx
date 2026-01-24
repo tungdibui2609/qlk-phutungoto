@@ -43,10 +43,13 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
                     .from('user_profiles')
                     .select('id, full_name, email, avatar_url, permissions, blocked_routes, hidden_menus, allowed_systems, roles(name)')
                     .eq('id', authUser.id)
-                    .maybeSingle()
+                    .eq('id', authUser.id)
+                    .limit(1)
 
-                if (!error && data) {
-                    setProfile(data as any)
+                if (!error && data && data.length > 0) {
+                    setProfile(data[0] as any)
+                } else {
+                    setProfile(null)
                 }
             } else {
                 setProfile(null)

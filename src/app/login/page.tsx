@@ -43,17 +43,14 @@ export default function LoginPage() {
             const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 
             if (!isEmail) {
-                // 2. If not email, assume it's a username and look it up
-                const { data: userData, error: userError } = await supabase
-                    .from('user_profiles')
-                    .select('email')
-                    .eq('username', email)
-                    .single()
+                // 2. If not email, assume it's a username and look it up via Secure RPC
+                const { data: userEmail, error: userError } = await supabase
+                    .rpc('get_user_email_by_username', { p_username: email })
 
-                if (userError || !userData || !(userData as any).email) {
+                if (userError || !userEmail) {
                     throw new Error('Tài khoản không tồn tại hoặc chưa cập nhật Email.')
                 }
-                signInEmail = (userData as any).email
+                signInEmail = userEmail
             }
 
             // 3. Sign in with the resolved email
