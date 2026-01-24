@@ -27,6 +27,7 @@ interface Lot {
     positions: { code: string }[] | null
     lot_items: LotItem[] | null
     metadata?: any
+    created_at?: string | null
 }
 
 interface LotDetailsModalProps {
@@ -108,9 +109,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                         <span className="text-[10px] font-bold uppercase tracking-wider">Ngày tạo</span>
                                     </div>
                                     <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
-                                        {/* Assuming created_at is available on lot object, though interface above might need update if it's strict */}
-                                        {/* Based on LotCard usage, lot usually has created_at but let's be safe with current interface */}
-                                        {'--/--/----'}
+                                        {lot.created_at ? new Date(lot.created_at).toLocaleDateString('vi-VN') : '--/--/----'}
                                     </p>
                                 </div>
                             )}

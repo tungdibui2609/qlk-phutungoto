@@ -4,11 +4,13 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Map, Settings, Package, MapPin, Tag } from 'lucide-react'
+import MultiSelectActionBar from '@/components/warehouse/map/MultiSelectActionBar'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
 import LayoutConfigPanel from '@/components/warehouse/LayoutConfigPanel'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { useSystem } from '@/contexts/SystemContext'
 import { LotTagModal } from '@/components/lots/LotTagModal'
+import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -19,7 +21,7 @@ interface PositionWithZone extends Position {
 }
 
 function WarehouseMapContent() {
-    const { systemType } = useSystem()
+    const { systemType, currentSystem } = useSystem()
     const [positions, setPositions] = useState<PositionWithZone[]>([])
     const [zones, setZones] = useState<Zone[]>([])
     const [layouts, setLayouts] = useState<ZoneLayout[]>([])
@@ -39,7 +41,8 @@ function WarehouseMapContent() {
     const [assignLot, setAssignLot] = useState<{ id: string, code: string } | null>(null)
     const [taggingLotId, setTaggingLotId] = useState<string | null>(null)
 
-    const [selectedPosition, setSelectedPosition] = useState<Position | null>(null)
+    // Multi-select state
+    const [selectedPositionIds, setSelectedPositionIds] = useState<Set<string>>(new Set())
     const [occupiedIds, setOccupiedIds] = useState<Set<string>>(new Set())
 
     // Design mode state
@@ -58,6 +61,10 @@ function WarehouseMapContent() {
         peeling_date?: string,
         tags?: string[]
     }>>({})
+
+    // Detail View State
+    const [viewingLot, setViewingLot] = useState<any>(null)
+    const [qrLot, setQrLot] = useState<any>(null) // For opening QR from details
 
     // Auth Session State
     const [session, setSession] = useState<any>(null)
@@ -84,35 +91,140 @@ function WarehouseMapContent() {
         const { data } = await supabase.from('lots').select('id, code').eq('id', id).single()
         if (data) setAssignLot(data)
     }
-
-    async function handlePositionClick(pos: Position) {
+    // Handle position selection (toggle for multi-select)
+    function handlePositionSelect(positionId: string) {
         if (assignLot && assignLotId) {
-            // Assignment Logic
+            // Assignment Logic - find position
+            const pos = positions.find(p => p.id === positionId)
+            if (!pos) return
+
             const isAssignedToThisLot = pos.lot_id === assignLotId
             const newLotId = isAssignedToThisLot ? null : assignLotId
 
             // Optimistic update
             setPositions(prev => prev.map(p =>
-                p.id === pos.id ? { ...p, lot_id: newLotId } : p
+                p.id === positionId ? { ...p, lot_id: newLotId } : p
             ))
 
             // DB Update
-            const { error } = await (supabase
-                .from('positions') as any)
-                .update({ lot_id: newLotId })
-                .eq('id', pos.id)
-
-            if (error) {
-                alert('Lỗi cập nhật vị trí: ' + error.message)
-                fetchData()
-            }
+            supabase
+                .from('positions')
+                .update({ lot_id: newLotId } as any)
+                .eq('id', positionId)
+                .then(({ error }) => {
+                    if (error) {
+                        alert('Lỗi cập nhật vị trí: ' + error.message)
+                        fetchData()
+                    }
+                })
         } else {
-            // Normal Selection
-            setSelectedPosition(pos)
+            // Toggle selection for multi-select
+            setSelectedPositionIds(prev => {
+                const next = new Set(prev)
+                if (next.has(positionId)) {
+                    next.delete(positionId)
+                } else {
+                    next.add(positionId)
+                }
+                return next
+            })
         }
     }
 
+    // Clear all selections
+    function clearSelection() {
+        setSelectedPositionIds(new Set())
+    }
+
+    // Get selected positions data for action bar
+    const selectedPositions = useMemo(() => {
+        return positions.filter(p => selectedPositionIds.has(p.id))
+    }, [positions, selectedPositionIds])
+
+    // Get unique LOT IDs from selected positions
+    const selectedLotIds = useMemo(() => {
+        const lotIds = new Set<string>()
+        selectedPositions.forEach(p => {
+            if (p.lot_id) lotIds.add(p.lot_id)
+        })
+        return lotIds
+    }, [selectedPositions])
+
     const accessToken = session?.access_token
+
+    // Provide module config check function for LotDetailsModal
+    const isModuleEnabled = useMemo(() => {
+        return (moduleId: string) => {
+            if (!currentSystem) return true // Default to true if system not loaded yet to avoid hiding data
+
+            // Collect all enabled modules from various fields
+            const allModules = new Set<string>()
+
+            // Check 'modules' field (string or array)
+            if (currentSystem.modules) {
+                if (Array.isArray(currentSystem.modules)) {
+                    currentSystem.modules.forEach(m => allModules.add(m))
+                } else if (typeof currentSystem.modules === 'string') {
+                    try {
+                        const parsed = JSON.parse(currentSystem.modules)
+                        if (Array.isArray(parsed)) parsed.forEach((m: string) => allModules.add(m))
+                    } catch (e) {
+                        // Maybe comma separated?
+                        currentSystem.modules.split(',').forEach(m => allModules.add(m.trim()))
+                    }
+                }
+            }
+
+            // Check inbound_modules
+            if (Array.isArray(currentSystem.inbound_modules)) {
+                currentSystem.inbound_modules.forEach(m => allModules.add(m))
+            }
+
+            // Check outbound_modules
+            if (Array.isArray(currentSystem.outbound_modules)) {
+                currentSystem.outbound_modules.forEach(m => allModules.add(m))
+            }
+
+            // Fallback: If strict config check fails, but we have data, show it!
+            if (viewingLot) {
+                if (moduleId === 'inbound_date' && viewingLot.inbound_date) return true
+                if (moduleId === 'packaging_date' && viewingLot.packaging_date) return true
+                if (moduleId === 'peeling_date' && viewingLot.peeling_date) return true
+                if (moduleId === 'batch_code' && viewingLot.batch_code) return true
+                if (moduleId === 'supplier_info' && viewingLot.suppliers) return true
+                if (moduleId === 'qc_info' && viewingLot.qc_info) return true
+                if (moduleId === 'extra_info' && viewingLot.metadata?.extra_info) return true
+            }
+
+            return allModules.has(moduleId)
+        }
+    }, [currentSystem, viewingLot])
+
+    async function fetchFullLotDetails(lotId: string) {
+        try {
+            const { data, error } = await supabase
+                .from('lots')
+                .select(`
+                    *,
+                    created_at,
+                    suppliers (name),
+                    qc_info (name),
+                    lot_items (
+                        id, quantity, unit,
+                        products (name, sku, unit)
+                    ),
+                    positions (code)
+                `)
+                .eq('id', lotId)
+                .single()
+
+            if (error) throw error
+            setViewingLot(data)
+        } catch (error: any) {
+            console.error('Error fetching lot details:', error)
+            alert('Không thể tải chi tiết LOT: ' + error.message)
+        }
+    }
 
     useEffect(() => {
         // Only fetch if we have a valid session and systemType
@@ -473,10 +585,11 @@ function WarehouseMapContent() {
                     occupiedIds={occupiedIds}
                     lotInfo={lotInfo}
                     collapsedZones={collapsedZones}
-                    selectedPositionId={selectedPosition?.id}
+                    selectedPositionIds={selectedPositionIds}
                     isDesignMode={isDesignMode}
                     onToggleCollapse={toggleZoneCollapse}
-                    onPositionClick={handlePositionClick}
+                    onPositionSelect={handlePositionSelect}
+                    onViewDetails={fetchFullLotDetails}
                     onConfigureZone={setConfiguringZone}
                     highlightLotId={assignLotId}
                 />
@@ -496,47 +609,14 @@ function WarehouseMapContent() {
                 </div>
             )}
 
-            {/* Selected position detail */}
-            {selectedPosition && (
-                <div className="fixed bottom-4 right-4 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 p-4 w-72 z-50 animate-in slide-in-from-bottom-5">
-                    <div className="flex items-start justify-between mb-2">
-                        <h4 className="font-bold text-gray-900 dark:text-white">Chi tiết vị trí</h4>
-                        <button
-                            onClick={() => setSelectedPosition(null)}
-                            className="text-gray-400 hover:text-gray-600"
-                        >
-                            ✕
-                        </button>
-                    </div>
-                    <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Mã:</span>
-                            <span className="font-mono font-bold">{selectedPosition.code}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Trạng thái:</span>
-                            <span className={occupiedIds.has(selectedPosition.id) ? 'text-green-600' : 'text-gray-400'}>
-                                {occupiedIds.has(selectedPosition.id) ? 'Có hàng' : 'Trống'}
-                            </span>
-                        </div>
-                        {selectedPosition.lot_id && lotInfo[selectedPosition.lot_id] && (
-                            <div className="pt-2 mt-2 border-t border-gray-100 dark:border-gray-700">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-gray-500">LOT:</span>
-                                    <span className="font-mono font-bold">{lotInfo[selectedPosition.lot_id].code}</span>
-                                </div>
-                                <button
-                                    onClick={() => setTaggingLotId(selectedPosition.lot_id || null)}
-                                    className="w-full mt-2 flex items-center justify-center gap-2 py-1.5 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors"
-                                >
-                                    <Tag size={12} />
-                                    Gán mã phụ
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
+            {/* Multi-Select Action Bar */}
+            <MultiSelectActionBar
+                selectedPositionIds={selectedPositionIds}
+                positions={positions}
+                lotInfo={lotInfo}
+                onClear={clearSelection}
+                onTag={(lotId) => setTaggingLotId(lotId)}
+            />
 
             {taggingLotId && (
                 <LotTagModal
@@ -548,6 +628,17 @@ function WarehouseMapContent() {
                     }}
                 />
             )}
+
+            {/* Lot Details Modal */}
+            <LotDetailsModal
+                lot={viewingLot}
+                onClose={() => setViewingLot(null)}
+                onOpenQr={(lot) => {
+                    // Handle QR open if needed, or just log
+                    console.log('Open QR for', lot)
+                }}
+                isModuleEnabled={isModuleEnabled}
+            />
         </div>
     )
 }

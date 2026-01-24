@@ -1,6 +1,6 @@
 'use client'
 import React, { useMemo } from 'react'
-import { ChevronDown, ChevronRight, Package, Settings } from 'lucide-react'
+import { ChevronDown, ChevronRight, Package, Settings, Eye } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 
 type Position = Database['public']['Tables']['positions']['Row']
@@ -17,10 +17,11 @@ interface FlexibleZoneGridProps {
     layouts: Record<string, ZoneLayout>
     occupiedIds: Set<string>
     collapsedZones: Set<string>
-    selectedPositionId?: string | null
+    selectedPositionIds: Set<string>
     isDesignMode?: boolean
     onToggleCollapse: (zoneId: string) => void
-    onPositionClick: (position: Position) => void
+    onPositionSelect: (positionId: string) => void
+    onViewDetails?: (lotId: string) => void
     onConfigureZone?: (zone: Zone) => void
     highlightLotId?: string | null
     lotInfo?: Record<string, { code: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>, inbound_date?: string, created_at?: string, packaging_date?: string, peeling_date?: string, tags?: string[] }>
@@ -32,10 +33,11 @@ export default function FlexibleZoneGrid({
     layouts,
     occupiedIds,
     collapsedZones,
-    selectedPositionId,
+    selectedPositionIds,
     isDesignMode = false,
     onToggleCollapse,
-    onPositionClick,
+    onPositionSelect,
+    onViewDetails,
     onConfigureZone,
     highlightLotId,
     lotInfo = {}
@@ -418,7 +420,7 @@ export default function FlexibleZoneGrid({
     // Helper function to render a position cell
     function renderPositionCell(pos: PositionWithZone, cellHeight: number): React.ReactNode {
         const isOccupied = occupiedIds.has(pos.id)
-        const isSelected = selectedPositionId === pos.id
+        const isSelected = selectedPositionIds.has(pos.id)
 
         // LOT Visualization Logic
         const hasLot = !!pos.lot_id
@@ -450,20 +452,62 @@ export default function FlexibleZoneGrid({
             borderClass = 'border-green-400 hover:border-green-500'
         }
 
+        // Determine if we are in LOT assignment mode
+        const isAssignmentMode = !!highlightLotId
+
         return (
             <div
                 key={pos.id}
-                onClick={() => onPositionClick(pos)}
+                onClick={isAssignmentMode ? () => onPositionSelect(pos.id) : undefined}
                 style={cellHeight > 0 ? { height: `${cellHeight}px` } : { minHeight: '80px' }} // Increased min-height for content
                 className={`
-                    relative cursor-pointer p-1.5 rounded-lg border-2 transition-all
+                    relative ${isAssignmentMode ? 'cursor-pointer' : ''} p-1.5 rounded-lg border-2 transition-all
                     flex flex-col justify-between overflow-hidden
                     ${bgClass} ${borderClass} ${ringClass}
-                    hover:shadow-lg hover:scale-[1.02] hover:z-10
+                    ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.02] hover:z-10' : ''}
                 `}
             >
+                {/* Selection checkbox - Bottom left corner (only in non-assignment mode) */}
+                {!isAssignmentMode && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            onPositionSelect(pos.id)
+                        }}
+                        className={`
+                            absolute bottom-1 left-1 z-20 w-4 h-4 rounded 
+                            border-2 transition-all duration-150
+                            flex items-center justify-center
+                            ${isSelected
+                                ? 'bg-blue-500 border-blue-500 text-white shadow-md'
+                                : 'bg-white/90 dark:bg-gray-800/90 border-gray-300 dark:border-gray-500 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30'
+                            }
+                        `}
+                        title={isSelected ? "Bỏ chọn vị trí" : "Chọn vị trí"}
+                    >
+                        {isSelected && (
+                            <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                        )}
+                    </button>
+                )}
                 {/* Header: Pos Code */}
                 <div className="flex justify-center items-start w-full relative mb-1 shrink-0">
+                    {/* View Details Eye Icon - Top Left */}
+                    {!isAssignmentMode && hasLot && lotDetail && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                onViewDetails?.(pos.lot_id!)
+                            }}
+                            className="absolute left-0 top-0 text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors z-20"
+                            title="Xem chi tiết LOT"
+                        >
+                            <Eye size={12} />
+                        </button>
+                    )}
+
                     <span className="font-mono text-[10px] items-center text-black dark:text-white font-bold leading-none">
                         {pos.code}
                     </span>
