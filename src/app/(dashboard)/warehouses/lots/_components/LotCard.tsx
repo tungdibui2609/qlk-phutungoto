@@ -1,4 +1,4 @@
-import { MapPin, Layers, Truck, ShieldCheck, Info, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight } from 'lucide-react'
+import { MapPin, Layers, Truck, ShieldCheck, Info, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History } from 'lucide-react'
 import { useState } from 'react'
 import { Lot } from '../_hooks/useLotManagement'
 import { useRouter } from 'next/navigation'
@@ -200,8 +200,11 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                             <>
                                 <div className="space-y-0">
                                     {displayItems.length > 0 ? (
-                                        displayItems.map((item, index) => (
-                                            <div key={item.id} className={`text-sm text-slate-800 dark:text-slate-200 flex items-center justify-between gap-2 py-2 px-2 rounded-lg border-b border-dashed border-slate-100 dark:border-slate-800 last:border-0 ${index % 2 === 1 ? 'bg-white/60 dark:bg-white/5' : ''}`}>
+                                        displayItems.map((item, index) => {
+                                            const mergedTag = lot.lot_tags?.find(t => t.lot_item_id === item.id && t.tag.startsWith('MERGED_FROM:'));
+
+                                            return (
+                                            <div key={item.id} className={`text-sm text-slate-800 dark:text-slate-200 flex items-center justify-between gap-2 py-2 px-2 rounded-lg border-b border-dashed border-slate-100 dark:border-slate-800 last:border-0 ${mergedTag ? 'bg-indigo-50/60 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-800/30' : (index % 2 === 1 ? 'bg-white/60 dark:bg-white/5' : '')}`}>
                                                 <div className="flex flex-col flex-1 min-w-0 gap-1">
                                                     <div className="flex flex-col gap-1.5">
                                                         <div className="flex items-center gap-2 flex-wrap min-w-0">
@@ -212,6 +215,12 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                                                                 <span className="font-bold">{item.quantity}</span>
                                                                 <span className="opacity-80">{(item as any).unit || item.products?.unit}</span>
                                                             </div>
+                                                            {mergedTag && (
+                                                                <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded border border-purple-200 dark:border-purple-800 text-[10px] font-bold" title={mergedTag.tag.replace('MERGED_FROM:', 'Gộp từ Lot: ')}>
+                                                                    <History size={10} />
+                                                                    <span>{mergedTag.tag.replace('MERGED_FROM:', '')}</span>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                         <span className="truncate font-bold text-sm text-slate-900 dark:text-slate-100 leading-tight" title={item.products?.name}>{item.products?.name}</span>
                                                     </div>
@@ -221,7 +230,7 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                                                         <div className="flex flex-wrap gap-1">
                                                             <TagDisplay
                                                                 tags={lot.lot_tags
-                                                                    .filter(t => t.lot_item_id === item.id)
+                                                                    .filter(t => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_FROM:'))
                                                                     .map(t => t.tag)}
                                                                 placeholderMap={{
                                                                     '@': item.products?.sku || 'SẢN PHẨM'
@@ -242,7 +251,8 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                                                     <QrIcon size={14} />
                                                 </button>
                                             </div>
-                                        ))
+                                            )
+                                        })
                                     ) : (
                                         <div className="text-sm text-zinc-400 italic">
                                             {lot.products?.name ? (
