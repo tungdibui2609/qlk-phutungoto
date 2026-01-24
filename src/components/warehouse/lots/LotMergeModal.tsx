@@ -68,6 +68,8 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ sourceLot, lots, o
                  const sourceItem = sourceLot.lot_items?.find(i => i.id === item.itemId);
                  if (!sourceItem) continue;
 
+                 console.log('Merging item:', sourceItem);
+
                  // 1. Decrement Source
                  if (item.qty >= sourceItem.quantity) {
                      await supabase.from('lot_items').delete().eq('id', sourceItem.id);
