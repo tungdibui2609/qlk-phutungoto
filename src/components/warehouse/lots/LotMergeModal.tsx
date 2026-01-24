@@ -81,13 +81,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ sourceLot, lots, o
                      lot_id: targetLotId,
                      product_id: sourceItem.product_id,
                      quantity: item.qty,
-                     // unit: sourceItem.unit, // Assuming unit is consistent or handled by DB default? check schema.
-                     // Schema for lot_items: id, lot_id, product_id, quantity. Unit is likely on products table or optional?
-                     // Wait, useLotManagement select includes 'unit'.
-                     // The schema check earlier: lot_items row has {id, lot_id, product_id, quantity}. It DOES NOT have unit.
-                     // The 'unit' in useLotManagement comes from join or maybe I missed it.
-                     // Ah, checking restored database.types.ts: lot_items ROW has {id, lot_id, product_id, quantity, created_at}. NO UNIT.
-                     // So unit is inferred from product.
+                     unit: (sourceItem as any).unit
                  }).select().single();
 
                  if (insertError) {
