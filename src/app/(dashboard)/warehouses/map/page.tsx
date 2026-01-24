@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo, Suspense } from 'react'
+import { useState, useEffect, useMemo, Suspense, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
@@ -226,13 +226,27 @@ function WarehouseMapContent() {
         }
     }
 
+    const lastUserIdRef = useRef<string | null>(null)
+
+    // Smart fetch: Only fetch when systemType changes OR when user *actually* changes (initial load or login/logout)
+    // Ignores silent token refreshes where user ID stays the same
     useEffect(() => {
-        // Only fetch if we have a valid session and systemType
-        if (accessToken && systemType) {
-            setErrorMsg(null)
+        const currentUserId = session?.user?.id
+
+        // Case 1: System Type changed -> Always fetch
+        // Case 2: User changed (e.g. initial load where null -> userId, or switch user) -> Fetch
+        if (systemType && (lastUserIdRef.current !== currentUserId)) {
+            lastUserIdRef.current = currentUserId
+            if (currentUserId) fetchData()
+        } else if (systemType && lastUserIdRef.current === currentUserId && currentUserId) {
+            // Case 3: Same user, just token refresh -> DO NOTHING (Prevent reload)
+        }
+
+        // Safety fallback for initial load race condition
+        if (systemType && accessToken && positions.length === 0 && !loading) {
             fetchData()
         }
-    }, [systemType, accessToken])
+    }, [systemType, session?.user?.id, accessToken])
 
     async function fetchData() {
         if (!accessToken || !systemType) return
