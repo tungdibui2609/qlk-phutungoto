@@ -107,6 +107,19 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ sourceLot, lots, o
                  }
             }
 
+            // Check if source lot is empty and clean up positions
+            const { count } = await supabase
+                .from('lot_items')
+                .select('*', { count: 'exact', head: true })
+                .eq('lot_id', sourceLot.id)
+
+            if (count === 0) {
+                await supabase
+                    .from('positions')
+                    .update({ lot_id: null })
+                    .eq('lot_id', sourceLot.id)
+            }
+
             onSuccess()
         } catch (e: any) {
             console.error(e)
