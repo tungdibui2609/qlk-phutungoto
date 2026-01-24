@@ -90,22 +90,22 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
     }
 
     return (
-        <div className="group bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-xl hover:border-emerald-500/30 transition-all duration-300 flex flex-col justify-between relative overflow-hidden">
+        <div className="group bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl hover:border-orange-500/30 transition-all duration-300 flex flex-col justify-between relative overflow-hidden">
             {/* Decorative Top Bar */}
-            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-emerald-500 to-emerald-400 z-10 transition-opacity"></div>
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-500 to-orange-400 z-10 transition-opacity"></div>
 
             {/* Header - Colored */}
-            <div className="px-4 pt-5 pb-4 bg-emerald-50/50 dark:bg-emerald-900/10 border-b border-emerald-100/50 dark:border-emerald-900/20">
+            <div className="px-4 pt-5 pb-4 bg-orange-50/50 dark:bg-orange-900/10 border-b border-orange-100/50 dark:border-orange-900/20">
                 <div className="flex items-center justify-between">
                     <div className="flex flex-wrap gap-2">
-                        <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap shadow-sm border border-black/5 dark:border-white/5">
+                        <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap shadow-sm border border-black/5 dark:border-white/5">
                             LOT: {lot.code}
                         </span>
                     </div>
                     {lot.positions && lot.positions.length > 0 ? (
                         <button
                             onClick={() => router.push(`/warehouses/map?assignLotId=${lot.id}`)}
-                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-200 dark:hover:bg-emerald-900/60 transition-colors shadow-sm"
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-[10px] font-bold border border-orange-200 dark:border-orange-800 hover:bg-orange-200 dark:hover:bg-orange-900/60 transition-colors shadow-sm"
                         >
                             <MapPin size={12} />
                             {lot.positions[0].code}
@@ -128,36 +128,36 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                 {/* Dates Grid */}
                 <div className="grid grid-cols-2 gap-2 mb-2">
                     {isModuleEnabled('inbound_date') && (
-                        <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2 border border-zinc-100 dark:border-zinc-800">
-                            <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày nhập kho</div>
+                        <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-2 border border-slate-100 dark:border-slate-800">
+                            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Ngày nhập kho</div>
                             <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
                                 {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : '--/--/----'}
                             </div>
                         </div>
                     )}
 
-                    {isModuleEnabled('packaging_date') && (
-                        <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2 border border-zinc-100 dark:border-zinc-800">
-                            <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày đóng bao bì</div>
-                            <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                {lot.packaging_date ? new Date(lot.packaging_date).toLocaleDateString('vi-VN') : '--/--/----'}
-                            </div>
-                        </div>
-                    )}
-
                     {isModuleEnabled('peeling_date') && (
-                        <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2 border border-zinc-100 dark:border-zinc-800">
-                            <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày bóc múi</div>
-                            <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                        <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-2 border border-slate-100 dark:border-slate-800">
+                            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Ngày bóc múi</div>
+                            <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                                 {lot.peeling_date ? new Date(lot.peeling_date).toLocaleDateString('vi-VN') : '--/--/----'}
                             </div>
                         </div>
                     )}
 
+                    {isModuleEnabled('packaging_date') && (
+                        <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-2 border border-slate-100 dark:border-slate-800">
+                            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Ngày đóng bao bì</div>
+                            <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                                {lot.packaging_date ? new Date(lot.packaging_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                            </div>
+                        </div>
+                    )}
+
                     {!isModuleEnabled('packaging_date') && !isModuleEnabled('peeling_date') && !isModuleEnabled('inbound_date') && (
-                        <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-xl p-2 border border-zinc-100 dark:border-zinc-800">
-                            <div className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ngày tạo</div>
-                            <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                        <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-2 border border-slate-100 dark:border-slate-800">
+                            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Ngày tạo</div>
+                            <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                                 {new Date(lot.created_at).toLocaleDateString('vi-VN')}
                             </div>
                         </div>
@@ -167,9 +167,9 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                 {renderInfoItems()}
 
                 {/* Product Info */}
-                <div className="mt-2 p-2.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-100 dark:border-zinc-800/50">
+                <div className="mt-2 p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800/50">
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-bold text-zinc-400 uppercase">Sản phẩm ({lot.lot_items?.length || 0})</span>
+                        <span className="text-xs font-bold text-slate-400 uppercase">Sản phẩm ({lot.lot_items?.length || 0})</span>
                         <div className="flex flex-wrap gap-1 justify-end">
                             {lot.lot_items && lot.lot_items.length > 0 ? (
                                 Object.entries(
@@ -179,8 +179,8 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                                         return acc;
                                     }, {})
                                 ).map(([unit, total]) => (
-                                    <span key={unit} className="text-emerald-600 font-bold text-sm bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30">
-                                        {total} <span className="text-[10px] font-medium text-emerald-500/70">{unit}</span>
+                                    <span key={unit} className="text-orange-600 font-bold text-sm bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-lg border border-orange-100 dark:border-orange-900/30">
+                                        {total} <span className="text-[10px] font-medium text-orange-500/70">{unit}</span>
                                     </span>
                                 ))
                             ) : (
@@ -198,19 +198,24 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                                 <div className="space-y-0">
                                     {displayItems.length > 0 ? (
                                         displayItems.map((item, index) => (
-                                            <div key={item.id} className={`text-sm text-zinc-800 dark:text-zinc-200 flex items-center justify-between gap-2 py-2 px-2 rounded-lg border-b border-dashed border-zinc-100 dark:border-zinc-800 last:border-0 ${index % 2 === 1 ? 'bg-white/60 dark:bg-white/5' : ''}`}>
-                                                <div className="flex flex-col flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2 mb-0.5 min-w-0">
-                                                        <span className="font-mono font-bold text-xs text-indigo-600 dark:text-indigo-400 leading-none shrink-0">{item.products?.sku}</span>
-                                                        <span className="font-mono text-xs text-zinc-400 shrink-0">-</span>
-                                                        <span className="font-mono text-xs bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300 whitespace-nowrap shrink-0">
-                                                            {item.quantity} {(item as any).unit || item.products?.unit}
-                                                        </span>
+                                            <div key={item.id} className={`text-sm text-slate-800 dark:text-slate-200 flex items-center justify-between gap-2 py-2 px-2 rounded-lg border-b border-dashed border-slate-100 dark:border-slate-800 last:border-0 ${index % 2 === 1 ? 'bg-white/60 dark:bg-white/5' : ''}`}>
+                                                <div className="flex flex-col flex-1 min-w-0 gap-1">
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                                            <div className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 rounded border border-indigo-100 dark:border-indigo-800 font-mono font-bold text-xs shrink-0">
+                                                                {item.products?.sku}
+                                                            </div>
+                                                            <div className="flex items-center gap-1 font-mono text-xs bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 px-2 py-0.5 rounded border border-orange-100 dark:border-orange-900/30 shrink-0">
+                                                                <span className="font-bold">{item.quantity}</span>
+                                                                <span className="opacity-80">{(item as any).unit || item.products?.unit}</span>
+                                                            </div>
+                                                        </div>
+                                                        <span className="truncate font-bold text-sm text-slate-900 dark:text-slate-100 leading-tight" title={item.products?.name}>{item.products?.name}</span>
                                                     </div>
 
                                                     {/* Inline Tags */}
                                                     {lot.lot_tags && (
-                                                        <div className="flex flex-wrap gap-1 mt-0.5">
+                                                        <div className="flex flex-wrap gap-1">
                                                             <TagDisplay
                                                                 tags={lot.lot_tags
                                                                     .filter(t => t.lot_item_id === item.id)
@@ -221,8 +226,6 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                                                             />
                                                         </div>
                                                     )}
-
-                                                    <span className="truncate font-medium leading-tight" title={item.products?.name}>{item.products?.name}</span>
                                                 </div>
 
                                                 <button
@@ -304,7 +307,7 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
             </div>
 
             {/* Actions Footer - Colored */}
-            <div className="px-4 py-2.5 bg-zinc-50/80 dark:bg-zinc-900/50 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between mt-auto">
+            <div className="px-4 py-2.5 bg-slate-50/80 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between mt-auto">
                 <div className="flex gap-2">
                     <button
                         onClick={() => onQr(lot)}
@@ -315,7 +318,7 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                     </button>
                     <button
                         onClick={() => onAssignTag?.(lot)}
-                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-zinc-800 transition-all border border-transparent"
+                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-zinc-800 transition-all border border-transparent"
                         title="Gắn mã phụ"
                     >
                         <Tag size={16} />
@@ -332,7 +335,7 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                     </button>
                     <button
                         onClick={() => onEdit(lot)}
-                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
                         title="Sửa"
                     >
                         <Edit size={16} />

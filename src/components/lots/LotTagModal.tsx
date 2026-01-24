@@ -282,13 +282,13 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
 
     return (
         <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-20 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[90vh]">
-                <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
                     <div>
-                        <h3 className="font-semibold text-lg">Gắn Mã Phụ</h3>
-                        <p className="text-xs text-zinc-500 font-mono">{lotCodeDisplay || lotId}</p>
+                        <h3 className="font-semibold text-lg text-slate-900 dark:text-slate-100">Gắn Mã Phụ</h3>
+                        <p className="text-xs text-slate-500 font-mono">{lotCodeDisplay || lotId}</p>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full">
+                    <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-500">
                         <X size={20} />
                     </button>
                 </div>
@@ -297,7 +297,7 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
                     {/* Product Selection */}
                     {lotItems.length > 1 && (
                         <div>
-                            <label className="text-sm font-medium text-zinc-600 dark:text-zinc-400 mb-2 block">
+                            <label className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-2 block">
                                 Chọn sản phẩm
                             </label>
                             <div className="space-y-2">
@@ -306,17 +306,17 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
                                         key={item.id}
                                         onClick={() => setSelectedItemId(item.id)}
                                         className={`p-3 rounded-xl border cursor-pointer transition-colors ${selectedItemId === item.id
-                                                ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 ring-1 ring-indigo-200 dark:ring-indigo-800"
-                                                : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                                            ? "bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 ring-1 ring-orange-200 dark:ring-orange-800"
+                                            : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"
                                             }`}
                                     >
                                         <div className="flex justify-between items-start">
                                             <div>
-                                                <div className="font-medium text-sm text-zinc-900 dark:text-zinc-100">{item.product_name}</div>
-                                                <div className="text-xs text-zinc-500 mt-0.5">{item.product_sku} • {item.unit}</div>
+                                                <div className="font-medium text-sm text-slate-900 dark:text-slate-100">{item.product_name}</div>
+                                                <div className="text-xs text-slate-500 mt-0.5">{item.product_sku} • {item.unit}</div>
                                             </div>
                                             {selectedItemId === item.id && (
-                                                <div className="w-4 h-4 rounded-full bg-indigo-600 flex items-center justify-center">
+                                                <div className="w-4 h-4 rounded-full bg-orange-600 flex items-center justify-center">
                                                     <div className="w-1.5 h-1.5 rounded-full bg-white" />
                                                 </div>
                                             )}
@@ -329,15 +329,15 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
 
                     {/* Current Tags */}
                     <div>
-                        <label className="text-sm font-medium text-zinc-600 dark:text-zinc-400 mb-2 block">
+                        <label className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-2 block">
                             Đã gắn ({currentTags.length})
                         </label>
-                        <div className="flex flex-wrap gap-2 min-h-[40px] p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                        <div className="flex flex-wrap gap-2 min-h-[40px] p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">
                             {currentTags.length === 0 && (
-                                <span className="text-sm text-zinc-400 italic">Chưa có mã phụ nào</span>
+                                <span className="text-sm text-slate-400 italic">Chưa có mã phụ nào</span>
                             )}
                             {currentTags.map(tag => (
-                                <div key={tag} className="flex items-center gap-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg pl-2 pr-1 py-1 shadow-sm">
+                                <div key={tag} className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-2 pr-1 py-1 shadow-sm">
                                     <TagDisplay tags={[tag]} placeholderMap={{ '@': 'Product' }} />
                                     <button
                                         onClick={() => handleRemove(tag)}
@@ -354,12 +354,12 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
                     {/* Input */}
                     <div>
                         <div className="flex justify-between items-center mb-2">
-                            <label className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
+                            <label className="text-sm font-medium text-slate-600 dark:text-slate-400">
                                 Thêm mới
                             </label>
                             <button
                                 onClick={insertPlaceholder}
-                                className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded border border-indigo-100 font-medium hover:bg-indigo-100 transition-colors"
+                                className="text-xs bg-orange-50 text-orange-600 px-2 py-1 rounded border border-orange-100 font-medium hover:bg-orange-100 transition-colors"
                             >
                                 + Chèn Sản Phẩm (@)
                             </button>
@@ -394,13 +394,13 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
                                     onFocus={() => setShowSuggestions(true)}
                                     onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                                     placeholder="VD: CONT1>@>TIENGIANG"
-                                    className="flex-1 px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-mono text-sm uppercase focus:ring-2 focus:ring-emerald-500"
+                                    className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-sm uppercase focus:ring-2 focus:ring-orange-500"
                                     disabled={saving}
                                 />
                                 <button
                                     onClick={handleAdd}
                                     disabled={!inputValue.trim() || saving}
-                                    className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-emerald-700 disabled:opacity-50"
+                                    className="bg-orange-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-orange-700 disabled:opacity-50"
                                 >
                                     {saving ? '...' : <Plus size={20} />}
                                 </button>
@@ -409,7 +409,7 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
                             {/* Suggestions */}
                             {showSuggestions && suggestions.length > 0 && dropdownStyles && (
                                 <div
-                                    className="fixed bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl z-[100] max-h-60 overflow-y-auto"
+                                    className="fixed bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-[100] max-h-60 overflow-y-auto"
                                     style={{
                                         top: dropdownStyles.top,
                                         left: dropdownStyles.left,
@@ -419,7 +419,7 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
                                     {suggestions.map((s, i) => (
                                         <div
                                             key={s}
-                                            className={`px-4 py-3 cursor-pointer font-mono text-base border-b border-zinc-100 dark:border-zinc-800/50 last:border-0 ${i === selectedIndex ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400" : "hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                                            className={`px-4 py-3 cursor-pointer font-mono text-base border-b border-slate-100 dark:border-slate-800/50 last:border-0 ${i === selectedIndex ? "bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400" : "hover:bg-slate-50 dark:hover:bg-slate-800"
                                                 }`}
                                             onMouseDown={() => handleSelectSuggestion(s)}
                                         >
@@ -429,7 +429,7 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
                                 </div>
                             )}
                         </div>
-                        <p className="mt-2 text-xs text-zinc-500">
+                        <p className="mt-2 text-xs text-slate-500">
                             Dùng nút <strong>Chèn Sản Phẩm</strong> để thêm vị trí sản phẩm trong chuỗi mã.
                         </p>
                     </div>

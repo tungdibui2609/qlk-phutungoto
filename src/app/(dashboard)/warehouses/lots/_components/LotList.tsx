@@ -18,7 +18,7 @@ export function LotList({ loading, lots, isModuleEnabled, onEdit, onDelete, onVi
         return (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {[1, 2, 3].map(i => (
-                    <div key={i} className="bg-white dark:bg-zinc-900 rounded-3xl p-6 shadow-sm border border-zinc-100 dark:border-zinc-800 animate-pulse h-64"></div>
+                    <div key={i} className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 animate-pulse h-64"></div>
                 ))}
             </div>
         )
@@ -26,10 +26,10 @@ export function LotList({ loading, lots, isModuleEnabled, onEdit, onDelete, onVi
 
     if (lots.length === 0) {
         return (
-            <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 p-12 text-center">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-12 text-center">
                 <div className="flex flex-col items-center justify-center gap-2">
-                    <Boxes className="text-zinc-300" size={48} />
-                    <p className="text-zinc-500">Chưa có LOT nào được tạo</p>
+                    <Boxes className="text-slate-300" size={48} />
+                    <p className="text-slate-500">Chưa có LOT nào được tạo</p>
                 </div>
             </div>
         )

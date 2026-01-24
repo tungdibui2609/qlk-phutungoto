@@ -283,9 +283,9 @@ export function LotForm({
 
     return (
         <div ref={formRef} className={`transition-all duration-500 ease-in-out overflow-hidden ${isVisible ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
-            <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xl p-6 md:p-8">
-                <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-6 flex items-center gap-2">
-                    <Boxes className="text-emerald-600" size={24} />
+            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl p-6 md:p-8">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                    <Boxes className="text-orange-600" size={24} />
                     {editingLot ? 'Cập nhật thông tin LOT' : 'Thông tin LOT mới'}
                 </h3>
 
@@ -296,12 +296,12 @@ export function LotForm({
                             Mã LOT Nội bộ <span className="text-red-500">*</span>
                         </label>
                         <div className="relative">
-                            <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                            <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                             <input
                                 type="text"
                                 value={newLotCode}
                                 readOnly
-                                className="w-full pl-10 pr-4 py-2.5 bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-500 cursor-not-allowed outline-none font-mono"
+                                className="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 cursor-not-allowed outline-none font-mono"
                             />
                         </div>
                     </div>
@@ -309,16 +309,16 @@ export function LotForm({
                     {/* Batch NCC */}
                     {isModuleEnabled('batch_code') && (
                         <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
                                 Số Batch/Lô (NCC)
                             </label>
                             <div className="relative">
-                                <Layers className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                <Layers className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 <input
                                     type="text"
                                     value={batchCode}
                                     onChange={(e) => setBatchCode(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
                                     placeholder="VD: BATCH-01"
                                 />
                             </div>
@@ -337,7 +337,7 @@ export function LotForm({
                                     type="date"
                                     value={inboundDate}
                                     onChange={(e) => setInboundDate(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
                                 />
                             </div>
                         </div>
@@ -355,7 +355,7 @@ export function LotForm({
                                     type="date"
                                     value={peelingDate}
                                     onChange={(e) => setPeelingDate(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
                                 />
                             </div>
                         </div>
@@ -373,7 +373,7 @@ export function LotForm({
                                     type="date"
                                     value={packagingDate}
                                     onChange={(e) => setPackagingDate(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
                                 />
                             </div>
                         </div>
@@ -390,7 +390,7 @@ export function LotForm({
                                 <select
                                     value={warehouseName}
                                     onChange={(e) => setWarehouseName(e.target.value)}
-                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none appearance-none transition-all"
+                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none appearance-none transition-all"
                                 >
                                     <option value="">-- Chọn kho hàng --</option>
                                     {branches.map(b => (
@@ -413,7 +413,7 @@ export function LotForm({
                                 <select
                                     value={selectedSupplierId}
                                     onChange={(e) => setSelectedSupplierId(e.target.value)}
-                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none appearance-none transition-all"
+                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none appearance-none transition-all"
                                 >
                                     <option value="">-- Chọn nhà cung cấp --</option>
                                     {suppliers.map(s => (
@@ -436,7 +436,7 @@ export function LotForm({
                                 <select
                                     value={selectedQCId}
                                     onChange={(e) => setSelectedQCId(e.target.value)}
-                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none appearance-none transition-all"
+                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none appearance-none transition-all"
                                 >
                                     <option value="">-- Chọn QC --</option>
                                     {qcList.map(qc => (
@@ -451,8 +451,8 @@ export function LotForm({
                     {/* Media & Extra Info */}
                     {(isModuleEnabled('lot_images') || isModuleEnabled('extra_info')) && (
                         <div className="md:col-span-2 lg:col-span-4 space-y-4 border-b border-zinc-100 dark:border-zinc-800 pb-4 mb-4">
-                            <h4 className="text-sm font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-                                <Package size={16} className="text-emerald-600" />
+                            <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                <Package size={16} className="text-orange-600" />
                                 Hình ảnh & Thông tin phụ
                             </h4>
 
@@ -479,7 +479,7 @@ export function LotForm({
                                         <textarea
                                             value={extraInfo}
                                             onChange={(e) => setExtraInfo(e.target.value)}
-                                            className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all resize-none font-mono text-sm"
+                                            className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all resize-none font-mono text-sm"
                                             rows={5}
                                             placeholder="Nhập các thông tin phụ khác..."
                                         />
@@ -497,7 +497,7 @@ export function LotForm({
                         <textarea
                             value={newLotNotes}
                             onChange={(e) => setNewLotNotes(e.target.value)}
-                            className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all resize-none"
+                            className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all resize-none"
                             rows={2}
                             placeholder="Ghi chú thêm..."
                         />
@@ -505,11 +505,11 @@ export function LotForm({
 
                     {/* Danh sách sản phẩm */}
                     <div className="col-span-1 md:col-span-2 lg:col-span-4 space-y-3">
-                        <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
+                        <label className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
                             <span>Danh sách sản phẩm ({lotItems.length})</span>
                             <button
                                 onClick={() => setLotItems([...lotItems, { productId: '', quantity: 0, unit: '' }])}
-                                className="text-xs flex items-center gap-1 text-emerald-600 hover:text-emerald-700 font-medium px-2 py-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+                                className="text-xs flex items-center gap-1 text-orange-600 hover:text-orange-700 font-medium px-2 py-1 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
                             >
                                 <Plus size={14} />
                                 Thêm dòng
@@ -566,7 +566,7 @@ export function LotForm({
                                                 newItems[index].quantity = parseInt(e.target.value) || 0
                                                 setLotItems(newItems)
                                             }}
-                                            className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none text-sm transition-all"
+                                            className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-sm transition-all"
                                         />
                                     </div>
 
@@ -579,7 +579,7 @@ export function LotForm({
                                                 newItems[index].unit = e.target.value
                                                 setLotItems(newItems)
                                             }}
-                                            className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none text-sm transition-all"
+                                            className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-sm transition-all"
                                         >
                                             {(() => {
                                                 const product = products.find(p => p.id === item.productId)
@@ -623,14 +623,14 @@ export function LotForm({
                 <div className="flex items-center justify-end gap-3 mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800">
                     <button
                         onClick={onClose}
-                        className="px-5 py-2.5 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 font-medium transition-colors"
+                        className="px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition-colors"
                     >
                         Hủy bỏ
                     </button>
                     <button
                         onClick={handleSubmit}
                         disabled={!newLotCode.trim()}
-                        className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium shadow-lg shadow-emerald-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-6 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-medium shadow-lg shadow-orange-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {editingLot ? 'Cập nhật' : 'Lưu LOT'}
                     </button>

@@ -2,33 +2,10 @@
 
 import React from 'react'
 import { Boxes, X, Calendar, Package, Factory, MapPin, Truck, ShieldCheck, Layers, Info, Maximize2, QrCode as QrIcon } from 'lucide-react'
+import { TagDisplay } from '@/components/lots/TagDisplay'
+import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 
-interface LotItem {
-    id: string
-    quantity: number
-    unit?: string | null
-    products: {
-        name: string;
-        unit: string | null;
-        sku: string
-    } | null
-}
 
-interface Lot {
-    id: string
-    code: string
-    inbound_date: string | null
-    packaging_date: string | null
-    peeling_date: string | null
-    batch_code: string | null
-    notes: string | null
-    suppliers: { name: string } | null
-    qc_info: { name: string } | null
-    positions: { code: string }[] | null
-    lot_items: LotItem[] | null
-    metadata?: any
-    created_at?: string | null
-}
 
 interface LotDetailsModalProps {
     lot: Lot | null
@@ -42,16 +19,16 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl scale-100 animate-in zoom-in-95 duration-200 border border-zinc-200 dark:border-zinc-800 flex flex-col relative">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl scale-100 animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800 flex flex-col relative">
                 {/* Header */}
-                <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50 dark:bg-zinc-800/50">
+                <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                        <div className="w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 flex items-center justify-center">
                             <Boxes size={20} />
                         </div>
                         <div>
-                            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 leading-none">Chi tiết Lô hàng</h3>
-                            <p className="text-xs text-emerald-600 dark:text-emerald-400 font-mono mt-1 font-bold">{lot.code}</p>
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 leading-none">Chi tiết Lô hàng</h3>
+                            <p className="text-xs text-orange-600 dark:text-orange-400 font-mono mt-1 font-bold">{lot.code}</p>
                         </div>
                     </div>
                     <button
@@ -68,66 +45,66 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                         {/* Top Grid: Dates & Location */}
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                             {isModuleEnabled('inbound_date') && (
-                                <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800">
-                                    <div className="flex items-center gap-2 text-zinc-400 mb-1.5">
+                                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                                    <div className="flex items-center gap-2 text-slate-400 mb-1.5">
                                         <Calendar size={14} />
                                         <span className="text-[10px] font-bold uppercase tracking-wider">Ngày nhập</span>
                                     </div>
-                                    <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
                                         {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : '--/--/----'}
                                     </p>
                                 </div>
                             )}
-                            {isModuleEnabled('packaging_date') && (
-                                <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800">
-                                    <div className="flex items-center gap-2 text-zinc-400 mb-1.5">
-                                        <Package size={14} />
-                                        <span className="text-[10px] font-bold uppercase tracking-wider">Đóng bao bì</span>
-                                    </div>
-                                    <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
-                                        {lot.packaging_date ? new Date(lot.packaging_date).toLocaleDateString('vi-VN') : '--/--/----'}
-                                    </p>
-                                </div>
-                            )}
                             {isModuleEnabled('peeling_date') && (
-                                <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800">
-                                    <div className="flex items-center gap-2 text-zinc-400 mb-1.5">
+                                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                                    <div className="flex items-center gap-2 text-slate-400 mb-1.5">
                                         <Factory size={14} />
                                         <span className="text-[10px] font-bold uppercase tracking-wider">Bóc múi</span>
                                     </div>
-                                    <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
                                         {lot.peeling_date ? new Date(lot.peeling_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                                    </p>
+                                </div>
+                            )}
+                            {isModuleEnabled('packaging_date') && (
+                                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                                    <div className="flex items-center gap-2 text-slate-400 mb-1.5">
+                                        <Package size={14} />
+                                        <span className="text-[10px] font-bold uppercase tracking-wider">Đóng bao bì</span>
+                                    </div>
+                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                                        {lot.packaging_date ? new Date(lot.packaging_date).toLocaleDateString('vi-VN') : '--/--/----'}
                                     </p>
                                 </div>
                             )}
 
                             {/* Fallback for created_at if no date modules are enabled */}
                             {!isModuleEnabled('packaging_date') && !isModuleEnabled('peeling_date') && !isModuleEnabled('inbound_date') && (
-                                <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800">
-                                    <div className="flex items-center gap-2 text-zinc-400 mb-1.5">
+                                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                                    <div className="flex items-center gap-2 text-slate-400 mb-1.5">
                                         <Calendar size={14} />
                                         <span className="text-[10px] font-bold uppercase tracking-wider">Ngày tạo</span>
                                     </div>
-                                    <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
                                         {lot.created_at ? new Date(lot.created_at).toLocaleDateString('vi-VN') : '--/--/----'}
                                     </p>
                                 </div>
                             )}
 
-                            <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800 col-span-2 sm:col-span-1">
-                                <div className="flex items-center gap-2 text-zinc-400 mb-1.5">
+                            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 col-span-2 sm:col-span-1">
+                                <div className="flex items-center gap-2 text-slate-400 mb-1.5">
                                     <MapPin size={14} />
                                     <span className="text-[10px] font-bold uppercase tracking-wider">Vị trí</span>
                                 </div>
                                 <div className="flex flex-wrap gap-1">
                                     {lot.positions && lot.positions.length > 0 ? (
                                         lot.positions.map(p => (
-                                            <span key={p.code} className="text-sm font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-lg border border-emerald-100 dark:border-emerald-900/10">
+                                            <span key={p.code} className="text-sm font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-lg border border-orange-100 dark:border-orange-900/10">
                                                 {p.code}
                                             </span>
                                         ))
                                     ) : (
-                                        <p className="text-sm font-medium text-zinc-400 italic">Chưa gán</p>
+                                        <p className="text-sm font-medium text-slate-400 italic">Chưa gán</p>
                                     )}
                                 </div>
                             </div>
@@ -152,8 +129,8 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                         <ShieldCheck size={20} />
                                     </div>
                                     <div className="min-w-0">
-                                        <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Nhân viên QC</p>
-                                        <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200 truncate">{lot.qc_info?.name || '---'}</p>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Nhân viên QC</p>
+                                        <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">{lot.qc_info?.name || '---'}</p>
                                     </div>
                                 </div>
                             )}
@@ -235,30 +212,46 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                             return acc;
                                         }, {});
                                         return Object.entries(summary).map(([unit, total]) => (
-                                            <span key={unit} className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-lg border border-emerald-100 dark:border-emerald-900/10">
+                                            <span key={unit} className="text-[10px] font-bold text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-lg border border-orange-100 dark:border-orange-900/10">
                                                 {total as number} {unit}
                                             </span>
                                         ));
                                     })()}
                                 </div>
                             </div>
-                            <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 overflow-hidden bg-white dark:bg-zinc-900/50">
-                                <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                            <div className="rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900/50">
+                                <div className="divide-y divide-slate-100 dark:divide-slate-800">
                                     {lot.lot_items?.map((item, idx) => (
-                                        <div key={item.id} className={`p-3 flex items-center justify-between gap-4 ${idx % 2 === 1 ? 'bg-zinc-50/50 dark:bg-white/5' : ''}`}>
-                                            <div className="flex-1 min-w-0">
-                                                <span className="font-mono text-[10px] font-bold text-indigo-600 dark:text-indigo-400">{item.products?.sku}</span>
-                                                <h4 className="text-sm font-bold text-zinc-800 dark:text-zinc-200 truncate">{item.products?.name}</h4>
+                                        <div key={item.id} className={`p-3 flex items-start justify-between gap-3 ${idx % 2 === 1 ? 'bg-slate-50/50 dark:bg-white/5' : ''}`}>
+                                            <div className="flex-1 min-w-0 flex flex-col gap-1">
+                                                <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                                                    <div className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 rounded text-xs font-mono font-bold border border-indigo-100 dark:border-indigo-800 shrink-0">
+                                                        {item.products?.sku}
+                                                    </div>
+                                                    <div className="flex items-center gap-1 px-2 py-0.5 bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 rounded-lg border border-orange-100 dark:border-orange-900/30 shrink-0">
+                                                        <span className="text-xs font-bold">{item.quantity}</span>
+                                                        <span className="text-[10px] font-medium opacity-80">{(item as any).unit || item.products?.unit}</span>
+                                                    </div>
+                                                </div>
+                                                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight" title={item.products?.name}>{item.products?.name}</h4>
+
+                                                {/* Tags */}
+                                                {lot.lot_tags && (
+                                                    <div className="flex flex-wrap gap-1 mt-1">
+                                                        <TagDisplay
+                                                            tags={lot.lot_tags.filter(t => t.lot_item_id === item.id).map(t => t.tag)}
+                                                            placeholderMap={{ '@': item.products?.sku || '' }}
+                                                        />
+                                                    </div>
+                                                )}
                                             </div>
-                                            <div className="shrink-0 flex items-center gap-2">
-                                                <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">{item.quantity}</span>
-                                                <span className="text-[10px] font-bold text-zinc-400 uppercase">{(item as any).unit || item.products?.unit}</span>
-                                            </div>
+
+
                                         </div>
                                     ))}
                                     {(!lot.lot_items || lot.lot_items.length === 0) && (
                                         <div className="p-8 text-center">
-                                            <p className="text-sm text-zinc-400 italic">Không có sản phẩm trong lô hàng</p>
+                                            <p className="text-sm text-slate-400 italic">Không có sản phẩm trong lô hàng</p>
                                         </div>
                                     )}
                                 </div>
@@ -268,16 +261,16 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 flex justify-end gap-3">
+                <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3">
                     <button
                         onClick={onClose}
-                        className="px-6 py-2.5 rounded-xl text-sm font-bold text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+                        className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
                     >
                         Đóng
                     </button>
                     <button
                         onClick={() => onOpenQr(lot)}
-                        className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 dark:bg-emerald-500 text-white rounded-xl text-sm font-bold hover:opacity-90 transition-opacity shadow-lg shadow-emerald-600/20"
+                        className="flex items-center gap-2 px-6 py-2.5 bg-orange-600 dark:bg-orange-500 text-white rounded-xl text-sm font-bold hover:opacity-90 transition-opacity shadow-lg shadow-orange-600/20"
                     >
                         <QrIcon size={18} />
                         Mã QR

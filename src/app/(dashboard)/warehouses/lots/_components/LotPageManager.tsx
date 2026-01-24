@@ -62,10 +62,10 @@ export function LotPageManager() {
             {/* Header Section */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight flex items-center gap-2">
+                    <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
                         Quản lý LOT
                     </h1>
-                    <p className="text-zinc-500 dark:text-zinc-400 mt-1">
+                    <p className="text-slate-500 dark:text-slate-400 mt-1">
                         Quản lý, theo dõi và xử lý các lô hàng trong kho.
                     </p>
                 </div>
@@ -73,7 +73,7 @@ export function LotPageManager() {
                 <div className="flex items-center gap-3">
                     <Link
                         href="/warehouses/map"
-                        className="px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all shadow-sm flex items-center gap-2"
+                        className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm flex items-center gap-2"
                     >
                         <MapPin size={18} />
                         Sơ đồ vị trí
@@ -82,7 +82,7 @@ export function LotPageManager() {
                         onClick={toggleCreateForm}
                         className={`px-5 py-2.5 rounded-xl font-medium shadow-lg active:scale-95 transition-all flex items-center gap-2 ${showCreateForm
                             ? "bg-rose-50 border border-rose-100 text-rose-600 hover:bg-rose-100 hover:border-rose-200 shadow-rose-500/10"
-                            : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-500/20"
+                            : "bg-orange-600 text-white hover:bg-orange-700 shadow-orange-500/20"
                             }`}
                     >
                         {showCreateForm ? (
