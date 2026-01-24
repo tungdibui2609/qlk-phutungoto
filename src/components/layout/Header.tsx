@@ -13,7 +13,7 @@ import { useToast } from '@/components/ui/ToastProvider'
 
 export default function Header({ onCollapse }: { onCollapse?: () => void }) {
     const router = useRouter()
-    const { isCollapsed, toggleSidebar, isReady } = useSidebar()
+    const { isCollapsed, toggleSidebar, isReady, setMobileMenuOpen } = useSidebar()
     const { user, profile, hasPermission } = useUser()
     const [isMenuOpen, setIsMenuOpen] = useState(false)
     const [showPasswordModal, setShowPasswordModal] = useState(false)
@@ -27,7 +27,7 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
     }
 
     // Dynamic margin match Sidebar
-    const marginLeft = isReady ? (isCollapsed ? 'ml-16' : 'ml-56') : 'ml-16'
+    const marginLeft = isReady ? (isCollapsed ? 'md:ml-16' : 'md:ml-56') : 'md:ml-16'
 
     return (
         <header
@@ -38,7 +38,13 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
         >
             {/* LEFT: SYSTEM SWITCHER */}
             <div className="flex items-center gap-4 flex-1">
-
+                {/* Mobile Menu Toggle */}
+                <button
+                    onClick={() => setMobileMenuOpen(true)}
+                    className="p-2 -ml-2 rounded-lg text-stone-500 hover:bg-stone-100 md:hidden"
+                >
+                    <Menu size={24} />
+                </button>
 
                 {/* HEADER COLLAPSE BUTTON (Replaces Sidebar Toggle Logic or sits nearby? User asked for close button) */}
                 {/* Actually user asked to close the HEADER so we add a ChevronUp here */}

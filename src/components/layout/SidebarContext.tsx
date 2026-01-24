@@ -5,6 +5,8 @@ interface SidebarContextType {
     isCollapsed: boolean
     toggleSidebar: () => void
     setCollapsed: (value: boolean) => void
+    isMobileMenuOpen: boolean
+    setMobileMenuOpen: (value: boolean) => void
     isReady: boolean
 }
 
@@ -12,6 +14,7 @@ const SidebarContext = createContext<SidebarContextType | undefined>(undefined)
 
 export function SidebarProvider({ children }: { children: ReactNode }) {
     const [isCollapsed, setIsCollapsed] = useState(true)
+    const [isMobileMenuOpen, setMobileMenuOpen] = useState(false)
     const [isReady, setIsReady] = useState(false)
 
     // Wait for client-side mount
@@ -23,7 +26,7 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
     const setCollapsed = (value: boolean) => setIsCollapsed(value)
 
     return (
-        <SidebarContext.Provider value={{ isCollapsed, toggleSidebar, setCollapsed, isReady }}>
+        <SidebarContext.Provider value={{ isCollapsed, toggleSidebar, setCollapsed, isMobileMenuOpen, setMobileMenuOpen, isReady }}>
             {children}
         </SidebarContext.Provider>
     )
