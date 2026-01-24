@@ -61,6 +61,13 @@ export function LotPageManager() {
 
     // Handlers for new actions
     const handleMerge = (lot: Lot) => {
+        if (lot.positions && lot.positions.length > 0) {
+            const positionCodes = lot.positions.map(p => p.code).join(', ')
+            const confirmed = window.confirm(
+                `Lot này đang được gán tại vị trí: ${positionCodes}.\nViệc gộp Lot sẽ giải phóng vị trí này.\nBạn có chắc chắn muốn tiếp tục?`
+            )
+            if (!confirmed) return
+        }
         setMergingLot(lot)
     }
 
