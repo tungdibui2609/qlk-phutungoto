@@ -57,6 +57,22 @@ export function LotPageManager() {
         setEditingLot(null)
     }
 
+    // Handlers for new actions
+    const handleMerge = (lot: Lot) => {
+        console.log('Merge lot:', lot)
+        alert('Chức năng gộp lot đang phát triển')
+    }
+
+    const handleSplit = (lot: Lot) => {
+        console.log('Split lot:', lot)
+        alert('Chức năng tách lot đang phát triển')
+    }
+
+    const handleExport = (lot: Lot) => {
+        console.log('Export lot:', lot)
+        alert('Chức năng xuất lot đang phát triển')
+    }
+
     return (
         <section className="space-y-6 pb-12">
             {/* Header Section */}
@@ -133,6 +149,9 @@ export function LotPageManager() {
                 onView={setViewingLot}
                 onQr={setQrLot}
                 onAssignTag={setTaggingLot}
+                onMerge={handleMerge}
+                onSplit={handleSplit}
+                onExport={handleExport}
             />
 
             {/* QR Code Modal */}

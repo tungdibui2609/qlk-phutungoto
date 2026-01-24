@@ -1,4 +1,4 @@
-import { MapPin, Layers, Truck, ShieldCheck, Info, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag } from 'lucide-react'
+import { MapPin, Layers, Truck, ShieldCheck, Info, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight } from 'lucide-react'
 import { useState } from 'react'
 import { Lot } from '../_hooks/useLotManagement'
 import { useRouter } from 'next/navigation'
@@ -12,9 +12,12 @@ interface LotCardProps {
     onView: (lot: Lot) => void
     onQr: (lot: Lot) => void
     onAssignTag?: (lot: Lot) => void
+    onMerge?: (lot: Lot) => void
+    onSplit?: (lot: Lot) => void
+    onExport?: (lot: Lot) => void
 }
 
-export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, onAssignTag }: LotCardProps) {
+export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, onAssignTag, onMerge, onSplit, onExport }: LotCardProps) {
     const router = useRouter()
     const [isExpanded, setIsExpanded] = useState(false)
 
@@ -322,6 +325,27 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                         title="Gắn mã phụ"
                     >
                         <Tag size={16} />
+                    </button>
+                    <button
+                        onClick={() => onMerge?.(lot)}
+                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all border border-transparent"
+                        title="Gộp Lot"
+                    >
+                        <Combine size={16} />
+                    </button>
+                    <button
+                        onClick={() => onSplit?.(lot)}
+                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all border border-transparent"
+                        title="Tách Lot"
+                    >
+                        <Split size={16} />
+                    </button>
+                    <button
+                        onClick={() => onExport?.(lot)}
+                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all border border-transparent"
+                        title="Xuất Lot"
+                    >
+                        <ArrowUpRight size={16} />
                     </button>
                 </div>
 
