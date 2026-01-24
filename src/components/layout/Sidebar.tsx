@@ -82,12 +82,11 @@ type CompanyInfo = {
 export default function Sidebar() {
     const pathname = usePathname()
     const router = useRouter()
-    const { isCollapsed, setCollapsed, isReady } = useSidebar()
+    const { isCollapsed, setCollapsed, isReady, isMobileMenuOpen, setMobileMenuOpen } = useSidebar()
     const { currentSystem, systemType } = useSystem()
     const { profile } = useUser() // Get profile to check hidden menus
     const [expandedMenus, setExpandedMenus] = useState<string[]>(['Quản lý sản phẩm'])
 
-    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
     const [openSubMenus, setOpenSubMenus] = useState<string[]>([])
     const sidebarRef = useRef<HTMLElement>(null)
     const [companyInfo, setCompanyInfo] = useState<CompanyInfo>({ name: 'Toàn Thắng', logo_url: null })
@@ -149,21 +148,30 @@ export default function Sidebar() {
         }
     }, [])
 
-    // Click outside to collapse
+    // Click outside to collapse (Desktop) or close (Mobile)
     useEffect(() => {
         if (!isReady) return
 
         function handleClickOutside(event: MouseEvent) {
             if (sidebarRef.current && !sidebarRef.current.contains(event.target as Node)) {
-                if (!isCollapsed) {
-                    setCollapsed(true)
+                // Desktop: Auto collapse if expanded (optional, keeping existing behavior)
+                // Actually, existing behavior was to collapse on click outside.
+                if (window.innerWidth >= 768) {
+                    if (!isCollapsed) {
+                        setCollapsed(true)
+                    }
+                } else {
+                    // Mobile: Close menu if open (handled by backdrop usually, but good fallback)
+                    if (isMobileMenuOpen) {
+                        setMobileMenuOpen(false)
+                    }
                 }
             }
         }
 
         document.addEventListener('mousedown', handleClickOutside)
         return () => document.removeEventListener('mousedown', handleClickOutside)
-    }, [isCollapsed, setCollapsed, isReady])
+    }, [isCollapsed, setCollapsed, isReady, isMobileMenuOpen, setMobileMenuOpen])
 
     const handleLogout = async () => {
         await supabase.auth.signOut()
@@ -179,8 +187,17 @@ export default function Sidebar() {
     }
 
     const handleMenuClick = () => {
-        if (isCollapsed) {
+        // Desktop: Expand if collapsed
+        if (isCollapsed && window.innerWidth >= 768) {
             setCollapsed(false)
+        }
+    }
+
+    const handleLinkClick = () => {
+        handleMenuClick()
+        // Mobile: Close menu on link click
+        if (window.innerWidth < 768) {
+            setMobileMenuOpen(false)
         }
     }
 
@@ -196,18 +213,32 @@ export default function Sidebar() {
         return false
     }
 
-    // Use consistent initial width for SSR
-    const sidebarWidth = isReady ? (isCollapsed ? 'w-16' : 'w-56') : 'w-16'
+    // Use consistent initial width for SSR.
+    // Desktop: md:w-16 or md:w-56
+    // Mobile: w-[280px] fixed
+    const sidebarDesktopWidth = isReady ? (isCollapsed ? 'md:w-16' : 'md:w-56') : 'md:w-16'
 
     return (
-        <aside
-            ref={sidebarRef}
-            className={`fixed left-0 top-0 z-50 h-screen flex flex-col bg-white border-r border-stone-200 transition-all duration-300 ${sidebarWidth}`}
-            style={{
-                boxShadow: '4px 0 15px rgba(0, 0, 0, 0.03)',
-            }}
-        >
-            {/* LOGO AREA */}
+        <>
+            {/* Mobile Backdrop */}
+            {isMobileMenuOpen && (
+                <div
+                    className="fixed inset-0 bg-black/50 z-40 md:hidden animate-fade-in"
+                    onClick={() => setMobileMenuOpen(false)}
+                />
+            )}
+
+            <aside
+                ref={sidebarRef}
+                className={`fixed left-0 top-0 z-50 h-screen flex flex-col bg-white border-r border-stone-200 transition-all duration-300
+                    w-[280px] ${sidebarDesktopWidth}
+                    ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0
+                `}
+                style={{
+                    boxShadow: '4px 0 15px rgba(0, 0, 0, 0.03)',
+                }}
+            >
+                {/* LOGO AREA */}
             <div
                 className="h-14 flex items-center justify-between px-3 border-b border-stone-100 cursor-pointer"
                 style={{
@@ -215,7 +246,7 @@ export default function Sidebar() {
                 }}
                 onClick={handleMenuClick}
             >
-                <div className={`relative flex items-center gap-2 ${(!isReady || isCollapsed) ? 'justify-center w-full' : ''}`}>
+                <div className={`relative flex items-center gap-2 ${(!isReady || (isCollapsed && !isMobileMenuOpen)) ? 'justify-center w-full' : ''}`}>
                     <div
                         className="relative w-9 h-9 rounded-lg overflow-hidden flex-shrink-0"
                         style={{
@@ -231,7 +262,7 @@ export default function Sidebar() {
                             className="object-contain p-1"
                         />
                     </div>
-                    {isReady && !isCollapsed && (
+                    {isReady && (!isCollapsed || isMobileMenuOpen) && (
                         <div>
                             <h1 className="font-bold text-sm text-stone-800 tracking-tight truncate max-w-[150px]">{companyInfo.name}</h1>
                             <p className="text-[10px] font-semibold text-orange-600">{currentSystem?.name || '...'}</p>
@@ -245,10 +276,12 @@ export default function Sidebar() {
                 {visibleMenuItems.map((item) => {
                     const Icon = item.icon
                     const hasChildren = item.children && item.children.length > 0
-                    const showExpanded = isReady && !isCollapsed
+                    // On mobile (isMobileMenuOpen), always show expanded content
+                    const showExpanded = isReady && (!isCollapsed || isMobileMenuOpen)
                     const isExpanded = expandedMenus.includes(item.name) && showExpanded
                     const isActive = isMenuActive(item)
-                    const showCollapsed = !isReady || isCollapsed
+                    // Collapsed only if not ready or (collapsed AND not mobile open)
+                    const showCollapsed = !isReady || (isCollapsed && !isMobileMenuOpen)
 
                     // Parent menu with children
                     if (hasChildren) {
@@ -295,6 +328,7 @@ export default function Sidebar() {
                                                 <Link
                                                     key={child.href}
                                                     href={child.href}
+                                                    onClick={handleLinkClick}
                                                     className={`group flex items-center gap-2 px-2.5 py-1.5 rounded-md transition-all duration-200 ${isChildActive
                                                         ? 'text-white'
                                                         : 'text-stone-600 hover:text-orange-600 hover:bg-orange-50'
@@ -326,7 +360,7 @@ export default function Sidebar() {
                         <Link
                             key={item.href}
                             href={item.href!}
-                            onClick={handleMenuClick}
+                            onClick={handleLinkClick}
                             className={`group relative flex items-center gap-2 px-2.5 py-2 rounded-lg transition-all duration-200 ${isItemActive
                                 ? 'text-white'
                                 : 'text-stone-600 hover:text-orange-600 hover:bg-orange-50'
@@ -375,16 +409,17 @@ export default function Sidebar() {
             <div className="p-2 border-t border-stone-100">
                 <button
                     onClick={handleLogout}
-                    className={`group flex items-center gap-2 w-full px-2.5 py-2 rounded-lg transition-all duration-200 text-stone-500 hover:text-red-600 hover:bg-red-50 ${(!isReady || isCollapsed) ? 'justify-center px-2' : ''
+                    className={`group flex items-center gap-2 w-full px-2.5 py-2 rounded-lg transition-all duration-200 text-stone-500 hover:text-red-600 hover:bg-red-50 ${(!isReady || (isCollapsed && !isMobileMenuOpen)) ? 'justify-center px-2' : ''
                         }`}
-                    title={(!isReady || isCollapsed) ? 'Đăng xuất' : undefined}
+                    title={(!isReady || (isCollapsed && !isMobileMenuOpen)) ? 'Đăng xuất' : undefined}
                 >
                     <div className="p-1.5 rounded-md bg-stone-100 group-hover:bg-red-100 transition-colors">
                         <LogOut size={16} />
                     </div>
-                    {isReady && !isCollapsed && <span className="text-xs font-medium">Đăng xuất</span>}
+                    {isReady && (!isCollapsed || isMobileMenuOpen) && <span className="text-xs font-medium">Đăng xuất</span>}
                 </button>
             </div>
         </aside>
+        </>
     )
 }

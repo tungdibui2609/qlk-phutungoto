@@ -12,7 +12,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     const [isHeaderVisible, setIsHeaderVisible] = useState(true)
 
     // Use fixed width initially to avoid hydration mismatch (w-16 = 64px, w-56 = 224px)
-    const marginLeft = isReady ? (isCollapsed ? 'ml-16' : 'ml-56') : 'ml-16'
+    const marginLeft = isReady ? (isCollapsed ? 'md:ml-16' : 'md:ml-56') : 'md:ml-16'
 
     return (
         <div className="min-h-screen font-sans bg-stone-50 text-stone-800 relative">
