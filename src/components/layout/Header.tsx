@@ -31,17 +31,17 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
 
     return (
         <header
-            className={`h-20 flex items-center justify-between px-6 sticky top-0 z-40 bg-white border-b border-stone-200 transition-all duration-300 ${marginLeft}`}
+            className={`h-16 md:h-20 flex items-center justify-between px-4 md:px-6 sticky top-0 z-40 bg-white border-b border-stone-200 transition-all duration-300 ${marginLeft}`}
             style={{
                 boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)',
             }}
         >
             {/* LEFT: SYSTEM SWITCHER */}
-            <div className="flex items-center gap-4 flex-1">
+            <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
                 {/* Mobile Menu Toggle */}
                 <button
                     onClick={() => setMobileMenuOpen(true)}
-                    className="p-2 -ml-2 rounded-lg text-stone-500 hover:bg-stone-100 md:hidden"
+                    className="p-2 -ml-2 rounded-lg text-stone-500 hover:bg-stone-100 md:hidden shrink-0"
                 >
                     <Menu size={24} />
                 </button>
@@ -57,9 +57,9 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
                         <ChevronUp size={20} />
                     </button>
                 )}
-                <div className="relative">
+                <div className="relative flex-1 min-w-0">
                     {/* LEFT: SYSTEM SWITCHER - TABS STYLE */}
-                    <div className="flex items-center flex-1 overflow-x-auto no-scrollbar gap-2 mr-4">
+                    <div className="flex items-center overflow-x-auto no-scrollbar gap-2 pr-4">
                         {systems.map((sys) => {
                             const isActive = systemType === sys.code
                             // 3. User Permission Logic
@@ -104,10 +104,10 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
             </div>
 
             {/* RIGHT: USER INFO & NOTIFICATIONS */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 md:gap-4 shrink-0">
                 {/* Notification Button */}
                 <button
-                    className="relative p-3 rounded-xl bg-stone-50 border border-stone-200 text-stone-500 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 transition-all duration-200"
+                    className="relative p-2 md:p-3 rounded-xl bg-stone-50 border border-stone-200 text-stone-500 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 transition-all duration-200"
                 >
                     <Bell size={20} />
                     <span
