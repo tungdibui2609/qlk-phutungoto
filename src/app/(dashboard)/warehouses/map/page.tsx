@@ -11,6 +11,7 @@ import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { useSystem } from '@/contexts/SystemContext'
 import { LotTagModal } from '@/components/lots/LotTagModal'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
+import { usePositionActionManager } from '@/components/warehouse/map/PositionActionManager'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -152,6 +153,8 @@ function WarehouseMapContent() {
 
     const accessToken = session?.access_token
 
+
+
     // Provide module config check function for LotDetailsModal
     const isModuleEnabled = useMemo(() => {
         return (moduleId: string) => {
@@ -199,6 +202,12 @@ function WarehouseMapContent() {
             return allModules.has(moduleId)
         }
     }, [currentSystem, viewingLot])
+
+    const { handlePositionMenu, PositionActionUI } = usePositionActionManager({
+        currentSystemCode: currentSystem?.code,
+        isModuleEnabled,
+        onRefreshMap: fetchData
+    })
 
     async function fetchFullLotDetails(lotId: string) {
         try {
@@ -604,6 +613,7 @@ function WarehouseMapContent() {
                     onToggleCollapse={toggleZoneCollapse}
                     onPositionSelect={handlePositionSelect}
                     onViewDetails={fetchFullLotDetails}
+                    onPositionMenu={handlePositionMenu}
                     onConfigureZone={setConfiguringZone}
                     highlightLotId={assignLotId}
                 />
@@ -653,6 +663,9 @@ function WarehouseMapContent() {
                 }}
                 isModuleEnabled={isModuleEnabled}
             />
+
+            {/* Context Menu & Lot Form */}
+            <PositionActionUI />
         </div>
     )
 }

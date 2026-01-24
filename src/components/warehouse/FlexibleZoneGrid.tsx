@@ -1,6 +1,6 @@
 'use client'
 import React, { useMemo } from 'react'
-import { ChevronDown, ChevronRight, Package, Settings, Eye } from 'lucide-react'
+import { ChevronDown, ChevronRight, Package, Settings, Eye, MoreHorizontal } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 
 type Position = Database['public']['Tables']['positions']['Row']
@@ -22,6 +22,7 @@ interface FlexibleZoneGridProps {
     onToggleCollapse: (zoneId: string) => void
     onPositionSelect: (positionId: string) => void
     onViewDetails?: (lotId: string) => void
+    onPositionMenu?: (pos: Position, e: React.MouseEvent) => void
     onConfigureZone?: (zone: Zone) => void
     highlightLotId?: string | null
     lotInfo?: Record<string, { code: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>, inbound_date?: string, created_at?: string, packaging_date?: string, peeling_date?: string, tags?: string[] }>
@@ -38,6 +39,7 @@ export default function FlexibleZoneGrid({
     onToggleCollapse,
     onPositionSelect,
     onViewDetails,
+    onPositionMenu,
     onConfigureZone,
     highlightLotId,
     lotInfo = {}
@@ -511,8 +513,23 @@ export default function FlexibleZoneGrid({
                     <span className="font-mono text-[10px] items-center text-black dark:text-white font-bold leading-none">
                         {pos.code}
                     </span>
+
+                    {/* Menu Trigger - Top Right */}
+                    {!isAssignmentMode && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                onPositionMenu?.(pos, e)
+                            }}
+                            className="absolute right-0 top-0 text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors z-30 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-bl-lg"
+                            title="Tùy chọn"
+                        >
+                            <MoreHorizontal size={14} />
+                        </button>
+                    )}
+
                     {/* Status Icons */}
-                    <div className="flex gap-0.5 absolute right-0 top-0">
+                    <div className={`flex gap-0.5 absolute ${!isAssignmentMode ? 'right-5' : 'right-0'} top-0`}>
                         {isTargetLot && (
                             <div title="Đang chọn" className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
                         )}

@@ -16,7 +16,7 @@ interface LotFormProps {
     isVisible: boolean
     editingLot: Lot | null
     onClose: () => void
-    onSuccess: () => void
+    onSuccess: (lot?: any) => void
 
     // Common Data Props
     products: Product[]
@@ -278,7 +278,7 @@ export function LotForm({
             }
         }
 
-        onSuccess()
+        onSuccess(lotId ? { id: lotId, ...lotData } : undefined)
     }
 
     return (
