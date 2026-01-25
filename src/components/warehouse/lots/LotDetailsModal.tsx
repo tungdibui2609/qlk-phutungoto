@@ -1,7 +1,8 @@
 'use client'
 
 import React from 'react'
-import { Boxes, X, Calendar, Package, Factory, MapPin, Truck, ShieldCheck, Layers, Info, Maximize2, QrCode as QrIcon } from 'lucide-react'
+import { Boxes, X, Calendar, Package, Factory, MapPin, Truck, ShieldCheck, Layers, Info, Maximize2, QrCode as QrIcon, History } from 'lucide-react'
+import { LotMergeHistoryModal } from './LotMergeHistoryModal'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 
@@ -15,6 +16,7 @@ interface LotDetailsModalProps {
 }
 
 export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, onOpenQr, isModuleEnabled }) => {
+    const [historyData, setHistoryData] = React.useState<any>(null)
     if (!lot) return null
 
     return (
@@ -222,7 +224,10 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                             <div className="rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900/50">
                                 <div className="divide-y divide-slate-100 dark:divide-slate-800">
                                     {lot.lot_items?.map((item, idx) => (
-                                        <div key={item.id} className={`p-3 flex items-start justify-between gap-3 ${idx % 2 === 1 ? 'bg-slate-50/50 dark:bg-white/5' : ''}`}>
+                                        <div
+                                            key={item.id}
+                                            className={`p-3 flex items-start justify-between gap-3 ${idx % 2 === 1 ? 'bg-slate-50/50 dark:bg-white/5' : ''}`}
+                                        >
                                             <div className="flex-1 min-w-0 flex flex-col gap-1">
                                                 <div className="flex items-center gap-2 flex-wrap mb-1.5">
                                                     <div className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 rounded text-xs font-mono font-bold border border-indigo-100 dark:border-indigo-800 shrink-0">
@@ -232,6 +237,28 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                                         <span className="text-xs font-bold">{item.quantity}</span>
                                                         <span className="text-[10px] font-medium opacity-80">{(item as any).unit || item.products?.unit}</span>
                                                     </div>
+                                                    {(() => {
+                                                        const mergedTag = lot.lot_tags?.find(t => t.lot_item_id === item.id && (t.tag.startsWith('MERGED_FROM:') || t.tag.startsWith('MERGED_DATA:')));
+                                                        if (!mergedTag) return null;
+                                                        const isMergedData = mergedTag.tag.startsWith('MERGED_DATA:');
+                                                        let history = null;
+                                                        if (isMergedData) {
+                                                            try { history = JSON.parse(mergedTag.tag.replace('MERGED_DATA:', '')); } catch (e) { }
+                                                        }
+
+                                                        return (
+                                                            <button
+                                                                onClick={() => {
+                                                                    if (history) setHistoryData(history);
+                                                                    else alert(`Sản phẩm gộp từ Lot: ${mergedTag.tag.replace('MERGED_FROM:', '')}`);
+                                                                }}
+                                                                className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded border border-purple-200 dark:border-purple-800 text-[10px] font-bold hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors"
+                                                            >
+                                                                <History size={10} />
+                                                                <span>{isMergedData ? history?.code : mergedTag.tag.replace('MERGED_FROM:', '')}</span>
+                                                            </button>
+                                                        )
+                                                    })()}
                                                 </div>
                                                 <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight" title={item.products?.name}>{item.products?.name}</h4>
 
@@ -239,14 +266,12 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                                 {lot.lot_tags && (
                                                     <div className="flex flex-wrap gap-1 mt-1">
                                                         <TagDisplay
-                                                            tags={lot.lot_tags.filter(t => t.lot_item_id === item.id).map(t => t.tag)}
+                                                            tags={lot.lot_tags.filter(t => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_FROM:') && !t.tag.startsWith('MERGED_DATA:')).map(t => t.tag)}
                                                             placeholderMap={{ '@': item.products?.sku || '' }}
                                                         />
                                                     </div>
                                                 )}
                                             </div>
-
-
                                         </div>
                                     ))}
                                     {(!lot.lot_items || lot.lot_items.length === 0) && (
@@ -277,6 +302,12 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                     </button>
                 </div>
             </div>
+            {historyData && (
+                <LotMergeHistoryModal
+                    data={historyData}
+                    onClose={() => setHistoryData(null)}
+                />
+            )}
         </div>
     )
 }

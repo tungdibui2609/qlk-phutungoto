@@ -136,6 +136,23 @@ export function useLotManagement() {
         }
     }
 
+    const handleToggleStar = async (lot: Lot) => {
+        const metadata = lot.metadata ? { ...lot.metadata } : {};
+        metadata.is_starred = !metadata.is_starred;
+
+        const { error } = await supabase
+            .from('lots')
+            .update({ metadata: metadata as any })
+            .eq('id', lot.id);
+
+        if (error) {
+            console.error('Error toggling star:', error);
+            alert('Lỗi khi đánh dấu: ' + error.message);
+        } else {
+            setLots(lots.map(l => l.id === lot.id ? { ...l, metadata } : l));
+        }
+    };
+
     const isModuleEnabled = (moduleId: string) => {
         if (!lotModules) return true // Default enabled if no config
         return lotModules.includes(moduleId)
@@ -166,6 +183,7 @@ export function useLotManagement() {
         // Actions
         fetchLots,
         handleDeleteLot,
+        handleToggleStar,
         isModuleEnabled,
         fetchCommonData
     }

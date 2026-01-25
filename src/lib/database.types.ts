@@ -434,6 +434,7 @@ export type Database = {
           created_at: string
           id: string
           inbound_date: string | null
+          metadata: Json | null
           notes: string | null
           packaging_date: string | null
           peeling_date: string | null
@@ -442,6 +443,7 @@ export type Database = {
           quantity: number | null
           status: string | null
           supplier_id: string | null
+          system_code: string | null
           warehouse_name: string | null
         }
         Insert: {
@@ -458,7 +460,9 @@ export type Database = {
           quantity?: number | null
           status?: string | null
           supplier_id?: string | null
+          system_code?: string | null
           warehouse_name?: string | null
+          metadata?: Json | null
         }
         Update: {
           batch_code?: string | null
@@ -468,12 +472,15 @@ export type Database = {
           inbound_date?: string | null
           notes?: string | null
           packaging_date?: string | null
+          peeling_date?: string | null
           product_id?: string | null
           qc_id?: string | null
           quantity?: number | null
           status?: string | null
           supplier_id?: string | null
+          system_code?: string | null
           warehouse_name?: string | null
+          metadata?: Json | null
         }
         Relationships: [
           {
@@ -1591,6 +1598,7 @@ export type Database = {
           added_by: string | null
           id: string
           lot_id: string
+          lot_item_id: string | null
           tag: string
         }
         Insert: {
@@ -1598,6 +1606,7 @@ export type Database = {
           added_by?: string | null
           id?: string
           lot_id: string
+          lot_item_id?: string | null
           tag: string
         }
         Update: {
@@ -1605,6 +1614,7 @@ export type Database = {
           added_by?: string | null
           id?: string
           lot_id?: string
+          lot_item_id?: string | null
           tag?: string
         }
         Relationships: [

@@ -23,6 +23,7 @@ export function LotPageManager() {
         setSearchTerm,
         fetchLots,
         handleDeleteLot,
+        handleToggleStar,
         isModuleEnabled,
         products,
         suppliers,
@@ -148,6 +149,7 @@ export function LotPageManager() {
                 onEdit={handleEdit}
                 onDelete={handleDeleteLot}
                 onView={setViewingLot}
+                onToggleStar={handleToggleStar}
                 onQr={setQrLot}
                 onAssignTag={setTaggingLot}
                 onMerge={handleMerge}

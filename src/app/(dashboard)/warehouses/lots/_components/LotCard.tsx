@@ -1,8 +1,9 @@
-import { MapPin, Layers, Truck, ShieldCheck, Info, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History } from 'lucide-react'
+import { MapPin, Layers, Truck, ShieldCheck, Info, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star } from 'lucide-react'
 import { useState } from 'react'
 import { Lot } from '../_hooks/useLotManagement'
 import { useRouter } from 'next/navigation'
 import { TagDisplay } from '@/components/lots/TagDisplay'
+import { LotMergeHistoryModal } from '@/components/warehouse/lots/LotMergeHistoryModal'
 
 interface LotCardProps {
     lot: Lot
@@ -11,15 +12,17 @@ interface LotCardProps {
     onDelete: (id: string) => void
     onView: (lot: Lot) => void
     onQr: (lot: Lot) => void
-    onAssignTag?: (lot: Lot) => void
+    onToggleStar: (lot: Lot) => void
+    onAssignTag: (lot: Lot) => void
     onMerge?: (lot: Lot) => void
     onSplit?: (lot: Lot) => void
     onExport?: (lot: Lot) => void
 }
 
-export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, onAssignTag, onMerge, onSplit, onExport }: LotCardProps) {
+export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport }: LotCardProps) {
     const router = useRouter()
     const [isExpanded, setIsExpanded] = useState(false)
+    const [historyData, setHistoryData] = useState<any>(null)
 
     // Helper to render info items dynamically
     const renderInfoItems = () => {
@@ -201,56 +204,74 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                                 <div className="space-y-0">
                                     {displayItems.length > 0 ? (
                                         displayItems.map((item, index) => {
-                                            const mergedTag = lot.lot_tags?.find(t => t.lot_item_id === item.id && t.tag.startsWith('MERGED_FROM:'));
+                                            const mergedTag = lot.lot_tags?.find(t => t.lot_item_id === item.id && (t.tag.startsWith('MERGED_FROM:') || t.tag.startsWith('MERGED_DATA:')));
+                                            const isMergedData = mergedTag?.tag.startsWith('MERGED_DATA:');
+                                            let parsedHistory = null;
+                                            if (isMergedData) {
+                                                try {
+                                                    parsedHistory = JSON.parse(mergedTag.tag.replace('MERGED_DATA:', ''));
+                                                } catch (e) {
+                                                    console.error('Error parsing merge history:', e);
+                                                }
+                                            }
 
                                             return (
-                                            <div key={item.id} className={`text-sm text-slate-800 dark:text-slate-200 flex items-center justify-between gap-2 py-2 px-2 rounded-lg border-b border-dashed border-slate-100 dark:border-slate-800 last:border-0 ${mergedTag ? 'bg-indigo-50/60 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-800/30' : (index % 2 === 1 ? 'bg-white/60 dark:bg-white/5' : '')}`}>
-                                                <div className="flex flex-col flex-1 min-w-0 gap-1">
-                                                    <div className="flex flex-col gap-1.5">
-                                                        <div className="flex items-center gap-2 flex-wrap min-w-0">
-                                                            <div className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 rounded border border-indigo-100 dark:border-indigo-800 font-mono font-bold text-xs shrink-0">
-                                                                {item.products?.sku}
-                                                            </div>
-                                                            <div className="flex items-center gap-1 font-mono text-xs bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 px-2 py-0.5 rounded border border-orange-100 dark:border-orange-900/30 shrink-0">
-                                                                <span className="font-bold">{item.quantity}</span>
-                                                                <span className="opacity-80">{(item as any).unit || item.products?.unit}</span>
-                                                            </div>
-                                                            {mergedTag && (
-                                                                <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded border border-purple-200 dark:border-purple-800 text-[10px] font-bold" title={mergedTag.tag.replace('MERGED_FROM:', 'Gộp từ Lot: ')}>
-                                                                    <History size={10} />
-                                                                    <span>{mergedTag.tag.replace('MERGED_FROM:', '')}</span>
+                                                <div
+                                                    key={item.id}
+                                                    onClick={() => {
+                                                        if (parsedHistory) setHistoryData(parsedHistory);
+                                                        else if (mergedTag && !isMergedData) {
+                                                            alert(`Sản phẩm được gộp từ Lot: ${mergedTag.tag.replace('MERGED_FROM:', '')}. (Dữ liệu cũ chi tiết không khả dụng cho Lot đã gộp trước đó)`);
+                                                        }
+                                                    }}
+                                                    className={`text-sm text-slate-800 dark:text-slate-200 flex items-center justify-between gap-2 py-2 px-2 rounded-lg border-b border-dashed border-slate-100 dark:border-slate-800 last:border-0 ${mergedTag ? 'bg-indigo-50/60 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-800/30 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/20 transition-colors' : (index % 2 === 1 ? 'bg-white/60 dark:bg-white/5' : '')}`}
+                                                >
+                                                    <div className="flex flex-col flex-1 min-w-0 gap-1">
+                                                        <div className="flex flex-col gap-1.5">
+                                                            <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                                                <div className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 rounded border border-indigo-100 dark:border-indigo-800 font-mono font-bold text-xs shrink-0">
+                                                                    {item.products?.sku}
                                                                 </div>
-                                                            )}
+                                                                <div className="flex items-center gap-1 font-mono text-xs bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 px-2 py-0.5 rounded border border-orange-100 dark:border-orange-900/30 shrink-0">
+                                                                    <span className="font-bold">{item.quantity}</span>
+                                                                    <span className="opacity-80">{(item as any).unit || item.products?.unit}</span>
+                                                                </div>
+                                                                {mergedTag && (
+                                                                    <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded border border-purple-200 dark:border-purple-800 text-[10px] font-bold" title={isMergedData ? 'Bấm để xem lịch sử gộp' : mergedTag.tag.replace('MERGED_FROM:', 'Gộp từ Lot: ')}>
+                                                                        <History size={10} />
+                                                                        <span>{isMergedData ? parsedHistory?.code : mergedTag.tag.replace('MERGED_FROM:', '')}</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <span className="truncate font-bold text-sm text-slate-900 dark:text-slate-100 leading-tight" title={item.products?.name}>{item.products?.name}</span>
                                                         </div>
-                                                        <span className="truncate font-bold text-sm text-slate-900 dark:text-slate-100 leading-tight" title={item.products?.name}>{item.products?.name}</span>
+
+                                                        {/* Inline Tags */}
+                                                        {lot.lot_tags && (
+                                                            <div className="flex flex-wrap gap-1">
+                                                                <TagDisplay
+                                                                    tags={lot.lot_tags
+                                                                        .filter(t => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_FROM:') && !t.tag.startsWith('MERGED_DATA:'))
+                                                                        .map(t => t.tag)}
+                                                                    placeholderMap={{
+                                                                        '@': item.products?.sku || 'SẢN PHẨM'
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                        )}
                                                     </div>
 
-                                                    {/* Inline Tags */}
-                                                    {lot.lot_tags && (
-                                                        <div className="flex flex-wrap gap-1">
-                                                            <TagDisplay
-                                                                tags={lot.lot_tags
-                                                                    .filter(t => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_FROM:'))
-                                                                    .map(t => t.tag)}
-                                                                placeholderMap={{
-                                                                    '@': item.products?.sku || 'SẢN PHẨM'
-                                                                }}
-                                                            />
-                                                        </div>
-                                                    )}
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onQr(lot);
+                                                        }}
+                                                        className="w-8 h-8 flex items-center justify-center rounded-full text-zinc-400 hover:text-zinc-800 hover:bg-white dark:hover:bg-zinc-800 shadow-sm transition-all border border-transparent hover:border-zinc-200 shrink-0"
+                                                        title="Mã QR Item"
+                                                    >
+                                                        <QrIcon size={14} />
+                                                    </button>
                                                 </div>
-
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        onQr(lot);
-                                                    }}
-                                                    className="w-8 h-8 flex items-center justify-center rounded-full text-zinc-400 hover:text-zinc-800 hover:bg-white dark:hover:bg-zinc-800 shadow-sm transition-all border border-transparent hover:border-zinc-200 shrink-0"
-                                                    title="Mã QR Item"
-                                                >
-                                                    <QrIcon size={14} />
-                                                </button>
-                                            </div>
                                             )
                                         })
                                     ) : (
@@ -323,11 +344,14 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
             <div className="px-4 py-2.5 bg-slate-50/80 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between mt-auto">
                 <div className="flex gap-2">
                     <button
-                        onClick={() => onQr(lot)}
-                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-zinc-800 hover:bg-white dark:hover:bg-zinc-800 shadow-sm transition-all border border-transparent hover:border-zinc-200"
-                        title="Mã QR"
+                        onClick={() => onToggleStar(lot)}
+                        className={`w-9 h-9 flex items-center justify-center rounded-full transition-all border border-transparent ${lot.metadata?.is_starred
+                            ? 'text-amber-500 bg-amber-50 dark:bg-amber-900/20 border-amber-100 dark:border-amber-900/30'
+                            : 'text-zinc-400 hover:text-zinc-800 hover:bg-white dark:hover:bg-zinc-800 shadow-sm hover:border-zinc-200'
+                            }`}
+                        title={lot.metadata?.is_starred ? "Bỏ đánh dấu" : "Đánh dấu sao"}
                     >
-                        <QrIcon size={16} />
+                        <Star size={16} fill={lot.metadata?.is_starred ? "currentColor" : "none"} />
                     </button>
                     <button
                         onClick={() => onAssignTag?.(lot)}
@@ -383,6 +407,12 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                     </button>
                 </div>
             </div>
+            {historyData && (
+                <LotMergeHistoryModal
+                    data={historyData}
+                    onClose={() => setHistoryData(null)}
+                />
+            )}
         </div>
     )
 }
