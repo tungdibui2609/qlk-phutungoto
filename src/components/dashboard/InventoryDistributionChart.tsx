@@ -8,6 +8,7 @@ import { Loader2, RefreshCw } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 
 type LotItem = Database['public']['Tables']['lot_items']['Row'] & {
+    unit: string | null
     products: {
         sku: string
         name: string
@@ -80,7 +81,7 @@ export default function InventoryDistributionChart() {
     }, [])
 
     const chartData = useMemo(() => {
-        if (conversionLoading || lots.length === 0) return []
+        if (conversionLoading || lots.length === 0) return { data: [], totalWeight: 0 }
 
         const aggregation = new Map<string, number>()
 
@@ -195,7 +196,7 @@ export default function InventoryDistributionChart() {
                             ))}
                         </Pie>
                         <Tooltip
-                            formatter={(value: number) => [`${value.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} KG`, 'Khối lượng']}
+                            formatter={(value: any) => [`${Number(value).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} KG`, 'Khối lượng']}
                             contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                         />
                     </PieChart>
