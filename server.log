@@ -12,3 +12,6 @@
 ○ Compiling /test-inventory ...
  GET /test-inventory 200 in 7.8s (compile: 6.1s, proxy.ts: 204ms, render: 1439ms)
 ✓ Compiled in 8ms
+✓ Compiled in 15ms
+ GET /test-inventory 200 in 2.4s (compile: 1045ms, proxy.ts: 137ms, render: 1202ms)
+✓ Compiled in 20ms
