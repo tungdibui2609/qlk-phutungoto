@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Plus, Search, Building2, Phone, Mail, MoreHorizontal, Edit, Trash2, CheckCircle, XCircle } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
+import MobileSupplierList from '@/components/suppliers/MobileSupplierList'
 
 type Supplier = Database['public']['Tables']['suppliers']['Row']
 
@@ -57,14 +58,14 @@ export default function SuppliersPage() {
     return (
         <div className="space-y-6">
             {/* HEADER */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-stone-800">Nhà cung cấp</h1>
                     <p className="text-stone-500 text-sm mt-1">Quản lý danh sách nhà cung cấp phụ tùng</p>
                 </div>
                 <Link
                     href="/suppliers/new"
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
+                    className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
                     style={{
                         background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
                         boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)',
@@ -76,8 +77,8 @@ export default function SuppliersPage() {
             </div>
 
             {/* FILTERS */}
-            <div className="bg-white rounded-2xl p-4 border border-stone-200 flex flex-wrap gap-4 items-center">
-                <div className="relative flex-1 min-w-[250px]">
+            <div className="bg-white rounded-2xl p-4 border border-stone-200 flex flex-col md:flex-row flex-wrap gap-4 md:items-center">
+                <div className="relative flex-1 w-full md:min-w-[250px]">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
                     <input
                         type="text"
@@ -103,90 +104,100 @@ export default function SuppliersPage() {
                 </div>
             </div>
 
-            {/* TABLE */}
-            <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden">
-                {loading ? (
-                    <div className="p-8 text-center text-stone-500">Đang tải...</div>
-                ) : filteredSuppliers.length === 0 ? (
-                    <div className="p-8 text-center text-stone-500">
-                        <Building2 className="mx-auto mb-3 opacity-30" size={48} />
-                        <p>Chưa có nhà cung cấp nào</p>
+            {/* CONTENT */}
+            {loading ? (
+                <div className="bg-white rounded-2xl border border-stone-200 p-8 text-center text-stone-500">
+                    Đang tải...
+                </div>
+            ) : filteredSuppliers.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-stone-200 p-8 text-center text-stone-500">
+                    <Building2 className="mx-auto mb-3 opacity-30" size={48} />
+                    <p>Chưa có nhà cung cấp nào</p>
+                </div>
+            ) : (
+                <>
+                    {/* MOBILE LIST */}
+                    <div className="md:hidden">
+                        <MobileSupplierList suppliers={filteredSuppliers} onDelete={deleteSupplier} />
                     </div>
-                ) : (
-                    <table className="w-full">
-                        <thead className="bg-stone-50 border-b border-stone-200">
-                            <tr>
-                                <th className="text-left px-5 py-4 text-sm font-semibold text-stone-600">Mã</th>
-                                <th className="text-left px-5 py-4 text-sm font-semibold text-stone-600">Nhà cung cấp</th>
-                                <th className="text-left px-5 py-4 text-sm font-semibold text-stone-600">Liên hệ</th>
-                                <th className="text-left px-5 py-4 text-sm font-semibold text-stone-600">SĐT</th>
-                                <th className="text-center px-5 py-4 text-sm font-semibold text-stone-600">Trạng thái</th>
-                                <th className="text-center px-5 py-4 text-sm font-semibold text-stone-600">Thao tác</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stone-100">
-                            {filteredSuppliers.map((supplier) => (
-                                <tr key={supplier.id} className="hover:bg-stone-50 transition-colors">
-                                    <td className="px-5 py-4">
-                                        <span className="font-mono text-sm bg-stone-100 px-2 py-1 rounded">
-                                            {supplier.code}
-                                        </span>
-                                    </td>
-                                    <td className="px-5 py-4">
-                                        <div className="font-medium text-stone-800">{supplier.name}</div>
-                                        {supplier.email && (
-                                            <div className="text-sm text-stone-500 flex items-center gap-1 mt-0.5">
-                                                <Mail size={12} />
-                                                {supplier.email}
-                                            </div>
-                                        )}
-                                    </td>
-                                    <td className="px-5 py-4 text-stone-600">
-                                        {supplier.contact_person || '-'}
-                                    </td>
-                                    <td className="px-5 py-4">
-                                        {supplier.phone ? (
-                                            <span className="flex items-center gap-1 text-stone-600">
-                                                <Phone size={14} />
-                                                {supplier.phone}
-                                            </span>
-                                        ) : '-'}
-                                    </td>
-                                    <td className="px-5 py-4 text-center">
-                                        {supplier.is_active ? (
-                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                                                <CheckCircle size={12} />
-                                                Hoạt động
-                                            </span>
-                                        ) : (
-                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-stone-100 text-stone-500">
-                                                <XCircle size={12} />
-                                                Ngừng
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td className="px-5 py-4">
-                                        <div className="flex items-center justify-center gap-2">
-                                            <Link
-                                                href={`/suppliers/${supplier.id}`}
-                                                className="p-2 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
-                                            >
-                                                <Edit size={16} />
-                                            </Link>
-                                            <button
-                                                onClick={() => deleteSupplier(supplier.id)}
-                                                className="p-2 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
-                                        </div>
-                                    </td>
+
+                    {/* DESKTOP TABLE */}
+                    <div className="hidden md:block bg-white rounded-2xl border border-stone-200 overflow-hidden">
+                        <table className="w-full">
+                            <thead className="bg-stone-50 border-b border-stone-200">
+                                <tr>
+                                    <th className="text-left px-5 py-4 text-sm font-semibold text-stone-600">Mã</th>
+                                    <th className="text-left px-5 py-4 text-sm font-semibold text-stone-600">Nhà cung cấp</th>
+                                    <th className="text-left px-5 py-4 text-sm font-semibold text-stone-600">Liên hệ</th>
+                                    <th className="text-left px-5 py-4 text-sm font-semibold text-stone-600">SĐT</th>
+                                    <th className="text-center px-5 py-4 text-sm font-semibold text-stone-600">Trạng thái</th>
+                                    <th className="text-center px-5 py-4 text-sm font-semibold text-stone-600">Thao tác</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
-            </div>
+                            </thead>
+                            <tbody className="divide-y divide-stone-100">
+                                {filteredSuppliers.map((supplier) => (
+                                    <tr key={supplier.id} className="hover:bg-stone-50 transition-colors">
+                                        <td className="px-5 py-4">
+                                            <span className="font-mono text-sm bg-stone-100 px-2 py-1 rounded">
+                                                {supplier.code}
+                                            </span>
+                                        </td>
+                                        <td className="px-5 py-4">
+                                            <div className="font-medium text-stone-800">{supplier.name}</div>
+                                            {supplier.email && (
+                                                <div className="text-sm text-stone-500 flex items-center gap-1 mt-0.5">
+                                                    <Mail size={12} />
+                                                    {supplier.email}
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="px-5 py-4 text-stone-600">
+                                            {supplier.contact_person || '-'}
+                                        </td>
+                                        <td className="px-5 py-4">
+                                            {supplier.phone ? (
+                                                <span className="flex items-center gap-1 text-stone-600">
+                                                    <Phone size={14} />
+                                                    {supplier.phone}
+                                                </span>
+                                            ) : '-'}
+                                        </td>
+                                        <td className="px-5 py-4 text-center">
+                                            {supplier.is_active ? (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                                                    <CheckCircle size={12} />
+                                                    Hoạt động
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-stone-100 text-stone-500">
+                                                    <XCircle size={12} />
+                                                    Ngừng
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-5 py-4">
+                                            <div className="flex items-center justify-center gap-2">
+                                                <Link
+                                                    href={`/suppliers/${supplier.id}`}
+                                                    className="p-2 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
+                                                >
+                                                    <Edit size={16} />
+                                                </Link>
+                                                <button
+                                                    onClick={() => deleteSupplier(supplier.id)}
+                                                    className="p-2 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </>
+            )}
 
             {/* STATS */}
             <div className="text-sm text-stone-500 text-right">
