@@ -172,7 +172,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                     lot_id: targetLot.id,
                     product_id: sourceItem.product_id as string,
                     quantity: entry.qty,
-                    unit: (sourceItem as any).unit
+                    unit: sourceItem.unit || sourceItem.products?.unit
                 }).select().single();
 
                 if (insertError) throw new Error('Lỗi khi gộp: ' + insertError.message);
@@ -311,9 +311,21 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                                                     {(lot.lot_items?.length || 0) > 2 && <span className="text-[10px] text-slate-400 italic">+{lot.lot_items!.length - 2} sản phẩm khác</span>}
                                                 </div>
                                                 <div className="mt-3 flex items-center justify-between">
-                                                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                                                        TỔNG SL: {lot.lot_items?.reduce((acc, i) => acc + (i.quantity || 0), 0)} {lot.lot_items?.[0]?.products?.unit || 'Thùng'}
-                                                    </span>
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {(() => {
+                                                            const items = lot.lot_items || [];
+                                                            const summary = items.reduce((acc: Record<string, number>, item: any) => {
+                                                                const unit = (item as any).unit || item.products?.unit || 'Đơn vị';
+                                                                acc[unit] = (acc[unit] || 0) + (item.quantity || 0);
+                                                                return acc;
+                                                            }, {});
+                                                            return Object.entries(summary).map(([unit, total]) => (
+                                                                <span key={unit} className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30">
+                                                                    TỔNG SL: {total as number} {unit}
+                                                                </span>
+                                                            ));
+                                                        })()}
+                                                    </div>
                                                     <span className="text-[10px] text-slate-400 font-medium">
                                                         {lot.warehouse_name || 'Chi nhánh mặc định'}
                                                     </span>

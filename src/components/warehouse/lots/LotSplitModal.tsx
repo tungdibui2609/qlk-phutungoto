@@ -152,7 +152,7 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                             lot_id: newLot.id,
                             product_id: item.product_id,
                             quantity: splitQty,
-                            unit: (item as any).unit
+                            unit: item.unit || item.products?.unit
                         })
                         .select()
                         .single()
@@ -280,6 +280,43 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                                 </div>
                             ))}
                         </div>
+                    </div>
+
+                    <div className="mt-4 px-1 flex items-center justify-between">
+                        <div className="flex flex-wrap gap-1">
+                            {(() => {
+                                const items = lot.lot_items || [];
+                                const summary = items.reduce((acc: Record<string, number>, item: any) => {
+                                    const unit = (item as any).unit || item.products?.unit || 'Đơn vị';
+                                    acc[unit] = (acc[unit] || 0) + (item.quantity || 0);
+                                    return acc;
+                                }, {});
+                                return Object.entries(summary).map(([unit, total]) => (
+                                    <span key={unit} className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-lg border border-orange-100 dark:border-orange-900/10">
+                                        TỔNG SL GỐC: {total as number} {unit}
+                                    </span>
+                                ));
+                            })()}
+                        </div>
+                        {Object.values(splitQuantities).some(v => v > 0) && (
+                            <div className="flex flex-wrap gap-1 justify-end">
+                                {(() => {
+                                    const items = lot.lot_items || [];
+                                    const summary = items.reduce((acc: Record<string, number>, item: any) => {
+                                        const qty = splitQuantities[item.id] || 0;
+                                        if (qty === 0) return acc;
+                                        const unit = (item as any).unit || item.products?.unit || 'Đơn vị';
+                                        acc[unit] = (acc[unit] || 0) + qty;
+                                        return acc;
+                                    }, {});
+                                    return Object.entries(summary).map(([unit, total]) => (
+                                        <span key={unit} className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 rounded-lg border border-purple-100 dark:border-purple-800">
+                                            TÁCH RA: {total as number} {unit}
+                                        </span>
+                                    ));
+                                })()}
+                            </div>
+                        )}
                     </div>
 
                     <div className="mt-6 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700">
