@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
+import { useToast } from '@/components/ui/ToastProvider'
 import {
     PieChart,
     AlertTriangle,
@@ -11,7 +12,8 @@ import {
     Sparkles,
     Settings,
     Map as MapIcon,
-    Layers
+    Layers,
+    Trash2
 } from 'lucide-react'
 import WarehouseStats from '@/components/warehouse/WarehouseStats'
 import SmartRackList from '@/components/warehouse/SmartRackList'
@@ -51,6 +53,7 @@ interface Lot {
 
 export default function WarehouseStatusPage() {
     const { systemType, systems, currentSystem } = useSystem()
+    const { showToast } = useToast()
     const [loading, setLoading] = useState(true)
     const [positions, setPositions] = useState<PositionWithZone[]>([])
     const [zones, setZones] = useState<Zone[]>([])
@@ -175,11 +178,27 @@ export default function WarehouseStatusPage() {
             .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
     }, [zones, positionsWithZone, lots])
 
+    const [previewLayouts, setPreviewLayouts] = useState<Record<string, ZoneLayout>>({})
+    const [layoutVersion, setLayoutVersion] = useState(0)
+
     const layoutsMap = useMemo(() => {
         const map: Record<string, ZoneLayout> = {}
         layouts.forEach(l => { if (l.zone_id) map[l.zone_id] = l })
+        // Merge in previews
+        Object.keys(previewLayouts).forEach(zid => {
+            map[zid] = { ...(map[zid] || {}), ...previewLayouts[zid] } as ZoneLayout
+        })
         return map
-    }, [layouts])
+    }, [layouts, previewLayouts])
+
+    function handleLayoutPreview(preview: Partial<ZoneLayout>) {
+        if (!preview.zone_id) return
+        setPreviewLayouts(prev => ({
+            ...prev,
+            [preview.zone_id as string]: { ...prev[preview.zone_id as string], ...preview } as ZoneLayout
+        }))
+        setLayoutVersion(v => v + 1)
+    }
 
     function handleLayoutSave(updatedLayout: ZoneLayout) {
         setLayouts(prev => {
@@ -189,6 +208,13 @@ export default function WarehouseStatusPage() {
             }
             return [...prev, updatedLayout]
         })
+        // Clear preview for this zone as it's now permanent
+        setPreviewLayouts(prev => {
+            const next = { ...prev }
+            delete next[updatedLayout.zone_id!]
+            return next
+        })
+        setLayoutVersion(v => v + 1)
         setConfiguringZone(null)
     }
 
@@ -205,6 +231,63 @@ export default function WarehouseStatusPage() {
             }
             return newLayouts
         })
+        // Clear previews for these zones
+        setPreviewLayouts(prev => {
+            const next = { ...prev }
+            updatedLayouts.forEach(l => { if (l.zone_id) delete next[l.zone_id] })
+            return next
+        })
+        setLayoutVersion(v => v + 1)
+    }
+
+    async function handleGlobalReset() {
+        const confirmMsg = 'HÀNH ĐỘNG DỌN DẸP MẠNH: Bạn có chắc chắn muốn XÓA BỎ TOÀN BỘ cấu hình thiết kế và đưa kho về trạng thái chuẩn không?'
+        if (!confirm(confirmMsg)) return
+
+        setLoading(true)
+        try {
+            const zoneIds = zones.map(z => z.id).filter(Boolean)
+            if (zoneIds.length === 0) {
+                showToast('Không có khu vực nào để dọn dẹp', 'info')
+                return
+            }
+
+            // Standard chunked delete with .in() filter
+            const chunkSize = 50
+            let deletedCount = 0
+            for (let i = 0; i < zoneIds.length; i += chunkSize) {
+                const chunk = zoneIds.slice(i, i + chunkSize)
+                const { error: delError } = await (supabase as any)
+                    .from('zone_status_layouts')
+                    .delete()
+                    .in('zone_id', chunk)
+
+                if (delError) {
+                    console.error(`Error deleting layouts chunk:`, delError)
+                    // If error is 400, it might be the table name after all
+                    throw delError
+                }
+                deletedCount += chunk.length
+            }
+
+            setLayouts([])
+            setPreviewLayouts({})
+            setLayoutVersion(v => v + 1)
+            showToast(`Đã dọn sạch thiết kế (${zoneIds.length} vị trí)!`, 'success')
+        } catch (err: any) {
+            console.error('GLOBAL RESET FAILED:', err)
+            const detail = err.message || err.details || 'Bad Request (400)'
+            showToast('Lỗi dọn dẹp hệ thống: ' + detail, 'error')
+
+            // Fallback for local state even if DB fails or for "ghost" data
+            if (confirm('Lỗi server. Bạn có muốn xóa giao diện tạm thời để thiết kế lại không? (Dữ liệu gốc có thể vẫn còn)')) {
+                setLayouts([])
+                setPreviewLayouts({})
+                setLayoutVersion(v => v + 1)
+            }
+        } finally {
+            setLoading(false)
+        }
     }
 
     if (loading && positions.length === 0) {
@@ -233,6 +316,17 @@ export default function WarehouseStatusPage() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
+                    {/* Global Reset Button (Only in Design Mode) */}
+                    {isDesignMode && (
+                        <button
+                            onClick={handleGlobalReset}
+                            className="px-4 py-2 rounded-xl font-bold flex items-center gap-2 bg-red-100 text-red-600 hover:bg-red-200 transition-all shadow-sm border border-red-200"
+                        >
+                            <Trash2 size={18} />
+                            Xóa toàn bộ thiết kế
+                        </button>
+                    )}
+
                     {/* Design Mode Toggle */}
                     <button
                         onClick={() => setIsDesignMode(!isDesignMode)}
@@ -258,6 +352,7 @@ export default function WarehouseStatusPage() {
 
             <div className="relative">
                 <SmartRackList
+                    key={`rack-list-${isDesignMode}`}
                     zones={transformedZones}
                     isLoading={loading}
                     warehouseId={systems.find(s => s.code === systemType)?.name || systemType}
@@ -278,6 +373,7 @@ export default function WarehouseStatusPage() {
                             siblingZones={zones.filter(z => z.parent_id === configuringZone.parent_id)}
                             onSave={handleLayoutSave}
                             onBatchSave={handleBatchSave}
+                            onChange={handleLayoutPreview}
                             onClose={() => setConfiguringZone(null)}
                             tableName="zone_status_layouts"
                         />

@@ -101,27 +101,25 @@ export default function SmartRackList({ zones, isLoading, warehouseId, isDesignM
                 </div>
             )}
 
-            {/* Header section */}
-            <div className="p-10 border-b border-zinc-100 bg-zinc-50/30">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-10">
-                    <h2 className="font-black text-3xl text-zinc-900 flex items-center gap-4 tracking-tighter">
-                        <div className="w-12 h-12 rounded-2xl bg-orange-600 text-white flex items-center justify-center shadow-lg shadow-orange-500/20">
-                            <Layers size={24} />
+            {/* Header section - Ultra Compact */}
+            <div className="px-4 py-3 border-b border-zinc-100 bg-zinc-50/20 flex items-center justify-between">
+                <h2 className="font-black text-sm text-zinc-900 flex items-center gap-2 tracking-tighter">
+                    <Layers size={14} className="text-orange-600" />
+                    {warehouseId} - Sơ đồ
+                </h2>
+
+                <div className="flex flex-wrap items-center gap-2 px-3 py-1 bg-white/50 rounded-lg border border-zinc-50">
+                    {Object.entries(PRODUCT_COLORS).filter(([k]) => k !== 'EMPTY' && k !== 'OTHER').map(([code, color]) => (
+                        <div key={code} className="flex items-center gap-1 group cursor-help" title={code}>
+                            <div className={`w-1.5 h-1.5 rounded-full ${color} shadow-sm group-hover:scale-125 transition-transform`}></div>
+                            <span className="text-[7px] font-black text-zinc-400 uppercase tracking-tighter hidden sm:block">{code}</span>
                         </div>
-                        {warehouseId} - Sơ đồ chi tiết
-                    </h2>
-
-                    <div className="flex flex-wrap items-center gap-4 bg-white px-6 py-4 rounded-[1.5rem] border border-zinc-100 shadow-sm">
-                        {Object.entries(PRODUCT_COLORS).filter(([k]) => k !== 'EMPTY' && k !== 'OTHER').map(([code, color]) => (
-                            <div key={code} className="flex items-center gap-2">
-                                <div className={`w-3 h-3 rounded-full ${color} shadow-sm`}></div>
-                                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{code}</span>
-                            </div>
-                        ))}
-                    </div>
+                    ))}
                 </div>
+            </div>
 
-                <div className="space-y-16">
+            <div className="p-3">
+                <div className="space-y-4">
                     {zones.map((zone: ZoneData) => (
                         <ZoneSection
                             key={zone.id}
@@ -140,30 +138,43 @@ export default function SmartRackList({ zones, isLoading, warehouseId, isDesignM
     );
 }
 
-function ZoneSection({ zone, breadcrumb, getProductColor, onOpenModal, isDesignMode, onConfigureZone, layouts }: { zone: ZoneData, breadcrumb: string[], getProductColor: (id?: string) => string, onOpenModal: (data: { level: LevelData, rackName: string }) => void, isDesignMode?: boolean, onConfigureZone?: (zoneId: string) => void, layouts: Record<string, any> }) {
+function ZoneSection({ zone, breadcrumb, getProductColor, onOpenModal, isDesignMode, onConfigureZone, layouts, parentLayout }: { zone: ZoneData, breadcrumb: string[], getProductColor: (id?: string) => string, onOpenModal: (data: { level: LevelData, rackName: string }) => void, isDesignMode?: boolean, onConfigureZone?: (zoneId: string) => void, layouts: Record<string, any>, parentLayout?: any }) {
     const hasPositions = zone.positions && zone.positions.length > 0;
     const hasChildren = zone.children && zone.children.length > 0;
 
+    // Get zone's own layout, or inherit from parent if not set
+    const ownLayout = layouts[zone.id];
+    const layout = ownLayout ? {
+        // Merge parent values as fallback
+        ...parentLayout,
+        ...ownLayout,
+        // Use own values if explicitly set (> 0), otherwise inherit from parent
+        cell_width: (ownLayout.cell_width && ownLayout.cell_width > 0) ? ownLayout.cell_width : (parentLayout?.cell_width || 0),
+        cell_height: (ownLayout.cell_height && ownLayout.cell_height > 0) ? ownLayout.cell_height : (parentLayout?.cell_height || 0),
+        position_columns: (ownLayout.position_columns && ownLayout.position_columns > 0) ? ownLayout.position_columns : (parentLayout?.position_columns || 8),
+    } : parentLayout || null;
+
+    // Debug logging - focus on zones with positions where cell_width matters
+    if (isDesignMode && hasPositions) {
+        console.log(`[TẦNG] Zone ${zone.name}: cell_width=${layout?.cell_width || 0}, cell_height=${layout?.cell_height || 0}, inherited=${!ownLayout}, columns=${layout?.position_columns || 8}`);
+    } else if (isDesignMode && hasChildren && layout?.cell_width > 0) {
+        console.log(`[DÃY] Zone ${zone.name}: cell_width=${layout.cell_width} -> sẽ kế thừa xuống children`);
+    }
+
     // Logic for "Row" display (like Dãy A1)
-    // We group positions into "Levels" for visualization if they are many
     const levelGroups = useMemo(() => {
         if (!hasPositions) return [];
-
-        // Group positions by the "Level" part of their code if possible, or just treat as one big level
-        // For simplicity and matching the UI, we'll try to find a digit in the code that looks like a level
-        // Usually: Area-Rack-Level-Pos. Let's look for known patterns or just chunk 8 by 8.
-
         const groups: Record<number, NonNullable<ZoneData['positions']>> = {};
         zone.positions!.forEach((p: any) => {
-            // Extraction logic: find the 3rd or 2nd to last segment in a hyphen-separated code
             const parts = p.code.split('-');
             let levelNum = 1;
-            if (parts.length >= 2) {
-                // Try to find a single digit segment
-                const found = parts.find((p: string) => p.length === 1 && !isNaN(parseInt(p)));
+            const levelPart = parts.find((pt: string) => pt.startsWith('T') && pt.length > 1 && !isNaN(parseInt(pt.substring(1))));
+            if (levelPart) {
+                levelNum = parseInt(levelPart.substring(1));
+            } else {
+                const found = parts.find((pt: string) => pt.length === 1 && !isNaN(parseInt(pt)));
                 if (found) levelNum = parseInt(found);
                 else {
-                    // Fallback to second to last if index based
                     const idx = Math.max(0, parts.length - 2);
                     levelNum = parseInt(parts[idx]) || 1;
                 }
@@ -178,13 +189,126 @@ function ZoneSection({ zone, breadcrumb, getProductColor, onOpenModal, isDesignM
         })).sort((a, b) => a.levelNumber - b.levelNumber);
     }, [zone.positions]);
 
+    const getChildContainerStyle = () => {
+        if (layout?.child_layout === 'grid') {
+            return {
+                display: 'grid',
+                gridTemplateColumns: layout.child_columns > 0
+                    ? `repeat(${layout.child_columns}, minmax(0, 1fr))`
+                    : `repeat(auto-fill, minmax(200px, 1fr))`,
+                gap: '0.75rem'
+            };
+        }
+        if (layout?.child_layout === 'horizontal') {
+            return {
+                display: 'flex',
+                flexWrap: 'nowrap' as const,
+                overflowX: 'auto' as const,
+                gap: '0.75rem',
+                flexDirection: 'row' as const,
+                alignItems: 'flex-start' as const,
+                justifyContent: 'flex-start' as const,
+                paddingBottom: '0.5rem'
+            };
+        }
+        return { display: 'flex', flexDirection: 'column' as const, gap: '0.75rem' };
+    };
+
+    const isHidden = layout?.display_type === 'hidden' && !isDesignMode;
+    const showHeader = (isDesignMode || layout?.display_type === 'header' || layout?.display_type === 'section' || layout?.display_type === 'hidden' || (!layout?.display_type && !hasPositions)) && !isHidden;
+
+    const renderLevelCard = (group: any) => {
+        const total = group.positions.length;
+        const used = group.positions.filter((p: any) => p.lot_id).length;
+        const isFull = used === total;
+        const dominantProduct = group.positions.find((p: any) => p.items.length > 0)?.items[0]?.name;
+
+        return (
+            <div
+                key={group.levelNumber}
+                onClick={() => onOpenModal({
+                    level: {
+                        id: `${zone.id}-L${group.levelNumber}`,
+                        levelNumber: group.levelNumber,
+                        total,
+                        used,
+                        product: dominantProduct,
+                        items: group.positions.flatMap((p: any) => p.items)
+                    },
+                    rackName: `${breadcrumb.join(' • ')}`
+                })}
+                className={`bg-white border rounded p-1.5 shadow-sm hover:shadow-md transition-all cursor-pointer group/card ${isDesignMode ? 'ring-1 ring-orange-500/10' : ''}`}
+                style={{
+                    width: (layout?.cell_width && layout.cell_width > 0) ? `${layout.cell_width}px` : 'auto',
+                    minWidth: '85px',
+                    height: (layout?.cell_height && layout.cell_height > 0) ? `${layout.cell_height}px` : 'auto',
+                    borderColor: isDesignMode ? '#fdba74' : '#f1f1f2'
+                }}
+            >
+                <div className="flex justify-between items-center mb-0.5">
+                    <span className={`font-bold text-[7px] tracking-tight ${isDesignMode ? 'text-zinc-500' : 'text-zinc-400'}`}>T{group.levelNumber}</span>
+                    <span className={`text-[7px] font-black tabular-nums ${isFull ? 'text-orange-500' : 'text-zinc-400'}`}>
+                        {used}/{total}
+                    </span>
+                </div>
+                <div className="flex gap-[0.5px] h-1 w-full bg-zinc-50 rounded-[0.5px] overflow-hidden p-[0.5px]">
+                    {group.positions.map((p: any, idx: number) => {
+                        const color = p.lot_id ? getProductColor(p.items[0]?.code) : 'bg-transparent';
+                        return <div key={idx} className={`h-full flex-1 rounded-[0.5px] ${color} transition-colors`}></div>
+                    })}
+                </div>
+            </div>
+        );
+    };
+
+    if (isHidden) {
+        return (
+            <div className="contents">
+                {hasPositions && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                        {levelGroups.map((group: any) => renderLevelCard(group))}
+                    </div>
+                )}
+                {hasChildren && zone.children?.map((child: ZoneData) => (
+                    <ZoneSection
+                        key={child.id}
+                        zone={child}
+                        breadcrumb={[...breadcrumb, child.name]}
+                        getProductColor={getProductColor}
+                        onOpenModal={onOpenModal}
+                        isDesignMode={isDesignMode}
+                        onConfigureZone={onConfigureZone}
+                        layouts={layouts}
+                        parentLayout={layout}
+                    />
+                ))}
+            </div>
+        );
+    }
+
     return (
-        <div className="space-y-8">
-            {/* Folder-like Header for Section */}
-            {!hasPositions && (
-                <div className="flex items-center gap-4 border-b border-zinc-100 pb-4">
-                    <div className="bg-zinc-900 text-white text-[10px] font-black px-4 py-1.5 rounded-xl tracking-[0.2em] uppercase shrink-0">
-                        {zone.name}
+        <div
+            className={`transition-all duration-300 ${isDesignMode ? 'border border-dashed border-orange-200 p-2 rounded-xl bg-orange-50/5 space-y-1.5' : 'space-y-0.5'}`}
+            style={{
+                width: hasChildren && layout?.child_layout === 'horizontal' ? '100%' : 'fit-content',
+                maxWidth: '100%',
+                flexShrink: hasChildren && layout?.child_layout === 'horizontal' ? 1 : 0
+            }}
+        >
+            {showHeader && (
+                <div className={`flex items-center justify-between gap-2 border-b pb-1 ${layout?.display_type === 'hidden' ? 'border-orange-100 bg-orange-50/50 -mx-1 px-1 py-0.5 rounded shadow-sm' : 'border-zinc-50'}`}>
+                    <div className="flex items-center gap-1.5">
+                        {layout?.display_type === 'hidden' && (
+                            <span className="text-[7px] bg-orange-500 text-white font-black px-1 py-0.5 rounded shadow-sm">ẨN</span>
+                        )}
+                        <div className="bg-zinc-800 text-white text-[8px] font-black px-2 py-0.5 rounded-md tracking-wider uppercase shrink-0">
+                            {zone.name}
+                        </div>
+                        {isDesignMode && (
+                            <div className="text-[7px] font-bold text-zinc-300 uppercase tracking-widest hidden md:block">
+                                {breadcrumb.join(' • ')}
+                            </div>
+                        )}
                     </div>
                     {isDesignMode && (
                         <button
@@ -192,105 +316,97 @@ function ZoneSection({ zone, breadcrumb, getProductColor, onOpenModal, isDesignM
                                 e.stopPropagation();
                                 onConfigureZone?.(zone.id);
                             }}
-                            className="p-1.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors shadow-sm"
-                            title="Cấu hình Zone"
+                            className="flex items-center gap-1 px-2 py-0.5 bg-orange-500 hover:bg-orange-600 text-white rounded text-[8px] font-bold transition-all shadow-sm active:scale-95"
                         >
-                            <Settings size={14} />
+                            <Settings size={10} />
+                            CHỈNH
                         </button>
                     )}
-                    <div className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest hidden md:block">
-                        {breadcrumb.join(' • ')}
-                    </div>
                 </div>
             )}
 
             {hasPositions && (
-                <div className="flex flex-col lg:flex-row lg:items-start gap-6 group hover:bg-orange-50/30 p-4 rounded-3xl transition-all duration-300">
-                    <div className="w-32 shrink-0">
-                        <div className="flex items-center gap-2">
-                            <div className="font-black text-sm text-zinc-800 uppercase tracking-tight group-hover:text-orange-600 transition-colors">
+                <div
+                    className={`transition-all duration-300 p-1.5 rounded-xl flex flex-col lg:flex-row lg:items-center gap-3 ${isDesignMode ? 'bg-white shadow-sm ring-1 ring-zinc-100' : 'hover:bg-zinc-50/50'}`}
+                    style={{
+                        width: 'max-content',
+                        minWidth: 'auto',
+                        flexShrink: 0
+                    }}
+                >
+                    {(layout?.display_type !== 'grid' || isDesignMode) && (
+                        <div className="w-14 shrink-0 flex flex-col pl-1 border-r border-zinc-100 pr-2">
+                            <div className="font-black text-[10px] text-zinc-900 uppercase tracking-tighter truncate leading-none mb-1">
                                 {zone.name}
                             </div>
-                            {isDesignMode && (
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onConfigureZone?.(zone.id);
-                                    }}
-                                    className="p-1 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors shadow-sm"
-                                    title="Cấu hình Layout"
-                                >
-                                    <Settings size={10} />
-                                </button>
-                            )}
+                            <div className="text-[8px] font-bold text-zinc-400 uppercase tracking-tighter tabular-nums">{zone.positions?.length} VT</div>
                         </div>
-                        <div className="text-[9px] font-bold text-zinc-400 mt-1">{zone.positions?.length} vị trí</div>
-                    </div>
+                    )}
 
                     <div
-                        className="flex-1 grid gap-4"
+                        className="flex-none grid gap-1.5"
                         style={{
-                            gridTemplateColumns: layouts[zone.id]?.child_columns > 0
-                                ? `repeat(${layouts[zone.id].child_columns}, minmax(0, 1fr))`
-                                : `repeat(auto-fill, minmax(200px, 1fr))`
+                            display: 'grid',
+                            gridTemplateColumns: (layout?.position_columns && layout.position_columns > 0)
+                                ? (layout?.cell_width && layout.cell_width > 0)
+                                    ? `repeat(${layout.position_columns}, ${layout.cell_width}px)`
+                                    : `repeat(${layout.position_columns}, max-content)`
+                                : `repeat(auto-fill, minmax(85px, 1fr))`,
+                            width: layout?.cell_width ? 'auto' : 'max-content'
                         }}
                     >
-                        {levelGroups.map((group: any) => {
-                            const total = group.positions.length;
-                            const used = group.positions.filter((p: any) => p.lot_id).length;
-                            const isFull = used === total;
-
-                            // Dominant product in group
-                            const dominantProduct = group.positions.find((p: any) => p.items.length > 0)?.items[0]?.name;
-
-                            return (
-                                <div
-                                    key={group.levelNumber}
-                                    onClick={() => onOpenModal({
-                                        level: {
-                                            id: `${zone.id}-L${group.levelNumber}`,
-                                            levelNumber: group.levelNumber,
-                                            total,
-                                            used,
-                                            product: dominantProduct,
-                                            items: group.positions.flatMap((p: any) => p.items)
-                                        },
-                                        rackName: `${breadcrumb.join(' • ')}`
-                                    })}
-                                    className="bg-white border border-zinc-100 rounded-2xl p-4 shadow-sm hover:shadow-xl hover:border-orange-200 transition-all cursor-pointer group/card"
-                                >
-                                    <div className="flex justify-between items-center mb-3">
-                                        <span className="font-black text-[10px] text-zinc-300 group-hover/card:text-zinc-500">TẦNG {group.levelNumber}</span>
-                                        <span className={`text-[10px] font-black ${isFull ? 'text-orange-600' : 'text-zinc-400'}`}>
-                                            {used}/{total}
-                                        </span>
-                                    </div>
-                                    <div className="flex gap-[1.5px] h-2.5 w-full bg-zinc-50 rounded-full overflow-hidden p-[2px] border border-zinc-50">
-                                        {group.positions.map((p: any, idx: number) => {
-                                            const color = p.lot_id ? getProductColor(p.items[0]?.code) : 'bg-transparent';
-                                            return <div key={idx} className={`h-full flex-1 rounded-full ${color} transition-colors`}></div>
-                                        })}
-                                    </div>
-                                </div>
-                            );
-                        })}
+                        {levelGroups.map((group: any) => renderLevelCard(group))}
                     </div>
                 </div>
             )}
 
             {hasChildren && (
-                <div className="pl-6 border-l-2 border-zinc-50 space-y-12">
+                <div
+                    className={`${!hasPositions ? 'pl-2 border-l border-zinc-100/30' : ''} overflow-x-auto custom-scrollbar-horizontal max-w-full relative`}
+                    style={{
+                        ...getChildContainerStyle(),
+                        width: '100%',
+                        maxWidth: '100%'
+                    }}
+                >
+                    <style jsx>{`
+                        .custom-scrollbar-horizontal::-webkit-scrollbar {
+                            height: 12px;
+                            display: block !important;
+                        }
+                        .custom-scrollbar-horizontal::-webkit-scrollbar-track {
+                            background: #f8fafc;
+                            border-radius: 10px;
+                            box-shadow: inset 0 0 2px rgba(0,0,0,0.05);
+                        }
+                        .custom-scrollbar-horizontal::-webkit-scrollbar-thumb {
+                            background: #fb923c; /* Bolder Orange-400 */
+                            border-radius: 10px;
+                            border: 3px solid #f8fafc;
+                        }
+                        .custom-scrollbar-horizontal::-webkit-scrollbar-thumb:hover {
+                            background: #f97316; /* Orange-500 */
+                        }
+                        /* Force visibility */
+                        .custom-scrollbar-horizontal {
+                            scrollbar-width: auto;
+                            scrollbar-color: #fb923c #f8fafc;
+                            -ms-overflow-style: auto;
+                        }
+                    `}</style>
                     {zone.children?.map((child: ZoneData) => (
-                        <ZoneSection
-                            key={child.id}
-                            zone={child}
-                            breadcrumb={[...breadcrumb, child.name]}
-                            getProductColor={getProductColor}
-                            onOpenModal={onOpenModal}
-                            isDesignMode={isDesignMode}
-                            onConfigureZone={onConfigureZone}
-                            layouts={layouts}
-                        />
+                        <div key={child.id} className="shrink-0 h-full">
+                            <ZoneSection
+                                zone={child}
+                                breadcrumb={[...breadcrumb, child.name]}
+                                getProductColor={getProductColor}
+                                onOpenModal={onOpenModal}
+                                isDesignMode={isDesignMode}
+                                onConfigureZone={onConfigureZone}
+                                layouts={layouts}
+                                parentLayout={layout}
+                            />
+                        </div>
                     ))}
                 </div>
             )}

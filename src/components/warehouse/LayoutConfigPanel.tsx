@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Grid3X3, Save, X, Columns, LayoutGrid, ChevronDown, Move, Box, Copy, ClipboardPaste, Users } from 'lucide-react'
+import { Grid3X3, Save, X, Columns, LayoutGrid, ChevronDown, Move, Box, Copy, ClipboardPaste, Users, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { Database } from '@/lib/database.types'
@@ -28,6 +28,7 @@ interface LayoutConfigPanelProps {
     siblingZones?: Zone[] // Zones with same parent (for batch apply)
     onSave: (layout: ZoneLayout) => void
     onBatchSave?: (layouts: ZoneLayout[]) => void
+    onChange?: (layout: Partial<ZoneLayout>) => void
     onClose: () => void
     tableName?: string
 }
@@ -46,7 +47,7 @@ const DISPLAY_TYPE_OPTIONS = [
     { value: 'hidden', label: 'Ẩn', desc: 'Không hiển thị' },
 ]
 
-export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, onBatchSave, onClose, tableName = 'zone_layouts' }: LayoutConfigPanelProps) {
+export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, onBatchSave, onChange, onClose, tableName = 'zone_layouts' }: LayoutConfigPanelProps) {
     const { showToast } = useToast()
     const [positionColumns, setPositionColumns] = useState(layout?.position_columns ?? 8)
     const [cellWidth, setCellWidth] = useState(layout?.cell_width ?? 0)
@@ -59,6 +60,18 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
     const [isSaving, setIsSaving] = useState(false)
     const [hasClipboard, setHasClipboard] = useState(!!layoutClipboard)
 
+    // Sync settings when layout or zone changes
+    useEffect(() => {
+        setPositionColumns(layout?.position_columns ?? 8)
+        setCellWidth(layout?.cell_width ?? 0)
+        setCellHeight(layout?.cell_height ?? 0)
+        setChildLayout(layout?.child_layout ?? 'vertical')
+        setChildColumns(layout?.child_columns ?? 0)
+        setChildWidth(layout?.child_width ?? 0)
+        setCollapsible(layout?.collapsible ?? true)
+        setDisplayType(layout?.display_type ?? 'auto')
+    }, [layout, zone.id])
+
     // Count siblings (excluding current zone)
     const siblingCount = (siblingZones || []).filter(z => z.id !== zone.id).length
 
@@ -68,6 +81,16 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
         }, 500)
         return () => clearInterval(interval)
     }, [])
+
+    // Trigger preview when local states change
+    useEffect(() => {
+        if (onChange) {
+            onChange({
+                zone_id: zone.id,
+                ...getCurrentSettings()
+            } as any);
+        }
+    }, [positionColumns, cellWidth, cellHeight, childLayout, childColumns, childWidth, collapsible, displayType]);
 
     function getCurrentSettings(): LayoutSettings {
         return {
@@ -101,86 +124,131 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
         showToast('Đã paste! Nhấn Lưu để áp dụng.', 'info')
     }
 
+    function handleReset() {
+        setPositionColumns(8)
+        setCellWidth(0)
+        setCellHeight(0)
+        setChildLayout('vertical')
+        setChildColumns(0)
+        setChildWidth(0)
+        setCollapsible(true)
+        setDisplayType('auto')
+        showToast('Đã đặt về mặc định hệ thống!', 'info')
+    }
+
+    async function handleResetAll() {
+        if (!siblingZones || siblingZones.length === 0) return;
+        if (!confirm('Bạn có chắc chắn muốn đặt lại MẶC ĐỊNH cho TOÀN BỘ các zone cùng cấp không?')) return;
+
+        setIsSaving(true);
+        try {
+            const defaultSettings = {
+                position_columns: 8,
+                cell_width: 0,
+                cell_height: 0,
+                child_layout: 'vertical',
+                child_columns: 0,
+                child_width: 0,
+                collapsible: true,
+                display_type: 'auto'
+            };
+            const now = new Date().toISOString();
+
+            const upsertData = siblingZones.map(z => ({
+                zone_id: z.id,
+                ...defaultSettings,
+                updated_at: now
+            }));
+
+            const { data, error } = await (supabase as any)
+                .from(tableName)
+                .upsert(upsertData, { onConflict: 'zone_id' })
+                .select();
+
+            if (error) throw error;
+
+            const savedLayouts = data || [];
+            showToast(`Đã khôi phục mặc định cho ${savedLayouts.length} zone!`, 'success');
+
+            // Sync current panel to default too
+            handleReset();
+
+            const currentSaved = savedLayouts.find((l: ZoneLayout) => l.zone_id === zone.id);
+            if (currentSaved) onSave(currentSaved);
+
+            onBatchSave?.(savedLayouts);
+        } catch (err: any) {
+            console.error('Reset all error:', err);
+            showToast('Lỗi khôi phục: ' + (err.message || 'Thất bại'), 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    }
+
     async function handleSave() {
-        setIsSaving(true)
+        setIsSaving(true);
         try {
             const payload = {
+                zone_id: zone.id,
                 ...getCurrentSettings(),
                 updated_at: new Date().toISOString()
-            }
+            };
 
-            if (layout) {
-                const { data, error } = await (supabase as any)
-                    .from(tableName)
-                    .update(payload)
-                    .eq('id', layout.id)
-                    .select()
-                    .single()
+            const { data, error } = await (supabase as any)
+                .from(tableName)
+                .upsert(payload, { onConflict: 'zone_id' })
+                .select()
+                .single();
 
-                if (error) throw error
-                showToast('Đã lưu!', 'success')
-                onSave(data)
-            } else {
-                const { data, error } = await (supabase as any)
-                    .from(tableName)
-                    .insert({ zone_id: zone.id, ...payload })
-                    .select()
-                    .single()
-
-                if (error) throw error
-                showToast('Đã tạo cấu hình!', 'success')
-                onSave(data)
-            }
+            if (error) throw error;
+            showToast('Đã lưu cấu hình!', 'success');
+            onSave(data);
         } catch (err: any) {
-            showToast('Lỗi: ' + err.message, 'error')
+            console.error('Save error:', err);
+            showToast('Lỗi lưu: ' + (err.message || 'Không thể lưu'), 'error');
         } finally {
-            setIsSaving(false)
+            setIsSaving(false);
         }
     }
 
     async function handleApplyToSiblings() {
-        if (!siblingZones || siblingZones.length === 0) return
+        if (!siblingZones || siblingZones.length === 0) {
+            showToast('Không có zone cùng cấp để áp dụng', 'info');
+            return;
+        }
 
-        setIsSaving(true)
+        setIsSaving(true);
         try {
-            const settings = getCurrentSettings()
-            const siblings = siblingZones.filter(z => z.id !== zone.id)
-            const savedLayouts: ZoneLayout[] = []
+            const settings = getCurrentSettings();
+            const now = new Date().toISOString();
 
-            for (const sibling of siblings) {
-                // Check if layout exists for this zone
-                const { data: existing } = await (supabase as any)
-                    .from(tableName)
-                    .select('id')
-                    .eq('zone_id', sibling.id)
-                    .single()
+            // Sync all sibling zones (including current if list is complete)
+            const upsertData = siblingZones.map(z => ({
+                zone_id: z.id,
+                ...settings,
+                updated_at: now
+            }));
 
-                if (existing) {
-                    // Update existing
-                    const { data, error } = await (supabase as any)
-                        .from(tableName)
-                        .update({ ...settings, updated_at: new Date().toISOString() })
-                        .eq('id', (existing as any).id)
-                        .select()
-                        .single()
-                    if (!error && data) savedLayouts.push(data)
-                } else {
-                    // Insert new
-                    const { data, error } = await (supabase as any)
-                        .from(tableName)
-                        .insert({ zone_id: sibling.id, ...settings })
-                        .select()
-                        .single()
-                    if (!error && data) savedLayouts.push(data)
-                }
-            }
+            const { data, error } = await (supabase as any)
+                .from(tableName)
+                .upsert(upsertData, { onConflict: 'zone_id' })
+                .select();
 
-            showToast(`Đã áp dụng cho ${savedLayouts.length} zone!`, 'success')
-            onBatchSave?.(savedLayouts)
+            if (error) throw error;
+
+            const savedLayouts = data || [];
+            showToast(`Đã đồng bộ ${savedLayouts.length} vị trí!`, 'success');
+
+            // Find current zone's result to update local panel if it stays open
+            const currentSaved = savedLayouts.find((l: ZoneLayout) => l.zone_id === zone.id);
+            if (currentSaved) onSave(currentSaved);
+
+            onBatchSave?.(savedLayouts);
         } catch (err: any) {
-            showToast('Lỗi: ' + err.message, 'error')
+            console.error('Batch save error:', err);
+            showToast('Lỗi lưu hàng loạt: ' + (err.message || 'Thất bại'), 'error');
         } finally {
-            setIsSaving(false)
+            setIsSaving(false);
         }
     }
 
@@ -196,25 +264,35 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
                 </button>
             </div>
 
-            {/* Copy/Paste buttons */}
-            <div className="flex gap-2">
+            {/* Copy/Paste/Default buttons */}
+            <div className="flex gap-1.5">
                 <button
                     onClick={handleCopy}
-                    className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium transition-colors"
+                    title="Copy cấu hình"
+                    className="flex-1 flex items-center justify-center gap-1 px-1.5 py-1.5 bg-gray-50 hover:bg-gray-100 dark:bg-gray-700/50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-lg text-[10px] font-bold transition-all border border-gray-100 dark:border-gray-600"
                 >
-                    <Copy size={14} />
-                    Copy
+                    <Copy size={12} />
+                    COPY
                 </button>
                 <button
                     onClick={handlePaste}
                     disabled={!hasClipboard}
-                    className={`flex-1 flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${hasClipboard
-                        ? 'bg-orange-100 hover:bg-orange-200 dark:bg-orange-900/30 dark:hover:bg-orange-900/50 text-orange-700 dark:text-orange-300'
-                        : 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                    title="Paste cấu hình"
+                    className={`flex-1 flex items-center justify-center gap-1 px-1.5 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${hasClipboard
+                        ? 'bg-orange-50 hover:bg-orange-100 border-orange-100 text-orange-600 shadow-sm'
+                        : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'
                         }`}
                 >
-                    <ClipboardPaste size={14} />
-                    Paste
+                    <ClipboardPaste size={12} />
+                    PASTE
+                </button>
+                <button
+                    onClick={handleReset}
+                    title="Khôi phục mặc định"
+                    className="flex-1 flex items-center justify-center gap-1 px-1.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-[10px] font-bold transition-all border border-red-100 shadow-sm"
+                >
+                    <RefreshCw size={12} />
+                    RESET
                 </button>
             </div>
 
@@ -352,16 +430,25 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
                     {isSaving ? 'Đang lưu...' : <><Save size={16} /> Lưu</>}
                 </button>
 
-                {/* Apply to siblings button */}
                 {siblingCount > 0 && (
-                    <button
-                        onClick={handleApplyToSiblings}
-                        disabled={isSaving}
-                        className="w-full py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors"
-                    >
-                        <Users size={14} />
-                        Áp dụng cho {siblingCount} zone cùng cấp
-                    </button>
+                    <div className="grid grid-cols-2 gap-2">
+                        <button
+                            onClick={handleApplyToSiblings}
+                            disabled={isSaving}
+                            className="py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1 transition-colors"
+                        >
+                            <Users size={14} />
+                            Đồng bộ {siblingCount} zone
+                        </button>
+                        <button
+                            onClick={handleResetAll}
+                            disabled={isSaving}
+                            className="py-2 bg-stone-500 hover:bg-stone-600 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1 transition-colors shadow-sm"
+                        >
+                            <RefreshCw size={14} />
+                            Reset All
+                        </button>
+                    </div>
                 )}
             </div>
         </div>
