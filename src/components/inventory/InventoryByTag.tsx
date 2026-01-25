@@ -198,35 +198,37 @@ export default function InventoryByTag() {
                 <div className={`rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden`}>
                     <div
                         onClick={toggleExpand}
-                        className={`w-full px-4 py-3 flex items-center justify-between transition-colors ${canExpand ? 'cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50' : ''}`}
+                        className={`w-full px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-colors ${canExpand ? 'cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50' : ''}`}
                     >
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-start sm:items-center gap-3 w-full">
                             {/* Icon */}
-                            {canExpand ? (
-                                <svg
-                                    className={`w-4 h-4 text-zinc-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                                >
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                </svg>
-                            ) : <span className="w-4 h-4" />}
+                            <div className="mt-1 sm:mt-0 shrink-0">
+                                {canExpand ? (
+                                    <svg
+                                        className={`w-4 h-4 text-zinc-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                                        fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                    >
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                    </svg>
+                                ) : <span className="w-4 h-4 inline-block" />}
+                            </div>
 
                             {isProductNode ? (
-                                <div className="flex items-center gap-3 text-left">
-                                    <div className="font-mono text-sm font-bold text-emerald-700 dark:text-emerald-400">{node.name}</div>
-                                    <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{node.productDetails?.productName}</div>
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-left w-full">
+                                    <div className="font-mono text-sm font-bold text-emerald-700 dark:text-emerald-400 shrink-0">{node.name}</div>
+                                    <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 break-words">{node.productDetails?.productName}</div>
                                 </div>
                             ) : (
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2 w-full">
                                     <span className={`px-2.5 py-1 rounded-full text-sm font-medium ${bgColors[level % bgColors.length]}`}>
                                         {node.name}
                                     </span>
-                                    {hasChildren && <span className="text-xs text-zinc-400">({node.children.length} nhóm con)</span>}
+                                    {hasChildren && <span className="text-xs text-zinc-400 whitespace-nowrap">({node.children.length} nhóm con)</span>}
                                 </div>
                             )}
                         </div>
 
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 pl-7 sm:pl-0 self-end sm:self-auto">
                             <span className="text-lg font-bold tabular-nums text-zinc-700 dark:text-zinc-300">
                                 {node.totalQuantity.toLocaleString()}
                             </span>
@@ -238,12 +240,12 @@ export default function InventoryByTag() {
                     {isExpanded && hasProducts && !isProductNode && (
                         <div className="border-t border-dashed border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
                             {node.products.map((p, idx) => (
-                                <div key={idx} className="flex items-center justify-between px-4 py-2 pl-12 border-b border-dashed border-zinc-200 dark:border-zinc-800 last:border-0 text-sm">
-                                    <div className="flex items-center gap-2">
+                                <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2 pl-12 border-b border-dashed border-zinc-200 dark:border-zinc-800 last:border-0 text-sm gap-1">
+                                    <div className="flex flex-wrap items-center gap-2">
                                         <span className="font-mono text-zinc-500">{p.productCode}</span>
                                         <span className="text-zinc-700 dark:text-zinc-300">{p.productName}</span>
                                     </div>
-                                    <div className="flex items-center gap-4">
+                                    <div className="flex items-center gap-4 pl-0 sm:pl-4 self-end sm:self-auto">
                                         <span className="font-medium">{p.quantity.toLocaleString()}</span>
                                         <span className="text-xs text-zinc-400">{p.lotCount} LOT</span>
                                     </div>
