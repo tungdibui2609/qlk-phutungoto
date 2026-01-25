@@ -32,3 +32,26 @@ export interface OrderFormProps<T> {
     editOrderId?: string | null
     systemCode: string
 }
+
+export type ProductWithCategory = {
+    id: string
+    sku: string
+    name: string
+    manufacturer: string | null
+    part_number: string | null
+    image_url: string | null
+    min_stock_level: number | null
+    unit: string | null
+    price: number | null
+    categories: {
+        name: string
+    } | null
+    product_media: {
+        url: string
+        type: string
+    }[]
+    product_units: {
+        conversion_rate: number
+        unit_id: string
+    }[]
+}

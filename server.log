@@ -8,7 +8,7 @@
 
 ✓ Starting...
 ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
-✓ Ready in 3.7s
-○ Compiling /test-layout ...
- GET /test-layout 200 in 8.2s (compile: 6.1s, proxy.ts: 184ms, render: 1919ms)
-✓ Compiled in 6ms
+✓ Ready in 1752ms
+○ Compiling /test-mobile-products ...
+ HEAD /test-mobile-products 200 in 4.5s (compile: 4.0s, proxy.ts: 135ms, render: 357ms)
+ GET /test-mobile-products 200 in 943ms (compile: 19ms, proxy.ts: 34ms, render: 890ms)
