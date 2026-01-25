@@ -33,6 +33,25 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
 
     if (!props.isOpen) return null
 
+    const footerButtons = (
+        <>
+            <button
+                onClick={props.onClose}
+                className="px-6 py-2.5 rounded-xl border border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-gray-300 font-medium hover:bg-stone-50 dark:hover:bg-zinc-800 transition-colors"
+            >
+                Hủy bỏ
+            </button>
+            <button
+                onClick={handleSubmit}
+                disabled={submitting}
+                className="px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold shadow-lg shadow-orange-500/20 flex items-center gap-2 transition-all transform active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+                <Save size={20} />
+                {submitting ? 'Đang lưu...' : (props.editOrderId ? 'Cập Nhật Phiếu' : 'Lưu Phiếu Nhập')}
+            </button>
+        </>
+    )
+
     return (
         <OrderFormLayout
             title={
@@ -44,6 +63,7 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
             subtitle={props.editOrderId ? 'Cập nhật phiếu' : 'Tạo phiếu mới'}
             onClose={props.onClose}
             maxWidth={hasModule('inbound_ui_compact') ? 'max-w-5xl' : 'max-w-7xl'}
+            footer={footerButtons}
         >
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {(hasModule('inbound_basic') || true) && (
@@ -108,23 +128,6 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
                 Thêm sản phẩm
             </button>
 
-            {/* Footer */}
-            <div className="pt-4 border-t border-stone-200 dark:border-zinc-800 flex justify-end gap-3 sticky bottom-0 bg-white dark:bg-zinc-900 z-10 p-4 -mx-6 -mb-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-                <button
-                    onClick={props.onClose}
-                    className="px-6 py-2.5 rounded-xl border border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-gray-300 font-medium hover:bg-stone-50 dark:hover:bg-zinc-800 transition-colors"
-                >
-                    Hủy bỏ
-                </button>
-                <button
-                    onClick={handleSubmit}
-                    disabled={submitting}
-                    className="px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold shadow-lg shadow-orange-500/20 flex items-center gap-2 transition-all transform active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                    <Save size={20} />
-                    {submitting ? 'Đang lưu...' : (props.editOrderId ? 'Cập Nhật Phiếu' : 'Lưu Phiếu Nhập')}
-                </button>
-            </div>
         </OrderFormLayout>
     )
 }
