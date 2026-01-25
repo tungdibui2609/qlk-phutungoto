@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Package, TrendingUp, AlertTriangle, Boxes, ArrowUpRight, Sparkles } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
+import InventoryDistributionChart from '@/components/dashboard/InventoryDistributionChart'
 
 type Category = Database['public']['Tables']['categories']['Row']
 type Product = Database['public']['Tables']['products']['Row']
@@ -120,6 +121,11 @@ export default function Home() {
                         </div>
                     )
                 })}
+            </div>
+
+            {/* CHART */}
+            <div>
+                <InventoryDistributionChart />
             </div>
 
             {/* CONTENT GRID */}
