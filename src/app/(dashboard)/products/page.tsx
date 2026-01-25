@@ -9,31 +9,11 @@ import Protected from '@/components/auth/Protected'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import ProductDetailModal from '@/components/inventory/ProductDetailModal'
 import { Database } from '@/lib/database.types'
+import MobileProductList from '@/components/inventory/MobileProductList'
+import { ProductWithCategory } from '@/components/inventory/types'
+import { getProductDisplayImage } from '@/lib/utils'
 
 type Product = Database['public']['Tables']['products']['Row']
-
-type ProductWithCategory = {
-    id: string
-    sku: string
-    name: string
-    manufacturer: string | null
-    part_number: string | null
-    image_url: string | null
-    min_stock_level: number
-    unit: string | null
-    price: number | null
-    categories: {
-        name: string
-    } | null
-    product_media: {
-        url: string
-        type: 'image' | 'video'
-    }[]
-    product_units: {
-        conversion_rate: number
-        unit_id: string
-    }[]
-}
 
 export default function InventoryPage() {
     const router = useRouter()
@@ -81,46 +61,9 @@ export default function InventoryPage() {
         if (error) {
             console.error('Error fetching products:', error)
         } else {
-            if (data.length > 0) {
-                // Determine if any processing is needed or leave empty block / remove completely
-            }
             setProducts(data as any)
         }
         setLoading(false)
-    }
-
-    // Helper to get display URL (handles Google Drive)
-    const getDisplayImage = (product: ProductWithCategory) => {
-        let url = product.image_url
-
-        // Prioritize product_media
-        if (product.product_media && product.product_media.length > 0) {
-            // 1. Try to find an explicit image
-            const firstImage = product.product_media.find(m => m.type === 'image')
-            if (firstImage) {
-                url = firstImage.url
-            } else {
-                // 2. If no image, but we have a Google Drive link (video?), try it anyway
-                const firstDriveMedia = product.product_media.find(m => m.url.includes('drive.google.com'))
-                if (firstDriveMedia) {
-                    url = firstDriveMedia.url
-                }
-            }
-        }
-
-        if (!url) return null
-
-        // Google Drive check
-        const idMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/)
-        if (idMatch && idMatch[1]) {
-            const thumbUrl = `https://drive.google.com/thumbnail?id=${idMatch[1]}&sz=w600`
-            if (products.length > 0 && product.id === products[0].id) {
-                console.log('Generated Thumbnail URL:', thumbUrl)
-            }
-            return thumbUrl
-        }
-
-        return url
     }
 
     async function handleSeedData() {
@@ -397,8 +340,8 @@ export default function InventoryPage() {
                 </button>
             </div>
 
-            {/* TABLE */}
-            <div className="bg-white rounded-2xl overflow-hidden border border-stone-200">
+            {/* TABLE (Desktop) */}
+            <div className="hidden md:block bg-white rounded-2xl overflow-hidden border border-stone-200">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
                         <thead>
@@ -441,9 +384,9 @@ export default function InventoryPage() {
                                         <td className="p-4">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-14 h-14 rounded-xl flex-shrink-0 flex items-center justify-center bg-stone-100 overflow-hidden">
-                                                    {getDisplayImage(item) ? (
+                                                    {getProductDisplayImage(item) ? (
                                                         <img
-                                                            src={getDisplayImage(item)!}
+                                                            src={getProductDisplayImage(item)!}
                                                             alt={item.name}
                                                             className="w-full h-full object-cover"
                                                             onError={(e) => {
@@ -537,6 +480,25 @@ export default function InventoryPage() {
                         </button>
                     </div>
                 </div>
+            </div>
+
+            {/* LIST (Mobile) */}
+            <div className="md:hidden">
+                {loading ? (
+                     <div className="p-12 text-center">
+                        <div className="flex flex-col items-center gap-3">
+                            <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                            <span className="text-stone-500">Đang tải dữ liệu...</span>
+                        </div>
+                    </div>
+                ) : (
+                    <MobileProductList
+                        products={filteredProducts}
+                        unitsMap={unitsMap}
+                        onView={handleViewProduct}
+                        onDelete={handleDelete}
+                    />
+                )}
             </div>
 
             <ConfirmDialog
