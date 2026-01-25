@@ -17,6 +17,7 @@ interface SourceLotSnapshot {
     positions?: { code: string }[]
     notes?: string
     merge_date?: string
+    split_date?: string
 }
 
 interface LotMergeHistoryModalProps {
@@ -37,8 +38,12 @@ export const LotMergeHistoryModal: React.FC<LotMergeHistoryModalProps> = ({ data
                             <History size={20} />
                         </div>
                         <div>
-                            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 leading-none">Lịch sử Gộp Lot</h3>
-                            <p className="text-xs text-indigo-600 dark:text-indigo-400 font-mono mt-1 font-bold">GỐC: {data.code}</p>
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 leading-none">
+                                {data.split_date ? 'Lịch sử Tách Lot' : 'Lịch sử Gộp Lot'}
+                            </h3>
+                            <p className="text-xs text-indigo-600 dark:text-indigo-400 font-mono mt-1 font-bold uppercase">
+                                {data.split_date ? 'TÁCH TỪ:' : 'GỐC:'} {data.code}
+                            </p>
                         </div>
                     </div>
                     <button
@@ -85,10 +90,14 @@ export const LotMergeHistoryModal: React.FC<LotMergeHistoryModalProps> = ({ data
                             <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                                 <div className="flex items-center gap-2 text-slate-400 mb-1.5">
                                     <Calendar size={14} />
-                                    <span className="text-[10px] font-bold uppercase tracking-wider">Ngày gộp</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider">
+                                        {data.split_date ? 'Ngày tách' : 'Ngày gộp'}
+                                    </span>
                                 </div>
                                 <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                                    {data.merge_date ? new Date(data.merge_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                                    {data.split_date
+                                        ? new Date(data.split_date).toLocaleDateString('vi-VN')
+                                        : (data.merge_date ? new Date(data.merge_date).toLocaleDateString('vi-VN') : '--/--/----')}
                                 </p>
                             </div>
 
@@ -158,7 +167,9 @@ export const LotMergeHistoryModal: React.FC<LotMergeHistoryModalProps> = ({ data
                             <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/20">
                                 <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 mb-2">
                                     <Info size={16} />
-                                    <span className="text-xs font-bold uppercase tracking-wider">Ghi chú gốc</span>
+                                    <span className="text-xs font-bold uppercase tracking-wider">
+                                        {data.split_date ? 'Ghi chú gốc' : 'Ghi chú gốc'}
+                                    </span>
                                 </div>
                                 <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap italic">"{data.notes}"</p>
                             </div>

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { LotTagModal } from '@/components/lots/LotTagModal'
 import { LotMergeModal } from '@/components/warehouse/lots/LotMergeModal'
+import { LotSplitModal } from '@/components/warehouse/lots/LotSplitModal'
 
 // Modular Components
 import { useLotManagement, Lot } from '../_hooks/useLotManagement'
@@ -41,6 +42,7 @@ export function LotPageManager() {
     const [viewingLot, setViewingLot] = useState<Lot | null>(null)
     const [taggingLot, setTaggingLot] = useState<Lot | null>(null)
     const [mergingLot, setMergingLot] = useState<Lot | null>(null)
+    const [splittingLot, setSplittingLot] = useState<Lot | null>(null)
 
     const toggleCreateForm = () => {
         if (!showCreateForm) {
@@ -66,8 +68,7 @@ export function LotPageManager() {
     }
 
     const handleSplit = (lot: Lot) => {
-        console.log('Split lot:', lot)
-        alert('Chức năng tách lot đang phát triển')
+        setSplittingLot(lot)
     }
 
     const handleExport = (lot: Lot) => {
@@ -194,6 +195,17 @@ export function LotPageManager() {
                     onClose={() => setMergingLot(null)}
                     onSuccess={() => {
                         setMergingLot(null);
+                        fetchLots();
+                    }}
+                />
+            )}
+
+            {splittingLot && (
+                <LotSplitModal
+                    lot={splittingLot}
+                    onClose={() => setSplittingLot(null)}
+                    onSuccess={() => {
+                        setSplittingLot(null);
                         fetchLots();
                     }}
                 />

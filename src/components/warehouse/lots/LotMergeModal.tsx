@@ -133,6 +133,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
 
         try {
             const itemsToMerge = Object.entries(selectedItems).map(([itemId, qty]) => ({ itemId, qty }));
+            const newItemHistories: Record<string, any> = {}
 
             for (const entry of itemsToMerge) {
                 // Find source item and its lot
@@ -142,25 +143,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                 const sourceItem = sourceLot.lot_items?.find(i => i.id === entry.itemId);
                 if (!sourceItem) continue;
 
-                // 1. Decrement Source
-                const sourceQty = sourceItem.quantity || 0;
-                if (entry.qty >= sourceQty) {
-                    await supabase.from('lot_items').delete().eq('id', sourceItem.id);
-                } else {
-                    await supabase.from('lot_items').update({ quantity: sourceQty - entry.qty }).eq('id', sourceItem.id);
-                }
-
-                // 2. Insert into Target
-                const { data: newItem, error: insertError } = await supabase.from('lot_items').insert({
-                    lot_id: targetLot.id,
-                    product_id: sourceItem.product_id as string,
-                    quantity: entry.qty,
-                    unit: (sourceItem as any).unit
-                }).select().single();
-
-                if (insertError) throw new Error('Lỗi khi gộp: ' + insertError.message);
-
-                // 3. Add History Tag
+                // Prepare snapshot
                 const snapshot = {
                     code: sourceLot.code,
                     inbound_date: sourceLot.inbound_date,
@@ -176,12 +159,40 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                     merge_date: new Date().toISOString()
                 };
 
-                await supabase.from('lot_tags').insert({
+                // 1. Decrement Source
+                const sourceQty = sourceItem.quantity || 0;
+                if (entry.qty >= sourceQty) {
+                    await supabase.from('lot_items').delete().eq('id', sourceItem.id);
+                } else {
+                    await supabase.from('lot_items').update({ quantity: sourceQty - entry.qty }).eq('id', sourceItem.id);
+                }
+
+                // 2. Insert into Target
+                const { data: newItem, error: insertError } = await (supabase.from('lot_items') as any).insert({
                     lot_id: targetLot.id,
-                    lot_item_id: newItem.id,
-                    tag: `MERGED_DATA:${JSON.stringify(snapshot)}`
-                });
+                    product_id: sourceItem.product_id as string,
+                    quantity: entry.qty,
+                    unit: (sourceItem as any).unit
+                }).select().single();
+
+                if (insertError) throw new Error('Lỗi khi gộp: ' + insertError.message);
+
+                // Save history in item-level metadata map
+                newItemHistories[newItem.id] = {
+                    type: 'merge',
+                    source_code: sourceLot.code,
+                    snapshot: snapshot
+                }
             }
+
+            // 3. Update Target LOT metadata with all new item histories
+            const targetMetadata = targetLot.metadata ? { ...targetLot.metadata as any } : {}
+            if (!targetMetadata.system_history) targetMetadata.system_history = {}
+            if (!targetMetadata.system_history.item_history) targetMetadata.system_history.item_history = {}
+
+            Object.assign(targetMetadata.system_history.item_history, newItemHistories)
+
+            await supabase.from('lots').update({ metadata: targetMetadata }).eq('id', targetLot.id)
 
             // Clean up positions for lots that became empty
             const sourceLotIdsAffected = Array.from(new Set(lots.filter(l => l.lot_items?.some(i => selectedItems[i.id])).map(l => l.id)));
@@ -194,6 +205,15 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
 
                 if (count === 0) {
                     await supabase.from('positions').update({ lot_id: null }).eq('lot_id', lid)
+
+                    // Add MERGED_TO reference to the source lot metadata
+                    const { data: sLot } = await supabase.from('lots').select('metadata').eq('id', lid).single();
+                    if (sLot) {
+                        const sMeta = sLot.metadata ? { ...sLot.metadata as any } : {}
+                        if (!sMeta.system_history) sMeta.system_history = {}
+                        sMeta.system_history.merged_to = targetLot.code
+                        await supabase.from('lots').update({ metadata: sMeta }).eq('id', lid)
+                    }
                 }
             }
 

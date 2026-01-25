@@ -204,27 +204,46 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                                 <div className="space-y-0">
                                     {displayItems.length > 0 ? (
                                         displayItems.map((item, index) => {
-                                            const mergedTag = lot.lot_tags?.find(t => t.lot_item_id === item.id && (t.tag.startsWith('MERGED_FROM:') || t.tag.startsWith('MERGED_DATA:')));
-                                            const isMergedData = mergedTag?.tag.startsWith('MERGED_DATA:');
-                                            let parsedHistory = null;
-                                            if (isMergedData) {
-                                                try {
-                                                    parsedHistory = JSON.parse(mergedTag!.tag.replace('MERGED_DATA:', ''));
-                                                } catch (e) {
-                                                    console.error('Error parsing merge history:', e);
+                                            // 1. Check history from metadata (New)
+                                            const itemHistory = (lot.metadata as any)?.system_history?.item_history?.[item.id];
+                                            let parsedHistory = itemHistory?.snapshot || null;
+                                            let historyType = itemHistory?.type || null; // 'split' | 'merge'
+                                            let sourceCode = itemHistory?.source_code || null;
+
+                                            // 2. Check history from tags (Legacy/Compatibility)
+                                            const originTag = lot.lot_tags?.find(t => t.lot_item_id === item.id && (t.tag.startsWith('MERGED_') || t.tag.startsWith('SPLIT_')));
+
+                                            if (!parsedHistory && originTag) {
+                                                const isMergedData = originTag.tag.startsWith('MERGED_DATA:');
+                                                const isSplitData = originTag.tag.startsWith('SPLIT_DATA:');
+                                                if (isMergedData || isSplitData) {
+                                                    try {
+                                                        const prefix = isMergedData ? 'MERGED_DATA:' : 'SPLIT_DATA:';
+                                                        parsedHistory = JSON.parse(originTag.tag.replace(prefix, ''));
+                                                        historyType = isMergedData ? 'merge' : 'split';
+                                                        sourceCode = parsedHistory.code;
+                                                    } catch (e) {
+                                                        console.error('Error parsing legacy tag history:', e);
+                                                    }
                                                 }
                                             }
+
+                                            const hasHistory = !!parsedHistory || !!originTag;
+                                            const isSplit = historyType === 'split' || (originTag && (originTag.tag.startsWith('SPLIT_') || originTag.tag.startsWith('SPLIT_DATA:')));
 
                                             return (
                                                 <div
                                                     key={item.id}
                                                     onClick={() => {
                                                         if (parsedHistory) setHistoryData(parsedHistory);
-                                                        else if (mergedTag && !isMergedData) {
-                                                            alert(`Sản phẩm được gộp từ Lot: ${mergedTag.tag.replace('MERGED_FROM:', '')}. (Dữ liệu cũ chi tiết không khả dụng cho Lot đã gộp trước đó)`);
+                                                        else if (originTag && !parsedHistory) {
+                                                            const originInfo = originTag.tag.startsWith('MERGED_FROM:')
+                                                                ? `Sản phẩm được gộp từ Lot: ${originTag.tag.replace('MERGED_FROM:', '')}`
+                                                                : `Sản phẩm được tách từ Lot: ${originTag.tag.replace('SPLIT_FROM:', '')}`;
+                                                            alert(`${originInfo}. (Dữ liệu cũ chi tiết không khả dụng cho Lot này)`);
                                                         }
                                                     }}
-                                                    className={`text-sm text-slate-800 dark:text-slate-200 flex items-center justify-between gap-2 py-2 px-2 rounded-lg border-b border-dashed border-slate-100 dark:border-slate-800 last:border-0 ${mergedTag ? 'bg-indigo-50/60 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-800/30 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/20 transition-colors' : (index % 2 === 1 ? 'bg-white/60 dark:bg-white/5' : '')}`}
+                                                    className={`text-sm text-slate-800 dark:text-slate-200 flex items-center justify-between gap-2 py-2 px-2 rounded-lg border-b border-dashed border-slate-100 dark:border-slate-800 last:border-0 ${hasHistory ? 'bg-indigo-50/60 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-800/30 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/20 transition-colors' : (index % 2 === 1 ? 'bg-white/60 dark:bg-white/5' : '')}`}
                                                 >
                                                     <div className="flex flex-col flex-1 min-w-0 gap-1">
                                                         <div className="flex flex-col gap-1.5">
@@ -236,10 +255,17 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                                                                     <span className="font-bold">{item.quantity}</span>
                                                                     <span className="opacity-80">{(item as any).unit || item.products?.unit}</span>
                                                                 </div>
-                                                                {mergedTag && (
-                                                                    <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded border border-purple-200 dark:border-purple-800 text-[10px] font-bold" title={isMergedData ? 'Bấm để xem lịch sử gộp' : mergedTag.tag.replace('MERGED_FROM:', 'Gộp từ Lot: ')}>
+                                                                {(parsedHistory || originTag) && (
+                                                                    <div
+                                                                        className={`flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold ${isSplit ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800' : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'}`}
+                                                                        title={parsedHistory ? 'Bấm để xem lịch sử' : (originTag?.tag.startsWith('MERGED_FROM:') ? originTag.tag.replace('MERGED_FROM:', 'Gộp từ Lot: ') : originTag?.tag.replace('SPLIT_FROM:', 'Tách từ Lot: '))}
+                                                                    >
                                                                         <History size={10} />
-                                                                        <span>{isMergedData ? parsedHistory?.code : mergedTag.tag.replace('MERGED_FROM:', '')}</span>
+                                                                        <span>
+                                                                            {parsedHistory
+                                                                                ? (isSplit ? `SPLIT_FROM:${sourceCode}` : sourceCode)
+                                                                                : (originTag?.tag.includes(':') ? originTag.tag.split(':')[1] : originTag?.tag)}
+                                                                        </span>
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -251,7 +277,13 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                                                             <div className="flex flex-wrap gap-1">
                                                                 <TagDisplay
                                                                     tags={lot.lot_tags
-                                                                        .filter(t => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_FROM:') && !t.tag.startsWith('MERGED_DATA:'))
+                                                                        .filter(t =>
+                                                                            t.lot_item_id === item.id &&
+                                                                            !t.tag.startsWith('MERGED_FROM:') &&
+                                                                            !t.tag.startsWith('MERGED_DATA:') &&
+                                                                            !t.tag.startsWith('SPLIT_FROM:') &&
+                                                                            !t.tag.startsWith('SPLIT_DATA:')
+                                                                        )
                                                                         .map(t => t.tag)}
                                                                     placeholderMap={{
                                                                         '@': item.products?.sku || 'SẢN PHẨM'
@@ -322,7 +354,13 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                 {lot.lot_tags && lot.lot_tags.filter(t => !t.lot_item_id).length > 0 && (
                     <div className="mt-2 text-xs">
                         <TagDisplay
-                            tags={lot.lot_tags.filter(t => !t.lot_item_id).map(t => t.tag)}
+                            tags={lot.lot_tags
+                                .filter(t =>
+                                    !t.lot_item_id &&
+                                    !t.tag.startsWith('SPLIT_TO:') &&
+                                    !t.tag.startsWith('MERGED_TO:')
+                                )
+                                .map(t => t.tag)}
                             placeholderMap={{
                                 '@': lot.products?.sku || lot.products?.name || 'SẢN PHẨM'
                             }}
