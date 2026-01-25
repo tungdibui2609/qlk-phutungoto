@@ -47,6 +47,7 @@ const menuItems: MenuItem[] = [
         children: [
             { name: 'Hạ tầng', href: '/warehouses', icon: Warehouse },
             { name: 'Sơ đồ kho', href: '/warehouses/map', icon: Map },
+            { name: 'Trạng thái kho', href: '/warehouses/status', icon: BarChart3 },
             { name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes }, // Using Boxes or Barcode/Tags if imported
             { name: 'Nhập kho (KT)', href: '/inbound', icon: ArrowDownToLine },
             { name: 'Xuất kho (KT)', href: '/outbound', icon: ArrowUpFromLine },
