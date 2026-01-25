@@ -189,7 +189,7 @@ export function LotPageManager() {
 
             {mergingLot && (
                 <LotMergeModal
-                    sourceLot={mergingLot}
+                    targetLot={mergingLot}
                     lots={lots}
                     onClose={() => setMergingLot(null)}
                     onSuccess={() => {

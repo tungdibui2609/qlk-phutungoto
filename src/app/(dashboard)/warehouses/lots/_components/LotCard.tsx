@@ -209,7 +209,7 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                                             let parsedHistory = null;
                                             if (isMergedData) {
                                                 try {
-                                                    parsedHistory = JSON.parse(mergedTag.tag.replace('MERGED_DATA:', ''));
+                                                    parsedHistory = JSON.parse(mergedTag!.tag.replace('MERGED_DATA:', ''));
                                                 } catch (e) {
                                                     console.error('Error parsing merge history:', e);
                                                 }
