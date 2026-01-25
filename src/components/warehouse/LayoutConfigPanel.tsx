@@ -29,6 +29,7 @@ interface LayoutConfigPanelProps {
     onSave: (layout: ZoneLayout) => void
     onBatchSave?: (layouts: ZoneLayout[]) => void
     onClose: () => void
+    tableName?: string
 }
 
 const CHILD_LAYOUT_OPTIONS = [
@@ -45,7 +46,7 @@ const DISPLAY_TYPE_OPTIONS = [
     { value: 'hidden', label: 'Ẩn', desc: 'Không hiển thị' },
 ]
 
-export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, onBatchSave, onClose }: LayoutConfigPanelProps) {
+export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, onBatchSave, onClose, tableName = 'zone_layouts' }: LayoutConfigPanelProps) {
     const { showToast } = useToast()
     const [positionColumns, setPositionColumns] = useState(layout?.position_columns ?? 8)
     const [cellWidth, setCellWidth] = useState(layout?.cell_width ?? 0)
@@ -109,8 +110,8 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
             }
 
             if (layout) {
-                const { data, error } = await (supabase
-                    .from('zone_layouts') as any)
+                const { data, error } = await (supabase as any)
+                    .from(tableName)
                     .update(payload)
                     .eq('id', layout.id)
                     .select()
@@ -120,8 +121,8 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
                 showToast('Đã lưu!', 'success')
                 onSave(data)
             } else {
-                const { data, error } = await (supabase
-                    .from('zone_layouts') as any)
+                const { data, error } = await (supabase as any)
+                    .from(tableName)
                     .insert({ zone_id: zone.id, ...payload })
                     .select()
                     .single()
@@ -148,16 +149,16 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
 
             for (const sibling of siblings) {
                 // Check if layout exists for this zone
-                const { data: existing } = await supabase
-                    .from('zone_layouts')
+                const { data: existing } = await (supabase as any)
+                    .from(tableName)
                     .select('id')
                     .eq('zone_id', sibling.id)
                     .single()
 
                 if (existing) {
                     // Update existing
-                    const { data, error } = await (supabase
-                        .from('zone_layouts') as any)
+                    const { data, error } = await (supabase as any)
+                        .from(tableName)
                         .update({ ...settings, updated_at: new Date().toISOString() })
                         .eq('id', (existing as any).id)
                         .select()
@@ -165,8 +166,8 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
                     if (!error && data) savedLayouts.push(data)
                 } else {
                     // Insert new
-                    const { data, error } = await (supabase
-                        .from('zone_layouts') as any)
+                    const { data, error } = await (supabase as any)
+                        .from(tableName)
                         .insert({ zone_id: sibling.id, ...settings })
                         .select()
                         .single()
