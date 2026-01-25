@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Loader2, AlertTriangle, CheckCircle, Printer } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
+import MobileReconciliationList from './MobileReconciliationList'
 
 // Types
 interface AccountingItem {
@@ -122,12 +123,12 @@ export default function InventoryReconciliation() {
 
     return (
         <div className="space-y-4">
-            <div className="flex items-center justify-between bg-white dark:bg-stone-900 p-4 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-white dark:bg-stone-900 p-4 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm">
                 <div>
                     <h3 className="font-medium text-stone-900 dark:text-stone-100">Bảng đối chiếu tồn kho</h3>
                     <p className="text-sm text-stone-500">So sánh Tồn kho Kế toán (nhập/xuất) và Tổng tồn kho theo LOT thực tế.</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between w-full md:w-auto gap-4">
                     <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-stone-700 dark:text-stone-300">
                         <input
                             type="checkbox"
@@ -154,70 +155,78 @@ export default function InventoryReconciliation() {
                 </div>
             </div>
 
-            <div className="rounded-md border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-stone-50 dark:bg-stone-800/50 text-stone-500 dark:text-stone-400 font-medium">
-                            <tr>
-                                <th className="px-4 py-3">Mã SP</th>
-                                <th className="px-4 py-3">Tên sản phẩm</th>
-                                <th className="px-4 py-3 text-center">ĐVT</th>
-                                <th className="px-4 py-3 text-right">Tồn Kế toán</th>
-                                <th className="px-4 py-3 text-right">Tổng LOT</th>
-                                <th className="px-4 py-3 text-right">Chênh lệch</th>
-                                <th className="px-4 py-3 text-center">Trạng thái</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stone-200 dark:divide-stone-800">
-                            {loading ? (
-                                <tr>
-                                    <td colSpan={7} className="px-4 py-8 text-center text-stone-500">
-                                        <div className="flex items-center justify-center gap-2">
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                            <span>Đang tải và đối chiếu dữ liệu...</span>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ) : displayedItems.length === 0 ? (
-                                <tr>
-                                    <td colSpan={7} className="px-4 py-8 text-center text-stone-500">
-                                        {showOnlyDiff ? 'Tuyệt vời! Không có mục nào bị sai lệch.' : 'Không có dữ liệu.'}
-                                    </td>
-                                </tr>
-                            ) : (
-                                displayedItems.map((item) => {
-                                    const isDiff = item.diff !== 0
-                                    return (
-                                        <tr key={item.productId} className={`hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors ${isDiff ? 'bg-orange-50/50 dark:bg-orange-900/10' : ''}`}>
-                                            <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-400">{item.productCode}</td>
-                                            <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">{item.productName}</td>
-                                            <td className="px-4 py-3 text-center text-stone-500">{item.unit}</td>
-                                            <td className="px-4 py-3 text-right tabular-nums text-stone-700 font-medium">{item.accountingBalance.toLocaleString()}</td>
-                                            <td className="px-4 py-3 text-right tabular-nums text-stone-700 font-medium">{item.lotBalance.toLocaleString()}</td>
-                                            <td className={`px-4 py-3 text-right tabular-nums font-bold ${isDiff ? 'text-red-500' : 'text-stone-400'}`}>
-                                                {item.diff > 0 ? '+' : ''}{item.diff.toLocaleString()}
-                                            </td>
-                                            <td className="px-4 py-3 text-center">
-                                                {isDiff ? (
-                                                    <div className="inline-flex items-center gap-1 text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full text-xs font-medium border border-red-100 dark:border-red-900/30">
-                                                        <AlertTriangle size={12} />
-                                                        Lệch
-                                                    </div>
-                                                ) : (
-                                                    <div className="inline-flex items-center gap-1 text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full text-xs font-medium border border-emerald-100 dark:border-emerald-900/30">
-                                                        <CheckCircle size={12} />
-                                                        Khớp
-                                                    </div>
-                                                )}
+            {loading ? (
+                <div className="p-8 text-center text-stone-500 bg-white dark:bg-stone-900 rounded-lg border border-stone-200 dark:border-stone-800">
+                    <div className="flex items-center justify-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Đang tải và đối chiếu dữ liệu...</span>
+                    </div>
+                </div>
+            ) : (
+                <>
+                    {/* Mobile List */}
+                    <div className="md:hidden">
+                        <MobileReconciliationList items={displayedItems} />
+                    </div>
+
+                    {/* Desktop Table */}
+                    <div className="hidden md:block rounded-md border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 shadow-sm overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-stone-50 dark:bg-stone-800/50 text-stone-500 dark:text-stone-400 font-medium">
+                                    <tr>
+                                        <th className="px-4 py-3">Mã SP</th>
+                                        <th className="px-4 py-3">Tên sản phẩm</th>
+                                        <th className="px-4 py-3 text-center">ĐVT</th>
+                                        <th className="px-4 py-3 text-right">Tồn Kế toán</th>
+                                        <th className="px-4 py-3 text-right">Tổng LOT</th>
+                                        <th className="px-4 py-3 text-right">Chênh lệch</th>
+                                        <th className="px-4 py-3 text-center">Trạng thái</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-stone-200 dark:divide-stone-800">
+                                    {displayedItems.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={7} className="px-4 py-8 text-center text-stone-500">
+                                                {showOnlyDiff ? 'Tuyệt vời! Không có mục nào bị sai lệch.' : 'Không có dữ liệu.'}
                                             </td>
                                         </tr>
-                                    )
-                                })
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+                                    ) : (
+                                        displayedItems.map((item) => {
+                                            const isDiff = item.diff !== 0
+                                            return (
+                                                <tr key={item.productId} className={`hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors ${isDiff ? 'bg-orange-50/50 dark:bg-orange-900/10' : ''}`}>
+                                                    <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-400">{item.productCode}</td>
+                                                    <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">{item.productName}</td>
+                                                    <td className="px-4 py-3 text-center text-stone-500">{item.unit}</td>
+                                                    <td className="px-4 py-3 text-right tabular-nums text-stone-700 font-medium">{item.accountingBalance.toLocaleString()}</td>
+                                                    <td className="px-4 py-3 text-right tabular-nums text-stone-700 font-medium">{item.lotBalance.toLocaleString()}</td>
+                                                    <td className={`px-4 py-3 text-right tabular-nums font-bold ${isDiff ? 'text-red-500' : 'text-stone-400'}`}>
+                                                        {item.diff > 0 ? '+' : ''}{item.diff.toLocaleString()}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-center">
+                                                        {isDiff ? (
+                                                            <div className="inline-flex items-center gap-1 text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full text-xs font-medium border border-red-100 dark:border-red-900/30">
+                                                                <AlertTriangle size={12} />
+                                                                Lệch
+                                                            </div>
+                                                        ) : (
+                                                            <div className="inline-flex items-center gap-1 text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full text-xs font-medium border border-emerald-100 dark:border-emerald-900/30">
+                                                                <CheckCircle size={12} />
+                                                                Khớp
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </>
+            )}
             <div className="text-xs text-stone-500 text-right mt-2">
                 * Chênh lệch = Tồn Kế toán - Tổng LOT. Nếu dương (+) tức là Kế toán nhiều hơn LOT thực tế.
             </div>
