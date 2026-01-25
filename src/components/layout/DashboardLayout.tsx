@@ -1,6 +1,7 @@
 'use client'
 import Sidebar from './Sidebar'
 import Header from './Header'
+import Footer from './Footer'
 import { SidebarProvider, useSidebar } from './SidebarContext'
 import { useUser } from '@/contexts/UserContext'
 import { usePathname } from 'next/navigation'
@@ -15,7 +16,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     const marginLeft = isReady ? (isCollapsed ? 'md:ml-16' : 'md:ml-56') : 'md:ml-16'
 
     return (
-        <div className="min-h-screen font-sans bg-stone-50 text-stone-800 relative">
+        <div className="min-h-screen font-sans bg-stone-50 text-stone-800 relative flex flex-col">
             <Sidebar />
 
             {isHeaderVisible ? (
@@ -33,11 +34,15 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 </div>
             )}
 
-            <main className={`p-8 transition-all duration-300 ${marginLeft}`}>
+            <main className={`flex-1 p-4 md:p-8 transition-all duration-300 ${marginLeft}`}>
                 <div className="max-w-7xl mx-auto animate-slide-up">
                     <RouteProtector>{children}</RouteProtector>
                 </div>
             </main>
+
+            <div className={`transition-all duration-300 ${marginLeft}`}>
+                <Footer />
+            </div>
         </div>
     )
 }
