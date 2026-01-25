@@ -306,7 +306,10 @@ function WarehouseMapContent() {
 
                 if (lotItems.length > 0) {
                     items = lotItems.map((item: any) => {
-                        const itemTags = allTags.filter((t: any) => t.lot_item_id === item.id).map((t: any) => t.tag.replace(/@/g, item.products?.sku || ''))
+                        const itemTags = allTags
+                            .filter((t: any) => t.lot_item_id === item.id)
+                            .map((t: any) => t.tag.replace(/@/g, item.products?.sku || ''))
+                            .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
                         accumulatedTags.push(...itemTags)
                         return {
                             product_name: item.products?.name,
@@ -317,7 +320,9 @@ function WarehouseMapContent() {
                         }
                     })
                 } else if (l.products) {
-                    const itemTags = allTags.map((t: any) => t.tag.replace(/@/g, l.products?.sku || ''))
+                    const itemTags = allTags
+                        .map((t: any) => t.tag.replace(/@/g, l.products?.sku || ''))
+                        .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
                     accumulatedTags.push(...itemTags)
                     items = [{
                         product_name: l.products.name,
