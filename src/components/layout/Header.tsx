@@ -20,6 +20,9 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
     const [showAvatarModal, setShowAvatarModal] = useState(false)
     const { showToast } = useToast()
     const { systemType, setSystemType, systems } = useSystem()
+    const [isSystemMenuOpen, setIsSystemMenuOpen] = useState(false)
+
+    const currentSystem = systems.find(s => s.code === systemType)
 
     const handleLogout = async () => {
         await supabase.auth.signOut()
@@ -58,20 +61,15 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
                     </button>
                 )}
                 <div className="relative flex-1 min-w-0">
-                    {/* LEFT: SYSTEM SWITCHER - TABS STYLE */}
-                    <div className="flex items-center overflow-x-auto no-scrollbar gap-2 pr-4">
+                    {/* DESKTOP: SYSTEM SWITCHER - TABS STYLE */}
+                    <div className="hidden md:flex items-center overflow-x-auto no-scrollbar gap-2 pr-4">
                         {systems.map((sys) => {
                             const isActive = systemType === sys.code
-                            // 3. User Permission Logic
                             const allowed = profile?.allowed_systems || []
                             const isAllowed =
                                 hasPermission('system.full_access') ||
                                 allowed.includes('ALL') ||
                                 allowed.includes(sys.code)
-
-                            // Parse color from class or fallback (Rough heuristic or update DB to be simpler)
-                            // DB has 'bg-blue-600'. Let's just use gray/black for generic if dynamic.
-                            // Or standard styles.
 
                             return (
                                 <button
@@ -99,6 +97,69 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
                                 </button>
                             )
                         })}
+                    </div>
+
+                    {/* MOBILE: SYSTEM SWITCHER - DROPDOWN STYLE */}
+                    <div className="md:hidden relative">
+                        <button
+                            onClick={() => setIsSystemMenuOpen(!isSystemMenuOpen)}
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-orange-200 bg-orange-50 text-orange-700 text-sm font-semibold shadow-sm w-full max-w-[200px]"
+                        >
+                            <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0" />
+                            <span className="truncate flex-1 text-left">{currentSystem?.name || 'Chọn hệ thống'}</span>
+                            <ChevronDown size={14} className={`transition-transform duration-200 ${isSystemMenuOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {isSystemMenuOpen && (
+                            <>
+                                <div
+                                    className="fixed inset-0 z-40"
+                                    onClick={() => setIsSystemMenuOpen(false)}
+                                />
+                                <div className="absolute left-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border border-stone-100 z-50 py-1 overflow-hidden animate-slide-up">
+                                    <div className="px-3 py-2 text-xs font-bold text-stone-400 uppercase tracking-wider border-b border-stone-50 mb-1">
+                                        Chọn phân hệ kho
+                                    </div>
+                                    {systems.map((sys) => {
+                                        const isActive = systemType === sys.code
+                                        const allowed = profile?.allowed_systems || []
+                                        const isAllowed =
+                                            hasPermission('system.full_access') ||
+                                            allowed.includes('ALL') ||
+                                            allowed.includes(sys.code)
+
+                                        return (
+                                            <button
+                                                key={sys.code}
+                                                disabled={!isAllowed}
+                                                onClick={() => {
+                                                    if (isAllowed) {
+                                                        setSystemType(sys.code)
+                                                        setIsSystemMenuOpen(false)
+                                                        router.push('/')
+                                                    }
+                                                }}
+                                                className={`
+                                                    w-full px-4 py-3 text-left text-sm flex items-center gap-3 transition-colors
+                                                    ${isActive
+                                                        ? 'bg-orange-50 text-orange-700 font-bold'
+                                                        : isAllowed
+                                                            ? 'text-stone-600 hover:bg-stone-50'
+                                                            : 'text-stone-300 cursor-not-allowed italic'
+                                                    }
+                                                `}
+                                            >
+                                                <span className={`w-2 h-2 rounded-full shrink-0 ${isActive ? 'bg-orange-500' : isAllowed ? 'bg-stone-300' : 'bg-stone-200'}`} />
+                                                <span className="truncate">{sys.name}</span>
+                                                {isActive && (
+                                                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-orange-500" />
+                                                )}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
