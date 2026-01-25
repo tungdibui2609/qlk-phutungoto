@@ -15,3 +15,7 @@
 ✓ Compiled in 15ms
  GET /test-inventory 200 in 2.4s (compile: 1045ms, proxy.ts: 137ms, render: 1202ms)
 ✓ Compiled in 20ms
+✓ Compiled in 163ms
+○ Compiling /test-chart ...
+ GET /test-chart 200 in 15.0s (compile: 13.0s, proxy.ts: 320ms, render: 1647ms)
+✓ Compiled in 10ms
