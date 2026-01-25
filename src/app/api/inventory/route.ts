@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { Database } from '@/lib/database.types'
+import { toBaseAmount as toBaseAmountLogic, getBaseToKgRate as getBaseToKgRateLogic } from '@/lib/unitConversion'
 
 export const dynamic = 'force-dynamic'
 
@@ -143,58 +144,6 @@ export async function GET(request: Request) {
 
         const inventoryMap = new Map<string, InventoryItem>()
 
-        // Helper: Convert any unit to Base Unit amount
-        const toBaseAmount = (pid: string, unitName: string | null, qty: number): number => {
-            if (!pid || !unitName) return qty
-            const prod = productMap.get(pid)
-            if (!prod) return qty
-
-            // If unit is Base Unit, return qty
-            if (prod.unit && prod.unit.toLowerCase() === unitName.toLowerCase()) return qty
-
-            // Look up unit ID
-            const uid = unitNameMap.get(unitName.toLowerCase())
-            if (!uid) return qty // Unknown unit, treat as 1:1 fallback (or error)
-
-            // Look up rate
-            const rates = conversionMap.get(pid)
-            if (rates && rates.has(uid)) {
-                return qty * rates.get(uid)!
-            }
-
-            return qty
-        }
-
-        // Helper: Get Product's KG conversion rate (How many KG in 1 Base Unit?)
-        // If Base is KG, return 1.
-        // If 1 KG = X Base (from table), then 1 Base = 1/X KG.
-        const getBaseToKgRate = (pid: string): number | null => {
-            const prod = productMap.get(pid)
-            if (!prod) return null
-
-            const kgNames = ['kg', 'kilogram', 'ki-lo-gam', 'kgs']
-
-            // Check Base Unit
-            if (prod.unit && kgNames.includes(prod.unit.toLowerCase())) return 1
-
-            // Check Product Units for a KG entry
-            // Table stores: 1 Alt = rate * Base.
-            // So if Alt is KG: 1 KG = rate * Base. -> 1 Base = 1/rate KG.
-            const rates = conversionMap.get(pid)
-            if (!rates) return null
-
-            for (const name of kgNames) {
-                const uid = unitNameMap.get(name)
-                if (uid && rates.has(uid)) {
-                    const rateKgToBase = rates.get(uid)!
-                    if (rateKgToBase === 0) return null
-                    return 1 / rateKgToBase
-                }
-            }
-
-            return null
-        }
-
         const processItem = (item: any, type: 'in' | 'out', date: Date) => {
             const isBeforePeriod = from ? date < new Date(from) : false
             const isAfterPeriod = to ? date > new Date(to + 'T23:59:59') : false
@@ -211,7 +160,8 @@ export async function GET(request: Request) {
 
             if (convertToKg) {
                 // Determine if convertible
-                const baseToKgParams = getBaseToKgRate(pid)
+                const prod = productMap.get(pid)
+                const baseToKgParams = getBaseToKgRateLogic(pid, prod?.unit || null, unitNameMap, conversionMap)
 
                 if (baseToKgParams !== null) {
                     // CONVERTIBLE
@@ -219,7 +169,7 @@ export async function GET(request: Request) {
                     unitDisplay = 'Kg'
 
                     // 1. Convert Transaction Qty to Base Qty
-                    const baseQty = toBaseAmount(pid, uName, quantity)
+                    const baseQty = toBaseAmountLogic(pid, uName, quantity, prod?.unit || null, unitNameMap, conversionMap)
                     // 2. Convert Base Qty to KG Qty
                     quantity = baseQty * baseToKgParams
 

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { toBaseAmount as toBaseAmountLogic, getBaseToKgRate as getBaseToKgRateLogic, UnitNameMap, ConversionMap } from '@/lib/unitConversion'
 
 interface Unit {
     id: string
@@ -16,8 +17,8 @@ export function useUnitConversion() {
     const [loading, setLoading] = useState(true)
 
     // Maps for O(1) access
-    const [unitNameMap, setUnitNameMap] = useState<Map<string, string>>(new Map()) // Name (lower) -> ID
-    const [conversionMap, setConversionMap] = useState<Map<string, Map<string, number>>>(new Map()) // ProductID -> UnitID -> Rate
+    const [unitNameMap, setUnitNameMap] = useState<UnitNameMap>(new Map()) // Name (lower) -> ID
+    const [conversionMap, setConversionMap] = useState<ConversionMap>(new Map()) // ProductID -> UnitID -> Rate
 
     useEffect(() => {
         async function fetchData() {
@@ -53,50 +54,14 @@ export function useUnitConversion() {
         fetchData()
     }, [])
 
-    // Helper: Convert any unit to Base Unit amount
-    const toBaseAmount = useCallback((productId: string, unitName: string | null, qty: number, baseUnitName: string | null): number => {
-        if (!productId || !unitName || !baseUnitName) return qty
-
-        // If unit is Base Unit, return qty
-        if (unitName.toLowerCase() === baseUnitName.toLowerCase()) return qty
-
-        // Look up unit ID
-        const uid = unitNameMap.get(unitName.toLowerCase())
-        if (!uid) return qty
-
-        // Look up rate
-        const rates = conversionMap.get(productId)
-        if (rates && rates.has(uid)) {
-            return qty * rates.get(uid)!
-        }
-
-        return qty
+    // Wrapper: Convert any unit to Base Unit amount
+    const toBaseAmount = useCallback((productId: string | null, unitName: string | null, qty: number, baseUnitName: string | null): number => {
+        return toBaseAmountLogic(productId, unitName, qty, baseUnitName, unitNameMap, conversionMap)
     }, [unitNameMap, conversionMap])
 
-    // Helper: Get Product's KG conversion rate (How many KG in 1 Base Unit?)
-    const getBaseToKgRate = useCallback((productId: string, baseUnitName: string | null): number | null => {
-        if (!productId || !baseUnitName) return null
-
-        const kgNames = ['kg', 'kilogram', 'ki-lo-gam', 'kgs']
-
-        // Check Base Unit
-        if (kgNames.includes(baseUnitName.toLowerCase())) return 1
-
-        // Check Product Units for a KG entry
-        // 1 Alt(KG) = rate * Base. -> 1 Base = 1/rate KG.
-        const rates = conversionMap.get(productId)
-        if (!rates) return null
-
-        for (const name of kgNames) {
-            const uid = unitNameMap.get(name)
-            if (uid && rates.has(uid)) {
-                const rateKgToBase = rates.get(uid)!
-                if (rateKgToBase === 0) return null
-                return 1 / rateKgToBase
-            }
-        }
-
-        return null
+    // Wrapper: Get Product's KG conversion rate
+    const getBaseToKgRate = useCallback((productId: string | null, baseUnitName: string | null): number | null => {
+        return getBaseToKgRateLogic(productId, baseUnitName, unitNameMap, conversionMap)
     }, [unitNameMap, conversionMap])
 
     return {
