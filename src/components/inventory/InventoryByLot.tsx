@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Search, Loader2, Printer, ChevronRight, ChevronDown } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { TagDisplay } from '../lots/TagDisplay'
 import MobileLotList from './MobileLotList'
 
@@ -38,6 +39,8 @@ export default function InventoryByLot() {
     const [searchTerm, setSearchTerm] = useState('')
     const { systemType } = useSystem()
     const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
+    const [isConvertKg, setIsConvertKg] = useState(false)
+    const { toBaseAmount, getBaseToKgRate, unitNameMap, conversionMap } = useUnitConversion()
 
     useEffect(() => {
         fetchLots()
@@ -99,23 +102,39 @@ export default function InventoryByLot() {
                 name: string,
                 unit: string,
                 qty: number,
-                itemId: string | null
+                itemId: string | null,
+                productId: string | null,
+                baseUnit: string | null
             ) => {
-                const key = `${sku}__${unit}`
+                let displayQty = qty
+                let displayUnit = unit
+                let key = `${sku}__${unit}`
+
+                // Logic conversion
+                if (isConvertKg && productId && baseUnit) {
+                    const kgRate = getBaseToKgRate(productId, baseUnit)
+                    if (kgRate !== null) {
+                        const baseQty = toBaseAmount(productId, unit, qty, baseUnit)
+                        displayQty = baseQty * kgRate
+                        displayUnit = 'Kg'
+                        key = `${sku}__Kg`
+                    }
+                }
+
                 if (!groups.has(key)) {
                     groups.set(key, {
                         key,
                         productSku: sku,
                         productCode: sku, // Using SKU as code for display
                         productName: name,
-                        unit: unit,
+                        unit: displayUnit,
                         totalQuantity: 0,
                         variants: new Map(),
                         lotCodes: []
                     })
                 }
                 const group = groups.get(key)!
-                group.totalQuantity += qty
+                group.totalQuantity += displayQty
                 if (!group.lotCodes.includes(lot.code)) group.lotCodes.push(lot.code)
 
                 // Determine Tag/Variant
@@ -132,7 +151,7 @@ export default function InventoryByLot() {
 
                 // Aggregate into variant
                 const currentVariantQty = group.variants.get(compositeTag) || 0
-                group.variants.set(compositeTag, currentVariantQty + qty)
+                group.variants.set(compositeTag, currentVariantQty + displayQty)
             }
 
             if (lot.lot_items && lot.lot_items.length > 0) {
@@ -142,12 +161,28 @@ export default function InventoryByLot() {
                     if (item.products) {
                         const itemUnit = item.unit || item.products.unit
                         const qty = item.quantity || 0
-                        processItem(item.products.sku, item.products.name, itemUnit, qty, item.id)
+                        processItem(
+                            item.products.sku,
+                            item.products.name,
+                            itemUnit,
+                            qty,
+                            item.id,
+                            item.product_id,
+                            item.products.unit
+                        )
                     }
                 })
             } else if (lot.products) {
                 // Legacy
-                processItem(lot.products.sku, lot.products.name, lot.products.unit, lot.quantity || 0, null)
+                processItem(
+                    lot.products.sku,
+                    lot.products.name,
+                    lot.products.unit,
+                    lot.quantity || 0,
+                    null,
+                    lot.product_id,
+                    lot.products.unit
+                )
             }
         })
 
@@ -162,7 +197,7 @@ export default function InventoryByLot() {
         // Sort by SKU
         return result.sort((a, b) => a.productSku.localeCompare(b.productSku))
 
-    }, [lots, searchTerm])
+    }, [lots, searchTerm, isConvertKg, unitNameMap, conversionMap])
 
 
     const toggleExpand = (key: string) => {
@@ -189,6 +224,20 @@ export default function InventoryByLot() {
                         />
                     </div>
                 </div>
+
+                <div className="flex items-center gap-2 pb-2">
+                    <input
+                        type="checkbox"
+                        id="convertCheckLot"
+                        checked={isConvertKg}
+                        onChange={(e) => setIsConvertKg(e.target.checked)}
+                        className="w-4 h-4 text-orange-600 rounded border-stone-300 focus:ring-orange-500"
+                    />
+                    <label htmlFor="convertCheckLot" className="text-sm font-medium text-stone-700 dark:text-stone-300 cursor-pointer select-none whitespace-nowrap">
+                        Quy đổi sang KG
+                    </label>
+                </div>
+
                 <button
                     onClick={() => {
                         const params = new URLSearchParams()
