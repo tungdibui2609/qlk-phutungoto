@@ -4,6 +4,7 @@ import { Combobox } from '@/components/ui/Combobox'
 import { ImageUpload } from '@/components/ui/ImageUpload'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
+import { logActivity } from '@/lib/audit'
 import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '../_hooks/useLotManagement'
 
 interface LotItemInput {
@@ -276,6 +277,20 @@ export function LotForm({
             if (itemsError) {
                 alert('Lỗi lưu danh sách sản phẩm: ' + itemsError.message)
             }
+        }
+
+        // Audit Log
+        try {
+            await logActivity({
+                supabase,
+                tableName: 'lots',
+                recordId: lotId || 'unknown',
+                action: editingLot ? 'UPDATE' : 'CREATE',
+                oldData: editingLot ? { ...editingLot, lot_items: editingLot.lot_items } : null,
+                newData: { ...lotData, lot_items: validItems }
+            })
+        } catch (err) {
+            console.error('Failed to log activity', err)
         }
 
         onSuccess(lotId ? { id: lotId, ...lotData } : undefined)
