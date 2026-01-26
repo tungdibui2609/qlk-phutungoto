@@ -275,6 +275,8 @@ function WarehouseStatusContent() {
                             newLayouts.forEach(l => { if (l.zone_id) map[l.zone_id] = l })
                             setLayouts(map)
                         }}
+                        allZones={zones}
+                        allLayouts={layouts}
                         onClose={() => setConfiguringZone(null)}
                     />
                 </div>
