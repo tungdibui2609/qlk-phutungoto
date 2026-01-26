@@ -28,10 +28,13 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
 
     const fetchWarehouses = async () => {
         setLoading(true)
-        // Fetch warehouses. Assuming 'warehouses' table or 'branches'.
-        // Based on previous exploration, 'warehouses' table exists.
-        // Also lots link to 'warehouse_name'.
-        const { data } = await supabase.from('warehouses').select('id, name')
+        // Use 'branches' as warehouses to be consistent with Lot management
+        const { data } = await supabase
+            .from('branches')
+            .select('id, name')
+            .order('is_default', { ascending: false })
+            .order('name')
+
         if (data) {
             setWarehouses(data)
         }

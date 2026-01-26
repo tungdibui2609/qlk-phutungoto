@@ -92,7 +92,7 @@ type InventoryChecksTable = {
             foreignKeyName: "inventory_checks_warehouse_id_fkey"
             columns: ["warehouse_id"]
             isOneToOne: false
-            referencedRelation: "warehouses"
+            referencedRelation: "branches"
             referencedColumns: ["id"]
         },
         {
