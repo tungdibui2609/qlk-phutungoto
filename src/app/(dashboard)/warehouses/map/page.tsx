@@ -634,6 +634,8 @@ function WarehouseMapContent() {
                         siblingZones={getSiblingZones(configuringZone)}
                         onSave={handleLayoutSave}
                         onBatchSave={handleBatchSave}
+                        allZones={zones}
+                        allLayouts={layoutsMap}
                         onClose={() => setConfiguringZone(null)}
                     />
                 </div>

@@ -19,8 +19,13 @@ interface LayoutSettings {
     display_type: string
 }
 
-// Global clipboard for layout settings
-let layoutClipboard: LayoutSettings | null = null
+interface DeepLayoutTemplate {
+    settings: LayoutSettings
+    children: DeepLayoutTemplate[] // index-based matching for children
+}
+
+// Global clipboard for recursive layout settings
+let layoutDeepClipboard: DeepLayoutTemplate | null = null
 
 interface LayoutConfigPanelProps {
     zone: Zone
@@ -31,6 +36,8 @@ interface LayoutConfigPanelProps {
     onChange?: (layout: Partial<ZoneLayout>) => void
     onClose: () => void
     tableName?: string
+    allZones?: Zone[]
+    allLayouts?: Record<string, any>
 }
 
 const CHILD_LAYOUT_OPTIONS = [
@@ -47,7 +54,18 @@ const DISPLAY_TYPE_OPTIONS = [
     { value: 'hidden', label: 'Ẩn', desc: 'Không hiển thị' },
 ]
 
-export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, onBatchSave, onChange, onClose, tableName = 'zone_layouts' }: LayoutConfigPanelProps) {
+export default function LayoutConfigPanel({
+    zone,
+    layout,
+    siblingZones,
+    onSave,
+    onBatchSave,
+    onChange,
+    onClose,
+    tableName = 'zone_layouts',
+    allZones = [],
+    allLayouts = {}
+}: LayoutConfigPanelProps) {
     const { showToast } = useToast()
     const [positionColumns, setPositionColumns] = useState(layout?.position_columns ?? 8)
     const [cellWidth, setCellWidth] = useState(layout?.cell_width ?? 0)
@@ -58,7 +76,7 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
     const [collapsible, setCollapsible] = useState(layout?.collapsible ?? true)
     const [displayType, setDisplayType] = useState(layout?.display_type ?? 'auto')
     const [isSaving, setIsSaving] = useState(false)
-    const [hasClipboard, setHasClipboard] = useState(!!layoutClipboard)
+    const [hasClipboard, setHasClipboard] = useState(!!layoutDeepClipboard)
 
     // Sync settings when layout or zone changes
     useEffect(() => {
@@ -77,7 +95,7 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
 
     useEffect(() => {
         const interval = setInterval(() => {
-            setHasClipboard(!!layoutClipboard)
+            setHasClipboard(!!layoutDeepClipboard)
         }, 500)
         return () => clearInterval(interval)
     }, [])
@@ -106,22 +124,98 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
     }
 
     function handleCopy() {
-        layoutClipboard = getCurrentSettings()
-        setHasClipboard(true)
-        showToast('Đã copy cấu hình!', 'success')
+        // Recursive function to build the template tree
+        const buildTemplate = (targetZone: Zone): DeepLayoutTemplate => {
+            const rawSettings = allLayouts[targetZone.id] || {};
+
+            // Sanitize settings: Pick only layout configuration fields
+            const sanitize = (s: any): LayoutSettings => ({
+                position_columns: s.position_columns ?? 8,
+                cell_width: s.cell_width ?? 0,
+                cell_height: s.cell_height ?? 0,
+                child_layout: s.child_layout ?? 'vertical',
+                child_columns: s.child_columns ?? 0,
+                child_width: s.child_width ?? 0,
+                collapsible: s.collapsible ?? true,
+                display_type: s.display_type ?? 'auto'
+            });
+
+            const actualSettings = targetZone.id === zone.id ? getCurrentSettings() : sanitize(rawSettings);
+
+            const childrenZones = allZones
+                .filter(z => z.parent_id === targetZone.id)
+                .sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+
+            return {
+                settings: actualSettings,
+                children: childrenZones.map(z => buildTemplate(z))
+            };
+        };
+
+        layoutDeepClipboard = buildTemplate(zone);
+        setHasClipboard(true);
+        showToast('Đã copy cấu hình (bao gồm cấp con)!', 'success');
     }
 
     function handlePaste() {
-        if (!layoutClipboard) return
-        setPositionColumns(layoutClipboard.position_columns)
-        setCellWidth(layoutClipboard.cell_width)
-        setCellHeight(layoutClipboard.cell_height)
-        setChildLayout(layoutClipboard.child_layout)
-        setChildColumns(layoutClipboard.child_columns)
-        setChildWidth(layoutClipboard.child_width)
-        setCollapsible(layoutClipboard.collapsible)
-        setDisplayType(layoutClipboard.display_type || 'auto')
-        showToast('Đã paste! Nhấn Lưu để áp dụng.', 'info')
+        if (!layoutDeepClipboard) return;
+
+        // 1. Apply root settings to local state
+        const rootSettings = layoutDeepClipboard.settings;
+        setPositionColumns(rootSettings.position_columns);
+        setCellWidth(rootSettings.cell_width);
+        setCellHeight(rootSettings.cell_height);
+        setChildLayout(rootSettings.child_layout);
+        setChildColumns(rootSettings.child_columns);
+        setChildWidth(rootSettings.child_width);
+        setCollapsible(rootSettings.collapsible);
+        setDisplayType(rootSettings.display_type || 'auto');
+
+        // 2. Recursively collect and apply settings for descendants
+        const batchToSave: any[] = [];
+
+        const applyRecursive = (targetZone: Zone, template: DeepLayoutTemplate) => {
+            const targetChildren = allZones
+                .filter(z => z.parent_id === targetZone.id)
+                .sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+
+            targetChildren.forEach((child, index) => {
+                const childTemplate = template.children[index];
+                if (childTemplate) {
+                    batchToSave.push({
+                        zone_id: child.id,
+                        ...childTemplate.settings,
+                        updated_at: new Date().toISOString()
+                    });
+                    applyRecursive(child, childTemplate);
+                }
+            });
+        };
+
+        applyRecursive(zone, layoutDeepClipboard);
+
+        if (batchToSave.length > 0) {
+            handleApplyBatchToPersistence(batchToSave);
+        } else {
+            showToast('Đã paste cấu hình cho Zone hiện tại!', 'info');
+        }
+    }
+
+    async function handleApplyBatchToPersistence(batch: any[]) {
+        try {
+            console.log('Applying standard map deep paste batch:', batch);
+            const { error: batchError } = await (supabase as any)
+                .from(tableName)
+                .upsert(batch, { onConflict: 'zone_id' });
+
+            if (batchError) throw batchError;
+
+            onBatchSave?.(batch);
+            showToast(`Đã paste cấu hình cho ${batch.length} cấp con!`, 'success');
+        } catch (err: any) {
+            console.error('Deep paste error:', err);
+            showToast('Lỗi paste cấp con: ' + (err.message || 'Thất bại'), 'error');
+        }
     }
 
     function handleReset() {
