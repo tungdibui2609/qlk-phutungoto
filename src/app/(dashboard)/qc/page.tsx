@@ -19,7 +19,7 @@ type QCInfo = {
 }
 
 export default function QCPage() {
-    const { showToast } = useToast()
+    const { showToast, showConfirm } = useToast()
     const { currentSystem } = useSystem()
     const [qcList, setQCList] = useState<QCInfo[]>([])
     const [loading, setLoading] = useState(true)
@@ -179,7 +179,7 @@ export default function QCPage() {
     }
 
     async function handleDelete(id: string) {
-        if (!confirm('Bạn có chắc muốn xóa nhân viên QC này?')) return
+        if (!await showConfirm('Bạn có chắc muốn xóa nhân viên QC này?')) return
 
         try {
             // Fetch data before delete for logging

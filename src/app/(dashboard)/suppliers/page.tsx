@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Plus, Search, Building2, Phone, Mail, MoreHorizontal, Edit, Trash2, CheckCircle, XCircle } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
+import { useToast } from '@/components/ui/ToastProvider'
 import MobileSupplierList from '@/components/suppliers/MobileSupplierList'
 
 type Supplier = Database['public']['Tables']['suppliers']['Row']
@@ -12,6 +13,7 @@ type Supplier = Database['public']['Tables']['suppliers']['Row']
 export default function SuppliersPage() {
     const [suppliers, setSuppliers] = useState<Supplier[]>([])
     const { systemType } = useSystem()
+    const { showToast, showConfirm } = useToast()
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('all')
@@ -33,12 +35,13 @@ export default function SuppliersPage() {
     }
 
     async function deleteSupplier(id: string) {
-        if (!confirm('Bạn có chắc muốn xóa nhà cung cấp này?')) return
+        if (!await showConfirm('Bạn có chắc muốn xóa nhà cung cấp này?')) return
 
         const { error } = await supabase.from('suppliers').delete().eq('id', id)
         if (error) {
-            alert('Lỗi: ' + error.message)
+            showToast('Lỗi: ' + error.message, 'error')
         } else {
+            showToast('Đã xóa nhà cung cấp thành công', 'success')
             fetchSuppliers()
         }
     }

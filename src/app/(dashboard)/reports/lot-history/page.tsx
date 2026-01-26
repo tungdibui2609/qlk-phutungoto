@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { History, Search, Download, Calendar, Boxes, ArrowRightLeft, Combine, Split, Package, Building2, Tag as TagIcon, Filter, Layers, ChevronDown } from 'lucide-react'
+import { History, Search, Download, Calendar, Boxes, ArrowRightLeft, Combine, Split, Package, Building2, Tag as TagIcon, Filter, Layers, ChevronDown, ArrowUpRight } from 'lucide-react'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { useSystem } from '@/contexts/SystemContext'
 
@@ -92,7 +92,13 @@ export default function LotHistoryPage() {
             return { type: 'split_origin', label: `Đã tách ra ${dests}`, variant: 'pink' }
         }
 
-        // 5. Legacy Tags
+        // 5. Exports
+        if (history?.exports && history.exports.length > 0) {
+            const dest = history.exports[history.exports.length - 1].customer
+            return { type: 'export', label: `Đã xuất cho ${dest}`, variant: 'blue' }
+        }
+
+        // 6. Legacy Tags
         const legacyMerge = lot.lot_tags?.find(t => t.tag.startsWith('MERGED_FROM:'))
         if (legacyMerge) return { type: 'merge_target', label: 'Gộp (Dữ liệu cũ)', variant: 'purple' }
 
@@ -120,7 +126,8 @@ export default function LotHistoryPage() {
         const matchesAction = actionTypeFilter === 'all' ||
             (actionTypeFilter === 'create' && actionData.type === 'create') ||
             (actionTypeFilter === 'merge' && (actionData.type === 'merge_target' || actionData.type === 'merge_source')) ||
-            (actionTypeFilter === 'split' && (actionData.type === 'split_result' || actionData.type === 'split_origin'))
+            (actionTypeFilter === 'split' && (actionData.type === 'split_result' || actionData.type === 'split_origin')) ||
+            (actionTypeFilter === 'export' && actionData.type === 'export')
 
         return matchesSearch && matchesDate && matchesAction
     })
@@ -133,7 +140,8 @@ export default function LotHistoryPage() {
             purple: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800',
             orange: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-800',
             slate: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700',
-            pink: 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-400 border-pink-200 dark:border-pink-800'
+            pink: 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-400 border-pink-200 dark:border-pink-800',
+            blue: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
         }
 
         const icons: Record<string, any> = {
@@ -141,7 +149,8 @@ export default function LotHistoryPage() {
             purple: <Combine size={12} />,
             orange: <Split size={12} />,
             slate: <ArrowRightLeft size={12} />,
-            pink: <Split size={12} />
+            pink: <Split size={12} />,
+            blue: <ArrowUpRight size={12} />
         }
 
         return (
@@ -211,7 +220,7 @@ export default function LotHistoryPage() {
                         <option value="create">Tạo mới</option>
                         <option value="merge">Gộp LOT</option>
                         <option value="split">Tách LOT</option>
-                        <option value="export">Xuất kho (Sắp có)</option>
+                        <option value="export">Xuất kho</option>
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" size={16} />
                 </div>
@@ -293,35 +302,82 @@ export default function LotHistoryPage() {
                                                         </div>
                                                     ))
                                                 ) : (
-                                                    <div className="flex flex-col">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded text-[10px] font-bold border border-blue-100 dark:border-blue-800/50 uppercase tracking-tighter">
-                                                                {lot.products?.sku || 'N/A'}
-                                                            </span>
-                                                            <span className="font-bold text-stone-900 dark:text-stone-100">
-                                                                {lot.products?.name || 'Sản phẩm không xác định'}
-                                                            </span>
-                                                        </div>
-                                                        {lot.lot_tags && lot.lot_tags.length > 0 && (
-                                                            <div className="mt-1">
-                                                                <TagDisplay
-                                                                    tags={lot.lot_tags.map(t => t.tag)}
-                                                                    placeholderMap={{ '@': lot.products?.sku || '' }}
-                                                                />
+                                                    (() => {
+                                                        const actionData = getLotActionData(lot);
+                                                        const lastExport = lot.metadata?.system_history?.exports?.[lot.metadata?.system_history?.exports?.length - 1];
+
+                                                        if (actionData.type === 'export' && lastExport?.items) {
+                                                            return Object.values(lastExport.items).map((item: any, idx) => (
+                                                                <div key={idx} className="flex flex-col">
+                                                                    <div className="flex items-center gap-2 mb-0.5">
+                                                                        <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded text-[10px] font-bold border border-blue-100 dark:border-blue-800/50 uppercase tracking-tighter">
+                                                                            {item.product_sku}
+                                                                        </span>
+                                                                        <span className="font-bold text-stone-900 dark:text-stone-100 truncate max-w-[200px]" title={item.product_name}>
+                                                                            {item.product_name}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            ));
+                                                        }
+
+                                                        return (
+                                                            <div className="flex flex-col">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded text-[10px] font-bold border border-blue-100 dark:border-blue-800/50 uppercase tracking-tighter">
+                                                                        {lot.products?.sku || 'N/A'}
+                                                                    </span>
+                                                                    <span className="font-bold text-stone-900 dark:text-stone-100">
+                                                                        {lot.products?.name || 'Sản phẩm không xác định'}
+                                                                    </span>
+                                                                </div>
+                                                                {lot.lot_tags && lot.lot_tags.length > 0 && (
+                                                                    <div className="mt-1">
+                                                                        <TagDisplay
+                                                                            tags={lot.lot_tags.map(t => t.tag)}
+                                                                            placeholderMap={{ '@': lot.products?.sku || '' }}
+                                                                        />
+                                                                    </div>
+                                                                )}
                                                             </div>
-                                                        )}
-                                                    </div>
+                                                        );
+                                                    })()
                                                 )}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-center whitespace-nowrap">
                                             <div className="flex flex-col items-center">
-                                                <span className="text-base font-black text-orange-600 dark:text-orange-500 tabular-nums">
-                                                    {lot.quantity ?? lot.lot_items?.reduce((sum, item) => sum + (item.quantity || 0), 0) ?? 0}
-                                                </span>
-                                                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mt-0.5">
-                                                    {lot.products?.unit || lot.lot_items?.[0]?.products?.unit || 'Đơn vị'}
-                                                </span>
+                                                {(() => {
+                                                    const actionData = getLotActionData(lot);
+                                                    const lastExport = lot.metadata?.system_history?.exports?.[lot.metadata?.system_history?.exports?.length - 1];
+
+                                                    if (actionData.type === 'export' && lastExport?.items) {
+                                                        const totalExported = Object.values(lastExport.items).reduce((sum: number, item: any) => sum + (item.exported_quantity || 0), 0);
+                                                        const unit = Object.values(lastExport.items)[0] ? (Object.values(lastExport.items)[0] as any).unit : 'Đơn vị';
+
+                                                        return (
+                                                            <>
+                                                                <span className="text-base font-black text-blue-600 dark:text-blue-500 tabular-nums">
+                                                                    {totalExported}
+                                                                </span>
+                                                                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mt-0.5">
+                                                                    {unit}
+                                                                </span>
+                                                            </>
+                                                        );
+                                                    }
+
+                                                    return (
+                                                        <>
+                                                            <span className="text-base font-black text-orange-600 dark:text-orange-500 tabular-nums">
+                                                                {lot.quantity ?? lot.lot_items?.reduce((sum, item) => sum + (item.quantity || 0), 0) ?? 0}
+                                                            </span>
+                                                            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mt-0.5">
+                                                                {lot.products?.unit || lot.lot_items?.[0]?.products?.unit || 'Đơn vị'}
+                                                            </span>
+                                                        </>
+                                                    );
+                                                })()}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">

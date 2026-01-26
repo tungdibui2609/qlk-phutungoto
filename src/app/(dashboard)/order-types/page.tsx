@@ -18,7 +18,7 @@ type OrderType = {
 }
 
 export default function OrderTypesPage() {
-    const { showToast } = useToast()
+    const { showToast, showConfirm } = useToast()
     const { currentSystem } = useSystem()
     const [types, setTypes] = useState<OrderType[]>([])
     const [loading, setLoading] = useState(true)
@@ -156,7 +156,7 @@ export default function OrderTypesPage() {
     }
 
     async function handleDelete(id: string) {
-        if (!confirm('Bạn có chắc muốn xóa loại phiếu này?')) return
+        if (!await showConfirm('Bạn có chắc muốn xóa loại phiếu này?')) return
 
         try {
             const { error } = await (supabase

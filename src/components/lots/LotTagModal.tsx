@@ -5,6 +5,7 @@ import { X, Plus, Trash2 } from "lucide-react"
 import { TagDisplay } from "./TagDisplay"
 import { useSystem } from "@/contexts/SystemContext"
 import { supabase } from "@/lib/supabaseClient"
+import { useToast } from "@/components/ui/ToastProvider"
 
 interface LotTagModalProps {
     lotId: string | null
@@ -34,6 +35,7 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
     const inputRef = useRef<HTMLInputElement>(null)
 
     const { systemType } = useSystem()
+    const { showToast, showConfirm } = useToast()
     // Load Data
     const loadData = useCallback(async () => {
         if (!lotId) return
@@ -153,7 +155,7 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
 
         // Validation: Must select item if multiple exist
         if (lotItems.length > 1 && !selectedItemId) {
-            alert("Vui lòng chọn dòng sản phẩm để gán mã")
+            showToast("Vui lòng chọn dòng sản phẩm để gán mã", 'warning')
             return
         }
 
@@ -161,7 +163,7 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
         const targetItemId = selectedItemId || (lotItems.length === 1 ? lotItems[0].id : null)
 
         if (currentTags.includes(trimmed)) {
-            alert("Mã này đã được gắn rồi")
+            showToast("Mã này đã được gắn rồi", 'warning')
             return
         }
 
@@ -212,11 +214,11 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
                 })
                 onSuccess?.()
             } else {
-                alert(j?.error || "Lỗi khi lưu")
+                showToast(j?.error || "Lỗi khi lưu", 'error')
             }
 
         } catch {
-            alert("Lỗi kết nối")
+            showToast("Lỗi kết nối", 'error')
         } finally {
             setSaving(false)
         }
@@ -224,7 +226,7 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
 
     const handleRemove = async (tag: string) => {
         if (!lotId) return
-        if (!confirm(`Xóa mã ${tag}?`)) return
+        if (!await showConfirm(`Xóa mã ${tag}?`)) return
 
         // Find the specific entry to delete
         const targetItemId = selectedItemId || (lotItems.length === 1 ? lotItems[0].id : undefined)
@@ -246,7 +248,7 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
                 onSuccess?.()
             }
         } catch {
-            alert("Lỗi kết nối")
+            showToast("Lỗi kết nối", 'error')
         } finally {
             setSaving(false)
         }

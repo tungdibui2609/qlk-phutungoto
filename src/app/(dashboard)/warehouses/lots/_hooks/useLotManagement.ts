@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { useSystem } from '@/contexts/SystemContext'
+import { useToast } from '@/components/ui/ToastProvider'
 
 export type Lot = Database['public']['Tables']['lots']['Row'] & {
     system_code?: string
     lot_items: (Database['public']['Tables']['lot_items']['Row'] & {
-        products: { name: string; unit: string | null; product_code?: string; sku: string } | null
+        products: { name: string; unit: string | null; product_code?: string; sku: string; cost_price?: number | null } | null
         unit?: string | null
     })[] | null
     suppliers: { name: string } | null
@@ -14,7 +15,7 @@ export type Lot = Database['public']['Tables']['lots']['Row'] & {
     positions: { code: string }[] | null
     lot_tags?: { tag: string; lot_item_id: string | null }[] | null
     // Legacy support for display if needed
-    products?: { name: string; unit: string | null; product_code?: string; sku?: string } | null
+    products?: { name: string; unit: string | null; product_code?: string; sku?: string; cost_price?: number | null } | null
     images?: any
     metadata?: any
 }
@@ -27,6 +28,7 @@ export type ProductUnit = Database['public']['Tables']['product_units']['Row']
 
 export function useLotManagement() {
     const { currentSystem } = useSystem()
+    const { showToast, showConfirm } = useToast()
     const [lots, setLots] = useState<Lot[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
@@ -101,6 +103,7 @@ export function useLotManagement() {
                         name,
                         unit,
                         sku,
+                        cost_price,
                         product_code:id
                     ),
                     unit
@@ -109,7 +112,7 @@ export function useLotManagement() {
                 qc_info (name),
                 positions (code),
                 lot_tags (tag, lot_item_id),
-                products (name, unit, sku)
+                products (name, unit, sku, cost_price)
             `)
             .eq('system_code', currentSystem.code)
             .order('created_at', { ascending: false })
@@ -123,7 +126,7 @@ export function useLotManagement() {
     }
 
     async function handleDeleteLot(id: string) {
-        if (!confirm('Bạn có chắc chắn muốn xóa LOT này?')) return
+        if (!await showConfirm('Bạn có chắc chắn muốn xóa LOT này?')) return
 
         const { error } = await supabase
             .from('lots')
@@ -131,8 +134,9 @@ export function useLotManagement() {
             .eq('id', id)
 
         if (error) {
-            alert('Lỗi xóa LOT: ' + error.message)
+            showToast('Lỗi xóa LOT: ' + error.message, 'error')
         } else {
+            showToast('Đã xóa LOT thành công', 'success')
             setLots(lots.filter(lot => lot.id !== id))
         }
     }
@@ -148,7 +152,7 @@ export function useLotManagement() {
 
         if (error) {
             console.error('Error toggling star:', error);
-            alert('Lỗi khi đánh dấu: ' + error.message);
+            showToast('Lỗi khi đánh dấu: ' + error.message, 'error');
         } else {
             setLots(lots.map(l => l.id === lot.id ? { ...l, metadata } : l));
         }

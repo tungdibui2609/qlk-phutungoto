@@ -55,7 +55,7 @@ export default function SystemManagerSection() {
     const [loading, setLoading] = useState(true)
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [editingSystem, setEditingSystem] = useState<System | null>(null)
-    const { showToast } = useToast()
+    const { showToast, showConfirm } = useToast()
 
     // Form State
     const [formData, setFormData] = useState({
@@ -123,7 +123,7 @@ export default function SystemManagerSection() {
     }
 
     const handleDelete = async (code: string) => {
-        if (!confirm('Bạn có chắc chắn muốn xóa kho này? Hành động này có thể gây lỗi nếu đang có dữ liệu liên kết.')) return
+        if (!await showConfirm('Bạn có chắc chắn muốn xóa kho này? Hành động này có thể gây lỗi nếu đang có dữ liệu liên kết.')) return
 
         const { error } = await (supabase.from('systems') as any).delete().eq('code', code)
         if (error) {
@@ -137,7 +137,7 @@ export default function SystemManagerSection() {
     const handleToggleActive = async (sys: System) => {
         const newStatus = !sys.is_active
         const action = newStatus ? 'kích hoạt' : 'tạm ngưng'
-        if (!confirm(`Bạn có chắc muốn ${action} hệ thống "${sys.name}"?`)) return
+        if (!await showConfirm(`Bạn có chắc muốn ${action} hệ thống "${sys.name}"?`)) return
 
         try {
             const { error } = await (supabase.from('systems') as any)

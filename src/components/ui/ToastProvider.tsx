@@ -56,19 +56,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
     const getIcon = (type: ToastType) => {
         switch (type) {
-            case 'success': return <CheckCircle className="text-green-500" size={20} />
-            case 'error': return <AlertCircle className="text-red-500" size={20} />
-            case 'warning': return <AlertTriangle className="text-yellow-500" size={20} />
-            default: return <Info className="text-blue-500" size={20} />
+            case 'success': return <div className="p-2 bg-emerald-500 rounded-full text-white shadow-lg shadow-emerald-500/20"><CheckCircle size={18} /></div>
+            case 'error': return <div className="p-2 bg-rose-500 rounded-full text-white shadow-lg shadow-rose-500/20"><AlertCircle size={18} /></div>
+            case 'warning': return <div className="p-2 bg-amber-500 rounded-full text-white shadow-lg shadow-amber-500/20"><AlertTriangle size={18} /></div>
+            default: return <div className="p-2 bg-blue-500 rounded-full text-white shadow-lg shadow-blue-500/20"><Info size={18} /></div>
         }
     }
 
     const getBgColor = (type: ToastType) => {
         switch (type) {
-            case 'success': return 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800'
-            case 'error': return 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800'
-            case 'warning': return 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800'
-            default: return 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800'
+            case 'success': return 'bg-white/80 dark:bg-zinc-900/80 border-emerald-500/10'
+            case 'error': return 'bg-white/80 dark:bg-zinc-900/80 border-rose-500/10'
+            case 'warning': return 'bg-white/80 dark:bg-zinc-900/10 border-amber-500/10'
+            default: return 'bg-white/80 dark:bg-zinc-900/80 border-blue-500/10'
         }
     }
 
@@ -76,55 +76,90 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         <ToastContext.Provider value={{ showToast, showConfirm }}>
             {children}
 
-            {/* Toast Container */}
-            <div className="fixed top-4 right-4 z-[9999] space-y-2 max-w-sm">
+            {/* Toast Container - Floating and Glassmorphism */}
+            <div className="fixed top-8 right-8 z-[10001] space-y-4 max-w-sm w-full">
                 {toasts.map(toast => (
                     <div
                         key={toast.id}
-                        className={`flex items-center gap-3 p-4 rounded-xl border shadow-lg animate-in slide-in-from-right-5 ${getBgColor(toast.type)}`}
+                        className={`relative group flex items-center gap-4 p-5 rounded-[24px] border shadow-[0_30px_60px_rgba(0,0,0,0.12)] backdrop-blur-3xl animate-in slide-in-from-right-10 duration-500 overflow-hidden ${getBgColor(toast.type)}`}
                     >
-                        {getIcon(toast.type)}
-                        <p className="flex-1 text-sm text-gray-800 dark:text-gray-200">{toast.message}</p>
+                        {/* Shimmer effect */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+
+                        {/* Progress Bar */}
+                        <div className="absolute bottom-0 left-0 h-1 w-full bg-slate-200 dark:bg-slate-800 opacity-20">
+                            <div className="h-full bg-current opacity-60 animate-[toast-progress_3s_linear_forwards]" />
+                        </div>
+
+                        <div className="shrink-0">
+                            {getIcon(toast.type)}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-black text-slate-800 dark:text-slate-100 tracking-tight leading-none mb-1">
+                                {toast.type === 'success' ? 'Thành công' : toast.type === 'error' ? 'Lỗi' : toast.type === 'warning' ? 'Cảnh báo' : 'Thông báo'}
+                            </p>
+                            <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 leading-snug line-clamp-2">
+                                {toast.message}
+                            </p>
+                        </div>
+
                         <button
                             onClick={() => removeToast(toast.id)}
-                            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                            className="shrink-0 p-1.5 rounded-full text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800 transition-all opacity-0 group-hover:opacity-100 shadow-sm"
                         >
-                            <X size={16} />
+                            <X size={14} />
                         </button>
                     </div>
                 ))}
             </div>
 
-            {/* Confirm Dialog */}
+            {/* Confirm Dialog - High Impact Professional Design */}
             {confirmDialog && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-6 max-w-md w-full mx-4 animate-in zoom-in-95">
-                        <div className="flex items-start gap-4">
-                            <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-full">
-                                <AlertTriangle className="text-yellow-600 dark:text-yellow-400" size={24} />
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center p-6 bg-slate-950/40 backdrop-blur-xl animate-in fade-in duration-500">
+                    <div className="bg-white/95 dark:bg-zinc-950/95 rounded-[56px] shadow-[0_60px_100px_-20px_rgba(0,0,0,0.5)] border border-white/20 p-12 max-w-sm w-full animate-in zoom-in-95 slide-in-from-bottom-5 duration-700">
+                        <div className="flex flex-col items-center text-center">
+                            <div className="relative mb-12 group">
+                                <div className="absolute inset-0 bg-orange-500 blur-[40px] opacity-20 animate-pulse" />
+                                <div className="relative w-36 h-36 bg-gradient-to-br from-amber-100 via-orange-50 to-amber-100 dark:from-amber-900/40 dark:via-orange-900/20 dark:to-amber-900/40 rounded-[48px] flex items-center justify-center rotate-6 shadow-[inset_0_2px_10px_rgba(255,255,255,0.5)] border border-white dark:border-slate-800 transition-transform group-hover:rotate-12 duration-500">
+                                    <AlertTriangle className="text-orange-600 dark:text-orange-400 drop-shadow-2xl" size={72} />
+                                </div>
                             </div>
-                            <div className="flex-1">
-                                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Xác nhận</h3>
-                                <p className="text-gray-600 dark:text-gray-300">{confirmDialog.message}</p>
-                            </div>
+
+                            <h3 className="text-4xl font-black text-slate-900 dark:text-white mb-4 tracking-tighter leading-none">
+                                Chờ chút!
+                            </h3>
+
+                            <p className="text-slate-500 dark:text-slate-400 font-bold text-base leading-relaxed px-2">
+                                {confirmDialog.message}
+                            </p>
                         </div>
-                        <div className="flex justify-end gap-3 mt-6">
-                            <button
-                                onClick={() => handleConfirm(false)}
-                                className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg font-medium transition-colors"
-                            >
-                                Hủy
-                            </button>
+
+                        <div className="flex flex-col gap-4 mt-14">
                             <button
                                 onClick={() => handleConfirm(true)}
-                                className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold shadow-md transition-all"
+                                className="w-full py-6 bg-blue-600 hover:bg-blue-500 text-white rounded-[32px] font-black text-xl shadow-[0_25px_50px_-12px_rgba(37,99,235,0.4)] transition-all hover:scale-[1.03] active:scale-95 flex items-center justify-center gap-4 group"
                             >
-                                Xác nhận
+                                <CheckCircle size={28} className="group-hover:rotate-12 transition-transform" />
+                                Tuyệt vời, tiếp tục
+                            </button>
+                            <button
+                                onClick={() => handleConfirm(false)}
+                                className="w-full py-6 text-slate-400 hover:text-slate-900 dark:hover:text-white font-bold transition-all rounded-[32px] hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                            >
+                                Quay lại sau
                             </button>
                         </div>
                     </div>
                 </div>
             )}
+
+            <style jsx global>{`
+                @keyframes toast-progress {
+                    from { width: 100%; }
+                    to { width: 0%; }
+                }
+            `}</style>
         </ToastContext.Provider>
     )
 }

@@ -4,7 +4,7 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { Product, Supplier, Unit, OrderItem } from '../types'
 
-export function useInboundOrder({ isOpen, editOrderId, systemCode, onSuccess, onClose }: any) {
+export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, onSuccess, onClose }: any) {
     const { showToast } = useToast()
     const { currentSystem } = useSystem()
 
@@ -147,6 +147,10 @@ export function useInboundOrder({ isOpen, editOrderId, systemCode, onSuccess, on
                         note: i.note || ''
                     })))
                 }
+            } else if (initialData) {
+                if (initialData.items) setItems(initialData.items)
+                if (initialData.supplierId) handleSupplierChange(initialData.supplierId)
+                generateOrderCode('PNK', systemCode, currentSystem?.name).then(setCode)
             } else {
                 if (!editOrderId) generateOrderCode('PNK', systemCode, currentSystem?.name).then(setCode)
             }
@@ -246,6 +250,23 @@ export function useInboundOrder({ isOpen, editOrderId, systemCode, onSuccess, on
 
             const { error: itemsError } = await (supabase.from('inbound_order_items') as any).insert(orderItems)
             if (itemsError) throw itemsError
+
+            // Cleanup LOT metadata if this was a buffer sync
+            if (initialData?.batchData) {
+                for (const p of initialData.batchData) {
+                    const { data: lot } = await supabase.from('lots').select('metadata').eq('id', p.lot_id).single()
+                    if (lot) {
+                        const metadata = { ...lot.metadata as any }
+                        metadata.system_history.inbound = metadata.system_history.inbound.map((inb: any) => {
+                            if (inb.id === p.inbound_id) {
+                                return { ...inb, draft: false, order_id: orderId, order_code: code }
+                            }
+                            return inb
+                        })
+                        await supabase.from('lots').update({ metadata }).eq('id', p.lot_id)
+                    }
+                }
+            }
             onSuccess()
             onClose()
         } catch (e: any) {

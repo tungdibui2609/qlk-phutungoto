@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Plus, Search, Filter, Edit, Trash2, Package, Sparkles, Eye } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
+import { useToast } from '@/components/ui/ToastProvider'
 import Protected from '@/components/auth/Protected'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import ProductDetailModal from '@/components/inventory/ProductDetailModal'
@@ -21,6 +22,7 @@ export default function InventoryPage() {
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const { systemType } = useSystem()
+    const { showToast, showConfirm } = useToast()
     // Add delete confirmation state
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
     const [unitsMap, setUnitsMap] = useState<Record<string, string>>({})
@@ -67,7 +69,7 @@ export default function InventoryPage() {
     }
 
     async function handleSeedData() {
-        if (!confirm('Hành động này sẽ thêm dữ liệu mẫu vào danh mục và sản phẩm. Tiếp tục?')) return
+        if (!await showConfirm('Hành động này sẽ thêm dữ liệu mẫu vào danh mục và sản phẩm. Tiếp tục?')) return
         setLoading(true)
 
         try {
@@ -260,11 +262,11 @@ export default function InventoryPage() {
 
             if (prodError) throw prodError
 
-            alert('Đã tạo dữ liệu mẫu thành công!')
+            showToast('Đã tạo dữ liệu mẫu thành công!', 'success')
             fetchProducts()
         } catch (error: any) {
             console.error(error)
-            alert('Lỗi: ' + error.message)
+            showToast('Lỗi: ' + error.message, 'error')
         } finally {
             setLoading(false)
         }
@@ -281,8 +283,9 @@ export default function InventoryPage() {
 
         const { error } = await supabase.from('products').delete().eq('id', deleteConfirmId)
         if (error) {
-            alert('Lỗi khi xóa: ' + error.message)
+            showToast('Lỗi khi xóa: ' + error.message, 'error')
         } else {
+            showToast('Đã xóa thành công', 'success')
             setProducts(prev => prev.filter(p => p.id !== deleteConfirmId))
         }
         setDeleteConfirmId(null)
@@ -485,7 +488,7 @@ export default function InventoryPage() {
             {/* LIST (Mobile) */}
             <div className="md:hidden">
                 {loading ? (
-                     <div className="p-12 text-center">
+                    <div className="p-12 text-center">
                         <div className="flex flex-col items-center gap-3">
                             <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
                             <span className="text-stone-500">Đang tải dữ liệu...</span>

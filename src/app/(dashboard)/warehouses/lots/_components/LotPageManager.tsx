@@ -1,12 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, MapPin, X } from 'lucide-react'
 import Link from 'next/link'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { LotTagModal } from '@/components/lots/LotTagModal'
 import { LotMergeModal } from '@/components/warehouse/lots/LotMergeModal'
 import { LotSplitModal } from '@/components/warehouse/lots/LotSplitModal'
+import { LotExportModal } from '@/components/warehouse/lots/LotExportModal'
+import { LotExportBuffer } from '@/components/warehouse/lots/LotExportBuffer'
+import { useSystem } from '@/contexts/SystemContext'
+import { supabase } from '@/lib/supabaseClient'
 
 // Modular Components
 import { useLotManagement, Lot } from '../_hooks/useLotManagement'
@@ -31,8 +35,11 @@ export function LotPageManager() {
         qcList,
         units,
         productUnits,
-        branches
+        branches,
+        fetchCommonData
     } = useLotManagement()
+
+    const { currentSystem } = useSystem()
 
     // UI States
     const [showCreateForm, setShowCreateForm] = useState(false)
@@ -43,6 +50,13 @@ export function LotPageManager() {
     const [taggingLot, setTaggingLot] = useState<Lot | null>(null)
     const [mergingLot, setMergingLot] = useState<Lot | null>(null)
     const [splittingLot, setSplittingLot] = useState<Lot | null>(null)
+    const [exportingLot, setExportingLot] = useState<Lot | null>(null)
+
+    useEffect(() => {
+        if (currentSystem?.code) {
+            fetchLots()
+        }
+    }, [currentSystem])
 
     const toggleCreateForm = () => {
         if (!showCreateForm) {
@@ -72,8 +86,7 @@ export function LotPageManager() {
     }
 
     const handleExport = (lot: Lot) => {
-        console.log('Export lot:', lot)
-        alert('Chức năng xuất lot đang phát triển')
+        setExportingLot(lot)
     }
 
     return (
@@ -89,7 +102,7 @@ export function LotPageManager() {
                     </p>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                     <Link
                         href="/warehouses/map"
                         className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm flex items-center gap-2"
@@ -97,24 +110,16 @@ export function LotPageManager() {
                         <MapPin size={18} />
                         Sơ đồ vị trí
                     </Link>
+
                     <button
                         onClick={toggleCreateForm}
-                        className={`px-5 py-2.5 rounded-xl font-medium shadow-lg active:scale-95 transition-all flex items-center gap-2 ${showCreateForm
-                            ? "bg-rose-50 border border-rose-100 text-rose-600 hover:bg-rose-100 hover:border-rose-200 shadow-rose-500/10"
-                            : "bg-orange-600 text-white hover:bg-orange-700 shadow-orange-500/20"
+                        className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all transform active:scale-95 ${showCreateForm
+                            ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200'
+                            : 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-500/20'
                             }`}
                     >
-                        {showCreateForm ? (
-                            <>
-                                <X size={20} />
-                                Đóng form
-                            </>
-                        ) : (
-                            <>
-                                <Plus size={20} />
-                                Tạo LOT mới
-                            </>
-                        )}
+                        {showCreateForm ? <X size={18} /> : <Plus size={18} />}
+                        {showCreateForm ? 'Đóng form' : 'Tạo LOT mới'}
                     </button>
                 </div>
             </div>
@@ -206,6 +211,17 @@ export function LotPageManager() {
                     onClose={() => setSplittingLot(null)}
                     onSuccess={() => {
                         setSplittingLot(null);
+                        fetchLots();
+                    }}
+                />
+            )}
+
+            {exportingLot && (
+                <LotExportModal
+                    lot={exportingLot}
+                    onClose={() => setExportingLot(null)}
+                    onSuccess={() => {
+                        setExportingLot(null);
                         fetchLots();
                     }}
                 />

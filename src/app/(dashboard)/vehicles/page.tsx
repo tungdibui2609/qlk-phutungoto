@@ -5,12 +5,14 @@ import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Plus, Search, Car, Edit, Trash2, Calendar, ChevronDown, ChevronRight } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
+import { useToast } from '@/components/ui/ToastProvider'
 
 type Vehicle = Database['public']['Tables']['vehicles']['Row']
 
 export default function VehiclesPage() {
     const [vehicles, setVehicles] = useState<Vehicle[]>([])
     const { systemType } = useSystem()
+    const { showToast, showConfirm } = useToast()
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const [expandedBrands, setExpandedBrands] = useState<Set<string>>(new Set())
@@ -37,12 +39,13 @@ export default function VehiclesPage() {
     }
 
     async function deleteVehicle(id: string) {
-        if (!confirm('Bạn có chắc muốn xóa dòng xe này?')) return
+        if (!await showConfirm('Bạn có chắc muốn xóa dòng xe này?')) return
 
         const { error } = await supabase.from('vehicles').delete().eq('id', id)
         if (error) {
-            alert('Lỗi: ' + error.message)
+            showToast('Lỗi: ' + error.message, 'error')
         } else {
+            showToast('Đã xóa dòng xe thành công', 'success')
             fetchVehicles()
         }
     }

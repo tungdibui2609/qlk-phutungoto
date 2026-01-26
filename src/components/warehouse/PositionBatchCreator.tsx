@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Plus, Eye, Loader2, Check, AlertCircle, FolderOpen, Trash2, Edit2, ChevronDown, ChevronRight, Save, X } from 'lucide-react'
 import { Database } from '@/lib/database.types'
+import { useToast } from '@/components/ui/ToastProvider'
 
 type Position = Database['public']['Tables']['positions']['Row']
 
@@ -16,6 +17,7 @@ interface BatchGroup {
 }
 
 export default function PositionBatchCreator({ onPositionsCreated }: PositionBatchCreatorProps) {
+    const { showToast, showConfirm } = useToast()
     const [batchName, setBatchName] = useState('')
     const [prefix, setPrefix] = useState('')
     const [startNum, setStartNum] = useState(1)
@@ -109,11 +111,11 @@ export default function PositionBatchCreator({ onPositionsCreated }: PositionBat
     // Create positions
     async function handleCreate() {
         if (preview.length === 0) {
-            alert('Vui lòng tạo preview trước!')
+            showToast('Vui lòng tạo preview trước!', 'warning')
             return
         }
         if (!batchName.trim()) {
-            alert('Vui lòng nhập tên nhóm!')
+            showToast('Vui lòng nhập tên nhóm!', 'warning')
             return
         }
 
@@ -153,7 +155,7 @@ export default function PositionBatchCreator({ onPositionsCreated }: PositionBat
     // Delete batch
     async function handleDeleteBatch(batchNameToDelete: string) {
         const batchInfo = batches.find(b => b.batch_name === batchNameToDelete)
-        if (!confirm(`Xóa tất cả ${batchInfo?.count || 0} ô trong nhóm "${batchNameToDelete}"?`)) {
+        if (!await showConfirm(`Xóa tất cả ${batchInfo?.count || 0} ô trong nhóm "${batchNameToDelete}"?`)) {
             return
         }
 
@@ -167,9 +169,9 @@ export default function PositionBatchCreator({ onPositionsCreated }: PositionBat
         const { error } = await query
 
         if (error) {
-            alert('Lỗi: ' + error.message)
+            showToast('Lỗi: ' + error.message, 'error')
         } else {
-            alert(`Đã xóa nhóm "${batchNameToDelete}" thành công!`)
+            showToast(`Đã xóa nhóm "${batchNameToDelete}" thành công!`, 'success')
             setExpandedBatch(null)
             await fetchBatches()
             if (onPositionsCreated) onPositionsCreated()
@@ -179,7 +181,7 @@ export default function PositionBatchCreator({ onPositionsCreated }: PositionBat
     // Rename batch
     async function handleRenameBatch(oldName: string) {
         if (!newBatchName.trim()) {
-            alert('Vui lòng nhập tên mới!')
+            showToast('Vui lòng nhập tên mới!', 'warning')
             return
         }
 
@@ -193,9 +195,9 @@ export default function PositionBatchCreator({ onPositionsCreated }: PositionBat
         const { error } = await query
 
         if (error) {
-            alert('Lỗi: ' + error.message)
+            showToast('Lỗi: ' + error.message, 'error')
         } else {
-            alert('Đã đổi tên nhóm thành công!')
+            showToast('Đã đổi tên nhóm thành công!', 'success')
             setEditingBatchName(null)
             setNewBatchName('')
             await fetchBatches()
@@ -205,7 +207,7 @@ export default function PositionBatchCreator({ onPositionsCreated }: PositionBat
     // Edit single position code
     async function handleSavePositionEdit(positionId: string) {
         if (!editCode.trim()) {
-            alert('Mã không được trống!')
+            showToast('Mã không được trống!', 'warning')
             return
         }
 
@@ -216,7 +218,7 @@ export default function PositionBatchCreator({ onPositionsCreated }: PositionBat
             .eq('id', positionId)
 
         if (error) {
-            alert('Lỗi: ' + error.message)
+            showToast('Lỗi: ' + error.message, 'error')
         } else {
             // Update local state
             setBatchPositions(prev => prev.map(p =>
@@ -231,13 +233,14 @@ export default function PositionBatchCreator({ onPositionsCreated }: PositionBat
 
     // Delete single position
     async function handleDeletePosition(positionId: string, code: string) {
-        if (!confirm(`Xóa ô "${code}"?`)) return
+        if (!await showConfirm(`Xóa ô "${code}"?`)) return
 
         const { error } = await supabase.from('positions').delete().eq('id', positionId)
 
         if (error) {
-            alert('Lỗi: ' + error.message)
+            showToast('Lỗi: ' + error.message, 'error')
         } else {
+            showToast(`Đã xóa ô "${code}" thành công!`, 'success')
             setBatchPositions(prev => prev.filter(p => p.id !== positionId))
             await fetchBatches()
             if (onPositionsCreated) onPositionsCreated()

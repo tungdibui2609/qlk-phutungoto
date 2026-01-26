@@ -4,7 +4,7 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { Product, Customer, Unit, OrderItem } from '../types'
 
-export function useOutboundOrder({ isOpen, systemCode, onSuccess, onClose }: any) {
+export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, onClose }: any) {
     const { showToast } = useToast()
     const { currentSystem } = useSystem()
 
@@ -73,7 +73,6 @@ export function useOutboundOrder({ isOpen, systemCode, onSuccess, onClose }: any
 
     useEffect(() => {
         if (isOpen) {
-            generateOrderCode('PXK', systemCode, currentSystem?.name).then(setCode)
             fetchData()
         } else {
             resetForm()
@@ -126,6 +125,11 @@ export function useOutboundOrder({ isOpen, systemCode, onSuccess, onClose }: any
                 setWarehouseName(branchesData.find(b => b.is_default)?.name || branchesData[0].name)
             }
 
+            if (initialData) {
+                if (initialData.items) setItems(initialData.items)
+                if (initialData.customerName) setCustomerName(initialData.customerName)
+            }
+            generateOrderCode('PXK', systemCode, currentSystem?.name).then(setCode)
         } catch (error) {
             console.error(error)
             showToast('Lỗi tải dữ liệu', 'error')
@@ -237,6 +241,23 @@ export function useOutboundOrder({ isOpen, systemCode, onSuccess, onClose }: any
 
             const { error: itemsError } = await (supabase.from('outbound_order_items') as any).insert(orderItems)
             if (itemsError) throw itemsError
+
+            // Cleanup LOT metadata if this was a buffer sync
+            if (initialData?.batchData) {
+                for (const p of initialData.batchData) {
+                    const { data: lot } = await supabase.from('lots').select('metadata').eq('id', p.lot_id).single()
+                    if (lot) {
+                        const metadata = { ...lot.metadata as any }
+                        metadata.system_history.exports = metadata.system_history.exports.map((exp: any) => {
+                            if (exp.id === p.export_id) {
+                                return { ...exp, draft: false, order_id: order.id, order_code: code }
+                            }
+                            return exp
+                        })
+                        await supabase.from('lots').update({ metadata }).eq('id', p.lot_id)
+                    }
+                }
+            }
             onSuccess()
             onClose()
         } catch (e: any) {

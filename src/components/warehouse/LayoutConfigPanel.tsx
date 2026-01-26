@@ -66,7 +66,7 @@ export default function LayoutConfigPanel({
     allZones = [],
     allLayouts = {}
 }: LayoutConfigPanelProps) {
-    const { showToast } = useToast()
+    const { showToast, showConfirm } = useToast()
     const [positionColumns, setPositionColumns] = useState(layout?.position_columns ?? 8)
     const [cellWidth, setCellWidth] = useState(layout?.cell_width ?? 0)
     const [cellHeight, setCellHeight] = useState(layout?.cell_height ?? 0)
@@ -232,7 +232,7 @@ export default function LayoutConfigPanel({
 
     async function handleResetAll() {
         if (!siblingZones || siblingZones.length === 0) return;
-        if (!confirm('Bạn có chắc chắn muốn đặt lại MẶC ĐỊNH cho TOÀN BỘ các zone cùng cấp không?')) return;
+        if (!await showConfirm('Bạn có chắc chắn muốn đặt lại MẶC ĐỊNH cho TOÀN BỘ các zone cùng cấp không?')) return;
 
         setIsSaving(true);
         try {

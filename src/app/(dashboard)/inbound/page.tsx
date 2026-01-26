@@ -9,6 +9,8 @@ import InboundOrderModal from './InboundOrderModal'
 import InboundOrderDetailModal from './InboundOrderDetailModal'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
+import { LotInboundBuffer } from '@/components/warehouse/lots/LotInboundBuffer'
+import { ShoppingCart } from 'lucide-react'
 
 type InboundOrder = Database['public']['Tables']['inbound_orders']['Row'] & {
     supplier: { name: string } | null
@@ -34,13 +36,31 @@ export default function InboundPage() {
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [selectedOrder, setSelectedOrder] = useState<InboundOrder | null>(null)
     const [editingOrderId, setEditingOrderId] = useState<string | null>(null)
+    const [initialBufferData, setInitialBufferData] = useState<any>(null)
     const { showToast, showConfirm } = useToast()
 
     const { systemType } = useSystem()
+    const [bufferOpen, setBufferOpen] = useState(false)
+    const [bufferCount, setBufferCount] = useState(0)
 
     useEffect(() => {
         fetchOrders()
+        updateBufferCount()
     }, [systemType])
+
+    const updateBufferCount = async () => {
+        if (!systemType) return
+        const { data } = await supabase.from('lots').select('metadata').eq('system_code', systemType)
+        let count = 0
+        data?.forEach(lot => {
+            const metadata = lot.metadata as any
+            const inbounds = metadata?.system_history?.inbound || []
+            inbounds.forEach((inb: any) => {
+                if (inb.draft) count++
+            })
+        })
+        setBufferCount(count)
+    }
 
     async function fetchOrders() {
         setLoading(true)
@@ -81,16 +101,34 @@ export default function InboundPage() {
                         Quản lý phiếu nhập, hóa đơn và chứng từ đầu vào.
                     </p>
                 </div>
-                <button
-                    onClick={() => {
-                        setEditingOrderId(null)
-                        setIsModalOpen(true)
-                    }}
-                    className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-5 py-2.5 rounded-lg font-medium shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95"
-                >
-                    <Plus size={20} />
-                    Tạo Phiếu Nhập
-                </button>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => setBufferOpen(true)}
+                        className={`flex items-center gap-2.5 px-6 py-2.5 rounded-xl border border-stone-200 dark:border-zinc-700 font-bold text-sm shadow-sm relative group active:scale-95 transition-all ${bufferCount > 0
+                            ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/50 hover:bg-blue-100'
+                            : 'bg-white dark:bg-zinc-800 text-stone-400 hover:bg-stone-50'
+                            }`}
+                    >
+                        <ShoppingCart size={18} className={bufferCount > 0 ? "group-hover:rotate-12 transition-transform" : ""} />
+                        <span>Hàng chờ nhập</span>
+                        {bufferCount > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center border-2 border-white dark:border-zinc-900 animate-in zoom-in shadow-lg">
+                                {bufferCount}
+                            </span>
+                        )}
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            setEditingOrderId(null)
+                            setIsModalOpen(true)
+                        }}
+                        className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-5 py-2.5 rounded-lg font-medium shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95"
+                    >
+                        <Plus size={20} />
+                        Tạo Phiếu Nhập
+                    </button>
+                </div>
             </div>
 
             {/* Filters */}
@@ -266,13 +304,17 @@ export default function InboundPage() {
                 onClose={() => {
                     setIsModalOpen(false)
                     setEditingOrderId(null)
+                    setInitialBufferData(null)
                 }}
                 onSuccess={() => {
                     fetchOrders()
                     setIsModalOpen(false)
                     setEditingOrderId(null)
+                    setInitialBufferData(null)
+                    updateBufferCount()
                 }}
                 editOrderId={editingOrderId}
+                initialData={initialBufferData}
                 systemCode={systemType}
             />
 
@@ -281,6 +323,21 @@ export default function InboundPage() {
                 order={selectedOrder}
                 onClose={() => setSelectedOrder(null)}
                 onUpdate={fetchOrders}
+            />
+
+            <LotInboundBuffer
+                isOpen={bufferOpen}
+                onClose={() => setBufferOpen(false)}
+                onSuccess={() => {
+                    fetchOrders();
+                    updateBufferCount();
+                }}
+                onFillInfo={(data) => {
+                    setInitialBufferData(data)
+                    setEditingOrderId(null)
+                    setIsModalOpen(true)
+                    setBufferOpen(false)
+                }}
             />
         </div>
     )

@@ -208,6 +208,33 @@ export function LotForm({
         const validItems = lotItems.filter(item => item.productId && item.quantity > 0)
         const totalQuantity = validItems.reduce((sum, item) => sum + item.quantity, 0)
 
+        // Prepare History Entry if new Lot
+        const systemHistory: any = (editingLot?.metadata as any)?.system_history || { exports: [], inbound: [] }
+        if (!editingLot) {
+            const inboundItems: Record<string, any> = {}
+            validItems.forEach((item, idx) => {
+                const product = products.find(p => p.id === item.productId)
+                inboundItems[idx] = {
+                    product_id: item.productId,
+                    product_sku: product?.sku,
+                    product_name: product?.name,
+                    quantity: item.quantity,
+                    unit: item.unit,
+                    price: (product as any)?.cost_price || 0
+                }
+            })
+
+            if (!systemHistory.inbound) systemHistory.inbound = []
+            systemHistory.inbound.push({
+                id: crypto.randomUUID(),
+                date: new Date().toISOString(),
+                supplier_id: selectedSupplierId || null,
+                supplier_name: suppliers.find(s => s.id === selectedSupplierId)?.name || 'N/A',
+                items: inboundItems,
+                draft: true // Marked as draft for the inbound buffer
+            })
+        }
+
         const lotData = {
             code: newLotCode,
             notes: newLotNotes,
@@ -222,7 +249,10 @@ export function LotForm({
             status: 'active',
             system_code: currentSystem?.code,
             images: images,
-            metadata: { extra_info: extraInfo }
+            metadata: {
+                extra_info: extraInfo,
+                system_history: systemHistory
+            }
         }
 
         let lotId = editingLot?.id
