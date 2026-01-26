@@ -376,13 +376,44 @@ export function useZoneManager() {
         setIsSaving(true)
 
         try {
-            // Delete Zones (Deepest first)
+            // --- VALIDATION: Check for occupied positions before deleting ---
+            let allPos: LocalPosition[] = []
+            Object.values(positionsMap).forEach(list => allPos.push(...list))
+
             const zonesToDelete = zones.filter(z => z._status === 'deleted' && originalZones.some(oz => oz.id === z.id))
-            zonesToDelete.sort((a, b) => (b.level ?? 0) - (a.level ?? 0))
             const zoneIdsToDelete = zonesToDelete.map(z => z.id)
+            const pIdsDelExplicit = allPos.filter(p => p._status === 'deleted' && p.id).map(p => p.id)
+
+            // Gather all positions that MIGHT be deleted (explicit OR via parent zone deletion)
+            let allPotentialPosIds = new Set<string>(pIdsDelExplicit)
+            if (zoneIdsToDelete.length > 0) {
+                const { data: zpData } = await supabase.from('zone_positions').select('position_id').in('zone_id', zoneIdsToDelete)
+                if (zpData) (zpData as any[]).forEach(item => allPotentialPosIds.add(item.position_id))
+            }
+
+            if (allPotentialPosIds.size > 0) {
+                console.log(`Checking occupancy for ${allPotentialPosIds.size} positions before deletion...`)
+                const { data: occupied, error: occErr } = await supabase
+                    .from('positions')
+                    .select('code, lot_id')
+                    .in('id', Array.from(allPotentialPosIds))
+                    .not('lot_id', 'is', null)
+
+                if (occErr) throw occErr
+                if (occupied && (occupied as any[]).length > 0) {
+                    const codes = (occupied as any[]).map(o => o.code).join(', ')
+                    setIsSaving(false)
+                    showToast(`Không thể xóa vì vị trí đang có hàng: ${codes}. Vui lòng chuyển hàng đi trước khi xóa.`, 'error')
+                    return
+                }
+            }
+
+            // --- EXECUTION ---
+            // Delete Zones (Deepest first)
+            zonesToDelete.sort((a, b) => (b.level ?? 0) - (a.level ?? 0))
 
             if (zoneIdsToDelete.length > 0) {
-                // Find associated positions
+                // Find associated positions again to be safe
                 const { data: zpData } = await supabase.from('zone_positions').select('position_id').in('zone_id', zoneIdsToDelete)
                 const posIdsToDelete = (zpData as any[])?.map(item => item.position_id) || []
 
@@ -407,7 +438,6 @@ export function useZoneManager() {
             // Insert Zones
             const newZones = zones.filter(z => z._status === 'new')
             if (newZones.length > 0) {
-                // Sort by level ascending: parents (low level) first, then children (high level)
                 newZones.sort((a, b) => (a.level ?? 0) - (b.level ?? 0))
                 const cleanZones = newZones.map(z => ({
                     id: z.id, code: z.code, name: z.name, parent_id: z.parent_id, level: z.level, system_type: systemType
@@ -417,11 +447,8 @@ export function useZoneManager() {
             }
 
             // --- POSITIONS ---
-            let allPos: LocalPosition[] = []
-            Object.values(positionsMap).forEach(list => allPos.push(...list))
-
             // Delete Positions (Must delete links FIRST)
-            const pIdsDel = allPos.filter(p => p._status === 'deleted').map(p => p.id)
+            const pIdsDel = pIdsDelExplicit
             if (pIdsDel.length > 0) {
                 // Delete links first
                 const { error: zpDelErr } = await (supabase.from('zone_positions') as any).delete().in('position_id', pIdsDel)
