@@ -10,6 +10,7 @@ import ProductConfigSection from '@/components/settings/ProductConfigSection'
 import OrderConfigSection from '@/components/settings/OrderConfigSection'
 import LotConfigSection from '@/components/settings/LotConfigSection'
 import MenuManagerSection from '@/components/settings/MenuManagerSection'
+import DashboardConfigSection from '@/components/settings/DashboardConfigSection'
 import {
     Building2,
     Settings as SettingsIcon,
@@ -19,11 +20,12 @@ import {
     FileText,
     ArrowLeft,
     LogOut,
-    Box
+    Box,
+    PieChart
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type Tab = 'company' | 'branches' | 'systems' | 'product_config' | 'order_config' | 'lot_config' | 'menus'
+type Tab = 'company' | 'branches' | 'systems' | 'product_config' | 'order_config' | 'lot_config' | 'menus' | 'dashboard'
 
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState<Tab>('company')
@@ -36,6 +38,7 @@ export default function SettingsPage() {
         { id: 'product_config' as Tab, label: 'Cấu hình sản phẩm', icon: SettingsIcon },
         { id: 'order_config' as Tab, label: 'Cấu hình phiếu', icon: FileText },
         { id: 'lot_config' as Tab, label: 'Cấu hình LOT', icon: Box },
+        { id: 'dashboard' as Tab, label: 'Cấu hình Dashboard', icon: PieChart },
         { id: 'menus' as Tab, label: 'Menu Sidebar', icon: List },
     ]
 
@@ -104,6 +107,7 @@ export default function SettingsPage() {
                         {activeTab === 'product_config' && <ProductConfigSection />}
                         {activeTab === 'order_config' && <OrderConfigSection />}
                         {activeTab === 'lot_config' && <LotConfigSection />}
+                        {activeTab === 'dashboard' && <DashboardConfigSection />}
                         {activeTab === 'menus' && <MenuManagerSection />}
                     </div>
                 </div>

@@ -17,6 +17,7 @@ interface System {
   modules?: string | string[] // Supports JSON string or array
   inbound_modules?: string | string[]
   outbound_modules?: string | string[]
+  dashboard_modules?: string | string[]
   is_active?: boolean
   sort_order?: number
 }
@@ -75,7 +76,8 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
           return {
             ...sys,
             inbound_modules: config?.inbound_modules || [],
-            outbound_modules: config?.outbound_modules || []
+            outbound_modules: config?.outbound_modules || [],
+            dashboard_modules: config?.dashboard_modules || []
           }
         })
         setSystems(mergedSystems)

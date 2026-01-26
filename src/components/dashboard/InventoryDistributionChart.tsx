@@ -5,6 +5,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { supabase } from '@/lib/supabaseClient'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { Loader2, RefreshCw } from 'lucide-react'
+import { useSystem } from '@/contexts/SystemContext'
 import { Database } from '@/lib/database.types'
 
 type LotItem = Database['public']['Tables']['lot_items']['Row'] & {
@@ -40,6 +41,7 @@ const COLORS = [
 ]
 
 export default function InventoryDistributionChart() {
+    const { systemType } = useSystem()
     const [loading, setLoading] = useState(true)
     const [lots, setLots] = useState<Lot[]>([])
     const { toBaseAmount, getBaseToKgRate, unitNameMap, conversionMap, loading: conversionLoading } = useUnitConversion()
@@ -69,6 +71,7 @@ export default function InventoryDistributionChart() {
                 )
             `)
             .eq('status', 'active')
+            .eq('system_code', systemType)
 
         if (data) {
             setLots(data as unknown as Lot[])
@@ -77,8 +80,10 @@ export default function InventoryDistributionChart() {
     }
 
     useEffect(() => {
-        fetchData()
-    }, [])
+        if (systemType) {
+            fetchData()
+        }
+    }, [systemType])
 
     const chartData = useMemo(() => {
         if (conversionLoading || lots.length === 0) return { data: [], totalWeight: 0 }
@@ -118,7 +123,7 @@ export default function InventoryDistributionChart() {
                 // Let's rely on product unit if undefined.
                 const q = lot.quantity || 0
                 if (lot.product_id) {
-                     process(lot.product_id, lot.products.sku, q, u, lot.products.unit)
+                    process(lot.product_id, lot.products.sku, q, u, lot.products.unit)
                 }
             }
         })
@@ -142,15 +147,15 @@ export default function InventoryDistributionChart() {
 
     if (loading || conversionLoading) {
         return (
-             <div className="bg-white rounded-2xl p-6 border border-stone-200 h-[400px] flex items-center justify-center">
+            <div className="bg-white rounded-2xl p-6 border border-stone-200 h-[400px] flex items-center justify-center">
                 <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
             </div>
         )
     }
 
     if (processedData.length === 0) {
-         return (
-             <div className="bg-white rounded-2xl p-6 border border-stone-200 h-[400px] flex flex-col items-center justify-center text-stone-400">
+        return (
+            <div className="bg-white rounded-2xl p-6 border border-stone-200 h-[400px] flex flex-col items-center justify-center text-stone-400">
                 <p>Chưa có dữ liệu tồn kho (KG)</p>
             </div>
         )
@@ -223,7 +228,7 @@ export default function InventoryDistributionChart() {
                 ))}
             </div>
 
-             <div className="mt-6 space-y-1 text-xs text-stone-500 border-t border-stone-100 pt-4">
+            <div className="mt-6 space-y-1 text-xs text-stone-500 border-t border-stone-100 pt-4">
                 <p className="font-semibold text-stone-700 mb-2">Chú thích:</p>
                 <ul className="list-disc pl-4 space-y-1">
                     <li>Tính theo khối lượng (Kg)</li>

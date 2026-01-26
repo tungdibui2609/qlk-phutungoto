@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Search, Filter, ChevronDown, Check, X } from 'lucide-react'
+import { useSystem } from '@/contexts/SystemContext'
 
 type Zone = Database['public']['Tables']['zones']['Row']
 
@@ -20,6 +21,7 @@ export default function HorizontalZoneFilter({
     searchTerm,
     onSearchChange
 }: HorizontalZoneFilterProps) {
+    const { systemType } = useSystem()
     const [zones, setZones] = useState<Zone[]>([])
     const [loading, setLoading] = useState(true)
     const [session, setSession] = useState<any>(null)
@@ -38,17 +40,18 @@ export default function HorizontalZoneFilter({
     const accessToken = session?.access_token
 
     useEffect(() => {
-        if (accessToken) {
+        if (accessToken && systemType) {
             fetchZones()
         }
-    }, [accessToken])
+    }, [accessToken, systemType])
 
     async function fetchZones() {
-        if (!accessToken) return
+        if (!accessToken || !systemType) return
         setLoading(true)
         const { data, error } = await supabase
             .from('zones')
             .select('*')
+            .eq('system_type', systemType)
             .order('level')
             .order('name')
 

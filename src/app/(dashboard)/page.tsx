@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { Package, TrendingUp, AlertTriangle, Boxes, ArrowUpRight, Sparkles } from 'lucide-react'
+import { Package, TrendingUp, AlertTriangle, Boxes, ArrowUpRight, Sparkles, PieChart } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import InventoryDistributionChart from '@/components/dashboard/InventoryDistributionChart'
 
@@ -13,7 +13,13 @@ export default function Home() {
     const [categories, setCategories] = useState<Category[]>([])
     const [products, setProducts] = useState<Product[]>([])
     const [loading, setLoading] = useState(true)
-    const { systemType } = useSystem()
+    const { systemType, currentSystem } = useSystem()
+    const dashboardModules = currentSystem?.dashboard_modules || []
+
+    // Check if showing all by default if no configuration exists,
+    // or if we should be strict. For a better UX, if NO modules are configured,
+    // we show a message or a default set. Let's show a message to encourage configuration.
+    const hasModules = Array.isArray(dashboardModules) && dashboardModules.length > 0
 
     useEffect(() => {
         fetchData()
@@ -74,148 +80,169 @@ export default function Home() {
                         <span className="text-orange-600 text-sm font-medium">Dashboard</span>
                     </div>
                     <h1 className="text-3xl font-bold text-stone-800 tracking-tight">
-                        Tổng quan Kho hàng
+                        Tổng quan {currentSystem?.name || 'Kho hàng'}
                     </h1>
                     <p className="text-stone-500 mt-1">
-                        Theo dõi và quản lý phụ tùng ô tô hiệu quả
+                        Theo dõi và quản lý hệ thống hiệu quả
                     </p>
                 </div>
             </div>
 
-            {/* STATS GRID */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                {stats.map((stat, i) => {
-                    const Icon = stat.icon
-                    return (
-                        <div
-                            key={i}
-                            className="group relative overflow-hidden bg-white rounded-2xl p-6 border border-stone-200 transition-all duration-300 hover:border-orange-200 hover:shadow-lg hover:shadow-orange-100/50"
-                        >
-                            {/* Background glow on hover */}
-                            <div
-                                className="absolute -top-10 -right-10 w-32 h-32 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-                                style={{
-                                    background: `radial-gradient(circle, ${stat.color}15 0%, transparent 70%)`,
-                                }}
-                            />
+            {!hasModules && !loading && (
+                <div className="bg-orange-50 border border-orange-200 rounded-2xl p-8 text-center">
+                    <PieChart className="mx-auto mb-4 text-orange-400 opacity-50" size={48} />
+                    <h3 className="text-xl font-bold text-stone-800 mb-2">Chưa có module Dashboard nào được bật</h3>
+                    <p className="text-stone-500 max-w-md mx-auto mb-6">
+                        Vui lòng truy cập trang cài đặt để tùy chỉnh các biểu đồ và thẻ thống kê hiển thị cho phân hệ này.
+                    </p>
+                    <a href="/settings" className="inline-flex items-center gap-2 px-6 py-3 bg-orange-600 text-white rounded-xl font-medium hover:bg-orange-700 transition-all shadow-md shadow-orange-200">
+                        Phần Cài đặt
+                    </a>
+                </div>
+            )}
 
-                            <div className="relative flex items-start justify-between">
-                                <div>
-                                    <p className="text-stone-500 text-sm mb-1">{stat.label}</p>
-                                    <p className="text-3xl font-bold text-stone-800">{stat.value}</p>
-                                    <div className="flex items-center gap-1 mt-2">
-                                        <ArrowUpRight size={14} style={{ color: stat.color }} />
-                                        <span className="text-xs font-medium" style={{ color: stat.color }}>
-                                            {stat.trend}
-                                        </span>
-                                        <span className="text-xs text-stone-400">vs tuần trước</span>
+            {/* STATS GRID */}
+            {dashboardModules.includes('stats_overview') && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                    {stats.map((stat, i) => {
+                        const Icon = stat.icon
+                        return (
+                            <div
+                                key={i}
+                                className="group relative overflow-hidden bg-white rounded-2xl p-6 border border-stone-200 transition-all duration-300 hover:border-orange-200 hover:shadow-lg hover:shadow-orange-100/50"
+                            >
+                                {/* Background glow on hover */}
+                                <div
+                                    className="absolute -top-10 -right-10 w-32 h-32 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+                                    style={{
+                                        background: `radial-gradient(circle, ${stat.color}15 0%, transparent 70%)`,
+                                    }}
+                                />
+
+                                <div className="relative flex items-start justify-between">
+                                    <div>
+                                        <p className="text-stone-500 text-sm mb-1">{stat.label}</p>
+                                        <p className="text-3xl font-bold text-stone-800">{stat.value}</p>
+                                        <div className="flex items-center gap-1 mt-2">
+                                            <ArrowUpRight size={14} style={{ color: stat.color }} />
+                                            <span className="text-xs font-medium" style={{ color: stat.color }}>
+                                                {stat.trend}
+                                            </span>
+                                            <span className="text-xs text-stone-400">vs tuần trước</span>
+                                        </div>
+                                    </div>
+                                    <div
+                                        className="p-3 rounded-xl transition-all duration-300"
+                                        style={{ background: stat.bg }}
+                                    >
+                                        <Icon size={24} style={{ color: stat.color }} />
                                     </div>
                                 </div>
-                                <div
-                                    className="p-3 rounded-xl transition-all duration-300"
-                                    style={{ background: stat.bg }}
-                                >
-                                    <Icon size={24} style={{ color: stat.color }} />
-                                </div>
                             </div>
-                        </div>
-                    )
-                })}
-            </div>
+                        )
+                    })}
+                </div>
+            )}
 
             {/* CHART */}
-            <div>
-                <InventoryDistributionChart />
-            </div>
+            {dashboardModules.includes('inventory_distribution') && (
+                <div>
+                    <InventoryDistributionChart />
+                </div>
+            )}
 
             {/* CONTENT GRID */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Categories Card */}
-                <div className="bg-white rounded-2xl p-6 border border-stone-200">
-                    <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-xl font-semibold text-stone-800">Danh mục ({categories.length})</h2>
-                        <span className="px-3 py-1 rounded-full text-xs font-medium bg-cyan-50 text-cyan-700 border border-cyan-200">
-                            Tổng quan
-                        </span>
-                    </div>
+                {dashboardModules.includes('categories_summary') && (
+                    <div className="bg-white rounded-2xl p-6 border border-stone-200">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-xl font-semibold text-stone-800">Danh mục ({categories.length})</h2>
+                            <span className="px-3 py-1 rounded-full text-xs font-medium bg-cyan-50 text-cyan-700 border border-cyan-200">
+                                Tổng quan
+                            </span>
+                        </div>
 
-                    {loading ? (
-                        <div className="flex items-center justify-center py-12">
-                            <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-                        </div>
-                    ) : categories.length === 0 ? (
-                        <div className="text-center py-12 text-stone-400">
-                            <Boxes className="mx-auto mb-3 opacity-50" size={40} />
-                            <p>Chưa có danh mục nào</p>
-                        </div>
-                    ) : (
-                        <div className="space-y-3">
-                            {categories.map(cat => (
-                                <div
-                                    key={cat.id}
-                                    className="group flex items-center gap-4 p-4 rounded-xl bg-stone-50 border border-stone-100 transition-all duration-200 hover:bg-orange-50 hover:border-orange-200"
-                                >
+                        {loading ? (
+                            <div className="flex items-center justify-center py-12">
+                                <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                            </div>
+                        ) : categories.length === 0 ? (
+                            <div className="text-center py-12 text-stone-400">
+                                <Boxes className="mx-auto mb-3 opacity-50" size={40} />
+                                <p>Chưa có danh mục nào</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {categories.map(cat => (
                                     <div
-                                        className="w-10 h-10 rounded-lg flex items-center justify-center text-white"
-                                        style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)' }}
+                                        key={cat.id}
+                                        className="group flex items-center gap-4 p-4 rounded-xl bg-stone-50 border border-stone-100 transition-all duration-200 hover:bg-orange-50 hover:border-orange-200"
                                     >
-                                        <Boxes size={18} />
-                                    </div>
-                                    <div className="flex-1">
-                                        <p className="font-semibold text-stone-800">{cat.name}</p>
-                                        <p className="text-sm text-stone-500">{cat.description || 'Không có mô tả'}</p>
-                                    </div>
+                                        <div
+                                            className="w-10 h-10 rounded-lg flex items-center justify-center text-white"
+                                            style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)' }}
+                                        >
+                                            <Boxes size={18} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <p className="font-semibold text-stone-800">{cat.name}</p>
+                                            <p className="text-sm text-stone-500">{cat.description || 'Không có mô tả'}</p>
+                                        </div>
 
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Recent Products Card */}
-                <div className="bg-white rounded-2xl p-6 border border-stone-200">
-                    <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-xl font-semibold text-stone-800">Sản phẩm gần đây</h2>
-                        <span className="px-3 py-1 rounded-full text-xs font-medium bg-orange-50 text-orange-700 border border-orange-200">
-                            {products.length} sản phẩm
-                        </span>
-                    </div>
+                {dashboardModules.includes('recent_products') && (
+                    <div className="bg-white rounded-2xl p-6 border border-stone-200">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-xl font-semibold text-stone-800">Sản phẩm gần đây</h2>
+                            <span className="px-3 py-1 rounded-full text-xs font-medium bg-orange-50 text-orange-700 border border-orange-200">
+                                {products.length} sản phẩm
+                            </span>
+                        </div>
 
-                    {loading ? (
-                        <div className="flex items-center justify-center py-12">
-                            <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-                        </div>
-                    ) : products.length === 0 ? (
-                        <div className="text-center py-12 text-stone-400">
-                            <Package className="mx-auto mb-3 opacity-50" size={40} />
-                            <p>Chưa có sản phẩm nào</p>
-                        </div>
-                    ) : (
-                        <div className="space-y-3">
-                            {products.slice(0, 5).map(prod => (
-                                <div
-                                    key={prod.id}
-                                    className="group flex items-center gap-4 p-4 rounded-xl bg-stone-50 border border-stone-100 transition-all duration-200 hover:bg-orange-50 hover:border-orange-200"
-                                >
-                                    <div className="w-12 h-12 rounded-lg flex items-center justify-center bg-stone-200 overflow-hidden">
-                                        {prod.image_url ? (
-                                            <img src={prod.image_url} alt="" className="w-full h-full object-cover" />
-                                        ) : (
-                                            <Package size={20} className="text-stone-400" />
-                                        )}
+                        {loading ? (
+                            <div className="flex items-center justify-center py-12">
+                                <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                            </div>
+                        ) : products.length === 0 ? (
+                            <div className="text-center py-12 text-stone-400">
+                                <Package className="mx-auto mb-3 opacity-50" size={40} />
+                                <p>Chưa có sản phẩm nào</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {products.slice(0, 5).map(prod => (
+                                    <div
+                                        key={prod.id}
+                                        className="group flex items-center gap-4 p-4 rounded-xl bg-stone-50 border border-stone-100 transition-all duration-200 hover:bg-orange-50 hover:border-orange-200"
+                                    >
+                                        <div className="w-12 h-12 rounded-lg flex items-center justify-center bg-stone-200 overflow-hidden">
+                                            {prod.image_url ? (
+                                                <img src={prod.image_url} alt="" className="w-full h-full object-cover" />
+                                            ) : (
+                                                <Package size={20} className="text-stone-400" />
+                                            )}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-semibold text-stone-800 truncate">{prod.name}</p>
+                                            <p className="text-sm text-stone-500">{prod.manufacturer || 'N/A'}</p>
+                                        </div>
+                                        <span className="text-xs px-2 py-1 rounded font-mono bg-orange-100 text-orange-700 border border-orange-200">
+                                            {prod.sku}
+                                        </span>
                                     </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="font-semibold text-stone-800 truncate">{prod.name}</p>
-                                        <p className="text-sm text-stone-500">{prod.manufacturer || 'N/A'}</p>
-                                    </div>
-                                    <span className="text-xs px-2 py-1 rounded font-mono bg-orange-100 text-orange-700 border border-orange-200">
-                                        {prod.sku}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     )
