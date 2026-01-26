@@ -10,9 +10,9 @@ type QCInfo = {
     id: string
     name: string
     code: string
-    description: string
-    system_code?: string
-    is_active: boolean
+    description: string | null
+    system_code?: string | null
+    is_active: boolean | null
     created_at: string
 }
 
@@ -43,7 +43,7 @@ export default function QCPage() {
             setLoading(true)
 
             // Fetch QC info for current system OR global (system_code is null)
-            const { data, error } = await (supabase as any)
+            const { data, error } = await supabase
                 .from('qc_info')
                 .select('*')
                 .or(`system_code.eq.${currentSystem?.code},system_code.is.null`)
@@ -124,7 +124,7 @@ export default function QCPage() {
             }
 
             if (editingQC) {
-                const { error } = await (supabase as any)
+                const { error } = await supabase
                     .from('qc_info')
                     .update(payload)
                     .eq('id', editingQC.id)
@@ -134,7 +134,7 @@ export default function QCPage() {
                 // Attach current system code for new items
                 payload.system_code = currentSystem?.code
 
-                const { error } = await (supabase as any)
+                const { error } = await supabase
                     .from('qc_info')
                     .insert([payload])
                 if (error) throw error
@@ -152,7 +152,7 @@ export default function QCPage() {
         if (!confirm('Bạn có chắc muốn xóa nhân viên QC này?')) return
 
         try {
-            const { error } = await (supabase as any)
+            const { error } = await supabase
                 .from('qc_info')
                 .delete()
                 .eq('id', id)
@@ -234,7 +234,7 @@ export default function QCPage() {
                                                     <span className="ml-2 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] rounded border border-gray-200">Global</span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-3 text-stone-500 truncate max-w-xs" title={item.description}>
+                                            <td className="px-6 py-3 text-stone-500 truncate max-w-xs" title={item.description || ''}>
                                                 {item.description}
                                             </td>
                                             <td className="px-6 py-3">

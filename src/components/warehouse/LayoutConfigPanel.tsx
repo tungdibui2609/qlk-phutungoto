@@ -160,8 +160,10 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
                 updated_at: now
             }));
 
-            const { data, error } = await (supabase as any)
-                .from(tableName)
+            // Cast tableName to ensure TS knows it's a valid table
+            // In a real scenario, tableName should be strictly typed in props
+            const { data, error } = await supabase
+                .from(tableName as 'zone_layouts')
                 .upsert(upsertData, { onConflict: 'zone_id' })
                 .select();
 
@@ -194,8 +196,8 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
                 updated_at: new Date().toISOString()
             };
 
-            const { data, error } = await (supabase as any)
-                .from(tableName)
+            const { data, error } = await supabase
+                .from(tableName as 'zone_layouts')
                 .upsert(payload, { onConflict: 'zone_id' })
                 .select()
                 .single();
@@ -229,8 +231,8 @@ export default function LayoutConfigPanel({ zone, layout, siblingZones, onSave, 
                 updated_at: now
             }));
 
-            const { data, error } = await (supabase as any)
-                .from(tableName)
+            const { data, error } = await supabase
+                .from(tableName as 'zone_layouts')
                 .upsert(upsertData, { onConflict: 'zone_id' })
                 .select();
 

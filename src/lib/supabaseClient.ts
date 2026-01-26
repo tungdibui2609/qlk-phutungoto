@@ -5,7 +5,12 @@ import { Database } from './database.types'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key'
 
-export const createClient = () =>
-    createBrowserClient<Database>(supabaseUrl, supabaseKey)
+// Extend Database type to include any missing tables or columns manually if necessary
+// This acts as a bridge until the official database.types.ts is regenerated
+export type TypedDatabase = Database
 
-export const supabase = createBrowserClient<Database>(supabaseUrl, supabaseKey)
+export const createClient = () =>
+    createBrowserClient<TypedDatabase>(supabaseUrl, supabaseKey)
+
+// Export a typed client instance
+export const supabase = createBrowserClient<TypedDatabase>(supabaseUrl, supabaseKey)
