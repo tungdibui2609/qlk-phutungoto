@@ -51,7 +51,7 @@ export default function WarehouseStatusMap({
             if (z.parent_id && map.has(z.parent_id)) map.get(z.parent_id)!.children.push(map.get(z.id)!)
         })
         map.forEach(node => {
-            node.children.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+            node.children.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }))
             node.positions.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }))
         })
         return zones

@@ -48,6 +48,8 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
                 system_type: systemType
             } as any))
 
+            console.log(`Manually created ${newPositions.length} positions:`, newPositions.map(p => p.code))
+
             setPositionsMap(prev => {
                 const currentList = prev[zoneId] || []
                 return {
@@ -126,6 +128,8 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
 
                 updates[leafZone.id] = newPositions
             }
+
+            console.log(`Auto-created positions for ${leafZones.length} zones. Total updates:`, updates)
 
             setPositionsMap(prev => {
                 const next = { ...prev }

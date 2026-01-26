@@ -63,43 +63,72 @@ export function useZoneManager() {
 
     async function fetchZones(preserveExpanded = false) {
         setLoading(true)
-        const { data, error } = await supabase
-            .from('zones')
-            .select('*')
-            .eq('system_type', systemType)
-            .order('level', { ascending: true })
-            .order('code', { ascending: true })
 
-        if (error) {
-            console.error('Error fetching zones:', error)
-        } else {
+        async function fetchAllZones() {
+            let all: any[] = []
+            let from = 0
+            const limit = 1000
+            while (true) {
+                const { data, error } = await supabase
+                    .from('zones')
+                    .select('*')
+                    .eq('system_type', systemType)
+                    .order('level', { ascending: true })
+                    .order('code', { ascending: true })
+                    .range(from, from + limit - 1)
+                if (error) throw error
+                if (!data || data.length === 0) break
+                all = [...all, ...data]
+                if (data.length < limit) break
+                from += limit
+            }
+            return all
+        }
+
+        async function fetchAllZP() {
+            let all: any[] = []
+            let from = 0
+            const limit = 1000
+            while (true) {
+                const { data, error } = await supabase
+                    .from('zone_positions')
+                    .select('zone_id, positions!inner(*)')
+                    .eq('positions.system_type', systemType)
+                    .range(from, from + limit - 1)
+                if (error) throw error
+                if (!data || data.length === 0) break
+                all = [...all, ...data]
+                if (data.length < limit) break
+                from += limit
+            }
+            return all
+        }
+
+        try {
+            const data = await fetchAllZones()
             const loadedZones = (data as any[] || []).map(z => ({ ...z, _status: 'existing' } as LocalZone))
             setZones(loadedZones)
             setOriginalZones(data || [])
 
-            // Fetch positions
-            const { data: zpData, error: zpError } = await supabase
-                .from('zone_positions')
-                .select('zone_id, positions(*)')
-
-            if (!zpError && zpData) {
-                const map: Record<string, LocalPosition[]> = {}
-                zpData.forEach((item: any) => {
-                    if (item.positions && item.zone_id) {
-                        if (!map[item.zone_id]) map[item.zone_id] = []
-                        map[item.zone_id].push({ ...item.positions, _status: 'existing' })
-                    }
-                })
-                Object.keys(map).forEach(key => {
-                    map[key].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
-                })
-                setPositionsMap(map)
-            }
+            const zpData = await fetchAllZP()
+            const map: Record<string, LocalPosition[]> = {}
+            zpData.forEach((item: any) => {
+                if (item.positions && item.zone_id) {
+                    if (!map[item.zone_id]) map[item.zone_id] = []
+                    map[item.zone_id].push({ ...item.positions, _status: 'existing' })
+                }
+            })
+            Object.keys(map).forEach(key => {
+                map[key].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+            })
+            setPositionsMap(map)
 
             if (!preserveExpanded) {
                 const rootIds = loadedZones.filter(z => z.level === 0).map(z => z.id)
                 setExpandedNodes(new Set(rootIds))
             }
+        } catch (error) {
+            console.error('Error fetching warehouse data:', error)
         }
         setLoading(false)
     }
@@ -359,7 +388,8 @@ export function useZoneManager() {
 
                 await (supabase.from('zone_positions') as any).delete().in('zone_id', zoneIdsToDelete)
                 if (posIdsToDelete.length > 0) {
-                    await supabase.from('positions').delete().in('id', posIdsToDelete)
+                    const { error: pDelErr } = await supabase.from('positions').delete().in('id', posIdsToDelete)
+                    if (pDelErr) throw pDelErr
                 }
 
                 for (const zone of zonesToDelete) {
@@ -377,6 +407,7 @@ export function useZoneManager() {
             // Insert Zones
             const newZones = zones.filter(z => z._status === 'new')
             if (newZones.length > 0) {
+                // Sort by level ascending: parents (low level) first, then children (high level)
                 newZones.sort((a, b) => (a.level ?? 0) - (b.level ?? 0))
                 const cleanZones = newZones.map(z => ({
                     id: z.id, code: z.code, name: z.name, parent_id: z.parent_id, level: z.level, system_type: systemType
@@ -389,26 +420,95 @@ export function useZoneManager() {
             let allPos: LocalPosition[] = []
             Object.values(positionsMap).forEach(list => allPos.push(...list))
 
-            // Delete Positions
+            // Delete Positions (Must delete links FIRST)
             const pIdsDel = allPos.filter(p => p._status === 'deleted').map(p => p.id)
-            if (pIdsDel.length > 0) await (supabase.from('positions') as any).delete().in('id', pIdsDel)
+            if (pIdsDel.length > 0) {
+                // Delete links first
+                const { error: zpDelErr } = await (supabase.from('zone_positions') as any).delete().in('position_id', pIdsDel)
+                if (zpDelErr) throw zpDelErr
 
-            // Update Positions
-            for (const p of allPos.filter(p => p._status === 'modified')) {
-                await (supabase.from('positions') as any).update({ code: p.code }).eq('id', p.id)
+                // Then delete positions
+                const { error: pDelErr } = await (supabase.from('positions') as any).delete().in('id', pIdsDel)
+                if (pDelErr) throw pDelErr
             }
 
-            // Insert Positions
-            for (const [zoneId, localPositions] of Object.entries(positionsMap)) {
-                const unsaved = localPositions.filter(p => p._status === 'new')
-                if (unsaved.length > 0) {
-                    const posPayloads = unsaved.map(p => ({
-                        id: p.id, code: p.code, display_order: p.display_order, batch_name: p.batch_name, system_type: systemType
-                    }))
-                    await (supabase.from('positions') as any).insert(posPayloads)
+            // Update Positions (Individual updates because Supabase doesn't support batch update with where by ID easily in some versions)
+            for (const p of allPos.filter(p => p._status === 'modified')) {
+                const { error: pUpdErr } = await (supabase.from('positions') as any).update({ code: p.code }).eq('id', p.id)
+                if (pUpdErr) throw pUpdErr
+            }
 
-                    const links = unsaved.map(p => ({ zone_id: zoneId, position_id: p.id }))
-                    await (supabase.from('zone_positions') as any).insert(links)
+            // Insert Positions in Batches (Chunked to bypass server limits)
+            const unsavedPos = allPos.filter(p => p._status === 'new')
+            let posIdMap = new Map<string, string>() // code -> database_id
+
+            if (unsavedPos.length > 0) {
+                const CHUNK_SIZE = 500
+                console.log(`Saving ${unsavedPos.length} positions in chunks of ${CHUNK_SIZE}...`)
+
+                for (let i = 0; i < unsavedPos.length; i += CHUNK_SIZE) {
+                    const chunk = unsavedPos.slice(i, i + CHUNK_SIZE)
+                    const posPayloads = chunk.map(p => ({
+                        code: p.code,
+                        display_order: p.display_order,
+                        batch_name: p.batch_name,
+                        system_type: systemType
+                    }))
+
+                    const { data: upsertedData, error: pInsErr } = await (supabase.from('positions') as any)
+                        .upsert(posPayloads, { onConflict: 'code' })
+                        .select('id, code')
+                        .limit(CHUNK_SIZE)
+
+                    if (pInsErr) {
+                        console.error('Position Upsert Chunk Error:', pInsErr)
+                        throw new Error(`Lỗi lưu Vị trí (nhóm ${i / CHUNK_SIZE + 1}): ${pInsErr.message}`)
+                    }
+
+                    (upsertedData as any[]).forEach(row => {
+                        posIdMap.set(row.code, row.id)
+                    })
+                }
+
+                // Clean old links for ALL affected positions
+                const allRealIds = Array.from(posIdMap.values())
+                if (allRealIds.length > 0) {
+                    console.log(`Cleaning old links for ${allRealIds.length} positions...`)
+                    // Chunk deletion if too many
+                    for (let i = 0; i < allRealIds.length; i += CHUNK_SIZE) {
+                        const chunkIds = allRealIds.slice(i, i + CHUNK_SIZE)
+                        const { error: ldErr } = await (supabase.from('zone_positions') as any)
+                            .delete()
+                            .in('position_id', chunkIds)
+                        if (ldErr) throw new Error(`Lỗi làm sạch liên kết cũ: ${ldErr.message}`)
+                    }
+                }
+            }
+
+            // Insert Links in Batches (Chunked)
+            const newLinks: any[] = []
+            for (const [zoneId, localPositions] of Object.entries(positionsMap)) {
+                const unsavedForZone = localPositions.filter(p => p._status === 'new')
+                unsavedForZone.forEach(p => {
+                    const realId = posIdMap.get(p.code)
+                    if (realId) {
+                        newLinks.push({ zone_id: zoneId, position_id: realId })
+                    }
+                })
+            }
+
+            if (newLinks.length > 0) {
+                const CHUNK_SIZE = 500
+                console.log(`Inserting ${newLinks.length} links in chunks of ${CHUNK_SIZE}...`)
+                for (let i = 0; i < newLinks.length; i += CHUNK_SIZE) {
+                    const chunkLinks = newLinks.slice(i, i + CHUNK_SIZE)
+                    const { error: lInsErr } = await (supabase.from('zone_positions') as any)
+                        .insert(chunkLinks)
+
+                    if (lInsErr) {
+                        console.error('Link Insert Chunk Error:', lInsErr)
+                        throw new Error(`Lỗi lưu Liên kết (nhóm ${i / CHUNK_SIZE + 1}): ${lInsErr.message}`)
+                    }
                 }
             }
 

@@ -263,29 +263,67 @@ function WarehouseMapContent() {
         setLoading(true)
         setErrorMsg(null)
 
+        async function fetchAll(table: string, filter?: (query: any) => any, customSelect = '*', limit = 1000) {
+            let allRecs: any[] = []
+            let from = 0
+            while (true) {
+                let query = supabase.from(table as any).select(customSelect).range(from, from + limit - 1)
+                if (filter) query = filter(query)
+                const { data, error } = await query
+                if (error) throw error
+                if (!data || data.length === 0) break
+                allRecs = [...allRecs, ...data]
+                if (data.length < limit) break
+                from += limit
+            }
+            return allRecs
+        }
+
+        async function fetchAllZonesPos(limit = 1000) {
+            let allRecs: any[] = []
+            let from = 0
+            console.log(`[FetchAllZonesPos] Starting...`)
+            while (true) {
+                const { data, error } = await supabase
+                    .from('zone_positions')
+                    .select('zone_id, position_id, positions!inner(system_type)')
+                    .eq('positions.system_type', systemType)
+                    .range(from, from + limit - 1)
+                if (error) {
+                    console.error(`[FetchAllZonesPos] Error:`, error)
+                    throw error
+                }
+                if (!data || data.length === 0) break
+                allRecs = [...allRecs, ...data]
+                console.log(`[FetchAllZonesPos] loaded ${allRecs.length} links...`)
+                if (data.length < limit) break
+                from += limit
+            }
+            return allRecs
+        }
+
         try {
-            const [posRes, zoneRes, zpRes, layoutRes, lotsRes] = await Promise.all([
-                supabase.from('positions').select('*').eq('system_type', systemType).order('code'),
-                supabase.from('zones').select('*').eq('system_type', systemType).order('level').order('code'),
-                supabase.from('zone_positions').select('*'),
-                supabase.from('zone_layouts').select('*'),
-                supabase.from('lots').select('id, code, quantity, inbound_date, created_at, packaging_date, peeling_date, products(name, unit, sku), lot_items(id, product_id, quantity, unit, products(name, unit, sku)), lot_tags(tag, lot_item_id)')
+            const [posData, zoneData, zpData, layoutData, lotsData] = await Promise.all([
+                fetchAll('positions', q => q.eq('system_type', systemType).order('code')),
+                fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code')),
+                fetchAllZonesPos(),
+                fetchAll('zone_layouts'),
+                fetchAll('lots', undefined, 'id, code, quantity, inbound_date, created_at, packaging_date, peeling_date, products(name, unit, sku), lot_items(id, product_id, quantity, unit, products(name, unit, sku)), lot_tags(tag, lot_item_id)')
             ])
 
-            if (posRes.error) throw posRes.error
-            if (zoneRes.error) throw zoneRes.error
-            if (lotsRes.error) throw lotsRes.error
+            console.log(`[MapDataSummary] Zones: ${zoneData.length}, Positions: ${posData.length}, Links: ${zpData.length}, Lots: ${lotsData.length}`)
 
-            const posData = posRes.data || []
-            const zoneData = zoneRes.data || []
-            const zpData = zpRes.data || []
-            const layoutData = layoutRes.data || []
-            const lotsData = lotsRes.data || []
+            // Create lookup map for positions -> zone_id (O(N) instead of O(N*M))
+            const zpLookup: Record<string, string> = {}
+            zpData.forEach((zp: any) => {
+                if (zp.position_id && zp.zone_id) {
+                    zpLookup[zp.position_id] = zp.zone_id
+                }
+            })
 
             // Map positions with zone_id
             const posWithZone: PositionWithZone[] = (posData as any[]).map(pos => {
-                const zp = (zpData as any[]).find(zp => zp.position_id === pos.id)
-                return { ...pos, zone_id: zp?.zone_id || null }
+                return { ...pos, zone_id: zpLookup[pos.id] || null }
             })
 
             const lotInfoMap: Record<string, {

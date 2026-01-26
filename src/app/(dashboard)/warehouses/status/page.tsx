@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, Suspense, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { BarChart3, Settings, Package, Map, Info, Layout } from 'lucide-react'
+import { BarChart3, Settings, Package, Map as MapIcon, Info, Layout } from 'lucide-react'
 import WarehouseStatusMap from '@/components/warehouse/status/WarehouseStatusMap'
 import StatusLayoutConfigPanel from '@/components/warehouse/status/StatusLayoutConfigPanel'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
@@ -55,25 +55,61 @@ function WarehouseStatusContent() {
         setLoading(true)
         setErrorMsg(null)
 
+        async function fetchAll(table: string, filter?: (query: any) => any, customSelect = '*', limit = 1000) {
+            let allRecs: any[] = []
+            let from = 0
+            console.log(`[FetchAll] Starting ${table}...`)
+            while (true) {
+                let query = supabase.from(table as any).select(customSelect).range(from, from + limit - 1)
+                if (filter) query = filter(query)
+                const { data, error } = await query
+                if (error) {
+                    console.error(`[FetchAll] Error in ${table}:`, error)
+                    throw error
+                }
+                if (!data || data.length === 0) break
+                allRecs = [...allRecs, ...data]
+                console.log(`[FetchAll] ${table}: loaded ${allRecs.length} records...`)
+                if (data.length < limit) break
+                from += limit
+            }
+            return allRecs
+        }
+
+        async function fetchAllZonesPos(limit = 1000) {
+            let allRecs: any[] = []
+            let from = 0
+            console.log(`[FetchAllZonesPos] Starting...`)
+            while (true) {
+                const { data, error } = await supabase
+                    .from('zone_positions')
+                    .select('zone_id, positions!inner(*)')
+                    .eq('positions.system_type', systemType)
+                    .range(from, from + limit - 1)
+                if (error) {
+                    console.error(`[FetchAllZonesPos] Error:`, error)
+                    throw error
+                }
+                if (!data || data.length === 0) break
+                allRecs = [...allRecs, ...data]
+                console.log(`[FetchAllZonesPos] loaded ${allRecs.length} links...`)
+                if (data.length < limit) break
+                from += limit
+            }
+            return allRecs
+        }
+
         try {
-            const [posRes, zoneRes, zpRes, layoutRes, lotsRes] = await Promise.all([
-                supabase.from('positions').select('*').eq('system_type', systemType).order('code'),
-                supabase.from('zones').select('*').eq('system_type', systemType).order('level').order('code'),
-                supabase.from('zone_positions').select('*'),
-                supabase.from('zone_status_layouts' as any).select('*'), // Custom table for status
-                supabase.from('lots').select('id, code, quantity, lot_items(id, product_id, quantity, products(name, sku, unit))')
+            const [posData, zoneData, zpData, layoutRes, lotsData] = await Promise.all([
+                fetchAll('positions', q => q.eq('system_type', systemType).order('code')),
+                fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code')),
+                fetchAllZonesPos(),
+                supabase.from('zone_status_layouts' as any).select('*').limit(1000),
+                fetchAll('lots', q => q.order('created_at', { ascending: false }), 'id, code, quantity, lot_items(id, product_id, quantity, products(name, sku, unit))')
             ])
 
-            if (posRes.error) throw posRes.error
-            if (zoneRes.error) throw zoneRes.error
+            console.log(`[DataSummary] Zones: ${zoneData.length}, Positions: ${posData.length}, Links: ${zpData.length}, Lots: ${lotsData.length}`)
 
-            // Map data
-            const posData = posRes.data || []
-            const zoneData = zoneRes.data || []
-            const zpData = zpRes.data || []
-            const lotsData = lotsRes.data || []
-
-            // Handle layouts with fallback
             let layoutData: any[] = []
             if (layoutRes.error) {
                 console.warn('Could not fetch zone_status_layouts, trying localStorage fallback.');
@@ -83,9 +119,15 @@ function WarehouseStatusContent() {
                 layoutData = layoutRes.data || []
             }
 
+            // Create lookup map for positions -> zone_id (O(N) instead of O(N*M))
+            const zpLookup = new Map<string, string>()
+            zpData.forEach((zp: any) => {
+                const pId = zp.positions?.id || zp.position_id
+                if (pId && zp.zone_id) zpLookup.set(pId, zp.zone_id)
+            })
+
             const posWithZone: PositionWithZone[] = posData.map(pos => {
-                const zp = zpData.find(zp => zp.position_id === pos.id)
-                return { ...pos, zone_id: zp?.zone_id || null }
+                return { ...pos, zone_id: zpLookup.get(pos.id) || null }
             })
 
             const lotInfoMap: Record<string, any> = {}
