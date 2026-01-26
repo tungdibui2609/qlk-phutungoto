@@ -2,7 +2,7 @@
 create table if not exists public.inventory_checks (
     id uuid default gen_random_uuid() primary key,
     code text not null,
-    warehouse_id uuid references public.warehouses(id),
+    warehouse_id uuid references public.branches(id),
     warehouse_name text,
     status text check (status in ('DRAFT', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')) default 'DRAFT',
     note text,
