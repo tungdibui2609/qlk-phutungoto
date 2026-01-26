@@ -6,6 +6,7 @@ import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
 import { useRouter } from 'next/navigation'
+import { logActivity } from '@/lib/audit'
 
 export type InventoryCheck = TypedDatabase['public']['Tables']['inventory_checks']['Row'] & {
     user_profiles?: { full_name: string | null }
@@ -225,7 +226,9 @@ export function useAudit() {
 
             if (itemsError) throw itemsError
 
-            // 2. Iterate and Update
+            const affectedLotIds = new Set<string>()
+
+            // 2. Iterate and Update Lot Items
             for (const item of items) {
                 // Only process items that have been counted (actual_quantity !== null) AND have a difference
                 if (item.actual_quantity !== null && item.difference !== 0 && item.lot_item_id) {
@@ -237,17 +240,42 @@ export function useAudit() {
 
                      if (updateError) {
                          console.error(`Failed to update lot item ${item.lot_item_id}`, updateError)
-                         // Continue or break? Continue to try best effort.
+                     } else {
+                         affectedLotIds.add(item.lot_id)
                      }
-
-                     // Log activity? The audit_logs usually handled by triggers or manual.
-                     // Since we don't have triggers set up for this specific mass update logic, we might want to log it.
-                     // But let's assume the 'User Management' audit log is for user profiles.
-                     // If we want system audit logs, we should insert into audit_logs.
                 }
             }
 
-            // 3. Mark Completed
+            // 3. Sync Lots Quantity and Log Activity
+            for (const lotId of Array.from(affectedLotIds)) {
+                // Recalculate total quantity for the lot
+                const { data: lotItemsData } = await supabase
+                    .from('lot_items')
+                    .select('quantity')
+                    .eq('lot_id', lotId)
+
+                if (lotItemsData) {
+                    const newTotalQty = lotItemsData.reduce((sum, i) => sum + (i.quantity || 0), 0)
+
+                    // Update Lot
+                    await supabase
+                        .from('lots')
+                        .update({ quantity: newTotalQty })
+                        .eq('id', lotId)
+
+                    // Log
+                    await logActivity({
+                        supabase,
+                        tableName: 'lots',
+                        recordId: lotId,
+                        action: 'UPDATE',
+                        newData: { quantity: newTotalQty, note: 'Inventory Audit Adjustment' },
+                        oldData: { note: 'Previous Quantity Unknown' } // Simplified for now
+                    })
+                }
+            }
+
+            // 4. Mark Completed
              await supabase
                 .from('inventory_checks')
                 .update({
