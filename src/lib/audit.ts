@@ -101,3 +101,50 @@ export async function getAuditLogs(
         changed_by_user: log.changed_by ? profileMap.get(log.changed_by) : null
     }))
 }
+
+/**
+ * Fetches the latest audit logs across the entire system.
+ * Useful for the centralized Operation History dashboard.
+ */
+export async function getGlobalAuditLogs(
+    supabase: SupabaseClient<TypedDatabase>,
+    limit: number = 100
+) {
+    // 1. Fetch Logs
+    const { data: logs, error: logError } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(limit)
+
+    if (logError) {
+        console.error('Error fetching global audit logs:', logError)
+        return []
+    }
+
+    if (!logs || logs.length === 0) return []
+
+    // 2. Collect unique user IDs
+    const userIds = Array.from(new Set(logs.map(log => log.changed_by).filter(Boolean))) as string[]
+
+    if (userIds.length === 0) return logs
+
+    // 3. Fetch user profiles
+    const { data: profiles, error: profileError } = await supabase
+        .from('user_profiles' as any)
+        .select('id, email, full_name, avatar_url')
+        .in('id', userIds)
+
+    if (profileError) {
+         console.warn('Error fetching user profiles for audit logs:', profileError)
+         return logs
+    }
+
+    // 4. Map profiles to logs
+    const profileMap = new Map(profiles?.map((p: any) => [p.id, p]))
+
+    return logs.map(log => ({
+        ...log,
+        changed_by_user: log.changed_by ? profileMap.get(log.changed_by) : null
+    }))
+}
