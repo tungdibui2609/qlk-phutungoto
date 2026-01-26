@@ -213,6 +213,8 @@ export function LotPageManager() {
                         setSplittingLot(null);
                         fetchLots();
                     }}
+                    units={units}
+                    productUnits={productUnits}
                 />
             )}
 
@@ -224,6 +226,8 @@ export function LotPageManager() {
                         setExportingLot(null);
                         fetchLots();
                     }}
+                    units={units}
+                    productUnits={productUnits}
                 />
             )}
         </section>

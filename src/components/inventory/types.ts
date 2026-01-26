@@ -23,6 +23,8 @@ export interface OrderItem {
     note: string
     isDocQtyVisible?: boolean
     isNoteOpen?: boolean
+    needsUnbundle?: boolean
+    unbundleInfo?: string
 }
 
 export interface OrderFormProps<T> {

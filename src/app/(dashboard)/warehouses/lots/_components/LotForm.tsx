@@ -57,6 +57,8 @@ export function LotForm({
     const [images, setImages] = useState<string[]>([])
     const [extraInfo, setExtraInfo] = useState('')
     const [lotItems, setLotItems] = useState<LotItemInput[]>([{ productId: '', quantity: 0, unit: '' }])
+    const [isInitialized, setIsInitialized] = useState(false)
+    const [isPersistent, setIsPersistent] = useState(false)
 
     const formRef = useRef<HTMLDivElement>(null)
 
@@ -116,20 +118,57 @@ export function LotForm({
                 setExtraInfo(meta.extra_info || '')
 
             } else {
-                // Create Mode - Reset
-                resetForm()
-                generateLotCode()
+                // Create Mode - Load sticky values from localStorage
+                const stickyData = localStorage.getItem('LOT_FORM_STICKY_DATA')
+                if (stickyData) {
+                    try {
+                        const parsed = JSON.parse(stickyData)
+                        setIsPersistent(!!parsed.isPersistent)
 
-                // Defaults
-                setInboundDate(new Date().toISOString().split('T')[0])
-                setPeelingDate(new Date().toISOString().split('T')[0])
-                setPackagingDate(new Date().toISOString().split('T')[0])
+                        if (parsed.isPersistent) {
+                            // Reset non-persistent fields first to ensure no leaks
+                            setImages([])
+                            setNewLotNotes('')
 
-                if (branches.length > 0) {
-                    const defaultBranch = branches.find(b => b.is_default)
-                    setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
+                            if (parsed.supplierId) setSelectedSupplierId(parsed.supplierId)
+                            if (parsed.qcId) setSelectedQCId(parsed.qcId)
+                            if (parsed.peelingDate) setPeelingDate(parsed.peelingDate)
+                            if (parsed.packagingDate) setPackagingDate(parsed.packagingDate)
+                            if (parsed.warehouseName) setWarehouseName(parsed.warehouseName)
+                            if (parsed.batchCode) setBatchCode(parsed.batchCode)
+                            if (parsed.extraInfo) setExtraInfo(parsed.extraInfo.toUpperCase())
+                            if (parsed.inboundDate) setInboundDate(parsed.inboundDate)
+                            if (parsed.lotItems) setLotItems(parsed.lotItems)
+                        } else {
+                            resetForm()
+                            setInboundDate(new Date().toISOString().split('T')[0])
+                            setPeelingDate(new Date().toISOString().split('T')[0])
+                            setPackagingDate(new Date().toISOString().split('T')[0])
+
+                            if (branches.length > 0) {
+                                const defaultBranch = branches.find(b => b.is_default)
+                                setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse sticky data', e)
+                    }
+                } else {
+                    // Defaults if no sticky data
+                    resetForm()
+                    setInboundDate(new Date().toISOString().split('T')[0])
+                    setPeelingDate(new Date().toISOString().split('T')[0])
+                    setPackagingDate(new Date().toISOString().split('T')[0])
+
+                    if (branches.length > 0) {
+                        const defaultBranch = branches.find(b => b.is_default)
+                        setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
+                    }
                 }
+
+                generateLotCode()
             }
+            setIsInitialized(true)
 
             // Scroll to form
             setTimeout(() => {
@@ -139,7 +178,40 @@ export function LotForm({
                 }
             }, 100)
         }
-    }, [isVisible, editingLot, branches]) // Depend on isVisible to trigger init
+    }, [isVisible, editingLot, branches])
+
+    // Save sticky values to localStorage in Create Mode
+    useEffect(() => {
+        if (isVisible && !editingLot && isInitialized) {
+            const stickyData = {
+                isPersistent,
+                supplierId: isPersistent ? selectedSupplierId : '',
+                qcId: isPersistent ? selectedQCId : '',
+                peelingDate: isPersistent ? peelingDate : '',
+                packagingDate: isPersistent ? packagingDate : '',
+                warehouseName: isPersistent ? warehouseName : '',
+                batchCode: isPersistent ? batchCode : '',
+                extraInfo: isPersistent ? extraInfo : '',
+                inboundDate: isPersistent ? inboundDate : '',
+                lotItems: isPersistent ? lotItems : []
+            }
+            localStorage.setItem('LOT_FORM_STICKY_DATA', JSON.stringify(stickyData))
+        }
+    }, [
+        isVisible,
+        editingLot,
+        isInitialized,
+        isPersistent,
+        selectedSupplierId,
+        selectedQCId,
+        peelingDate,
+        packagingDate,
+        warehouseName,
+        batchCode,
+        extraInfo,
+        inboundDate,
+        lotItems
+    ])
 
     function resetForm() {
         setNewLotCode('')
@@ -523,10 +595,10 @@ export function LotForm({
                                         </label>
                                         <textarea
                                             value={extraInfo}
-                                            onChange={(e) => setExtraInfo(e.target.value)}
-                                            className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all resize-none font-mono text-sm"
+                                            onChange={(e) => setExtraInfo(e.target.value.toUpperCase())}
+                                            className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all resize-none font-mono text-sm uppercase"
                                             rows={5}
-                                            placeholder="Nhập các thông tin phụ khác..."
+                                            placeholder="NHẬP CÁC THÔNG TIN PHỤ KHÁC..."
                                         />
                                     </div>
                                 )}
@@ -575,16 +647,16 @@ export function LotForm({
                                                 }))}
                                                 value={item.productId}
                                                 onChange={(val) => {
-                                                    const newItems = [...lotItems]
-                                                    newItems[index].productId = val || ''
-
-                                                    // Auto select base unit
-                                                    const product = products.find(p => p.id === val)
-                                                    if (product) {
-                                                        newItems[index].unit = product.unit || ''
-                                                    }
-
-                                                    setLotItems(newItems)
+                                                    setLotItems(prev => {
+                                                        const newItems = [...prev]
+                                                        const product = products.find(p => p.id === val)
+                                                        newItems[index] = {
+                                                            ...newItems[index],
+                                                            productId: val || '',
+                                                            unit: product?.unit || ''
+                                                        }
+                                                        return newItems
+                                                    })
                                                 }}
                                                 placeholder="-- Chọn sản phẩm --"
                                                 className="w-full"
@@ -607,9 +679,12 @@ export function LotForm({
                                             placeholder="SL"
                                             value={item.quantity || ''}
                                             onChange={(e) => {
-                                                const newItems = [...lotItems]
-                                                newItems[index].quantity = parseInt(e.target.value) || 0
-                                                setLotItems(newItems)
+                                                const val = parseInt(e.target.value) || 0
+                                                setLotItems(prev => {
+                                                    const newItems = [...prev]
+                                                    newItems[index] = { ...newItems[index], quantity: val }
+                                                    return newItems
+                                                })
                                             }}
                                             className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-sm transition-all"
                                         />
@@ -620,9 +695,12 @@ export function LotForm({
                                         <select
                                             value={item.unit}
                                             onChange={(e) => {
-                                                const newItems = [...lotItems]
-                                                newItems[index].unit = e.target.value
-                                                setLotItems(newItems)
+                                                const val = e.target.value
+                                                setLotItems(prev => {
+                                                    const newItems = [...prev]
+                                                    newItems[index] = { ...newItems[index], unit: val }
+                                                    return newItems
+                                                })
                                             }}
                                             className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-sm transition-all"
                                         >
@@ -665,20 +743,38 @@ export function LotForm({
                     </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-3 mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800">
-                    <button
-                        onClick={onClose}
-                        className="px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition-colors"
-                    >
-                        Hủy bỏ
-                    </button>
-                    <button
-                        onClick={handleSubmit}
-                        disabled={!newLotCode.trim()}
-                        className="px-6 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-medium shadow-lg shadow-orange-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {editingLot ? 'Cập nhật' : 'Lưu LOT'}
-                    </button>
+                <div className="flex items-center justify-between gap-3 mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800">
+                    {!editingLot && (
+                        <label className="flex items-center gap-2 cursor-pointer group">
+                            <div className="relative">
+                                <input
+                                    type="checkbox"
+                                    checked={isPersistent}
+                                    onChange={(e) => setIsPersistent(e.target.checked)}
+                                    className="sr-only peer"
+                                />
+                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-300 dark:peer-focus:ring-orange-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-orange-600"></div>
+                            </div>
+                            <span className="text-sm font-medium text-slate-600 dark:text-slate-400 group-hover:text-orange-600 transition-colors">
+                                Ghi nhớ thông tin cho lô tiếp theo
+                            </span>
+                        </label>
+                    )}
+                    <div className="flex items-center gap-3 ml-auto">
+                        <button
+                            onClick={onClose}
+                            className="px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition-colors"
+                        >
+                            Hủy bỏ
+                        </button>
+                        <button
+                            onClick={handleSubmit}
+                            disabled={!newLotCode.trim()}
+                            className="px-6 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-medium shadow-lg shadow-orange-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {editingLot ? 'Cập nhật' : 'Lưu LOT'}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

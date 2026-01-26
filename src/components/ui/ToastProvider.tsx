@@ -117,35 +117,35 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             {/* Confirm Dialog - High Impact Professional Design */}
             {confirmDialog && (
                 <div className="fixed inset-0 z-[10000] flex items-center justify-center p-6 bg-slate-950/40 backdrop-blur-xl animate-in fade-in duration-500">
-                    <div className="bg-white/95 dark:bg-zinc-950/95 rounded-[56px] shadow-[0_60px_100px_-20px_rgba(0,0,0,0.5)] border border-white/20 p-12 max-w-sm w-full animate-in zoom-in-95 slide-in-from-bottom-5 duration-700">
+                    <div className="bg-white/95 dark:bg-zinc-950/95 rounded-[40px] shadow-[0_60px_100px_-20px_rgba(0,0,0,0.5)] border border-white/20 p-8 max-w-sm w-full animate-in zoom-in-95 slide-in-from-bottom-5 duration-700">
                         <div className="flex flex-col items-center text-center">
-                            <div className="relative mb-12 group">
+                            <div className="relative mb-8 group">
                                 <div className="absolute inset-0 bg-orange-500 blur-[40px] opacity-20 animate-pulse" />
-                                <div className="relative w-36 h-36 bg-gradient-to-br from-amber-100 via-orange-50 to-amber-100 dark:from-amber-900/40 dark:via-orange-900/20 dark:to-amber-900/40 rounded-[48px] flex items-center justify-center rotate-6 shadow-[inset_0_2px_10px_rgba(255,255,255,0.5)] border border-white dark:border-slate-800 transition-transform group-hover:rotate-12 duration-500">
-                                    <AlertTriangle className="text-orange-600 dark:text-orange-400 drop-shadow-2xl" size={72} />
+                                <div className="relative w-28 h-28 bg-gradient-to-br from-amber-100 via-orange-50 to-amber-100 dark:from-amber-900/40 dark:via-orange-900/20 dark:to-amber-900/40 rounded-[40px] flex items-center justify-center rotate-6 shadow-[inset_0_2px_10px_rgba(255,255,255,0.5)] border border-white dark:border-slate-800 transition-transform group-hover:rotate-12 duration-500">
+                                    <AlertTriangle className="text-orange-600 dark:text-orange-400 drop-shadow-2xl" size={60} />
                                 </div>
                             </div>
 
-                            <h3 className="text-4xl font-black text-slate-900 dark:text-white mb-4 tracking-tighter leading-none">
+                            <h3 className="text-3xl font-black text-slate-900 dark:text-white mb-3 tracking-tighter leading-none">
                                 Chờ chút!
                             </h3>
 
-                            <p className="text-slate-500 dark:text-slate-400 font-bold text-base leading-relaxed px-2">
+                            <p className="text-slate-500 dark:text-slate-400 font-bold text-sm leading-relaxed px-2">
                                 {confirmDialog.message}
                             </p>
                         </div>
 
-                        <div className="flex flex-col gap-4 mt-14">
+                        <div className="flex flex-col gap-3 mt-8">
                             <button
                                 onClick={() => handleConfirm(true)}
-                                className="w-full py-6 bg-blue-600 hover:bg-blue-500 text-white rounded-[32px] font-black text-xl shadow-[0_25px_50px_-12px_rgba(37,99,235,0.4)] transition-all hover:scale-[1.03] active:scale-95 flex items-center justify-center gap-4 group"
+                                className="w-full py-4.5 bg-blue-600 hover:bg-blue-500 text-white rounded-[28px] font-black text-lg shadow-[0_20px_40px_-10px_rgba(37,99,235,0.4)] transition-all hover:scale-[1.03] active:scale-95 flex items-center justify-center gap-3 group"
                             >
-                                <CheckCircle size={28} className="group-hover:rotate-12 transition-transform" />
+                                <CheckCircle size={24} className="group-hover:rotate-12 transition-transform" />
                                 Tuyệt vời, tiếp tục
                             </button>
                             <button
                                 onClick={() => handleConfirm(false)}
-                                className="w-full py-6 text-slate-400 hover:text-slate-900 dark:hover:text-white font-bold transition-all rounded-[32px] hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                                className="w-full py-4.5 text-slate-400 hover:text-slate-900 dark:hover:text-white font-bold transition-all rounded-[28px] hover:bg-slate-50 dark:hover:bg-slate-800/50"
                             >
                                 Quay lại sau
                             </button>

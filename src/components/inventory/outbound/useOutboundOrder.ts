@@ -2,11 +2,14 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { unbundleService } from '@/services/inventory/unbundleService'
 import { Product, Customer, Unit, OrderItem } from '../types'
 
 export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, onClose }: any) {
     const { showToast } = useToast()
     const { currentSystem } = useSystem()
+    const { toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
 
     // Form State
     const [code, setCode] = useState('')
@@ -35,6 +38,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
     const [loadingData, setLoadingData] = useState(false)
     const [submitting, setSubmitting] = useState(false)
     const [confirmDialog, setConfirmDialog] = useState<{ isOpen: boolean, title: string, message: string, onConfirm: () => void }>({ isOpen: false, title: '', message: '', onConfirm: () => { } })
+    const [unitStockMap, setUnitStockMap] = useState<Map<string, number>>(new Map()) // "productId_unitName" -> balance
 
     // Helper: Config Check
     const outboundModules = currentSystem?.outbound_modules
@@ -108,12 +112,22 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
 
             if (prodRes.data) {
                 let productsWithStock: Product[] = prodRes.data as Product[]
+                let localUnitStockMap = new Map<string, number>()
+
                 if (invRes.ok && Array.isArray(invRes.items)) {
-                    const stockMap = new Map<string, number>()
-                    invRes.items.forEach((item: any) => { if (item.productId) stockMap.set(item.productId, item.balance) })
-                    productsWithStock = prodRes.data.map((p: any) => ({ ...p, stock_quantity: stockMap.get(p.id) ?? 0 })) as Product[]
+                    const totalStockMap = new Map<string, number>()
+                    invRes.items.forEach((item: any) => {
+                        if (item.productId) {
+                            const prod = prodRes.data.find(p => p.id === item.productId)
+                            const baseQty = toBaseAmount(item.productId, item.unit, item.balance, prod?.unit || null)
+                            totalStockMap.set(item.productId, (totalStockMap.get(item.productId) || 0) + baseQty)
+                            localUnitStockMap.set(`${item.productId}_${item.unit}`, item.balance)
+                        }
+                    })
+                    productsWithStock = prodRes.data.map((p: any) => ({ ...p, stock_quantity: totalStockMap.get(p.id) ?? 0 })) as Product[]
                 }
                 setProducts(productsWithStock)
+                setUnitStockMap(localUnitStockMap)
             }
             if (custRes.data) setCustomers(custRes.data as any)
             if (unitRes.data) setUnits(unitRes.data)
@@ -153,20 +167,51 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         }])
     }
 
+    const checkUnbundle = (productId: string, unit: string, qty: number): { needsUnbundle: boolean, unbundleInfo?: string } => {
+        const product = products.find(p => p.id === productId)
+        if (!product || !unit || unit === product.unit) return { needsUnbundle: false }
+
+        const currentLiquid = unitStockMap.get(`${productId}_${unit}`) || 0
+        if (currentLiquid >= qty) return { needsUnbundle: false }
+
+        // Needs unbundle
+        const bUnitId = unitNameMap.get(product.unit?.toLowerCase() || '')
+        const rUnitId = unitNameMap.get(unit.toLowerCase())
+        const rate = conversionMap.get(productId)?.get(rUnitId || '') || 1
+
+        const deficit = qty - currentLiquid
+        const baseToBreak = Math.ceil(deficit / rate - 0.000001)
+
+        return {
+            needsUnbundle: true,
+            unbundleInfo: `Tự động bẻ ${baseToBreak} ${product.unit} -> ${baseToBreak * rate} ${unit}`
+        }
+    }
+
     const updateItem = (id: string, field: keyof OrderItem, value: any) => {
         setItems(prev => prev.map(item => {
             if (item.id !== id) return item
+            let updatedItem = { ...item, [field]: value }
+
             if (field === 'productId') {
                 const prod = products.find(p => p.id === value)
                 let initialUnit = ''
                 if (prod && (!prod.product_units || prod.product_units.length === 0) && prod.unit) initialUnit = prod.unit
-                return { ...item, productId: value, productName: prod?.name || '', unit: initialUnit, price: prod?.cost_price || 0 }
+                updatedItem = { ...updatedItem, productId: value, productName: prod?.name || '', unit: initialUnit, price: prod?.cost_price || 0 }
             }
             if (field === 'quantity') {
                 const newValue = Number(value)
-                return { ...item, quantity: newValue, document_quantity: !item.isDocQtyVisible ? newValue : item.document_quantity }
+                updatedItem = { ...updatedItem, quantity: newValue, document_quantity: !item.isDocQtyVisible ? newValue : item.document_quantity }
             }
-            return { ...item, [field]: value }
+
+            // Always re-check unbundle status when product, unit or quantity changes
+            if (field === 'productId' || field === 'unit' || field === 'quantity') {
+                const { needsUnbundle, unbundleInfo } = checkUnbundle(updatedItem.productId, updatedItem.unit, updatedItem.quantity)
+                updatedItem.needsUnbundle = needsUnbundle
+                updatedItem.unbundleInfo = unbundleInfo
+            }
+
+            return updatedItem
         }))
     }
 
@@ -204,6 +249,51 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         setConfirmDialog(prev => ({ ...prev, isOpen: false }))
         setSubmitting(true)
         try {
+            // Find Conversion Order Type
+            const conversionType = orderTypes.find(t => t.name.toLowerCase().includes('chuyển đổi'))
+            const convTypeId = conversionType?.id
+
+            // Step 1: Check and Perform Auto-Unbundle for items that need it
+            for (const item of items) {
+                const product = products.find(p => p.id === item.productId)
+                if (!product) continue
+
+                const baseUnit = product.unit
+                const reqUnit = item.unit
+                const reqQty = item.quantity
+
+                // If not base unit and not enough "liquid" stock in requested unit
+                if (reqUnit !== baseUnit) {
+                    const currentLiquid = unitStockMap.get(`${item.productId}_${reqUnit}`) || 0
+                    if (currentLiquid < reqQty) {
+                        const rUnitId = unitNameMap.get(reqUnit.toLowerCase())
+                        const rate = conversionMap.get(item.productId)?.get(rUnitId || '') || 1
+
+                        const baseToBreak = await unbundleService.executeAutoUnbundle({
+                            supabase,
+                            productId: item.productId,
+                            productName: item.productName,
+                            baseUnit: baseUnit || '',
+                            reqUnit: reqUnit,
+                            reqQty: reqQty,
+                            currentLiquid,
+                            costPrice: product.cost_price || 0,
+                            rate,
+                            warehouseName,
+                            systemCode,
+                            mainOrderCode: code,
+                            convTypeId,
+                            generateOrderCode: (type) => generateOrderCode(type, systemCode, currentSystem?.name)
+                        })
+
+                        if (baseToBreak) {
+                            showToast(`Đã tự động bẻ gói ${baseToBreak} ${baseUnit} sang ${reqUnit}`, 'success')
+                        }
+                    }
+                }
+            }
+
+            // Step 2: Create Main Outbound Order
             const { data: order, error: orderError } = await (supabase.from('outbound_orders') as any).insert({
                 code,
                 customer_name: customerName,

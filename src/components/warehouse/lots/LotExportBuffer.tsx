@@ -65,7 +65,7 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                             customer: exp.customer,
                             date: exp.date,
                             description: exp.description,
-                            location_code: (lot as any).positions?.[0]?.code || null,
+                            location_code: exp.location_code || (lot as any).positions?.[0]?.code || null,
                             items: exp.items
                         })
                     }

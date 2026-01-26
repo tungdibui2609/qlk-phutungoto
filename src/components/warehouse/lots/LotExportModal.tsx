@@ -6,38 +6,107 @@ import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
+import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { Unit, ProductUnit } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 
 interface LotExportModalProps {
     lot: Lot
     onClose: () => void
     onSuccess: () => void
+    units: Unit[]
+    productUnits: ProductUnit[]
 }
 
-export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, onSuccess }) => {
+export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, onSuccess, units, productUnits }) => {
     const { systemType, currentSystem } = useSystem()
     const { showToast } = useToast()
-    const [exportQuantities, setExportQuantities] = useState<Record<string, number>>({}) // lot_item_id -> quantity to export
+    const { toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
+    const [exportQuantities, setExportQuantities] = useState<Record<string, number>>({}) // lot_item_id -> quantity to export In SELECTED unit
+    const [exportUnits, setExportUnits] = useState<Record<string, string>>({}) // lot_item_id -> selected unit name
     const [customerName, setCustomerName] = useState('')
+    const [customers, setCustomers] = useState<any[]>([])
+    const [suggestions, setSuggestions] = useState<any[]>([])
+    const [showSuggestions, setShowSuggestions] = useState(false)
     const [description, setDescription] = useState('')
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
     useEffect(() => {
-        // Initialize with full quantities
+        // Initialize with full quantities and current units
         const initialQuantities: Record<string, number> = {}
+        const initialUnits: Record<string, string> = {}
         lot.lot_items?.forEach(item => {
             initialQuantities[item.id] = item.quantity || 0
+            initialUnits[item.id] = item.unit || item.products?.unit || ''
         })
         setExportQuantities(initialQuantities)
-    }, [lot])
+        setExportUnits(initialUnits)
+        fetchCustomers()
+    }, [lot, systemType])
 
-    const handleQuantityChange = (itemId: string, maxQty: number, value: string) => {
-        const qty = parseFloat(value)
+    async function fetchCustomers() {
+        if (!systemType) return
+        const { data } = await supabase
+            .from('customers')
+            .select('id, name, address, phone')
+            .eq('system_code', systemType)
+            .order('name')
+
+        if (data) setCustomers(data)
+    }
+
+    const handleCustomerChange = (val: string) => {
+        setCustomerName(val)
+        if (val.trim()) {
+            const filtered = customers.filter(c =>
+                c.name.toLowerCase().includes(val.toLowerCase())
+            )
+            setSuggestions(filtered)
+            setShowSuggestions(true)
+        } else {
+            setSuggestions([])
+            setShowSuggestions(false)
+        }
+    }
+
+    const selectCustomer = (customer: any) => {
+        setCustomerName(customer.name)
+        setShowSuggestions(false)
+        // You could also auto-fill description if needed, or other fields
+    }
+
+    const getConsumedOriginalQty = (itemId: string, selectedQty: number, selectedUnit: string) => {
+        const item = lot.lot_items?.find(i => i.id === itemId)
+        if (!item || !item.product_id) return selectedQty
+
+        const baseUnit = item.products?.unit || ''
+        const originalUnit = item.unit || baseUnit
+
+        const baseQty = toBaseAmount(item.product_id, selectedUnit, selectedQty, baseUnit)
+
+        const originalUnitId = unitNameMap.get(originalUnit.toLowerCase())
+        if (!originalUnitId) return baseQty
+
+        const productRates = conversionMap.get(item.product_id)
+        const rate = productRates?.get(originalUnitId)
+        if (!rate) return baseQty
+
+        return baseQty / rate
+    }
+
+    const handleQuantityChange = (itemId: string, maxOriginalQty: number, value: string) => {
+        // Support both comma and dot for decimals
+        const normalizedValue = value.replace(',', '.')
+        const qty = parseFloat(normalizedValue)
         if (isNaN(qty) || qty < 0) return
         setExportQuantities(prev => ({
             ...prev,
-            [itemId]: Math.min(qty, maxQty)
+            [itemId]: qty
         }))
+    }
+
+    const handleUnitChange = (itemId: string, unitName: string) => {
+        setExportUnits(prev => ({ ...prev, [itemId]: unitName }))
     }
 
     const handleExportAll = () => {
@@ -98,29 +167,63 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
             const exportItemsData: Record<string, any> = {}
 
             for (const item of lot.lot_items || []) {
-                const exportQty = exportQuantities[item.id] || 0
-                const remainingQty = (item.quantity || 0) - exportQty
+                const selectedQty = exportQuantities[item.id] || 0
+                const selectedUnit = exportUnits[item.id] || item.unit || item.products?.unit || ''
 
-                if (exportQty > 0) {
-                    // Track for history buffer
+                const consumedQty = getConsumedOriginalQty(item.id, selectedQty, selectedUnit)
+                const remainingQty = (item.quantity || 0) - consumedQty
+
+                if (selectedQty > 0) {
+                    // 1. Track for history buffer
                     exportItemsData[item.id] = {
                         product_id: item.product_id,
                         product_sku: item.products?.sku,
                         product_name: item.products?.name,
-                        exported_quantity: exportQty,
-                        unit: item.unit || item.products?.unit,
+                        exported_quantity: selectedQty,
+                        unit: selectedUnit,
                         cost_price: item.products?.cost_price || 0
                     }
 
-                    // Update or Delete lot item
-                    if (remainingQty <= 0) {
+                    // 2. Update or Delete lot item (with Auto-Split logic)
+                    if (remainingQty <= 0.000001) {
                         await supabase.from('lot_items').delete().eq('id', item.id)
                     } else {
-                        await supabase.from('lot_items').update({ quantity: remainingQty }).eq('id', item.id)
-                        totalRemainingLotQty += remainingQty
+                        // Check for fractional remaining
+                        const floorRemaining = Math.floor(remainingQty + 0.000001)
+                        const fractionalRemaining = remainingQty - floorRemaining
+
+                        if (fractionalRemaining > 0.000001) {
+                            // A. Update current row to integer part
+                            if (floorRemaining > 0) {
+                                await supabase.from('lot_items').update({ quantity: floorRemaining }).eq('id', item.id)
+                            } else {
+                                await supabase.from('lot_items').delete().eq('id', item.id)
+                            }
+
+                            // B. Create new row for fractional part in Base Unit
+                            const baseUnit = item.products?.unit || ''
+                            const originalUnit = item.unit || baseUnit
+                            const originalUnitId = unitNameMap.get(originalUnit.toLowerCase())
+                            const rate = conversionMap.get(item.product_id || '')?.get(originalUnitId || '') || 1
+                            const fractionalBaseQty = fractionalRemaining * rate
+
+                            await supabase.from('lot_items').insert({
+                                lot_id: lot.id,
+                                product_id: item.product_id,
+                                quantity: fractionalBaseQty,
+                                unit: baseUnit
+                            })
+                        } else {
+                            // Simple update
+                            await supabase.from('lot_items').update({ quantity: floorRemaining }).eq('id', item.id)
+                        }
+
+                        const remainingBaseQty = toBaseAmount(item.product_id, item.unit || item.products?.unit || '', remainingQty, item.products?.unit || null)
+                        totalRemainingLotQty += remainingBaseQty
                     }
                 } else {
-                    totalRemainingLotQty += item.quantity || 0
+                    const itemBaseQty = toBaseAmount(item.product_id, item.unit || item.products?.unit || '', item.quantity || 0, item.products?.unit || null)
+                    totalRemainingLotQty += itemBaseQty
                 }
             }
 
@@ -135,6 +238,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                 customer: customerName,
                 date: new Date().toISOString(),
                 description: description,
+                location_code: lot.positions?.[0]?.code || null,
                 items: exportItemsData,
                 draft: true, // Marked as draft for the buffer mechanism
                 order_id: null
@@ -193,13 +297,40 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                                 <User size={12} />
                                 Khách hàng / Nơi nhận <span className="text-red-500">*</span>
                             </label>
-                            <input
-                                type="text"
-                                value={customerName}
-                                onChange={(e) => setCustomerName(e.target.value)}
-                                className="w-full p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium"
-                                placeholder="Nhập tên khách hàng hoặc bộ phận nhận..."
-                            />
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    value={customerName}
+                                    onChange={(e) => handleCustomerChange(e.target.value)}
+                                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                                    onFocus={() => customerName.trim() && setShowSuggestions(true)}
+                                    className="w-full p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium"
+                                    placeholder="Nhập tên khách hàng hoặc bộ phận nhận..."
+                                />
+
+                                {showSuggestions && suggestions.length > 0 && (
+                                    <div className="absolute z-50 left-0 right-0 top-full mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
+                                        <div className="p-2">
+                                            {suggestions.map((customer) => (
+                                                <button
+                                                    key={customer.id}
+                                                    type="button"
+                                                    onClick={() => selectCustomer(customer)}
+                                                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors group"
+                                                >
+                                                    <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                                                        <User size={16} />
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-bold text-slate-900 dark:text-slate-100">{customer.name}</div>
+                                                        {customer.phone && <div className="text-[10px] text-slate-500">{customer.phone}</div>}
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                         <div className="space-y-1.5">
                             <label className="text-xs font-bold text-slate-400 uppercase ml-1 flex items-center gap-1.5">
@@ -255,14 +386,43 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                                                 type="number"
                                                 value={exportQuantities[item.id] || ''}
                                                 onChange={(e) => handleQuantityChange(item.id, item.quantity || 0, e.target.value)}
-                                                className="w-24 p-2 text-sm font-bold text-center border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all"
+                                                className="w-24 p-2 text-sm font-bold text-center border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all font-mono"
                                                 placeholder="0"
                                                 min="0"
-                                                max={item.quantity || 0}
                                             />
-                                            <span className="text-xs font-bold text-slate-500">{(item as any).unit || item.products?.unit}</span>
+                                            <select
+                                                value={exportUnits[item.id] || ''}
+                                                onChange={(e) => handleUnitChange(item.id, e.target.value)}
+                                                className="p-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all cursor-pointer"
+                                            >
+                                                {[
+                                                    item.products?.unit,
+                                                    ...productUnits
+                                                        .filter(pu => pu.product_id === item.product_id)
+                                                        .map(pu => units.find(u => u.id === pu.unit_id)?.name)
+                                                ]
+                                                    .filter(Boolean)
+                                                    .filter((v, i, a) => a.indexOf(v) === i)
+                                                    .map(uName => (
+                                                        <option key={uName} value={uName!}>{uName}</option>
+                                                    ))
+                                                }
+                                            </select>
                                         </div>
                                     </div>
+                                    {(() => {
+                                        const consumed = getConsumedOriginalQty(item.id, exportQuantities[item.id] || 0, exportUnits[item.id] || '')
+                                        const isOver = consumed > (item.quantity || 0)
+                                        if (consumed > 0 && Math.abs(consumed - (exportQuantities[item.id] || 0)) > 0.0001) {
+                                            return (
+                                                <div className={`mt-2 text-[10px] font-bold text-right ${isOver ? 'text-red-500' : 'text-slate-400'}`}>
+                                                    ~ {consumed.toLocaleString()} {(item as any).unit || item.products?.unit} (gốc)
+                                                    {isOver && ' - Vượt quá tồn kho!'}
+                                                </div>
+                                            )
+                                        }
+                                        return null
+                                    })()}
                                 </div>
                             ))}
                         </div>

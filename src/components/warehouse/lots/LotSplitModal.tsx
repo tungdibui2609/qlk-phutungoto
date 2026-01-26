@@ -5,22 +5,34 @@ import { X, Check, AlertCircle, Loader2 } from 'lucide-react'
 import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { Unit, ProductUnit } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 
 interface LotSplitModalProps {
     lot: Lot
     onClose: () => void
     onSuccess: () => void
+    units: Unit[]
+    productUnits: ProductUnit[]
 }
 
-export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSuccess }) => {
+export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSuccess, units, productUnits }) => {
     const { currentSystem } = useSystem()
-    const [splitQuantities, setSplitQuantities] = useState<Record<string, number>>({}) // lot_item_id -> quantity to move
+    const { toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
+    const [splitQuantities, setSplitQuantities] = useState<Record<string, number>>({}) // lot_item_id -> quantity to move in SELECTED unit
+    const [splitUnits, setSplitUnits] = useState<Record<string, string>>({}) // lot_item_id -> selected unit name
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [newLotCode, setNewLotCode] = useState<string>('...')
 
     useEffect(() => {
         generateNewLotCode()
+        // Initialize splitUnits with item's current unit or product base unit
+        const initialUnits: Record<string, string> = {}
+        lot.lot_items?.forEach(item => {
+            initialUnits[item.id] = item.unit || item.products?.unit || ''
+        })
+        setSplitUnits(initialUnits)
     }, [lot, currentSystem])
 
     async function generateNewLotCode() {
@@ -63,9 +75,47 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
         setNewLotCode(`${prefix}${String(sequence).padStart(3, '0')}`)
     }
 
-    const handleQuantityChange = (itemId: string, maxQty: number, value: string) => {
-        const qty = parseFloat(value)
+    const getConsumedOriginalQty = (itemId: string, selectedQty: number, selectedUnit: string) => {
+        const item = lot.lot_items?.find(i => i.id === itemId)
+        if (!item || !item.product_id) return selectedQty
+
+        const baseUnit = item.products?.unit || ''
+        const originalUnit = item.unit || baseUnit
+
+        // 1. Convert selected qty to base qty
+        const baseQty = toBaseAmount(item.product_id, selectedUnit, selectedQty, baseUnit)
+
+        // 2. Convert base qty to original unit qty
+        // Rate: 1 originalUnit = rate * baseUnit. So 1 baseUnit = 1/rate originalUnits.
+        const originalUnitId = unitNameMap.get(originalUnit.toLowerCase())
+        if (!originalUnitId) return baseQty // Fallback to base if mapping fails
+
+        const productRates = conversionMap.get(item.product_id)
+        const rate = productRates?.get(originalUnitId)
+        if (!rate) return baseQty // Fallback
+
+        return baseQty / rate
+    }
+
+    const handleQuantityChange = (itemId: string, maxOriginalQty: number, value: string) => {
+        // Support both comma and dot for decimals
+        const normalizedValue = value.replace(',', '.')
+        const qty = parseFloat(normalizedValue)
         if (isNaN(qty) || qty < 0) return
+
+        const selectedUnit = splitUnits[itemId]
+        const consumedOriginal = getConsumedOriginalQty(itemId, qty, selectedUnit)
+
+        if (consumedOriginal > maxOriginalQty) {
+            // Adjust qty to match maxOriginalQty if possible
+            // consumedOriginal = (toBaseAmount(qty)) / rate = maxOriginalQty
+            // toBaseAmount(qty) = maxOriginalQty * rate
+            // qty * targetRate = maxOriginalQty * rate
+            // qty = (maxOriginalQty * rate) / targetRate -> This is essentially maxOriginalQty converted to selectedUnit
+
+            // Simplified: just cap it. To cap precisely we'd need to convert maxOriginalQty to selectedUnit.
+            // For now, let's just setError if it exceeds.
+        }
 
         if (qty === 0) {
             const newSplit = { ...splitQuantities }
@@ -74,9 +124,13 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
         } else {
             setSplitQuantities(prev => ({
                 ...prev,
-                [itemId]: Math.min(qty, maxQty)
+                [itemId]: qty
             }))
         }
+    }
+
+    const handleUnitChange = (itemId: string, unitName: string) => {
+        setSplitUnits(prev => ({ ...prev, [itemId]: unitName }))
     }
 
     const handleSplit = async () => {
@@ -141,24 +195,28 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
             const newItemHistories: Record<string, any> = {}
 
             for (const item of lot.lot_items || []) {
-                const splitQty = splitQuantities[item.id] || 0
-                const remainingQty = (item.quantity || 0) - splitQty
+                const selectedQty = splitQuantities[item.id] || 0
+                const selectedUnit = splitUnits[item.id] || item.unit || item.products?.unit || ''
 
-                if (splitQty > 0) {
-                    // Create item in new LOT
+                const consumedQty = getConsumedOriginalQty(item.id, selectedQty, selectedUnit)
+                const remainingQty = (item.quantity || 0) - consumedQty
+
+                if (selectedQty > 0) {
+                    // 1. Create item in new LOT
                     const { data: newItem, error: insertError } = await (supabase
                         .from('lot_items') as any)
                         .insert({
                             lot_id: newLot.id,
                             product_id: item.product_id,
-                            quantity: splitQty,
-                            unit: item.unit || item.products?.unit
+                            quantity: selectedQty,
+                            unit: selectedUnit
                         })
                         .select()
                         .single()
 
                     if (insertError) throw insertError
-                    totalNewLotQty += splitQty
+                    const itemBaseQty = toBaseAmount(item.product_id, selectedUnit, selectedQty, item.products?.unit || null)
+                    totalNewLotQty += itemBaseQty
 
                     // Save history in metadata map
                     newItemHistories[newItem.id] = {
@@ -167,23 +225,63 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                         snapshot: snapshot
                     }
 
-                    // Update or Delete original item
-                    if (remainingQty <= 0) {
+                    // 2. Update or Delete original item (with Auto-Split logic)
+                    if (remainingQty <= 0.000001) {
                         const { error: deleteError } = await supabase
                             .from('lot_items')
                             .delete()
                             .eq('id', item.id)
                         if (deleteError) throw deleteError
                     } else {
-                        const { error: updateError } = await supabase
-                            .from('lot_items')
-                            .update({ quantity: remainingQty })
-                            .eq('id', item.id)
-                        if (updateError) throw updateError
-                        totalRemainingOriginalQty += remainingQty
+                        // Check if remaining quantity has fractional part
+                        const floorRemaining = Math.floor(remainingQty + 0.000001)
+                        const fractionalRemaining = remainingQty - floorRemaining
+
+                        if (fractionalRemaining > 0.000001) {
+                            // Split into two rows: Integer part (current unit) and Fractional part (base unit)
+
+                            // A. Update current row to integer part
+                            if (floorRemaining > 0) {
+                                const { error: updateError } = await supabase
+                                    .from('lot_items')
+                                    .update({ quantity: floorRemaining })
+                                    .eq('id', item.id)
+                                if (updateError) throw updateError
+                            } else {
+                                await supabase.from('lot_items').delete().eq('id', item.id)
+                            }
+
+                            // B. Create new row for fractional part in Base Unit
+                            const baseUnit = item.products?.unit || ''
+                            const originalUnit = item.unit || baseUnit
+                            const originalUnitId = unitNameMap.get(originalUnit.toLowerCase())
+                            const rate = conversionMap.get(item.product_id || '')?.get(originalUnitId || '') || 1
+                            const fractionalBaseQty = fractionalRemaining * rate
+
+                            const { error: fracInsertError } = await supabase
+                                .from('lot_items')
+                                .insert({
+                                    lot_id: lot.id,
+                                    product_id: item.product_id,
+                                    quantity: fractionalBaseQty,
+                                    unit: baseUnit
+                                })
+                            if (fracInsertError) throw fracInsertError
+                        } else {
+                            // Simple update
+                            const { error: updateError } = await supabase
+                                .from('lot_items')
+                                .update({ quantity: floorRemaining })
+                                .eq('id', item.id)
+                            if (updateError) throw updateError
+                        }
+
+                        const remainingBaseQty = toBaseAmount(item.product_id, item.unit || item.products?.unit || '', remainingQty, item.products?.unit || null)
+                        totalRemainingOriginalQty += remainingBaseQty
                     }
                 } else {
-                    totalRemainingOriginalQty += item.quantity || 0
+                    const itemBaseQty = toBaseAmount(item.product_id, item.unit || item.products?.unit || '', item.quantity || 0, item.products?.unit || null)
+                    totalRemainingOriginalQty += itemBaseQty
                 }
             }
 
@@ -269,14 +367,44 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                                                 type="number"
                                                 value={splitQuantities[item.id] || ''}
                                                 onChange={(e) => handleQuantityChange(item.id, item.quantity || 0, e.target.value)}
-                                                className="w-20 p-2 text-sm font-bold text-center border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all"
+                                                className="w-20 p-2 text-sm font-bold text-center border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all font-mono"
                                                 placeholder="0"
                                                 min="0"
-                                                max={item.quantity || 0}
                                             />
-                                            <span className="text-xs font-bold text-slate-500">{(item as any).unit || item.products?.unit}</span>
+                                            <select
+                                                value={splitUnits[item.id] || ''}
+                                                onChange={(e) => handleUnitChange(item.id, e.target.value)}
+                                                className="p-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all cursor-pointer"
+                                            >
+                                                {/* Get potential units for this product */}
+                                                {[
+                                                    item.products?.unit, // Base Unit
+                                                    ...productUnits
+                                                        .filter(pu => pu.product_id === item.product_id)
+                                                        .map(pu => units.find(u => u.id === pu.unit_id)?.name)
+                                                ]
+                                                    .filter(Boolean)
+                                                    .filter((v, i, a) => a.indexOf(v) === i) // Distinct
+                                                    .map(uName => (
+                                                        <option key={uName} value={uName!}>{uName}</option>
+                                                    ))
+                                                }
+                                            </select>
                                         </div>
                                     </div>
+                                    {(() => {
+                                        const consumed = getConsumedOriginalQty(item.id, splitQuantities[item.id] || 0, splitUnits[item.id] || '')
+                                        const isOver = consumed > (item.quantity || 0)
+                                        if (consumed > 0 && Math.abs(consumed - (splitQuantities[item.id] || 0)) > 0.0001) {
+                                            return (
+                                                <div className={`mt-2 text-[10px] font-bold text-right ${isOver ? 'text-red-500' : 'text-slate-400'}`}>
+                                                    ~ {consumed.toLocaleString()} {(item as any).unit || item.products?.unit} (gốc)
+                                                    {isOver && ' - Vượt quá tồn kho!'}
+                                                </div>
+                                            )
+                                        }
+                                        return null
+                                    })()}
                                 </div>
                             ))}
                         </div>

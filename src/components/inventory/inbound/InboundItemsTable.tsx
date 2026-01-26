@@ -1,3 +1,4 @@
+import React, { useState } from 'react'
 import { Trash2, ChevronDown } from 'lucide-react'
 import { Combobox } from '@/components/ui/Combobox'
 import { Product, Unit, OrderItem } from '@/components/inventory/types'
@@ -17,6 +18,23 @@ interface InboundItemsTableProps {
 export function InboundItemsTable({
     items, products, units, updateItem, removeItem, targetUnit, hasModule, compact
 }: InboundItemsTableProps) {
+    const [editingValue, setEditingValue] = useState<{ id: string, field: string, value: string } | null>(null)
+
+    const handleInputFocus = (id: string, field: string, currentVal: number | string | null | undefined) => {
+        const displayVal = currentVal?.toString().replace('.', ',') || ''
+        setEditingValue({ id, field, value: displayVal })
+    }
+
+    const handleInputChange = (id: string, field: keyof OrderItem, rawValue: string) => {
+        setEditingValue({ id, field, value: rawValue })
+        const normalized = rawValue.replace(',', '.')
+        const numericVal = parseFloat(normalized)
+        if (!isNaN(numericVal)) {
+            updateItem(id, field, numericVal)
+        } else if (rawValue === '') {
+            updateItem(id, field, 0)
+        }
+    }
     return (
         <div className="space-y-4">
             <h3 className="font-bold text-stone-900 dark:text-white">Chi tiết hàng hóa</h3>
@@ -85,11 +103,10 @@ export function InboundItemsTable({
                                         <div className="relative group/qty">
                                             <input
                                                 type="text"
-                                                value={item.quantity ? item.quantity.toLocaleString('vi-VN') : ''}
-                                                onChange={e => {
-                                                    const val = e.target.value.replace(/\D/g, '')
-                                                    updateItem(item.id, 'quantity', Number(val))
-                                                }}
+                                                value={editingValue?.id === item.id && editingValue?.field === 'quantity' ? editingValue.value : (item.quantity ? item.quantity.toLocaleString('vi-VN') : '')}
+                                                onFocus={() => handleInputFocus(item.id, 'quantity', item.quantity)}
+                                                onBlur={() => setEditingValue(null)}
+                                                onChange={e => handleInputChange(item.id, 'quantity', e.target.value)}
                                                 className="w-full bg-transparent outline-none text-right font-bold pr-2 focus:text-orange-600 transition-colors"
                                                 placeholder="0"
                                             />
@@ -111,11 +128,10 @@ export function InboundItemsTable({
                                                 <div className="text-[10px] text-stone-500 text-center mb-0.5">SL yêu cầu</div>
                                                 <input
                                                     type="text"
-                                                    value={item.document_quantity ? item.document_quantity.toLocaleString('vi-VN') : ''}
-                                                    onChange={e => {
-                                                        const val = e.target.value.replace(/\D/g, '')
-                                                        updateItem(item.id, 'document_quantity', Number(val))
-                                                    }}
+                                                    value={editingValue?.id === item.id && editingValue?.field === 'document_quantity' ? editingValue.value : (item.document_quantity ? item.document_quantity.toLocaleString('vi-VN') : '')}
+                                                    onFocus={() => handleInputFocus(item.id, 'document_quantity', item.document_quantity)}
+                                                    onBlur={() => setEditingValue(null)}
+                                                    onChange={e => handleInputChange(item.id, 'document_quantity', e.target.value)}
                                                     className="w-full bg-stone-50 border border-stone-200 rounded px-2 py-1 text-right text-xs text-stone-600 outline-none focus:border-blue-500"
                                                 />
                                             </div>
@@ -249,11 +265,10 @@ export function InboundItemsTable({
                                     <div className="relative group/qty">
                                         <input
                                             type="text"
-                                            value={item.quantity ? item.quantity.toLocaleString('vi-VN') : ''}
-                                            onChange={e => {
-                                                const val = e.target.value.replace(/\D/g, '')
-                                                updateItem(item.id, 'quantity', Number(val))
-                                            }}
+                                            value={editingValue?.id === item.id && editingValue?.field === 'quantity' ? editingValue.value : (item.quantity ? item.quantity.toLocaleString('vi-VN') : '')}
+                                            onFocus={() => handleInputFocus(item.id, 'quantity', item.quantity)}
+                                            onBlur={() => setEditingValue(null)}
+                                            onChange={e => handleInputChange(item.id, 'quantity', e.target.value)}
                                             className="w-full bg-transparent outline-none text-right font-bold pr-2 border-b border-stone-200 dark:border-zinc-700 py-1 focus:border-orange-500 focus:text-orange-600 transition-colors"
                                             placeholder="0"
                                         />
@@ -274,11 +289,10 @@ export function InboundItemsTable({
                                             <div className="text-[10px] text-stone-500 text-center mb-0.5">SL yêu cầu</div>
                                             <input
                                                 type="text"
-                                                value={item.document_quantity ? item.document_quantity.toLocaleString('vi-VN') : ''}
-                                                onChange={e => {
-                                                    const val = e.target.value.replace(/\D/g, '')
-                                                    updateItem(item.id, 'document_quantity', Number(val))
-                                                }}
+                                                value={editingValue?.id === item.id && editingValue?.field === 'document_quantity' ? editingValue.value : (item.document_quantity ? item.document_quantity.toLocaleString('vi-VN') : '')}
+                                                onFocus={() => handleInputFocus(item.id, 'document_quantity', item.document_quantity)}
+                                                onBlur={() => setEditingValue(null)}
+                                                onChange={e => handleInputChange(item.id, 'document_quantity', e.target.value)}
                                                 className="w-full bg-white border border-stone-200 rounded px-2 py-1 text-right text-xs text-stone-600 outline-none focus:border-blue-500"
                                             />
                                         </div>
