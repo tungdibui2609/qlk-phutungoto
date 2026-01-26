@@ -141,6 +141,47 @@ export async function getEnrichedAuditLogById(
 }
 
 /**
+ * Fetches all actions performed BY a specific user.
+ */
+export async function getUserActivityLogs(
+    supabase: SupabaseClient<TypedDatabase>,
+    userId: string
+) {
+    const { data: logs, error: logError } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .eq('changed_by', userId)
+        .order('created_at', { ascending: false })
+        .limit(100) // Limit to last 100 actions
+
+    if (logError) {
+        console.error('Error fetching user activity logs:', logError)
+        return []
+    }
+
+    if (!logs || logs.length === 0) return []
+
+    // For user activity, we might want to know WHO the user is (though we likely already know since we queried by ID),
+    // but the existing UI expects 'changed_by_user' to be populated to show the avatar/name.
+    // So we fetch the profile of the user (the actor).
+
+    const { data: profile, error: profileError } = await supabase
+        .from('user_profiles' as any)
+        .select('id, email, full_name, avatar_url')
+        .eq('id', userId)
+        .single()
+
+    if (profileError) {
+         return logs
+    }
+
+    return logs.map(log => ({
+        ...log,
+        changed_by_user: profile
+    }))
+}
+
+/**
  * Fetches the latest audit logs across the entire system.
  * Useful for the centralized Operation History dashboard.
  */

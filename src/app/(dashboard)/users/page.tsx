@@ -281,8 +281,9 @@ export default function UsersPage() {
             )}
 
             <AuditLogViewer
-                tableName="user_profiles"
-                recordId={viewingHistoryId || ''}
+                // When viewing user history, we want to see ACTIONS performed BY the user (Activity Log)
+                // rather than changes to the user profile itself.
+                userId={viewingHistoryId || ''}
                 isOpen={!!viewingHistoryId}
                 onClose={() => setViewingHistoryId(null)}
                 title="Nhật ký hoạt động người dùng"
