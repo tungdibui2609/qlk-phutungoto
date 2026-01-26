@@ -47,9 +47,141 @@ type AuditLogsTable = {
     ]
 }
 
+type InventoryChecksTable = {
+    Row: {
+        id: string
+        code: string
+        warehouse_id: string | null
+        warehouse_name: string | null
+        status: 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
+        note: string | null
+        created_by: string | null
+        created_at: string
+        updated_at: string
+        completed_at: string | null
+        system_code: string
+    }
+    Insert: {
+        id?: string
+        code: string
+        warehouse_id?: string | null
+        warehouse_name?: string | null
+        status?: 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
+        note?: string | null
+        created_by?: string | null
+        created_at?: string
+        updated_at?: string
+        completed_at?: string | null
+        system_code: string
+    }
+    Update: {
+        id?: string
+        code?: string
+        warehouse_id?: string | null
+        warehouse_name?: string | null
+        status?: 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
+        note?: string | null
+        created_by?: string | null
+        created_at?: string
+        updated_at?: string
+        completed_at?: string | null
+        system_code?: string
+    }
+    Relationships: [
+        {
+            foreignKeyName: "inventory_checks_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+        },
+        {
+            foreignKeyName: "inventory_checks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+        }
+    ]
+}
+
+type InventoryCheckItemsTable = {
+    Row: {
+        id: string
+        check_id: string
+        lot_id: string
+        lot_item_id: string | null
+        product_id: string
+        system_quantity: number
+        actual_quantity: number | null
+        difference: number
+        unit: string | null
+        note: string | null
+        created_at: string
+    }
+    Insert: {
+        id?: string
+        check_id: string
+        lot_id: string
+        lot_item_id?: string | null
+        product_id: string
+        system_quantity?: number
+        actual_quantity?: number | null
+        difference?: number
+        unit?: string | null
+        note?: string | null
+        created_at?: string
+    }
+    Update: {
+        id?: string
+        check_id?: string
+        lot_id?: string
+        lot_item_id?: string | null
+        product_id?: string
+        system_quantity?: number
+        actual_quantity?: number | null
+        difference?: number
+        unit?: string | null
+        note?: string | null
+        created_at?: string
+    }
+    Relationships: [
+        {
+            foreignKeyName: "inventory_check_items_check_id_fkey"
+            columns: ["check_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_checks"
+            referencedColumns: ["id"]
+        },
+        {
+            foreignKeyName: "inventory_check_items_lot_id_fkey"
+            columns: ["lot_id"]
+            isOneToOne: false
+            referencedRelation: "lots"
+            referencedColumns: ["id"]
+        },
+        {
+            foreignKeyName: "inventory_check_items_lot_item_id_fkey"
+            columns: ["lot_item_id"]
+            isOneToOne: false
+            referencedRelation: "lot_items"
+            referencedColumns: ["id"]
+        },
+        {
+            foreignKeyName: "inventory_check_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+        }
+    ]
+}
+
 // Extend the existing Tables type using intersection
 type TypedTables = Database['public']['Tables'] & {
     audit_logs: AuditLogsTable
+    inventory_checks: InventoryChecksTable
+    inventory_check_items: InventoryCheckItemsTable
 }
 
 // Manually extend the Database type
