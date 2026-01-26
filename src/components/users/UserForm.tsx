@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
+import { logActivity } from '@/lib/audit'
 import { ArrowLeft, Save, Loader2, User, Phone, Mail, Shield, Building, Warehouse } from 'lucide-react'
 import Link from 'next/link'
 
@@ -61,11 +62,16 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
         if (!isEditMode) {
             fetchLatestEmployeeCode()
         }
-    }, [])
+    }, [isEditMode])
 
     async function fetchSystems() {
-        const { data } = await (supabase.from('systems') as any).select('code, name').order('created_at')
-        if (data) setSystems(data)
+        // systems might not be in the default Types yet if generated via introspection only on public schema
+        // and systems table was added later or is in a different state.
+        // But we should try to use the typed client.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data } = await supabase.from('systems' as any).select('code, name').order('created_at')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (data) setSystems(data as any)
     }
 
     async function fetchLatestEmployeeCode() {
@@ -79,8 +85,8 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                 .maybeSingle()
 
             let nextCode = 'NV001'
-            if (data && (data as any).employee_code) {
-                const currentCode = (data as any).employee_code
+            if (data && data.employee_code) {
+                const currentCode = data.employee_code
                 const numberPart = parseInt(currentCode.replace(/\D/g, ''), 10)
                 if (!isNaN(numberPart)) {
                     nextCode = `NV${String(numberPart + 1).padStart(3, '0')}`
@@ -125,23 +131,35 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
         try {
             if (isEditMode && initialData) {
                 // Update existing user profile
-                // @ts-ignore
-                const { error } = await (supabase
-                    .from('user_profiles') as any)
-                    .update({
-                        employee_code: formData.employee_code || null,
-                        username: formData.username || null,
-                        full_name: formData.full_name,
-                        phone: formData.phone || null,
-                        email: formData.email || null,
-                        role_id: formData.role_id || null,
-                        department: formData.department || null,
-                        is_active: formData.is_active,
-                        allowed_systems: formData.allowed_systems,
-                    })
+                const updatePayload = {
+                    employee_code: formData.employee_code || null,
+                    username: formData.username || null,
+                    full_name: formData.full_name,
+                    phone: formData.phone || null,
+                    email: formData.email || null,
+                    role_id: formData.role_id || null,
+                    department: formData.department || null,
+                    is_active: formData.is_active,
+                    allowed_systems: formData.allowed_systems,
+                }
+
+                const { error } = await supabase
+                    .from('user_profiles')
+                    .update(updatePayload)
                     .eq('id', initialData.id)
 
                 if (error) throw error
+
+                // Log Activity
+                await logActivity({
+                    supabase,
+                    tableName: 'user_profiles',
+                    recordId: initialData.id,
+                    action: 'UPDATE',
+                    oldData: initialData,
+                    newData: updatePayload
+                })
+
             } else {
                 // Create new user with Supabase Auth
                 let submitEmail = formData.email
@@ -174,32 +192,8 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                     if (signUpError) throw signUpError
 
                     if (signUpData.user) {
-                        // 2. Create user profile
-                        // @ts-ignore
-                        const { error: profileError } = await (supabase
-                            .from('user_profiles') as any)
-                            .insert([{
-                                id: signUpData.user.id,
-                                employee_code: formData.employee_code || null,
-                                username: formData.username || null,
-                                full_name: formData.full_name,
-                                phone: formData.phone || null,
-                                email: submitEmail,
-                                role_id: formData.role_id || null,
-                                department: formData.department || null,
-                                is_active: formData.is_active,
-                                allowed_systems: formData.allowed_systems,
-                            }])
-
-                        if (profileError) throw profileError
-                    }
-                } else if (authData.user) {
-                    // 2. Create user profile
-                    // @ts-ignore
-                    const { error: profileError } = await (supabase
-                        .from('user_profiles') as any)
-                        .insert([{
-                            id: authData.user.id,
+                        const newProfile = {
+                            id: signUpData.user.id,
                             employee_code: formData.employee_code || null,
                             username: formData.username || null,
                             full_name: formData.full_name,
@@ -209,14 +203,59 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                             department: formData.department || null,
                             is_active: formData.is_active,
                             allowed_systems: formData.allowed_systems,
-                        }])
+                        }
+
+                        // 2. Create user profile
+                        const { error: profileError } = await supabase
+                            .from('user_profiles')
+                            .insert([newProfile])
+
+                        if (profileError) throw profileError
+
+                        // Log Activity
+                        await logActivity({
+                            supabase,
+                            tableName: 'user_profiles',
+                            recordId: signUpData.user.id,
+                            action: 'CREATE',
+                            newData: newProfile
+                        })
+                    }
+                } else if (authData.user) {
+                    const newProfile = {
+                        id: authData.user.id,
+                        employee_code: formData.employee_code || null,
+                        username: formData.username || null,
+                        full_name: formData.full_name,
+                        phone: formData.phone || null,
+                        email: submitEmail,
+                        role_id: formData.role_id || null,
+                        department: formData.department || null,
+                        is_active: formData.is_active,
+                        allowed_systems: formData.allowed_systems,
+                    }
+
+                    // 2. Create user profile
+                    const { error: profileError } = await supabase
+                        .from('user_profiles')
+                        .insert([newProfile])
 
                     if (profileError) throw profileError
+
+                    // Log Activity
+                    await logActivity({
+                        supabase,
+                        tableName: 'user_profiles',
+                        recordId: authData.user.id,
+                        action: 'CREATE',
+                        newData: newProfile
+                    })
                 }
             }
 
             router.push('/users')
             router.refresh()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (error: any) {
             alert('Lỗi: ' + error.message)
         } finally {

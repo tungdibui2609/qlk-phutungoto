@@ -1,8 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { logActivity } from '@/lib/audit'
+import AuditLogViewer from '@/components/shared/AuditLogViewer'
 import Link from 'next/link'
-import { Plus, Search, Users, Edit, Trash2, Shield, CheckCircle, XCircle, Mail, Phone } from 'lucide-react'
+import { Plus, Search, Users, Edit, Shield, CheckCircle, XCircle, Mail, Phone, History } from 'lucide-react'
 import Protected from '@/components/auth/Protected'
 import MobileUserList from '@/components/users/MobileUserList'
 
@@ -33,15 +35,11 @@ export default function UsersPage() {
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const [filterRole, setFilterRole] = useState<string>('all')
-
-    useEffect(() => {
-        fetchUsers()
-        fetchRoles()
-    }, [])
+    const [viewingHistoryId, setViewingHistoryId] = useState<string | null>(null)
 
     async function fetchUsers() {
         setLoading(true)
-        const { data, error } = await supabase
+        const { data } = await supabase
             .from('user_profiles')
             .select('*, roles(id, code, name)')
             .order('full_name')
@@ -55,14 +53,35 @@ export default function UsersPage() {
         if (data) setRoles(data)
     }
 
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        fetchUsers()
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        fetchRoles()
+    }, [])
+
     async function toggleUserStatus(id: string, currentStatus: boolean) {
-        const { error } = await (supabase.from('user_profiles') as any)
+        // Fetch old data for audit
+        const oldUser = users.find(u => u.id === id);
+
+        const { error } = await supabase.from('user_profiles')
             .update({ is_active: !currentStatus })
             .eq('id', id)
 
         if (error) {
             alert('Lỗi: ' + error.message)
         } else {
+             // Log Activity
+             if (oldUser) {
+                await logActivity({
+                    supabase,
+                    tableName: 'user_profiles',
+                    recordId: id,
+                    action: 'UPDATE',
+                    oldData: { is_active: currentStatus },
+                    newData: { is_active: !currentStatus }
+                })
+            }
             fetchUsers()
         }
     }
@@ -243,6 +262,13 @@ export default function UsersPage() {
                                                     >
                                                         <Edit size={14} />
                                                     </Link>
+                                                    <button
+                                                        onClick={() => setViewingHistoryId(user.id)}
+                                                        className="p-1.5 rounded-lg text-stone-500 hover:bg-purple-50 hover:text-purple-600 transition-colors"
+                                                        title="Lịch sử hoạt động"
+                                                    >
+                                                        <History size={14} />
+                                                    </button>
                                                 </Protected>
                                             </div>
                                         </td>
@@ -253,6 +279,14 @@ export default function UsersPage() {
                     </div>
                 </>
             )}
+
+            <AuditLogViewer
+                tableName="user_profiles"
+                recordId={viewingHistoryId || ''}
+                isOpen={!!viewingHistoryId}
+                onClose={() => setViewingHistoryId(null)}
+                title="Nhật ký hoạt động người dùng"
+            />
 
             {/* STATS */}
             <div className="text-xs text-stone-500 text-right">
