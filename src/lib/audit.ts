@@ -103,6 +103,44 @@ export async function getAuditLogs(
 }
 
 /**
+ * Fetches a single audit log entry by ID and enriches it with user details.
+ * Useful for Realtime updates where we only get the new record ID.
+ */
+export async function getEnrichedAuditLogById(
+    supabase: SupabaseClient<TypedDatabase>,
+    logId: string
+) {
+    // 1. Fetch Log
+    const { data: log, error: logError } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .eq('id', logId)
+        .single()
+
+    if (logError || !log) {
+        console.error('Error fetching single audit log:', logError)
+        return null
+    }
+
+    // 2. Fetch User Profile if needed
+    let userProfile = null
+    if (log.changed_by) {
+        const { data: profile } = await supabase
+            .from('user_profiles' as any)
+            .select('id, email, full_name, avatar_url')
+            .eq('id', log.changed_by)
+            .single()
+
+        userProfile = profile
+    }
+
+    return {
+        ...log,
+        changed_by_user: userProfile
+    }
+}
+
+/**
  * Fetches the latest audit logs across the entire system.
  * Useful for the centralized Operation History dashboard.
  */

@@ -1,19 +1,20 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { getGlobalAuditLogs } from '@/lib/audit'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { getGlobalAuditLogs, getEnrichedAuditLogById } from '@/lib/audit'
 import { supabase } from '@/lib/supabaseClient'
 import HistoryCard from '@/components/history/HistoryCard'
-import { RefreshCw, Calendar as CalendarIcon, Tag, Box, CheckSquare, Clock } from 'lucide-react'
+import { RefreshCw, Calendar as CalendarIcon, Tag, Box, CheckSquare, Clock, Radio, Activity } from 'lucide-react'
 
 export default function OperationHistoryPage() {
     const [logs, setLogs] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
-    const [autoRefresh, setAutoRefresh] = useState(true)
+    const [isRealtime, setIsRealtime] = useState(true)
     const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
+    const channelRef = useRef<any>(null)
 
-    const fetchLogs = useCallback(async () => {
-        setLoading(true)
+    const fetchLogs = useCallback(async (isInitial = false) => {
+        if (isInitial) setLoading(true)
         try {
             const data = await getGlobalAuditLogs(supabase, 200)
             setLogs(data)
@@ -21,19 +22,60 @@ export default function OperationHistoryPage() {
         } catch (error) {
             console.error('Failed to fetch logs', error)
         } finally {
-            setLoading(false)
+            if (isInitial) setLoading(false)
         }
     }, [])
 
+    // Initial Fetch
     useEffect(() => {
-        fetchLogs()
+        fetchLogs(true)
     }, [fetchLogs])
 
+    // Realtime Subscription
     useEffect(() => {
-        if (!autoRefresh) return
-        const interval = setInterval(fetchLogs, 60000)
-        return () => clearInterval(interval)
-    }, [autoRefresh, fetchLogs])
+        if (!isRealtime) {
+            if (channelRef.current) {
+                supabase.removeChannel(channelRef.current)
+                channelRef.current = null
+            }
+            return
+        }
+
+        const channel = supabase
+            .channel('audit-logs-realtime')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'audit_logs' },
+                async (payload) => {
+                    // When a new log is inserted, fetch its enriched details
+                    const newLogId = payload.new.id
+                    if (newLogId) {
+                        try {
+                            const enrichedLog = await getEnrichedAuditLogById(supabase, newLogId)
+                            if (enrichedLog) {
+                                setLogs(prev => [enrichedLog, ...prev])
+                                setLastUpdated(new Date())
+                            }
+                        } catch (err) {
+                            console.error("Error handling realtime log:", err)
+                        }
+                    }
+                }
+            )
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    console.log('Realtime connected for audit logs')
+                }
+            })
+
+        channelRef.current = channel
+
+        return () => {
+            if (channelRef.current) {
+                supabase.removeChannel(channelRef.current)
+            }
+        }
+    }, [isRealtime])
 
     const groups = {
         importExport: logs.filter(l => ['inbound_orders', 'outbound_orders'].includes(l.table_name)),
@@ -62,7 +104,7 @@ export default function OperationHistoryPage() {
                     </button>
 
                     <button
-                        onClick={fetchLogs}
+                        onClick={() => fetchLogs()}
                         className="flex items-center gap-2 px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg text-sm font-medium hover:bg-green-100 transition-colors"
                     >
                         <RefreshCw size={16} className={loading ? 'animate-spin' : ''}/>
@@ -70,15 +112,20 @@ export default function OperationHistoryPage() {
                     </button>
 
                      <button
-                        onClick={() => setAutoRefresh(!autoRefresh)}
+                        onClick={() => setIsRealtime(!isRealtime)}
                         className={`hidden md:flex items-center gap-2 px-3 py-2 border rounded-lg text-sm font-medium transition-colors ${
-                            autoRefresh
-                                ? 'bg-orange-50 text-orange-700 border-orange-200'
+                            isRealtime
+                                ? 'bg-red-50 text-red-700 border-red-200'
                                 : 'bg-stone-50 text-stone-600 border-stone-200'
                         }`}
+                        title="Chế độ cập nhật thời gian thực (Realtime)"
                     >
-                        <div className={`w-2 h-2 rounded-full ${autoRefresh ? 'bg-orange-500 animate-pulse' : 'bg-stone-300'}`} />
-                        <span>Auto (1 phút)</span>
+                        {isRealtime ? (
+                            <Activity size={16} className="animate-pulse" />
+                        ) : (
+                            <div className="w-2 h-2 rounded-full bg-stone-300" />
+                        )}
+                        <span>{isRealtime ? 'Live Mode' : 'Offline Mode'}</span>
                     </button>
                 </div>
             </div>
