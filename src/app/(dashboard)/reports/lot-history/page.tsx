@@ -75,9 +75,13 @@ export default function LotHistoryPage() {
         }
 
         // 2. Result of a Split
-        const splitFrom = lot.lot_items?.find(item => lot.metadata?.system_history?.item_history?.[item.id]?.type === 'split')
-        if (splitFrom) {
-            const sourceCode = lot.metadata.system_history.item_history[splitFrom.id].source_code
+        const splitFromItem = lot.lot_items?.find(item => (lot.metadata as any)?.system_history?.item_history?.[item.id]?.type === 'split')
+        const splitFromMetadata = (lot.metadata as any)?.system_history?.item_history?.source_code // Fallback if item_id changed
+
+        if (splitFromItem || splitFromMetadata) {
+            const sourceCode = splitFromItem
+                ? (lot.metadata as any).system_history.item_history[splitFromItem.id].source_code
+                : splitFromMetadata
             return { type: 'split_result', label: `Tách từ ${sourceCode}`, variant: 'orange' }
         }
 

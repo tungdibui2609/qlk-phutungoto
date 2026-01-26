@@ -55,7 +55,7 @@ export const unbundleService = {
             product_id: productId,
             product_name: productName,
             unit: baseUnit,
-            quantity: baseToBreak,
+            quantity: Number(baseToBreak.toFixed(6)),
             price: costPrice || 0
         })
 
@@ -79,7 +79,7 @@ export const unbundleService = {
             product_id: productId,
             product_name: productName,
             unit: reqUnit,
-            quantity: baseToBreak * rate,
+            quantity: Number((baseToBreak * rate).toFixed(6)),
             price: costPrice || 0
         })
 

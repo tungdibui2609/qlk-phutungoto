@@ -8,6 +8,7 @@ import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { Unit, ProductUnit } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
+import { lotService } from '@/services/warehouse/lotService'
 
 interface LotExportModalProps {
     lot: Lot
@@ -21,8 +22,8 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
     const { systemType, currentSystem } = useSystem()
     const { showToast } = useToast()
     const { toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
-    const [exportQuantities, setExportQuantities] = useState<Record<string, number>>({}) // lot_item_id -> quantity to export In SELECTED unit
-    const [exportUnits, setExportUnits] = useState<Record<string, string>>({}) // lot_item_id -> selected unit name
+    const [exportQuantities, setExportQuantities] = useState<Record<string, string>>({}) // Change to string for text input
+    const [exportUnits, setExportUnits] = useState<Record<string, string>>({})
     const [customerName, setCustomerName] = useState('')
     const [customers, setCustomers] = useState<any[]>([])
     const [suggestions, setSuggestions] = useState<any[]>([])
@@ -33,10 +34,10 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
 
     useEffect(() => {
         // Initialize with full quantities and current units
-        const initialQuantities: Record<string, number> = {}
+        const initialQuantities: Record<string, string> = {}
         const initialUnits: Record<string, string> = {}
         lot.lot_items?.forEach(item => {
-            initialQuantities[item.id] = item.quantity || 0
+            initialQuantities[item.id] = (item.quantity || 0).toString().replace('.', ',')
             initialUnits[item.id] = item.unit || item.products?.unit || ''
         })
         setExportQuantities(initialQuantities)
@@ -94,14 +95,11 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
         return baseQty / rate
     }
 
-    const handleQuantityChange = (itemId: string, maxOriginalQty: number, value: string) => {
-        // Support both comma and dot for decimals
-        const normalizedValue = value.replace(',', '.')
-        const qty = parseFloat(normalizedValue)
-        if (isNaN(qty) || qty < 0) return
+    const handleQuantityChange = (itemId: string, value: string) => {
+        // Allow user to type commas or dots
         setExportQuantities(prev => ({
             ...prev,
-            [itemId]: qty
+            [itemId]: value
         }))
     }
 
@@ -110,9 +108,9 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
     }
 
     const handleExportAll = () => {
-        const fullQuantities: Record<string, number> = {}
+        const fullQuantities: Record<string, string> = {}
         lot.lot_items?.forEach(item => {
-            fullQuantities[item.id] = item.quantity || 0
+            fullQuantities[item.id] = (item.quantity || 0).toString().replace('.', ',')
         })
         setExportQuantities(fullQuantities)
     }
@@ -148,7 +146,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
     }
 
     const handleExport = async () => {
-        const itemsToExport = Object.entries(exportQuantities).filter(([_, qty]) => qty > 0)
+        const itemsToExport = Object.entries(exportQuantities).filter(([_, qty]) => parseFloat(qty.replace(',', '.')) > 0)
         if (itemsToExport.length === 0) {
             setError('Vui lòng nhập số lượng muốn xuất cho ít nhất 1 sản phẩm')
             return
@@ -163,11 +161,11 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
 
         try {
             // Process Items & Update LOT
-            let totalRemainingLotQty = 0
             const exportItemsData: Record<string, any> = {}
 
             for (const item of lot.lot_items || []) {
-                const selectedQty = exportQuantities[item.id] || 0
+                const rawQty = exportQuantities[item.id] || '0'
+                const selectedQty = parseFloat(rawQty.replace(',', '.')) || 0
                 const selectedUnit = exportUnits[item.id] || item.unit || item.products?.unit || ''
 
                 const consumedQty = getConsumedOriginalQty(item.id, selectedQty, selectedUnit)
@@ -184,71 +182,45 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                         cost_price: item.products?.cost_price || 0
                     }
 
-                    // 2. Update or Delete lot item (with Auto-Split logic)
-                    if (remainingQty <= 0.000001) {
-                        await supabase.from('lot_items').delete().eq('id', item.id)
-                    } else {
-                        // Check for fractional remaining
-                        const floorRemaining = Math.floor(remainingQty + 0.000001)
-                        const fractionalRemaining = remainingQty - floorRemaining
-
-                        if (fractionalRemaining > 0.000001) {
-                            // A. Update current row to integer part
-                            if (floorRemaining > 0) {
-                                await supabase.from('lot_items').update({ quantity: floorRemaining }).eq('id', item.id)
-                            } else {
-                                await supabase.from('lot_items').delete().eq('id', item.id)
-                            }
-
-                            // B. Create new row for fractional part in Base Unit
-                            const baseUnit = item.products?.unit || ''
-                            const originalUnit = item.unit || baseUnit
-                            const originalUnitId = unitNameMap.get(originalUnit.toLowerCase())
-                            const rate = conversionMap.get(item.product_id || '')?.get(originalUnitId || '') || 1
-                            const fractionalBaseQty = fractionalRemaining * rate
-
-                            await supabase.from('lot_items').insert({
-                                lot_id: lot.id,
-                                product_id: item.product_id,
-                                quantity: fractionalBaseQty,
-                                unit: baseUnit
-                            })
-                        } else {
-                            // Simple update
-                            await supabase.from('lot_items').update({ quantity: floorRemaining }).eq('id', item.id)
-                        }
-
-                        const remainingBaseQty = toBaseAmount(item.product_id, item.unit || item.products?.unit || '', remainingQty, item.products?.unit || null)
-                        totalRemainingLotQty += remainingBaseQty
-                    }
-                } else {
-                    const itemBaseQty = toBaseAmount(item.product_id, item.unit || item.products?.unit || '', item.quantity || 0, item.products?.unit || null)
-                    totalRemainingLotQty += itemBaseQty
+                    // 2. Process Auto-Split logic via lotService
+                    await lotService.processItemAutoSplit({
+                        supabase,
+                        lotId: lot.id,
+                        item,
+                        consumedOriginalQty: consumedQty,
+                        unitNameMap,
+                        conversionMap
+                    })
                 }
             }
 
-            // Update Lot History Metadata (Buffered)
-            const originalMetadata = lot.metadata ? { ...lot.metadata as any } : {}
-            if (!originalMetadata.system_history) originalMetadata.system_history = {}
-            if (!originalMetadata.system_history.exports) originalMetadata.system_history.exports = []
+            // 3. Calculate Final Total Remaining Qty from DB to be 100% accurate
+            const totalRemainingLotQty = await lotService.calculateTotalBaseQty({
+                supabase,
+                lotId: lot.id,
+                unitNameMap,
+                conversionMap
+            })
 
-            // Add to buffer
-            originalMetadata.system_history.exports.push({
-                id: crypto.randomUUID(),
-                customer: customerName,
-                date: new Date().toISOString(),
-                description: description,
-                location_code: lot.positions?.[0]?.code || null,
-                items: exportItemsData,
-                draft: true, // Marked as draft for the buffer mechanism
-                order_id: null
+            // 4. Update Metadata & Final Lot Status
+            const newMetadata = await lotService.addExportToHistory({
+                supabase,
+                lotId: lot.id,
+                originalMetadata: lot.metadata,
+                exportData: {
+                    id: crypto.randomUUID(),
+                    customer: customerName,
+                    description: description,
+                    location_code: lot.positions?.[0]?.code || null,
+                    items: exportItemsData
+                }
             })
 
             // Final Update to LOT
             await supabase.from('lots').update({
                 quantity: totalRemainingLotQty,
-                metadata: originalMetadata,
-                status: totalRemainingLotQty === 0 ? 'exported' : lot.status
+                metadata: newMetadata,
+                status: totalRemainingLotQty <= 0.000001 ? 'exported' : lot.status
             }).eq('id', lot.id)
 
             // Map Cleanup: If lot is empty, clear from positions
@@ -383,12 +355,11 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                                         <span className="text-xs font-bold text-slate-400 uppercase">Số lượng xuất:</span>
                                         <div className="flex items-center gap-2">
                                             <input
-                                                type="number"
+                                                type="text"
                                                 value={exportQuantities[item.id] || ''}
-                                                onChange={(e) => handleQuantityChange(item.id, item.quantity || 0, e.target.value)}
+                                                onChange={(e) => handleQuantityChange(item.id, e.target.value)}
                                                 className="w-24 p-2 text-sm font-bold text-center border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all font-mono"
                                                 placeholder="0"
-                                                min="0"
                                             />
                                             <select
                                                 value={exportUnits[item.id] || ''}
@@ -411,9 +382,11 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                                         </div>
                                     </div>
                                     {(() => {
-                                        const consumed = getConsumedOriginalQty(item.id, exportQuantities[item.id] || 0, exportUnits[item.id] || '')
-                                        const isOver = consumed > (item.quantity || 0)
-                                        if (consumed > 0 && Math.abs(consumed - (exportQuantities[item.id] || 0)) > 0.0001) {
+                                        const rawQty = exportQuantities[item.id] || '0'
+                                        const selectedQty = parseFloat(rawQty.replace(',', '.')) || 0
+                                        const consumed = getConsumedOriginalQty(item.id, selectedQty, exportUnits[item.id] || '')
+                                        const isOver = consumed > (item.quantity || 0) + 0.000001
+                                        if (consumed > 0 && Math.abs(consumed - selectedQty) > 0.0001) {
                                             return (
                                                 <div className={`mt-2 text-[10px] font-bold text-right ${isOver ? 'text-red-500' : 'text-slate-400'}`}>
                                                     ~ {consumed.toLocaleString()} {(item as any).unit || item.products?.unit} (gốc)
@@ -451,7 +424,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                     </button>
                     <button
                         onClick={handleExport}
-                        disabled={loading || Object.values(exportQuantities).every(v => v === 0) || !customerName.trim()}
+                        disabled={loading || Object.values(exportQuantities).every(v => !v || parseFloat(v.replace(',', '.')) === 0) || !customerName.trim()}
                         className="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:shadow-none transition-all active:scale-95 flex items-center gap-2"
                     >
                         {loading ? (

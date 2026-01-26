@@ -101,13 +101,19 @@ export function OutboundItemsTable({
                                                 </div>
                                             )}
                                         />
-                                        {/* Stock Balance Display */}
                                         {product && (
-                                            <div className="mt-1 flex items-center gap-2 text-[10px]">
-                                                <span className="text-stone-500">Tồn kho:</span>
-                                                <span className={`font-medium ${stockAvailable <= 0 ? 'text-red-500' : 'text-blue-600'}`}>
-                                                    {stockAvailable.toLocaleString('vi-VN')} {product.unit}
-                                                </span>
+                                            <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
+                                                <div className="flex items-center gap-1.5 pt-0.5 border-t border-stone-100 dark:border-zinc-800/50 mt-0.5">
+                                                    <span className="text-stone-400">Tồn kho:</span>
+                                                    <span className={`font-bold ${stockAvailable <= 0 ? 'text-red-500' : 'text-blue-600'}`}>
+                                                        {product.stock_details || `${stockAvailable.toLocaleString('vi-VN')} ${product.unit}`}
+                                                    </span>
+                                                </div>
+                                                {product.stock_details && product.unit && !product.stock_details.toLowerCase().includes(product.unit.toLowerCase()) && (
+                                                    <div className="text-[9px] text-stone-400 italic">
+                                                        (~ {stockAvailable.toLocaleString('vi-VN')} {product.unit})
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </td>
@@ -282,13 +288,19 @@ export function OutboundItemsTable({
                                         </div>
                                     )}
                                 />
-                                {/* Stock Balance Display */}
                                 {product && (
-                                    <div className="flex justify-between items-center text-[10px] mt-1 bg-stone-50 dark:bg-zinc-800/50 p-1.5 rounded">
-                                        <span className="text-stone-500">Tồn kho hiện tại:</span>
-                                        <span className={`font-medium ${stockAvailable <= 0 ? 'text-red-500' : 'text-blue-600'}`}>
-                                            {stockAvailable.toLocaleString('vi-VN')} {product.unit}
-                                        </span>
+                                    <div className="mt-1 flex flex-col gap-0.5 text-[10px] bg-stone-50 dark:bg-zinc-800/50 p-2 rounded-lg border border-stone-100 dark:border-zinc-800">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-stone-500">Tồn kho hiện tại:</span>
+                                            <span className={`font-bold ${stockAvailable <= 0 ? 'text-red-500' : 'text-blue-600'}`}>
+                                                {product.stock_details || `${stockAvailable.toLocaleString('vi-VN')} ${product.unit}`}
+                                            </span>
+                                        </div>
+                                        {product.stock_details && product.unit && !product.stock_details.toLowerCase().includes(product.unit.toLowerCase()) && (
+                                            <div className="text-right text-[9px] text-stone-400 italic">
+                                                (~ {stockAvailable.toLocaleString('vi-VN')} {product.unit})
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>

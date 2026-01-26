@@ -112,22 +112,34 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
 
             if (prodRes.data) {
                 let productsWithStock: Product[] = prodRes.data as Product[]
-                let localUnitStockMap = new Map<string, number>()
-
                 if (invRes.ok && Array.isArray(invRes.items)) {
                     const totalStockMap = new Map<string, number>()
+                    const detailedStockMap = new Map<string, string[]>()
+                    const localUnitStockMap = new Map<string, number>()
+
                     invRes.items.forEach((item: any) => {
                         if (item.productId) {
                             const prod = prodRes.data.find(p => p.id === item.productId)
                             const baseQty = toBaseAmount(item.productId, item.unit, item.balance, prod?.unit || null)
                             totalStockMap.set(item.productId, (totalStockMap.get(item.productId) || 0) + baseQty)
-                            localUnitStockMap.set(`${item.productId}_${item.unit}`, item.balance)
+
+                            // Aggregation by Unit (Case-insensitive)
+                            const uKey = `${item.productId}_${(item.unit || '').toLowerCase().trim()}`
+                            localUnitStockMap.set(uKey, (localUnitStockMap.get(uKey) || 0) + item.balance)
+
+                            if (!detailedStockMap.has(item.productId)) detailedStockMap.set(item.productId, [])
+                            detailedStockMap.get(item.productId)!.push(`${item.balance.toLocaleString('vi-VN')} ${item.unit}`)
                         }
                     })
-                    productsWithStock = prodRes.data.map((p: any) => ({ ...p, stock_quantity: totalStockMap.get(p.id) ?? 0 })) as Product[]
+
+                    setUnitStockMap(localUnitStockMap)
+                    productsWithStock = prodRes.data.map((p: any) => ({
+                        ...p,
+                        stock_quantity: totalStockMap.get(p.id) ?? 0,
+                        stock_details: detailedStockMap.get(p.id)?.join('; ') || ''
+                    })) as Product[]
                 }
                 setProducts(productsWithStock)
-                setUnitStockMap(localUnitStockMap)
             }
             if (custRes.data) setCustomers(custRes.data as any)
             if (unitRes.data) setUnits(unitRes.data)
@@ -167,25 +179,59 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         }])
     }
 
-    const checkUnbundle = (productId: string, unit: string, qty: number): { needsUnbundle: boolean, unbundleInfo?: string } => {
+    const checkUnbundle = (productId: string, unit: string, qty: number): { needsUnbundle: boolean, unbundleInfo?: string, sourceUnit?: string, rate?: number } => {
         const product = products.find(p => p.id === productId)
-        if (!product || !unit || unit === product.unit) return { needsUnbundle: false }
+        if (!product || !unit) return { needsUnbundle: false }
 
-        const currentLiquid = unitStockMap.get(`${productId}_${unit}`) || 0
-        if (currentLiquid >= qty) return { needsUnbundle: false }
+        const normReqUnit = unit.toLowerCase().trim()
+        const currentLiquid = unitStockMap.get(`${productId}_${normReqUnit}`) || 0
+        if (currentLiquid >= qty - 0.000001) return { needsUnbundle: false }
 
-        // Needs unbundle
-        const bUnitId = unitNameMap.get(product.unit?.toLowerCase() || '')
-        const rUnitId = unitNameMap.get(unit.toLowerCase())
-        const rate = conversionMap.get(productId)?.get(rUnitId || '') || 1
-
-        const deficit = qty - currentLiquid
-        const baseToBreak = Math.ceil(deficit / rate - 0.000001)
-
-        return {
-            needsUnbundle: true,
-            unbundleInfo: `Tự động bẻ ${baseToBreak} ${product.unit} -> ${baseToBreak * rate} ${unit}`
+        // Case 1: Break Base Unit (Official Unit)
+        if (normReqUnit !== (product.unit || '').toLowerCase().trim()) {
+            const currentBase = unitStockMap.get(`${productId}_${(product.unit || '').toLowerCase().trim()}`) || 0
+            if (currentBase > 0) {
+                const rUnitId = unitNameMap.get(normReqUnit)
+                const rate = conversionMap.get(productId)?.get(rUnitId || '') || 1
+                if (rate > 0) {
+                    const deficit = qty - currentLiquid
+                    const baseToBreak = Math.ceil(deficit / rate - 0.000001)
+                    return {
+                        needsUnbundle: true,
+                        unbundleInfo: `Bẻ gói ${baseToBreak} ${product.unit} -> ${baseToBreak * rate} ${unit}`,
+                        sourceUnit: product.unit ?? undefined,
+                        rate
+                    }
+                }
+            }
         }
+
+        // Case 2: Break OTHER units
+        for (const pu of product.product_units || []) {
+            const altUnitName = units.find(u => u.id === pu.unit_id)?.name
+            if (!altUnitName || altUnitName.toLowerCase().trim() === normReqUnit) continue
+
+            const currentAlt = unitStockMap.get(`${productId}_${altUnitName.toLowerCase().trim()}`) || 0
+            if (currentAlt > 0) {
+                const altToBase = pu.conversion_rate
+                const reqUnitId = unitNameMap.get(normReqUnit)
+                const reqToBase = normReqUnit === (product.unit || '').toLowerCase().trim() ? 1 : (conversionMap.get(productId)?.get(reqUnitId || '') || 1)
+
+                const rateAltToReq = altToBase / reqToBase
+                if (rateAltToReq > 1) {
+                    const deficit = qty - currentLiquid
+                    const altToBreak = Math.ceil(deficit / rateAltToReq - 0.000001)
+                    return {
+                        needsUnbundle: true,
+                        unbundleInfo: `Bẻ gói ${altToBreak} ${altUnitName} -> ${altToBreak * rateAltToReq} ${unit}`,
+                        sourceUnit: altUnitName,
+                        rate: rateAltToReq
+                    }
+                }
+            }
+        }
+
+        return { needsUnbundle: false }
     }
 
     const updateItem = (id: string, field: keyof OrderItem, value: any) => {
@@ -255,40 +301,31 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
 
             // Step 1: Check and Perform Auto-Unbundle for items that need it
             for (const item of items) {
-                const product = products.find(p => p.id === item.productId)
-                if (!product) continue
+                const unbundle = checkUnbundle(item.productId, item.unit, item.quantity)
 
-                const baseUnit = product.unit
-                const reqUnit = item.unit
-                const reqQty = item.quantity
+                if (unbundle.needsUnbundle && unbundle.sourceUnit && unbundle.rate) {
+                    const product = products.find(p => p.id === item.productId)
+                    const currentLiquid = unitStockMap.get(`${item.productId}_${item.unit}`) || 0
 
-                // If not base unit and not enough "liquid" stock in requested unit
-                if (reqUnit !== baseUnit) {
-                    const currentLiquid = unitStockMap.get(`${item.productId}_${reqUnit}`) || 0
-                    if (currentLiquid < reqQty) {
-                        const rUnitId = unitNameMap.get(reqUnit.toLowerCase())
-                        const rate = conversionMap.get(item.productId)?.get(rUnitId || '') || 1
+                    const baseToBreak = await unbundleService.executeAutoUnbundle({
+                        supabase,
+                        productId: item.productId,
+                        productName: item.productName,
+                        baseUnit: unbundle.sourceUnit,
+                        reqUnit: item.unit,
+                        reqQty: item.quantity,
+                        currentLiquid,
+                        costPrice: product?.cost_price || 0,
+                        rate: unbundle.rate,
+                        warehouseName,
+                        systemCode,
+                        mainOrderCode: code,
+                        convTypeId,
+                        generateOrderCode: (type) => generateOrderCode(type, systemCode, currentSystem?.name)
+                    })
 
-                        const baseToBreak = await unbundleService.executeAutoUnbundle({
-                            supabase,
-                            productId: item.productId,
-                            productName: item.productName,
-                            baseUnit: baseUnit || '',
-                            reqUnit: reqUnit,
-                            reqQty: reqQty,
-                            currentLiquid,
-                            costPrice: product.cost_price || 0,
-                            rate,
-                            warehouseName,
-                            systemCode,
-                            mainOrderCode: code,
-                            convTypeId,
-                            generateOrderCode: (type) => generateOrderCode(type, systemCode, currentSystem?.name)
-                        })
-
-                        if (baseToBreak) {
-                            showToast(`Đã tự động bẻ gói ${baseToBreak} ${baseUnit} sang ${reqUnit}`, 'success')
-                        }
+                    if (baseToBreak) {
+                        showToast(`Đã tự động bẻ ${baseToBreak} ${unbundle.sourceUnit} sang ${item.unit}`, 'success')
                     }
                 }
             }
