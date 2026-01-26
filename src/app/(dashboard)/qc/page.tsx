@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ShieldCheck, Plus, Search, Edit, Trash2, X } from 'lucide-react'
+import { ShieldCheck, Plus, Search, Edit, Trash2, X, History } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import { logActivity } from '@/lib/audit'
+import AuditLogViewer from '@/components/shared/AuditLogViewer'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 
@@ -10,9 +12,9 @@ type QCInfo = {
     id: string
     name: string
     code: string
-    description: string
-    system_code?: string
-    is_active: boolean
+    description: string | null
+    system_code?: string | null
+    is_active: boolean | null
     created_at: string
 }
 
@@ -32,6 +34,9 @@ export default function QCPage() {
         description: ''
     })
 
+    // Audit Log State
+    const [viewingHistoryId, setViewingHistoryId] = useState<string | null>(null)
+
     useEffect(() => {
         if (currentSystem) {
             fetchQCList()
@@ -43,7 +48,7 @@ export default function QCPage() {
             setLoading(true)
 
             // Fetch QC info for current system OR global (system_code is null)
-            const { data, error } = await (supabase as any)
+            const { data, error } = await supabase
                 .from('qc_info')
                 .select('*')
                 .or(`system_code.eq.${currentSystem?.code},system_code.is.null`)
@@ -124,20 +129,45 @@ export default function QCPage() {
             }
 
             if (editingQC) {
-                const { error } = await (supabase as any)
+                const { error } = await supabase
                     .from('qc_info')
                     .update(payload)
                     .eq('id', editingQC.id)
                 if (error) throw error
+
+                // Log activity
+                await logActivity({
+                    supabase,
+                    tableName: 'qc_info',
+                    recordId: editingQC.id,
+                    action: 'UPDATE',
+                    oldData: editingQC,
+                    newData: payload
+                })
+
                 showToast('Cập nhật thành công', 'success')
             } else {
                 // Attach current system code for new items
                 payload.system_code = currentSystem?.code
 
-                const { error } = await (supabase as any)
+                const { data, error } = await supabase
                     .from('qc_info')
                     .insert([payload])
+                    .select()
+                    .single()
                 if (error) throw error
+
+                // Log activity
+                if (data) {
+                    await logActivity({
+                        supabase,
+                        tableName: 'qc_info',
+                        recordId: data.id,
+                        action: 'CREATE',
+                        newData: data
+                    })
+                }
+
                 showToast('Tạo mới thành công', 'success')
             }
 
@@ -152,12 +182,27 @@ export default function QCPage() {
         if (!confirm('Bạn có chắc muốn xóa nhân viên QC này?')) return
 
         try {
-            const { error } = await (supabase as any)
+            // Fetch data before delete for logging
+            const itemToDelete = qcList.find(i => i.id === id)
+
+            const { error } = await supabase
                 .from('qc_info')
                 .delete()
                 .eq('id', id)
 
             if (error) throw error
+
+            // Log activity
+            if (itemToDelete) {
+                await logActivity({
+                    supabase,
+                    tableName: 'qc_info',
+                    recordId: id,
+                    action: 'DELETE',
+                    oldData: itemToDelete
+                })
+            }
+
             showToast('Xóa thành công', 'success')
             fetchQCList()
         } catch (error: any) {
@@ -234,7 +279,7 @@ export default function QCPage() {
                                                     <span className="ml-2 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] rounded border border-gray-200">Global</span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-3 text-stone-500 truncate max-w-xs" title={item.description}>
+                                            <td className="px-6 py-3 text-stone-500 truncate max-w-xs" title={item.description || ''}>
                                                 {item.description}
                                             </td>
                                             <td className="px-6 py-3">
@@ -251,6 +296,13 @@ export default function QCPage() {
                                                     >
                                                         <Trash2 size={16} />
                                                     </button>
+                                                    <button
+                                                        onClick={() => setViewingHistoryId(item.id)}
+                                                        className="p-1.5 text-stone-400 hover:text-purple-600 hover:bg-purple-50 rounded"
+                                                        title="Xem lịch sử"
+                                                    >
+                                                        <History size={16} />
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -261,6 +313,14 @@ export default function QCPage() {
                     </div>
                 </div>
             </div>
+
+            <AuditLogViewer
+                tableName="qc_info"
+                recordId={viewingHistoryId || ''}
+                isOpen={!!viewingHistoryId}
+                onClose={() => setViewingHistoryId(null)}
+                title="Lịch sử thay đổi QC"
+            />
 
             {/* Modal */}
             {isModalOpen && (
