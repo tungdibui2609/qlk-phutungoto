@@ -52,6 +52,7 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
                     onClose={() => ui.setAddingPositionsTo(null)}
                     findLeafZones={manager.findLeafZones}
                     setPositionsMap={manager.setPositionsMap}
+                    positionsMap={manager.positionsMap}
                     generateId={manager.generateId}
                     buildDefaultPrefix={manager.buildDefaultPrefix}
                 />

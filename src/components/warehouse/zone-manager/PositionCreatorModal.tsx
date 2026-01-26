@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Package, X, Zap } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Package, X, Zap, Copy, Check } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { LocalZone, LocalPosition } from './types'
 import { useSystem } from '@/contexts/SystemContext'
@@ -10,11 +10,12 @@ interface PositionCreatorModalProps {
     onClose: () => void
     findLeafZones: (id: string) => LocalZone[]
     setPositionsMap: React.Dispatch<React.SetStateAction<Record<string, LocalPosition[]>>>
+    positionsMap: Record<string, LocalPosition[]>
     generateId: () => string
     buildDefaultPrefix: (id: string) => string
 }
 
-export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, setPositionsMap, generateId, buildDefaultPrefix }: PositionCreatorModalProps) {
+export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, setPositionsMap, positionsMap, generateId, buildDefaultPrefix }: PositionCreatorModalProps) {
     const { showToast } = useToast()
     const { systemType } = useSystem()
 
@@ -22,14 +23,50 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
     const leafZones = findLeafZones(zoneId)
     const hasChildren = zones.some(z => z.parent_id === zoneId && z._status !== 'deleted')
 
+    // Modes: manual, auto, clone
+    const [mode, setMode] = useState<'manual' | 'auto' | 'clone'>('manual')
+
     // Local State for Form
     const [posPrefix, setPosPrefix] = useState(buildDefaultPrefix(zoneId))
     const [posStart, setPosStart] = useState(1)
     const [posCount, setPosCount] = useState(10)
     const [isCreatingPositions, setIsCreatingPositions] = useState(false)
-    const [autoMode, setAutoMode] = useState(false)
     const [autoPosSuffix, setAutoPosSuffix] = useState('V')
-    const [autoPosPattern, setAutoPosPattern] = useState('')
+    const [autoPosPattern, setAutoPosPattern] = useState(`{zone}.${autoPosSuffix}{#}`)
+
+    // Clone mode state
+    const [sourceId, setSourceId] = useState('')
+    const [searchSource, setSearchSource] = useState('')
+
+    const availableTags = useMemo(() => {
+        // Use one of the leaf zones to get the full hierarchy depth (e.g. down to {T})
+        const leafZones = findLeafZones(zoneId)
+        const sampleZone = leafZones.length > 0 ? leafZones[0] : zones.find(z => z.id === zoneId)
+
+        const tags: string[] = []
+        let current = sampleZone
+        while (current) {
+            if (current.code) {
+                const prefix = current.code.replace(/\d+/g, '').toUpperCase()
+                if (prefix) {
+                    const tag = `{${prefix}}`
+                    // Avoid duplicates if multiple levels have same prefix (though rare in this project)
+                    if (!tags.includes(tag)) tags.unshift(tag)
+                }
+            }
+            current = zones.find(z => z.id === current?.parent_id)
+        }
+        return tags.join('')
+    }, [zoneId, zones, findLeafZones])
+
+    const [copied, setCopied] = useState(false)
+
+    const handleCopyTags = () => {
+        navigator.clipboard.writeText(availableTags)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+        showToast('Đã sao chép mã Level!', 'success')
+    }
 
     async function handleCreatePositions() {
         if (posCount < 1) return showToast('Số lượng phải > 0', 'warning')
@@ -66,29 +103,106 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
         }
     }
 
+    async function handleClonePositions() {
+        if (!sourceId) return showToast('Vui lòng chọn zone nguồn', 'warning')
+        const sourceZone = zones.find(z => z.id === sourceId)
+        if (!sourceZone || !currentZone) return
+
+        setIsCreatingPositions(true)
+        await new Promise(resolve => setTimeout(resolve, 50))
+
+        try {
+            // 1. Helper to map all sub-zones by relative path (code chain)
+            const getRelativeMap = (rootId: string) => {
+                const map = new Map<string, string>() // relativePath -> zoneId
+                const traverse = (parentId: string, currentPath: string) => {
+                    const children = zones.filter(z => z.parent_id === parentId && z._status !== 'deleted')
+                    children.forEach(child => {
+                        const path = currentPath ? `${currentPath}.${child.code}` : child.code
+                        map.set(path.toUpperCase(), child.id)
+                        traverse(child.id, path)
+                    })
+                }
+                map.set("", rootId) // Root itself is the empty path
+                traverse(rootId, "")
+                return map
+            }
+
+            const sourceMap = getRelativeMap(sourceId)
+            const targetMap = getRelativeMap(zoneId)
+
+            const updates: Record<string, LocalPosition[]> = {}
+            let totalCloned = 0
+
+            // 2. Pair zones and clone positions
+            sourceMap.forEach((sId, path) => {
+                const tId = targetMap.get(path)
+                if (!tId) return
+
+                const sPositions = positionsMap[sId] || []
+                if (sPositions.length === 0) return
+
+                const cloned = sPositions.map(p => ({
+                    ...p,
+                    id: generateId(),
+                    code: p.code.replace(new RegExp(`^${sourceZone.code}`, 'i'), currentZone.code),
+                    _status: 'new',
+                    lot_id: null, // Clear lots on clone
+                    system_type: systemType
+                } as any))
+
+                updates[tId] = cloned
+                totalCloned += cloned.length
+            })
+
+            if (totalCloned === 0) {
+                showToast('Không tìm thấy vị trí nào để sao chép!', 'warning')
+                setIsCreatingPositions(false)
+                return
+            }
+
+            setPositionsMap(prev => {
+                const next = { ...prev }
+                Object.entries(updates).forEach(([zId, posList]) => {
+                    const currentList = next[zId] || []
+                    next[zId] = [...currentList, ...posList].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+                })
+                return next
+            })
+
+            showToast(`Đã sao chép thành công ${totalCloned} vị trí!`, 'success')
+            onClose()
+        } catch (err: any) {
+            showToast('Lỗi: ' + err.message, 'error')
+        } finally {
+            setIsCreatingPositions(false)
+        }
+    }
+
+    // Filter zones for cloning (only those that have positions somewhere in their tree)
     async function handleAutoCreatePositions() {
         if (posCount < 1) return showToast('Số lượng phải > 0', 'warning')
 
         setIsCreatingPositions(true)
+        // Give UI a chance to render loading state
+        await new Promise(resolve => setTimeout(resolve, 50))
+
         try {
             if (leafZones.length === 0) {
                 showToast('Không tìm thấy zone cuối cùng nào!', 'warning')
+                setIsCreatingPositions(false)
                 return
             }
 
-            let totalCreated = 0
-            // We need to work on a copy of the map, but we can't easily deep copy the state setter function.
-            // We will build a delta map and merge it.
+            // Optimization: Map zones by ID for O(1) lookup
+            const zoneMap = new Map<string, LocalZone>()
+            zones.forEach(z => zoneMap.set(z.id, z))
 
-            // Wait, setPositionsMap accepts a callback.
-            // But we need to read current state? 
-            // The prop setPositionsMap is a setter. 
-
-            // Logic:
             const updates: Record<string, LocalPosition[]> = {}
+            const pattern = autoPosPattern || `{zone}.${autoPosSuffix}{#}`
 
             for (const leafZone of leafZones) {
-                // Build zone parts map
+                // Build zone parts map efficiently
                 const zoneParts: Record<string, string> = {}
                 const zonePathParts: string[] = []
                 let current: LocalZone | undefined = leafZone
@@ -99,12 +213,10 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
                         const prefix = current.code.replace(/\d+/g, '').toUpperCase()
                         zoneParts[prefix] = current.code
                     }
-                    current = zones.find(z => z.id === current?.parent_id)
+                    current = current.parent_id ? zoneMap.get(current.parent_id) : undefined
                 }
 
                 const zonePath = zonePathParts.join('.')
-
-                const pattern = autoPosPattern || `{zone}.${autoPosSuffix}{#}`
                 let codePattern = pattern.replace(/\{#\}/g, '___POS_NUM___')
                 codePattern = codePattern.replace(/\{zone\}/gi, zonePath)
 
@@ -129,8 +241,6 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
                 updates[leafZone.id] = newPositions
             }
 
-            console.log(`Auto-created positions for ${leafZones.length} zones. Total updates:`, updates)
-
             setPositionsMap(prev => {
                 const next = { ...prev }
                 Object.entries(updates).forEach(([zId, newPos]) => {
@@ -149,6 +259,31 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
         }
     }
 
+    // Filter zones for cloning (only those that have positions somewhere in their tree)
+    const cloneableZones = useMemo(() => {
+        const zonesWithPos = new Map<string, boolean>()
+        const checkTree = (id: string): boolean => {
+            if (zonesWithPos.has(id)) return zonesWithPos.get(id)!
+            const hasDirect = (positionsMap[id] || []).length > 0
+            if (hasDirect) {
+                zonesWithPos.set(id, true)
+                return true
+            }
+            const children = zones.filter(child => child.parent_id === id && child._status !== 'deleted')
+            const result = children.some(child => checkTree(child.id))
+            zonesWithPos.set(id, result)
+            return result
+        }
+
+        return zones.filter(z => {
+            if (z.id === zoneId || z._status === 'deleted') return false
+            return checkTree(z.id)
+        }).filter(z =>
+            z.name.toLowerCase().includes(searchSource.toLowerCase()) ||
+            z.code.toLowerCase().includes(searchSource.toLowerCase())
+        ).slice(0, 10)
+    }, [zones, positionsMap, zoneId, searchSource])
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-md overflow-hidden max-h-[90vh] flex flex-col">
@@ -162,52 +297,46 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
                     </button>
                 </div>
 
-                <div className="p-4 space-y-3 overflow-y-auto flex-1">
+                <div className="p-4 space-y-4 overflow-y-auto flex-1">
                     <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm text-blue-700 dark:text-blue-300">
-                        Đang tạo vị trí cho: <span className="font-bold">{currentZone?.name}</span>
-                        {hasChildren && (
-                            <span className="ml-2 text-xs bg-blue-200 dark:bg-blue-800 px-2 py-0.5 rounded-full">
-                                {leafZones.length} zone cuối cùng
-                            </span>
-                        )}
+                        Mục tiêu: <span className="font-bold">{currentZone?.name}</span> ({currentZone?.code})
                     </div>
 
-                    {hasChildren && (
-                        <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-900 rounded-lg">
+                    {/* Mode Tabs */}
+                    <div className="flex gap-1 p-1 bg-gray-100 dark:bg-gray-900 rounded-lg">
+                        {[
+                            { id: 'manual', label: 'Thủ công', icon: Package },
+                            { id: 'auto', label: 'Tự động', icon: Zap },
+                            { id: 'clone', label: 'Sao chép', icon: Copy }
+                        ].map((t) => (
                             <button
-                                onClick={() => setAutoMode(false)}
-                                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-colors ${!autoMode
-                                    ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white'
-                                    : 'text-gray-500 hover:text-gray-700'
+                                key={t.id}
+                                onClick={() => setMode(t.id as any)}
+                                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-md text-xs font-bold transition-all ${mode === t.id
+                                    ? t.id === 'clone'
+                                        ? 'bg-emerald-500 text-white shadow'
+                                        : t.id === 'auto'
+                                            ? 'bg-indigo-500 text-white shadow'
+                                            : 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white'
+                                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
                                     }`}
                             >
-                                <Package size={16} />
-                                Thủ công
+                                <t.icon size={14} />
+                                {t.label}
                             </button>
-                            <button
-                                onClick={() => setAutoMode(true)}
-                                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-colors ${autoMode
-                                    ? 'bg-gradient-to-r from-purple-500 to-indigo-500 shadow text-white'
-                                    : 'text-gray-500 hover:text-gray-700'
-                                    }`}
-                            >
-                                <Zap size={16} />
-                                Auto ({leafZones.length} zone)
-                            </button>
-                        </div>
-                    )}
+                        ))}
+                    </div>
 
-                    {!autoMode ? (
+                    {mode === 'manual' && (
                         <>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-xs font-medium text-gray-500 mb-1">Mã bắt đầu (Tiền tố)</label>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Tiền tố mã</label>
                                     <input
                                         type="text"
                                         value={posPrefix}
                                         onChange={(e) => setPosPrefix(e.target.value.toUpperCase())}
-                                        className="w-full px-3 py-2 border rounded-lg text-sm font-mono uppercase bg-gray-50 focus:bg-white transition-colors outline-none focus:ring-2 focus:ring-blue-500"
-                                        placeholder="VD: A"
+                                        className="w-full px-3 py-2 border rounded-lg text-sm font-mono uppercase bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
                                 <div>
@@ -216,71 +345,112 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
                                         type="number"
                                         value={posStart}
                                         onChange={(e) => setPosStart(Math.max(0, parseInt(e.target.value) || 0))}
-                                        className="w-full px-3 py-2 border rounded-lg text-sm text-center bg-gray-50 focus:bg-white transition-colors outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="w-full px-3 py-2 border rounded-lg text-sm text-center bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
                             </div>
 
                             <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">Số lượng cần tạo</label>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Số lượng</label>
                                 <div className="flex items-center gap-4">
-                                    <input
-                                        type="range"
-                                        min="1"
-                                        max="100"
-                                        value={posCount}
-                                        onChange={(e) => setPosCount(parseInt(e.target.value))}
-                                        className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                                    />
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        max="1000"
-                                        value={posCount}
-                                        onChange={(e) => setPosCount(Math.max(1, parseInt(e.target.value) || 0))}
-                                        className="w-20 px-2 py-1 text-center font-bold text-lg text-blue-600 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none hover:border-blue-300 transition-colors"
-                                    />
+                                    <input type="range" min="1" max="100" value={posCount} onChange={(e) => setPosCount(parseInt(e.target.value))} className="flex-1" />
+                                    <input type="number" value={posCount} onChange={(e) => setPosCount(Math.max(1, parseInt(e.target.value) || 0))} className="w-20 px-2 py-1 text-center font-bold border rounded-lg" />
                                 </div>
                             </div>
 
-                            <button
-                                onClick={handleCreatePositions}
-                                disabled={isCreatingPositions}
-                                className="w-full py-3 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold rounded-xl shadow-lg transform transition-all active:scale-95 flex items-center justify-center gap-2"
-                            >
-                                {isCreatingPositions ? 'Đang xử lý...' : <><Package size={20} /> Tạo & Gán Ngay</>}
+                            <button onClick={handleCreatePositions} disabled={isCreatingPositions} className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 transition-colors">
+                                {isCreatingPositions ? 'Đang tạo...' : 'Tạo & Gán Ngay'}
                             </button>
                         </>
-                    ) : (
-                        <>
-                            {/* Simplified Auto Mode UI for brevity, since original logic was copied */}
-                            <div className="grid grid-cols-2 gap-2">
+                    )}
+
+                    {mode === 'auto' && (
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Hậu tố vị trí</label>
-                                    <input type="text" value={autoPosSuffix} onChange={(e) => setAutoPosSuffix(e.target.value.toUpperCase())} className="w-full px-2 py-1.5 border rounded text-xs font-mono uppercase" />
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Số bắt đầu</label>
+                                    <input type="number" value={posStart} onChange={(e) => setPosStart(Math.max(0, parseInt(e.target.value) || 0))} className="w-full px-3 py-2 border rounded-lg text-sm text-center" />
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Số bắt đầu</label>
-                                    <input type="number" value={posStart} onChange={(e) => setPosStart(parseInt(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-xs text-center" />
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Số lượng mỗi zone</label>
+                                    <input type="number" value={posCount} onChange={(e) => setPosCount(Math.max(1, parseInt(e.target.value) || 0))} className="w-full px-3 py-2 border rounded-lg text-sm text-center" />
                                 </div>
                             </div>
 
-                            <input
-                                type="text"
-                                value={autoPosPattern || `{zone}.${autoPosSuffix}{#}`}
-                                onChange={(e) => setAutoPosPattern(e.target.value.toUpperCase())}
-                                placeholder="{zone}.V{#}"
-                                className="w-full font-mono text-xs px-2 py-1 rounded border mb-2"
-                            />
+                            <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-dashed border-gray-200 dark:border-gray-700 space-y-3">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Mã Level gợi ý</label>
+                                    <div className="flex items-center gap-1">
+                                        <code className="flex-1 px-2 py-1.5 bg-white dark:bg-gray-800 border rounded text-xs font-mono text-purple-600 break-all">{availableTags}</code>
+                                        <button onClick={handleCopyTags} className="p-1.5 bg-white border rounded hover:bg-gray-50 transition-colors">
+                                            {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+                                        </button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Pattern (Mẫu mã)</label>
+                                    <input value={autoPosPattern} onChange={(e) => setAutoPosPattern(e.target.value)} className="w-full font-mono text-sm px-2 py-1.5 rounded border uppercase outline-none focus:border-blue-500" />
+                                    <p className="text-[10px] text-gray-400 mt-1">Dùng {'{zone}'}, {'{#}'} hoặc các thẻ Level phía trên.</p>
+                                </div>
+                            </div>
+
+                            <button onClick={handleAutoCreatePositions} disabled={isCreatingPositions} className="w-full py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 transition-colors">
+                                {isCreatingPositions ? 'Đang xử lý...' : `Tạo ${leafZones.length * posCount} Vị Trí`}
+                            </button>
+                        </div>
+                    )}
+
+                    {mode === 'clone' && (
+                        <div className="space-y-4">
+                            <div className="space-y-2">
+                                <label className="block text-xs font-medium text-gray-500">Chọn Zone nguồn để sao chép cấu trúc</label>
+                                <input
+                                    type="text"
+                                    placeholder="Tìm theo tên hoặc mã..."
+                                    value={searchSource}
+                                    onChange={(e) => setSearchSource(e.target.value)}
+                                    className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 focus:bg-white outline-none focus:border-emerald-500 transition-colors"
+                                />
+
+                                <div className="grid grid-cols-1 gap-2 max-h-[160px] overflow-y-auto">
+                                    {cloneableZones.map(z => (
+                                        <button
+                                            key={z.id}
+                                            onClick={() => setSourceId(z.id)}
+                                            className={`flex items-center justify-between p-2 rounded-lg border text-sm transition-all ${sourceId === z.id
+                                                ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
+                                                : 'border-gray-100 hover:border-emerald-200 hover:bg-emerald-50/50'}`}
+                                        >
+                                            <div className="flex flex-col items-start">
+                                                <span className="font-bold text-gray-800 dark:text-gray-200">{z.name}</span>
+                                                <span className="text-[10px] font-mono text-gray-400">{z.code}</span>
+                                            </div>
+                                            {sourceId === z.id && <Check size={16} className="text-emerald-500" />}
+                                        </button>
+                                    ))}
+                                    {cloneableZones.length === 0 && (
+                                        <div className="py-4 text-center text-xs text-gray-400 italic">Không tìm thấy zone nào có vị trí</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {sourceId && (
+                                <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-900/50">
+                                    <p className="text-xs text-emerald-800 dark:text-emerald-300">
+                                        💡 Hệ thống sẽ copy toàn bộ vị trí từ <b>{zones.find(z => z.id === sourceId)?.name}</b> và đổi tiền tố mã
+                                        từ <code className="bg-emerald-100 px-1 rounded">{zones.find(z => z.id === sourceId)?.code}</code> thành <code className="bg-emerald-100 px-1 rounded">{currentZone?.code}</code>.
+                                    </p>
+                                </div>
+                            )}
 
                             <button
-                                onClick={handleAutoCreatePositions}
-                                disabled={isCreatingPositions}
-                                className="w-full py-2 bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-bold text-sm rounded-lg shadow-md flex items-center justify-center gap-2"
+                                onClick={handleClonePositions}
+                                disabled={isCreatingPositions || !sourceId}
+                                className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95"
                             >
-                                {isCreatingPositions ? 'Đang xử lý...' : <><Zap size={16} /> Tạo {leafZones.length * posCount} Vị Trí</>}
+                                {isCreatingPositions ? 'Đang sao chép...' : <><Copy size={18} /> Sao chép Ngay</>}
                             </button>
-                        </>
+                        </div>
                     )}
                 </div>
             </div>
