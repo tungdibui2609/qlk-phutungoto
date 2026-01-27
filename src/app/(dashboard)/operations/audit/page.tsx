@@ -7,7 +7,7 @@ import { AuditSessionList } from './_components/AuditSessionList'
 import { CreateAuditModal } from './_components/CreateAuditModal'
 
 export default function AuditPage() {
-    const { sessions, loading, fetchSessions, createSession } = useAudit()
+    const { sessions, loading, fetchSessions, createSession, deleteSession } = useAudit()
     const [showCreateModal, setShowCreateModal] = useState(false)
 
     useEffect(() => {
@@ -34,7 +34,11 @@ export default function AuditPage() {
             </div>
 
             {/* List */}
-            <AuditSessionList sessions={sessions} loading={loading} />
+            <AuditSessionList
+                sessions={sessions}
+                loading={loading}
+                onDelete={deleteSession}
+            />
 
             {/* Modal */}
             <CreateAuditModal

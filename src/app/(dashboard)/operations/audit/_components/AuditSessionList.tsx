@@ -1,15 +1,16 @@
 'use client'
 
 import { InventoryCheck } from '../_hooks/useAudit'
-import { Calendar, User, FileText, ChevronRight, ClipboardCheck } from 'lucide-react'
+import { Calendar, User, FileText, ChevronRight, ClipboardCheck, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 
 interface AuditSessionListProps {
     sessions: InventoryCheck[]
     loading: boolean
+    onDelete: (id: string) => void
 }
 
-export function AuditSessionList({ sessions, loading }: AuditSessionListProps) {
+export function AuditSessionList({ sessions, loading, onDelete }: AuditSessionListProps) {
     if (loading) {
         return (
             <div className="space-y-4">
@@ -81,7 +82,22 @@ export function AuditSessionList({ sessions, loading }: AuditSessionListProps) {
                             </div>
                         </div>
 
-                        <ChevronRight className="text-slate-300 group-hover:text-orange-500 transition-colors" size={20} />
+                        <div className="flex items-center gap-2">
+                            {['DRAFT', 'IN_PROGRESS', 'CANCELLED', 'REJECTED'].includes(session.status) && (
+                                <button
+                                    onClick={(e) => {
+                                        e.preventDefault()
+                                        e.stopPropagation()
+                                        onDelete(session.id)
+                                    }}
+                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                    title="Xóa phiếu"
+                                >
+                                    <Trash2 size={18} />
+                                </button>
+                            )}
+                            <ChevronRight className="text-slate-300 group-hover:text-orange-500 transition-colors" size={20} />
+                        </div>
                     </div>
                 </Link>
             ))}
