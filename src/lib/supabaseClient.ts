@@ -190,11 +190,58 @@ type InventoryCheckItemsTable = {
     ]
 }
 
+type OperationalNotesTable = {
+    Row: {
+        id: string
+        content: string
+        user_id: string
+        parent_id: string | null
+        images: string[]
+        created_at: string
+        updated_at: string
+    }
+    Insert: {
+        id?: string
+        content: string
+        user_id: string
+        parent_id?: string | null
+        images?: string[]
+        created_at?: string
+        updated_at?: string
+    }
+    Update: {
+        id?: string
+        content?: string
+        user_id?: string
+        parent_id?: string | null
+        images?: string[]
+        created_at?: string
+        updated_at?: string
+    }
+    Relationships: [
+        {
+            foreignKeyName: "operational_notes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+        },
+        {
+            foreignKeyName: "operational_notes_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "operational_notes"
+            referencedColumns: ["id"]
+        }
+    ]
+}
+
 // Extend the existing Tables type using intersection
 type TypedTables = Database['public']['Tables'] & {
     audit_logs: AuditLogsTable
     inventory_checks: InventoryChecksTable
     inventory_check_items: InventoryCheckItemsTable
+    operational_notes: OperationalNotesTable
 }
 
 // Manually extend the Database type
