@@ -9,6 +9,8 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { Unit, ProductUnit } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { lotService } from '@/services/warehouse/lotService'
+import { parseQuantity, formatQuantityFull } from '@/lib/numberUtils'
+import { QuantityInput } from '@/components/ui/QuantityInput'
 
 interface LotExportModalProps {
     lot: Lot
@@ -22,7 +24,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
     const { systemType, currentSystem } = useSystem()
     const { showToast } = useToast()
     const { toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
-    const [exportQuantities, setExportQuantities] = useState<Record<string, string>>({}) // Change to string for text input
+    const [exportQuantities, setExportQuantities] = useState<Record<string, number>>({})
     const [exportUnits, setExportUnits] = useState<Record<string, string>>({})
     const [customerName, setCustomerName] = useState('')
     const [customers, setCustomers] = useState<any[]>([])
@@ -34,10 +36,10 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
 
     useEffect(() => {
         // Initialize with full quantities and current units
-        const initialQuantities: Record<string, string> = {}
+        const initialQuantities: Record<string, number> = {}
         const initialUnits: Record<string, string> = {}
         lot.lot_items?.forEach(item => {
-            initialQuantities[item.id] = (item.quantity || 0).toString().replace('.', ',')
+            initialQuantities[item.id] = item.quantity || 0
             initialUnits[item.id] = item.unit || item.products?.unit || ''
         })
         setExportQuantities(initialQuantities)
@@ -95,8 +97,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
         return baseQty / rate
     }
 
-    const handleQuantityChange = (itemId: string, value: string) => {
-        // Allow user to type commas or dots
+    const handleQuantityChange = (itemId: string, value: number) => {
         setExportQuantities(prev => ({
             ...prev,
             [itemId]: value
@@ -108,9 +109,9 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
     }
 
     const handleExportAll = () => {
-        const fullQuantities: Record<string, string> = {}
+        const fullQuantities: Record<string, number> = {}
         lot.lot_items?.forEach(item => {
-            fullQuantities[item.id] = (item.quantity || 0).toString().replace('.', ',')
+            fullQuantities[item.id] = item.quantity || 0
         })
         setExportQuantities(fullQuantities)
     }
@@ -146,7 +147,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
     }
 
     const handleExport = async () => {
-        const itemsToExport = Object.entries(exportQuantities).filter(([_, qty]) => parseFloat(qty.replace(',', '.')) > 0)
+        const itemsToExport = Object.entries(exportQuantities).filter(([_, qty]) => qty > 0)
         if (itemsToExport.length === 0) {
             setError('Vui lòng nhập số lượng muốn xuất cho ít nhất 1 sản phẩm')
             return
@@ -164,8 +165,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
             const exportItemsData: Record<string, any> = {}
 
             for (const item of lot.lot_items || []) {
-                const rawQty = exportQuantities[item.id] || '0'
-                const selectedQty = parseFloat(rawQty.replace(',', '.')) || 0
+                const selectedQty = exportQuantities[item.id] || 0
                 const selectedUnit = exportUnits[item.id] || item.unit || item.products?.unit || ''
 
                 const consumedQty = getConsumedOriginalQty(item.id, selectedQty, selectedUnit)
@@ -346,7 +346,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                                         <div className="text-right shrink-0">
                                             <div className="text-xs text-slate-400 font-bold uppercase mb-1">Hiện có</div>
                                             <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                                                {item.quantity} {(item as any).unit || item.products?.unit}
+                                                {formatQuantityFull(item.quantity)} {(item as any).unit || item.products?.unit}
                                             </div>
                                         </div>
                                     </div>
@@ -354,10 +354,9 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                                     <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
                                         <span className="text-xs font-bold text-slate-400 uppercase">Số lượng xuất:</span>
                                         <div className="flex items-center gap-2">
-                                            <input
-                                                type="text"
+                                            <QuantityInput
                                                 value={exportQuantities[item.id] || ''}
-                                                onChange={(e) => handleQuantityChange(item.id, e.target.value)}
+                                                onChange={(val) => handleQuantityChange(item.id, val)}
                                                 className="w-24 p-2 text-sm font-bold text-center border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all font-mono"
                                                 placeholder="0"
                                             />
@@ -382,14 +381,13 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                                         </div>
                                     </div>
                                     {(() => {
-                                        const rawQty = exportQuantities[item.id] || '0'
-                                        const selectedQty = parseFloat(rawQty.replace(',', '.')) || 0
+                                        const selectedQty = exportQuantities[item.id] || 0
                                         const consumed = getConsumedOriginalQty(item.id, selectedQty, exportUnits[item.id] || '')
                                         const isOver = consumed > (item.quantity || 0) + 0.000001
                                         if (consumed > 0 && Math.abs(consumed - selectedQty) > 0.0001) {
                                             return (
                                                 <div className={`mt-2 text-[10px] font-bold text-right ${isOver ? 'text-red-500' : 'text-slate-400'}`}>
-                                                    ~ {consumed.toLocaleString()} {(item as any).unit || item.products?.unit} (gốc)
+                                                    ~ {formatQuantityFull(consumed)} {(item as any).unit || item.products?.unit} (gốc)
                                                     {isOver && ' - Vượt quá tồn kho!'}
                                                 </div>
                                             )
@@ -424,7 +422,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                     </button>
                     <button
                         onClick={handleExport}
-                        disabled={loading || Object.values(exportQuantities).every(v => !v || parseFloat(v.replace(',', '.')) === 0) || !customerName.trim()}
+                        disabled={loading || Object.values(exportQuantities).every(v => v === 0) || !customerName.trim()}
                         className="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:shadow-none transition-all active:scale-95 flex items-center gap-2"
                     >
                         {loading ? (

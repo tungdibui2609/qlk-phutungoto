@@ -1,6 +1,6 @@
-import React, { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { TagDisplay } from '../lots/TagDisplay'
+import { formatQuantityFull } from '@/lib/numberUtils'
 
 interface GroupedProduct {
     key: string
@@ -51,11 +51,10 @@ export default function MobileLotList({ items, expandedProducts, toggleExpand }:
                                     <div className="flex items-center gap-2 mb-1">
                                         <span className="font-mono text-emerald-600 font-bold text-sm">{item.productSku}</span>
                                         {hasVariants && (
-                                            <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
-                                                isExpanded
-                                                ? 'bg-emerald-600 text-white'
-                                                : 'bg-emerald-100 text-emerald-700'
-                                            }`}>
+                                            <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${isExpanded
+                                                    ? 'bg-emerald-600 text-white'
+                                                    : 'bg-emerald-100 text-emerald-700'
+                                                }`}>
                                                 {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
                                                 {variantCount} biến thể
                                             </span>
@@ -64,7 +63,7 @@ export default function MobileLotList({ items, expandedProducts, toggleExpand }:
                                     <h3 className="font-bold text-stone-900 leading-tight">{item.productName}</h3>
                                 </div>
                                 <div className="text-right shrink-0">
-                                    <div className="text-xl font-bold text-stone-900">{item.totalQuantity.toLocaleString()}</div>
+                                    <div className="text-xl font-bold text-stone-900">{formatQuantityFull(item.totalQuantity)}</div>
                                     <div className="text-xs text-stone-500">{item.unit}</div>
                                 </div>
                             </div>
@@ -91,7 +90,7 @@ export default function MobileLotList({ items, expandedProducts, toggleExpand }:
                                                     )}
                                                 </div>
                                                 <div className="font-medium text-stone-700 whitespace-nowrap">
-                                                    {qty.toLocaleString()} <span className="text-xs text-stone-400 font-normal">{item.unit}</span>
+                                                    {formatQuantityFull(qty)} <span className="text-xs text-stone-400 font-normal">{item.unit}</span>
                                                 </div>
                                             </div>
                                         )

@@ -5,11 +5,13 @@ import { ImageUpload } from '@/components/ui/ImageUpload'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { logActivity } from '@/lib/audit'
+import { parseQuantity } from '@/lib/numberUtils'
+import { QuantityInput } from '@/components/ui/QuantityInput'
 import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '../_hooks/useLotManagement'
 
 interface LotItemInput {
     productId: string
-    quantity: number
+    quantity: number | string
     unit: string
 }
 
@@ -277,11 +279,16 @@ export function LotForm({
     async function handleSubmit() {
         if (!newLotCode.trim()) return
 
-        const validItems = lotItems.filter(item => item.productId && item.quantity > 0)
-        const totalQuantity = validItems.reduce((sum, item) => sum + item.quantity, 0)
+        const processedItems = lotItems.map(item => ({
+            ...item,
+            quantity: parseQuantity(item.quantity)
+        }))
+        const validItems = processedItems.filter(item => item.productId && item.quantity > 0)
+        const totalQuantity = Number(validItems.reduce((sum, item) => sum + item.quantity, 0).toFixed(6))
 
-        // Prepare History Entry if new Lot
-        const systemHistory: any = (editingLot?.metadata as any)?.system_history || { exports: [], inbound: [] }
+        // Prepare History Entry
+        let systemHistory: any = (editingLot?.metadata as any)?.system_history || { exports: [], inbound: [] }
+
         if (!editingLot) {
             const inboundItems: Record<string, any> = {}
             validItems.forEach((item, idx) => {
@@ -305,6 +312,47 @@ export function LotForm({
                 items: inboundItems,
                 draft: true // Marked as draft for the inbound buffer
             })
+        } else {
+            // Edit Mode: Update existing draft or create adjustment
+            const inboundItems: Record<string, any> = {}
+            validItems.forEach((item, idx) => {
+                const product = products.find(p => p.id === item.productId)
+                inboundItems[idx] = {
+                    product_id: item.productId,
+                    product_sku: product?.sku,
+                    product_name: product?.name,
+                    quantity: item.quantity,
+                    unit: item.unit,
+                    price: (product as any)?.cost_price || 0
+                }
+            })
+
+            if (!systemHistory.inbound) systemHistory.inbound = []
+            const existingDraftIdx = systemHistory.inbound.findIndex((inb: any) => inb.draft === true)
+
+            if (existingDraftIdx >= 0) {
+                // Update existing draft to reflect new state
+                systemHistory.inbound[existingDraftIdx] = {
+                    ...systemHistory.inbound[existingDraftIdx],
+                    supplier_id: selectedSupplierId || null,
+                    supplier_name: suppliers.find(s => s.id === selectedSupplierId)?.name || 'N/A',
+                    items: inboundItems,
+                    is_edit: true,
+                    updated_at: new Date().toISOString()
+                }
+            } else {
+                // Original was already finalized, create an adjustment draft
+                systemHistory.inbound.push({
+                    id: crypto.randomUUID(),
+                    date: new Date().toISOString(),
+                    supplier_id: selectedSupplierId || null,
+                    supplier_name: suppliers.find(s => s.id === selectedSupplierId)?.name || 'N/A',
+                    items: inboundItems,
+                    draft: true,
+                    is_edit: true,
+                    is_adjustment: true
+                })
+            }
         }
 
         const lotData = {
@@ -368,7 +416,7 @@ export function LotForm({
             const itemsToInsert = validItems.map(item => ({
                 lot_id: lotId,
                 product_id: item.productId,
-                quantity: item.quantity,
+                quantity: Number(item.quantity.toFixed(6)),
                 unit: item.unit
             }))
 
@@ -625,7 +673,7 @@ export function LotForm({
                         <label className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
                             <span>Danh sách sản phẩm ({lotItems.length})</span>
                             <button
-                                onClick={() => setLotItems([...lotItems, { productId: '', quantity: 0, unit: '' }])}
+                                onClick={() => setLotItems([...lotItems, { productId: '', quantity: '', unit: '' }])}
                                 className="text-xs flex items-center gap-1 text-orange-600 hover:text-orange-700 font-medium px-2 py-1 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
                             >
                                 <Plus size={14} />
@@ -673,20 +721,16 @@ export function LotForm({
                                     </div>
 
                                     <div className="w-full md:w-32 space-y-1">
-                                        <input
-                                            type="number"
-                                            min="1"
+                                        <QuantityInput
                                             placeholder="SL"
-                                            value={item.quantity || ''}
-                                            onChange={(e) => {
-                                                const val = parseInt(e.target.value) || 0
+                                            value={item.quantity}
+                                            onChange={(val) => {
                                                 setLotItems(prev => {
                                                     const newItems = [...prev]
                                                     newItems[index] = { ...newItems[index], quantity: val }
                                                     return newItems
                                                 })
                                             }}
-                                            className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-sm transition-all"
                                         />
                                     </div>
 

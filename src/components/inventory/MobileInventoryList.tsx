@@ -1,3 +1,5 @@
+import { formatQuantityFull } from '@/lib/numberUtils'
+
 interface InventoryItem {
     productCode: string
     productName: string
@@ -52,19 +54,19 @@ export default function MobileInventoryList({ items }: MobileInventoryListProps)
                     <div className="grid grid-cols-2 gap-3 pt-2 border-t border-stone-100">
                         <div>
                             <div className="text-xs text-stone-500">Tồn đầu</div>
-                            <div className="font-medium text-stone-700">{item.opening.toLocaleString()}</div>
+                            <div className="font-medium text-stone-700">{formatQuantityFull(item.opening)}</div>
                         </div>
                         <div>
                             <div className="text-xs text-stone-500">Tồn cuối</div>
-                            <div className="font-bold text-stone-900">{item.balance.toLocaleString()}</div>
+                            <div className="font-bold text-stone-900">{formatQuantityFull(item.balance)}</div>
                         </div>
                         <div>
                             <div className="text-xs text-stone-500">Nhập</div>
-                            <div className="font-medium text-emerald-600">+{item.qtyIn.toLocaleString()}</div>
+                            <div className="font-medium text-emerald-600">+{formatQuantityFull(item.qtyIn)}</div>
                         </div>
                         <div>
                             <div className="text-xs text-stone-500">Xuất</div>
-                            <div className="font-medium text-rose-600">-{item.qtyOut.toLocaleString()}</div>
+                            <div className="font-medium text-rose-600">-{formatQuantityFull(item.qtyOut)}</div>
                         </div>
                     </div>
                 </div>

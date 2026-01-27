@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { Search, Loader2, Printer, Warehouse } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
+import { formatQuantityFull } from '@/lib/numberUtils'
 import InventoryByLot from '@/components/inventory/InventoryByLot'
 import InventoryByTag from '@/components/inventory/InventoryByTag'
 import InventoryReconciliation from '@/components/inventory/InventoryReconciliation'
@@ -265,7 +266,7 @@ export default function InventoryPage() {
 
                     {/* Content */}
                     {loading ? (
-                         <div className="p-8 text-center text-stone-500 bg-white dark:bg-stone-900 rounded-lg border border-stone-200 dark:border-stone-800">
+                        <div className="p-8 text-center text-stone-500 bg-white dark:bg-stone-900 rounded-lg border border-stone-200 dark:border-stone-800">
                             <div className="flex items-center justify-center gap-2">
                                 <Loader2 className="w-4 h-4 animate-spin" />
                                 <span>Đang tải dữ liệu...</span>
@@ -282,18 +283,18 @@ export default function InventoryPage() {
                             <div className="hidden md:block rounded-md border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 shadow-sm overflow-hidden">
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-sm text-left">
-                                <thead className="bg-stone-50 dark:bg-stone-800/50 text-stone-500 dark:text-stone-400 font-medium">
-                                    <tr>
-                                        <th className="px-4 py-3">Kho</th>
-                                        <th className="px-4 py-3">Mã SP</th>
-                                        <th className="px-4 py-3">Tên sản phẩm</th>
-                                        <th className="px-4 py-3 text-right">Tồn đầu</th>
-                                        <th className="px-4 py-3 text-right">Nhập</th>
-                                        <th className="px-4 py-3 text-right">Xuất</th>
-                                        <th className="px-4 py-3 text-right">Tồn cuối</th>
-                                        <th className="px-4 py-3 text-center">ĐVT</th>
-                                    </tr>
-                                </thead>
+                                        <thead className="bg-stone-50 dark:bg-stone-800/50 text-stone-500 dark:text-stone-400 font-medium">
+                                            <tr>
+                                                <th className="px-4 py-3">Kho</th>
+                                                <th className="px-4 py-3">Mã SP</th>
+                                                <th className="px-4 py-3">Tên sản phẩm</th>
+                                                <th className="px-4 py-3 text-right">Tồn đầu</th>
+                                                <th className="px-4 py-3 text-right">Nhập</th>
+                                                <th className="px-4 py-3 text-right">Xuất</th>
+                                                <th className="px-4 py-3 text-right">Tồn cuối</th>
+                                                <th className="px-4 py-3 text-center">ĐVT</th>
+                                            </tr>
+                                        </thead>
                                         <tbody className="divide-y divide-stone-200 dark:divide-stone-800">
                                             {items.length === 0 ? (
                                                 <tr>
@@ -321,10 +322,10 @@ export default function InventoryPage() {
                                                                     </span>
                                                                 )}
                                                             </td>
-                                                            <td className="px-4 py-3 text-right tabular-nums text-stone-600">{item.opening.toLocaleString()}</td>
-                                                            <td className="px-4 py-3 text-right tabular-nums text-emerald-600 font-medium">+{item.qtyIn.toLocaleString()}</td>
-                                                            <td className="px-4 py-3 text-right tabular-nums text-rose-600 font-medium">-{item.qtyOut.toLocaleString()}</td>
-                                                            <td className="px-4 py-3 text-right tabular-nums font-bold text-stone-900 dark:text-stone-100">{item.balance.toLocaleString()}</td>
+                                                            <td className="px-4 py-3 text-right tabular-nums text-stone-600">{formatQuantityFull(item.opening)}</td>
+                                                            <td className="px-4 py-3 text-right tabular-nums text-emerald-600 font-medium">+{formatQuantityFull(item.qtyIn)}</td>
+                                                            <td className="px-4 py-3 text-right tabular-nums text-rose-600 font-medium">-{formatQuantityFull(item.qtyOut)}</td>
+                                                            <td className="px-4 py-3 text-right tabular-nums font-bold text-stone-900 dark:text-stone-100">{formatQuantityFull(item.balance)}</td>
                                                             <td className="px-4 py-3 text-center text-stone-500">
                                                                 {item.unit}
                                                             </td>
@@ -333,10 +334,10 @@ export default function InventoryPage() {
                                                     {/* Summary Row */}
                                                     <tr className="bg-stone-100/50 dark:bg-stone-800 font-bold border-t-2 border-stone-300 dark:border-stone-700">
                                                         <td colSpan={3} className="px-4 py-3 text-right text-stone-600 dark:text-stone-400">Tổng cộng:</td>
-                                                        <td className="px-4 py-3 text-right tabular-nums">{totals.opening.toLocaleString()}</td>
-                                                        <td className="px-4 py-3 text-right tabular-nums text-emerald-700">+{totals.qtyIn.toLocaleString()}</td>
-                                                        <td className="px-4 py-3 text-right tabular-nums text-rose-700">-{totals.qtyOut.toLocaleString()}</td>
-                                                        <td className="px-4 py-3 text-right tabular-nums text-stone-900 dark:text-white">{totals.balance.toLocaleString()}</td>
+                                                        <td className="px-4 py-3 text-right tabular-nums">{formatQuantityFull(totals.opening)}</td>
+                                                        <td className="px-4 py-3 text-right tabular-nums text-emerald-700">+{formatQuantityFull(totals.qtyIn)}</td>
+                                                        <td className="px-4 py-3 text-right tabular-nums text-rose-700">-{formatQuantityFull(totals.qtyOut)}</td>
+                                                        <td className="px-4 py-3 text-right tabular-nums text-stone-900 dark:text-white">{formatQuantityFull(totals.balance)}</td>
                                                         <td></td>
                                                     </tr>
                                                 </>

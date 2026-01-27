@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Loader2, Printer } from 'lucide-react'
+import { formatQuantityFull } from '@/lib/numberUtils'
 
 // Types
 interface CompanyInfo {
@@ -528,10 +529,10 @@ export default function InventoryPrintPage() {
                                     </td>
                                     <td className="border border-black p-1">{item.productCode}</td>
                                     <td className="border border-black p-1 text-center">{item.unit}</td>
-                                    <td className="border border-black p-1 text-right">{item.opening.toLocaleString()}</td>
-                                    <td className="border border-black p-1 text-right">{item.qtyIn.toLocaleString()}</td>
-                                    <td className="border border-black p-1 text-right">{item.qtyOut.toLocaleString()}</td>
-                                    <td className="border border-black p-1 text-right font-bold">{item.balance.toLocaleString()}</td>
+                                    <td className="border border-black p-1 text-right">{formatQuantityFull(item.opening)}</td>
+                                    <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyIn)}</td>
+                                    <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyOut)}</td>
+                                    <td className="border border-black p-1 text-right font-bold">{formatQuantityFull(item.balance)}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -562,7 +563,7 @@ export default function InventoryPrintPage() {
                                         <td className="border border-black p-1">{item.productName}</td>
                                         <td className="border border-black p-1">{item.supplierName}</td>
                                         <td className="border border-black p-1 text-center">{item.inboundDate ? new Date(item.inboundDate).toLocaleDateString('vi-VN') : '-'}</td>
-                                        <td className="border border-black p-1 text-right font-bold">{item.quantity.toLocaleString()}</td>
+                                        <td className="border border-black p-1 text-right font-bold">{formatQuantityFull(item.quantity)}</td>
                                         <td className="border border-black p-1 text-center">{item.productUnit}</td>
                                     </tr>
                                 ))
@@ -593,10 +594,10 @@ export default function InventoryPrintPage() {
                                         <td className="border border-black p-1">{item.productCode}</td>
                                         <td className="border border-black p-1">{item.productName}</td>
                                         <td className="border border-black p-1 text-center">{item.unit}</td>
-                                        <td className="border border-black p-1 text-right">{item.accountingBalance.toLocaleString()}</td>
-                                        <td className="border border-black p-1 text-right">{item.lotBalance.toLocaleString()}</td>
+                                        <td className="border border-black p-1 text-right">{formatQuantityFull(item.accountingBalance)}</td>
+                                        <td className="border border-black p-1 text-right">{formatQuantityFull(item.lotBalance)}</td>
                                         <td className={`border border-black p-1 text-right font-bold ${item.diff !== 0 ? 'text-red-600 print:text-black' : ''}`}>
-                                            {item.diff > 0 ? '+' : ''}{item.diff.toLocaleString()}
+                                            {item.diff > 0 ? '+' : ''}{formatQuantityFull(item.diff)}
                                         </td>
                                         <td className="border border-black p-1 text-center">
                                             {item.diff !== 0 ? 'Lệch' : 'Khớp'}

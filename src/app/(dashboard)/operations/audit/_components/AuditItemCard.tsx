@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { InventoryCheckItem } from '../_hooks/useAudit'
 import { Check, AlertTriangle, MessageSquare, Package, Minus, Plus, X } from 'lucide-react'
+import { formatQuantityFull } from '@/lib/numberUtils'
+import { QuantityInput } from '@/components/ui/QuantityInput'
 import Image from 'next/image'
 
 interface AuditItemCardProps {
@@ -11,42 +13,31 @@ interface AuditItemCardProps {
 }
 
 export function AuditItemCard({ item, onUpdate }: AuditItemCardProps) {
-    const [qty, setQty] = useState<string>(item.actual_quantity !== null ? item.actual_quantity.toString() : '')
+    const [qty, setQty] = useState<number | ''>(item.actual_quantity !== null ? item.actual_quantity : '')
     const [note, setNote] = useState(item.note || '')
     const [showNote, setShowNote] = useState(!!item.note)
 
     // Update local state when prop changes (e.g. from quick fill)
     useEffect(() => {
-        setQty(item.actual_quantity !== null ? item.actual_quantity.toString() : '')
+        setQty(item.actual_quantity !== null ? item.actual_quantity : '')
     }, [item.actual_quantity])
 
-    const handleSave = (newQty: string) => {
-        const val = parseFloat(newQty)
-        if (!isNaN(val)) {
-            onUpdate(item.id, val, note)
-        } else if (newQty === '') {
-            // Handle clearing? Currently API expects number.
-            // If empty, maybe don't update or send null? Hook expects number | null.
-            // Let's assume empty string -> null
-            // checking hook: updateItem(id, actualQty, note)
-            // But hook type says actualQty: number | null
-            // So if '', pass null?
-            // Actually let's just keep it as is if invalid, or 0?
-            // Usually empty means "reset".
-            // For now, only save valid numbers.
+    const handleSave = (newQty: number | '') => {
+        if (typeof newQty === 'number') {
+            onUpdate(item.id, newQty, note)
         }
     }
 
     const handleBlur = () => {
-        if (qty === '') return // Don't save empty on blur unless intended?
+        if (qty === '') return
         handleSave(qty)
     }
 
     const adjustQty = (delta: number) => {
-        const current = parseFloat(qty) || 0
+        const current = typeof qty === 'number' ? qty : 0
         const newVal = Math.max(0, current + delta)
-        setQty(newVal.toString())
-        handleSave(newVal.toString())
+        setQty(newVal)
+        handleSave(newVal)
     }
 
     const isMatch = item.actual_quantity !== null && item.difference === 0
@@ -102,7 +93,7 @@ export function AuditItemCard({ item, onUpdate }: AuditItemCardProps) {
                 <div className="flex flex-col gap-1">
                     <span className="text-xs text-slate-500">Hệ thống</span>
                     <span className="font-mono font-bold text-lg text-slate-700 dark:text-slate-300">
-                        {item.system_quantity} <span className="text-xs font-normal text-slate-400">{item.unit}</span>
+                        {formatQuantityFull(item.system_quantity)} <span className="text-xs font-normal text-slate-400">{item.unit}</span>
                     </span>
                 </div>
 
@@ -115,11 +106,10 @@ export function AuditItemCard({ item, onUpdate }: AuditItemCardProps) {
                         >
                             <Minus size={18} />
                         </button>
-                        <input
-                            type="number"
+                        <QuantityInput
                             value={qty}
-                            onChange={(e) => setQty(e.target.value)}
-                            onBlur={handleBlur}
+                            onChange={(val) => setQty(val)}
+                            onBlurCustom={handleBlur}
                             placeholder="-"
                             className={`
                                 flex-1 h-10 rounded-xl text-center font-bold text-lg outline-none border-2 transition-all
@@ -129,7 +119,7 @@ export function AuditItemCard({ item, onUpdate }: AuditItemCardProps) {
                                 ${isUncounted ? 'border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-700' : ''}
                             `}
                         />
-                         <button
+                        <button
                             onClick={() => adjustQty(1)}
                             className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 active:scale-95 transition-all"
                         >
@@ -152,7 +142,7 @@ export function AuditItemCard({ item, onUpdate }: AuditItemCardProps) {
 
             {/* Note & Diff */}
             <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800/50">
-                 <button
+                <button
                     onClick={() => setShowNote(!showNote)}
                     className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${note ? 'text-orange-600' : 'text-slate-400 hover:text-slate-600'}`}
                 >
@@ -162,7 +152,7 @@ export function AuditItemCard({ item, onUpdate }: AuditItemCardProps) {
 
                 {item.actual_quantity !== null && item.difference !== 0 && (
                     <span className={`text-xs font-bold ${item.difference > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        Lệch: {item.difference > 0 ? '+' : ''}{item.difference}
+                        Lệch: {item.difference > 0 ? '+' : ''}{formatQuantityFull(item.difference)}
                     </span>
                 )}
             </div>
@@ -171,7 +161,7 @@ export function AuditItemCard({ item, onUpdate }: AuditItemCardProps) {
                 <textarea
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
-                    onBlur={() => onUpdate(item.id, parseFloat(qty) || 0, note)}
+                    onBlur={() => onUpdate(item.id, (typeof qty === 'number' ? qty : 0), note)}
                     placeholder="Nhập ghi chú kiểm kê..."
                     className="w-full text-sm p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:border-orange-500 resize-none"
                     rows={2}

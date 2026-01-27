@@ -5,6 +5,8 @@ import { X, Search, ChevronDown, ChevronUp, MapPin, Boxes, Check, AlertCircle, I
 import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { supabase } from '@/lib/supabaseClient'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { parseQuantity, formatQuantityFull } from '@/lib/numberUtils'
+import { QuantityInput } from '@/components/ui/QuantityInput'
 
 interface LotMergeModalProps {
     targetLot: Lot
@@ -67,9 +69,9 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
         setExpandedLots(prev => ({ ...prev, [lotId]: !prev[lotId] }))
     }
 
-    const handleQuantityChange = (itemId: string, maxQty: number, value: string) => {
-        const qty = parseFloat(value)
-        if (isNaN(qty) || qty < 0) return
+    const handleQuantityChange = (itemId: string, maxQty: number, value: number) => {
+        const qty = value
+        if (qty < 0) return
 
         if (qty === 0) {
             const newSelected = { ...selectedItems }
@@ -287,7 +289,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                         {sourceLots.length > 0 ? (
                             sourceLots.map(lot => {
                                 const isExpanded = expandedLots[lot.id]
-                                const isAnySelected = lot.lot_items?.some(item => !!selectedItems[item.id])
+                                const isAnySelected = lot.lot_items?.some(item => selectedItems[item.id] !== undefined)
                                 const isAllSelected = lot.lot_items?.every(item => selectedItems[item.id] === item.quantity)
 
                                 return (
@@ -321,7 +323,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                                                             }, {});
                                                             return Object.entries(summary).map(([unit, total]) => (
                                                                 <span key={unit} className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30">
-                                                                    TỔNG SL: {total as number} {unit}
+                                                                    TỔNG SL: {formatQuantityFull(total as number)} {unit}
                                                                 </span>
                                                             ));
                                                         })()}
@@ -345,13 +347,13 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                                                     </button>
                                                 </div>
                                                 {lot.lot_items?.map(item => (
-                                                    <div key={item.id} className={`p-2 rounded-xl border transition-all flex items-center gap-3 ${selectedItems[item.id] ? 'bg-white dark:bg-slate-800 border-emerald-200' : 'bg-transparent border-slate-200/50'}`}>
+                                                    <div key={item.id} className={`p-2 rounded-xl border transition-all flex items-center gap-3 ${selectedItems[item.id] !== undefined ? 'bg-white dark:bg-slate-800 border-emerald-200' : 'bg-transparent border-slate-200/50'}`}>
                                                         <input
                                                             type="checkbox"
-                                                            checked={!!selectedItems[item.id]}
+                                                            checked={selectedItems[item.id] !== undefined}
                                                             onChange={(e) => {
-                                                                if (e.target.checked) handleQuantityChange(item.id, item.quantity || 0, (item.quantity || 0).toString())
-                                                                else handleQuantityChange(item.id, item.quantity || 0, "0")
+                                                                if (e.target.checked) handleQuantityChange(item.id, item.quantity || 0, (item.quantity || 0))
+                                                                else handleQuantityChange(item.id, item.quantity || 0, 0)
                                                             }}
                                                             className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500"
                                                         />
@@ -360,19 +362,16 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                                                             <div className="text-[10px] text-slate-400 font-mono">{item.products?.sku}</div>
                                                         </div>
                                                         <div className="flex items-center gap-2">
-                                                            {selectedItems[item.id] ? (
-                                                                <input
-                                                                    type="number"
+                                                            {selectedItems[item.id] !== undefined ? (
+                                                                <QuantityInput
                                                                     value={selectedItems[item.id]}
-                                                                    onChange={(e) => handleQuantityChange(item.id, item.quantity || 0, e.target.value)}
-                                                                    className="w-16 p-1 text-xs font-bold text-center border border-emerald-200 rounded-lg focus:outline-none focus:border-emerald-500 bg-white"
-                                                                    min="0"
-                                                                    max={item.quantity || 0}
+                                                                    onChange={(val) => handleQuantityChange(item.id, item.quantity || 0, val)}
+                                                                    className="w-20 p-1 text-xs font-bold text-center border border-emerald-200 rounded-lg focus:outline-none focus:border-emerald-500 bg-white"
                                                                 />
                                                             ) : (
-                                                                <span className="text-xs font-bold text-slate-400">{item.quantity}</span>
+                                                                <span className="text-xs font-bold text-slate-400">{formatQuantityFull(item.quantity)}</span>
                                                             )}
-                                                            <span className="text-[10px] font-bold text-slate-400">/{item.quantity}</span>
+                                                            <span className="text-[10px] font-bold text-slate-400">/{formatQuantityFull(item.quantity)}</span>
                                                         </div>
                                                     </div>
                                                 ))}

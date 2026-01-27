@@ -7,6 +7,7 @@ import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import { Database } from '@/lib/database.types'
+import { formatQuantityFull } from '@/lib/numberUtils'
 
 type LotItem = Database['public']['Tables']['lot_items']['Row'] & {
     unit: string | null
@@ -179,7 +180,7 @@ export default function InventoryDistributionChart() {
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none z-10">
                     <p className="text-sm text-stone-500 font-medium">Tổng tồn kho</p>
                     <p className="text-3xl font-bold text-emerald-600">
-                        {totalWeight.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
+                        {formatQuantityFull(totalWeight, 1)}
                     </p>
                     <p className="text-sm text-stone-500 font-medium uppercase">KG</p>
                 </div>
@@ -201,7 +202,7 @@ export default function InventoryDistributionChart() {
                             ))}
                         </Pie>
                         <Tooltip
-                            formatter={(value: any) => [`${Number(value).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} KG`, 'Khối lượng']}
+                            formatter={(value: any) => [`${formatQuantityFull(value, 1)} KG`, 'Khối lượng']}
                             contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                         />
                     </PieChart>
@@ -221,7 +222,7 @@ export default function InventoryDistributionChart() {
                                 {entry.name}
                             </span>
                             <span className="text-stone-500 text-xs whitespace-nowrap">
-                                ({entry.percentage.toLocaleString('vi-VN', { maximumFractionDigits: 0 })}%)
+                                ({formatQuantityFull(entry.percentage, 0)}%)
                             </span>
                         </div>
                     </div>

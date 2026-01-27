@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Search, Download, Calendar, Boxes, Building2, User, FileText, Filter, Layers, ChevronDown, DollarSign, ArrowUpRight, ArrowDownLeft, PackageSearch, TrendingUp } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, isBefore, parseISO } from 'date-fns'
 import { useSystem } from '@/contexts/SystemContext'
+import { formatQuantityFull } from '@/lib/numberUtils'
 
 type OrderType = {
     id: string
@@ -208,25 +209,25 @@ export default function AccountingHistoryPage() {
                 </div>
                 <div className="bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-800/50 shadow-sm">
                     <p className="text-[10px] font-bold text-blue-400 dark:text-blue-500 uppercase tracking-wider mb-1">Tồn đầu kỳ</p>
-                    <h3 className="text-2xl font-black text-blue-700 dark:text-blue-400 tabular-nums">{summary.opening.toLocaleString('vi-VN')}</h3>
+                    <h3 className="text-2xl font-black text-blue-700 dark:text-blue-400 tabular-nums">{formatQuantityFull(summary.opening)}</h3>
                 </div>
                 <div className="bg-emerald-50/50 dark:bg-emerald-900/10 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-800/50 shadow-sm">
                     <p className="text-[10px] font-bold text-emerald-400 dark:text-emerald-500 uppercase tracking-wider mb-1">Nhập trong kỳ</p>
                     <div className="flex items-center gap-2">
                         <ArrowDownLeft size={16} className="text-emerald-500" />
-                        <h3 className="text-2xl font-black text-emerald-700 dark:text-emerald-400 tabular-nums">{summary.inbound.toLocaleString('vi-VN')}</h3>
+                        <h3 className="text-2xl font-black text-emerald-700 dark:text-emerald-400 tabular-nums">{formatQuantityFull(summary.inbound)}</h3>
                     </div>
                 </div>
                 <div className="bg-orange-50/50 dark:bg-orange-900/10 p-4 rounded-2xl border border-orange-100 dark:border-orange-800/50 shadow-sm">
                     <p className="text-[10px] font-bold text-orange-400 dark:text-orange-500 uppercase tracking-wider mb-1">Xuất trong kỳ</p>
                     <div className="flex items-center gap-2">
                         <ArrowUpRight size={16} className="text-orange-500" />
-                        <h3 className="text-2xl font-black text-orange-700 dark:text-orange-400 tabular-nums">{summary.outbound.toLocaleString('vi-VN')}</h3>
+                        <h3 className="text-2xl font-black text-orange-700 dark:text-orange-400 tabular-nums">{formatQuantityFull(summary.outbound)}</h3>
                     </div>
                 </div>
                 <div className="bg-purple-50/50 dark:bg-purple-900/10 p-4 rounded-2xl border border-purple-100 dark:border-purple-800/50 shadow-sm">
                     <p className="text-[10px] font-bold text-purple-400 dark:text-purple-500 uppercase tracking-wider mb-1">Tồn cuối kỳ</p>
-                    <h3 className="text-2xl font-black text-purple-700 dark:text-purple-400 tabular-nums">{summary.closing.toLocaleString('vi-VN')}</h3>
+                    <h3 className="text-2xl font-black text-purple-700 dark:text-purple-400 tabular-nums">{formatQuantityFull(summary.closing)}</h3>
                 </div>
             </div>
 
@@ -328,31 +329,31 @@ export default function AccountingHistoryPage() {
                                             <div className="text-[10px] text-stone-400 italic">({mov.unit})</div>
                                         </td>
                                         <td className="px-4 py-3 border-r border-stone-100 dark:border-slate-800 text-center font-bold text-blue-600 tabular-nums bg-blue-50/10">
-                                            {mov.opening.toLocaleString('vi-VN')}
+                                            {formatQuantityFull(mov.opening)}
                                         </td>
 
                                         {/* Inbound Details */}
                                         {inboundTypes.map(t => (
                                             <td key={t.id} className="px-2 py-3 border-r border-stone-100 dark:border-slate-800 text-center text-stone-500 tabular-nums">
-                                                {mov.inboundItems[t.id]?.toLocaleString('vi-VN') || '-'}
+                                                {mov.inboundItems[t.id] ? formatQuantityFull(mov.inboundItems[t.id]) : '-'}
                                             </td>
                                         ))}
                                         <td className="px-2 py-3 border-r border-emerald-100 dark:border-emerald-900 text-center font-black text-emerald-600 tabular-nums bg-emerald-50/20 dark:bg-emerald-900/5">
-                                            {mov.totalIn ? mov.totalIn.toLocaleString('vi-VN') : '-'}
+                                            {mov.totalIn ? formatQuantityFull(mov.totalIn) : '-'}
                                         </td>
 
                                         {/* Outbound Details */}
                                         {outboundTypes.map(t => (
                                             <td key={t.id} className="px-2 py-3 border-r border-stone-100 dark:border-slate-800 text-center text-stone-500 tabular-nums">
-                                                {mov.outboundItems[t.id]?.toLocaleString('vi-VN') || '-'}
+                                                {mov.outboundItems[t.id] ? formatQuantityFull(mov.outboundItems[t.id]) : '-'}
                                             </td>
                                         ))}
                                         <td className="px-2 py-3 border-r border-orange-100 dark:border-orange-900 text-center font-black text-orange-600 tabular-nums bg-orange-50/20 dark:bg-orange-900/5">
-                                            {mov.totalOut ? mov.totalOut.toLocaleString('vi-VN') : '-'}
+                                            {mov.totalOut ? formatQuantityFull(mov.totalOut) : '-'}
                                         </td>
 
                                         <td className="px-4 py-3 border-r border-purple-100 dark:border-purple-900 text-center font-black text-purple-600 tabular-nums bg-purple-50/20 dark:bg-purple-900/5">
-                                            {mov.closing.toLocaleString('vi-VN')}
+                                            {formatQuantityFull(mov.closing)}
                                         </td>
 
                                         <td className="px-4 py-3 text-center">
@@ -371,17 +372,17 @@ export default function AccountingHistoryPage() {
                             <tfoot className="bg-stone-50 dark:bg-slate-800/80 font-black text-stone-900 dark:text-white sticky bottom-0">
                                 <tr>
                                     <td colSpan={2} className="px-4 py-4 text-right uppercase tracking-wider border-t-2 border-indigo-500">Tổng cộng kỳ này</td>
-                                    <td className="px-4 py-4 text-center border-t-2 border-indigo-500 text-blue-600">{summary.opening.toLocaleString('vi-VN')}</td>
+                                    <td className="px-4 py-4 text-center border-t-2 border-indigo-500 text-blue-600">{formatQuantityFull(summary.opening)}</td>
 
                                     {/* Inbound TFoot Spacer & Total */}
                                     <td colSpan={inboundTypes.length} className="px-4 py-4 border-t-2 border-indigo-500"></td>
-                                    <td className="px-2 py-4 text-center border-t-2 border-indigo-500 text-emerald-600 bg-emerald-500/10">{summary.inbound.toLocaleString('vi-VN')}</td>
+                                    <td className="px-2 py-4 text-center border-t-2 border-indigo-500 text-emerald-600 bg-emerald-500/10">{formatQuantityFull(summary.inbound)}</td>
 
                                     {/* Outbound TFoot Spacer & Total */}
                                     <td colSpan={outboundTypes.length} className="px-4 py-4 border-t-2 border-indigo-500"></td>
-                                    <td className="px-2 py-4 text-center border-t-2 border-indigo-500 text-orange-600 bg-orange-500/10">{summary.outbound.toLocaleString('vi-VN')}</td>
+                                    <td className="px-2 py-4 text-center border-t-2 border-indigo-500 text-orange-600 bg-orange-500/10">{formatQuantityFull(summary.outbound)}</td>
 
-                                    <td className="px-4 py-4 text-center border-t-2 border-indigo-500 text-purple-600 bg-purple-500/10">{summary.closing.toLocaleString('vi-VN')}</td>
+                                    <td className="px-4 py-4 text-center border-t-2 border-indigo-500 text-purple-600 bg-purple-500/10">{formatQuantityFull(summary.closing)}</td>
                                     <td className="border-t-2 border-indigo-500"></td>
                                 </tr>
                             </tfoot>
@@ -523,7 +524,7 @@ function VoucherDetailModal({ isOpen, onClose, productId, productName, sku, star
                                         <div className="text-right">
                                             <div className={`text-lg font-black ${v.type === 'in' ? 'text-emerald-600' : 'text-orange-600'
                                                 }`}>
-                                                {v.type === 'in' ? '+' : '-'}{v.quantity}
+                                                {v.type === 'in' ? '+' : '-'}{formatQuantityFull(v.quantity)}
                                             </div>
                                             <div className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{v.type === 'in' ? 'Nhập kho' : 'Xuất kho'}</div>
                                         </div>

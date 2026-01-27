@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle } from 'lucide-react'
+import { formatQuantityFull } from '@/lib/numberUtils'
 
 interface ItemReconciliation {
     productId: string
@@ -45,7 +46,7 @@ export default function MobileReconciliationList({ items }: MobileReconciliation
                                 {isDiff ? (
                                     <span className="inline-flex items-center gap-1 text-red-600 bg-red-50 px-2 py-1 rounded text-xs font-bold border border-red-100">
                                         <AlertTriangle size={12} />
-                                        Lệch {item.diff > 0 ? '+' : ''}{item.diff.toLocaleString()}
+                                        Lệch {item.diff > 0 ? '+' : ''}{formatQuantityFull(item.diff)}
                                     </span>
                                 ) : (
                                     <span className="inline-flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-1 rounded text-xs font-bold border border-emerald-100">
@@ -60,11 +61,11 @@ export default function MobileReconciliationList({ items }: MobileReconciliation
                         <div className="grid grid-cols-2 gap-2 text-sm bg-stone-50 p-3 rounded-lg border border-stone-100">
                             <div>
                                 <div className="text-xs text-stone-500 mb-0.5">Tồn Kế toán</div>
-                                <div className="font-medium text-stone-900">{item.accountingBalance.toLocaleString()} {item.unit}</div>
+                                <div className="font-medium text-stone-900">{formatQuantityFull(item.accountingBalance)} {item.unit}</div>
                             </div>
                             <div className="text-right">
                                 <div className="text-xs text-stone-500 mb-0.5">Tổng LOT</div>
-                                <div className="font-medium text-stone-900">{item.lotBalance.toLocaleString()} {item.unit}</div>
+                                <div className="font-medium text-stone-900">{formatQuantityFull(item.lotBalance)} {item.unit}</div>
                             </div>
                         </div>
                     </div>

@@ -4,6 +4,7 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { unbundleService } from '@/services/inventory/unbundleService'
+import { formatQuantityFull } from '@/lib/numberUtils'
 import { Product, Customer, Unit, OrderItem } from '../types'
 
 export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, onClose }: any) {
@@ -128,7 +129,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                             localUnitStockMap.set(uKey, (localUnitStockMap.get(uKey) || 0) + item.balance)
 
                             if (!detailedStockMap.has(item.productId)) detailedStockMap.set(item.productId, [])
-                            detailedStockMap.get(item.productId)!.push(`${item.balance.toLocaleString('vi-VN')} ${item.unit}`)
+                            detailedStockMap.get(item.productId)!.push(`${formatQuantityFull(item.balance)} ${item.unit}`)
                         }
                     })
 

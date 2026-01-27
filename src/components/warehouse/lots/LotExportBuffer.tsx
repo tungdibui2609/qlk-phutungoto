@@ -15,6 +15,7 @@ interface PendingExport {
     description: string
     location_code: string | null
     items: Record<string, any>
+    is_edit?: boolean
 }
 
 interface LotExportBufferProps {
@@ -66,7 +67,8 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                             date: exp.date,
                             description: exp.description,
                             location_code: exp.location_code || (lot as any).positions?.[0]?.code || null,
-                            items: exp.items
+                            items: exp.items,
+                            is_edit: exp.is_edit
                         })
                     }
                 })
@@ -325,6 +327,11 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                                                             }`}>
                                                             {exp.location_code ? `VT: ${exp.location_code}` : "Chưa có vị trí"}
                                                         </span>
+                                                        {exp.is_edit && (
+                                                            <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 font-mono bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
+                                                                ĐÃ SỬA
+                                                            </span>
+                                                        )}
                                                         <span className="text-[10px] text-slate-400 font-medium">
                                                             {new Date(exp.date).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                                                         </span>

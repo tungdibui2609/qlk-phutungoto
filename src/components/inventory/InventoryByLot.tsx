@@ -8,6 +8,7 @@ import { Database } from '@/lib/database.types'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { TagDisplay } from '../lots/TagDisplay'
+import { formatQuantityFull } from '@/lib/numberUtils'
 import MobileLotList from './MobileLotList'
 
 type Lot = Database['public']['Tables']['lots']['Row'] & {
@@ -338,11 +339,11 @@ export default function InventoryByLot() {
                                                                     </td>
                                                                     <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">{item.productName}</td>
                                                                     <td className="px-4 py-3 text-right font-bold text-stone-900 dark:text-stone-100">
-                                                                        {item.totalQuantity.toLocaleString()}
+                                                                        {formatQuantityFull(item.totalQuantity)}
                                                                     </td>
                                                                     {hasAnyExpanded && (
                                                                         <td className="px-4 py-3 text-right font-medium text-stone-700 dark:text-stone-300">
-                                                                            {isExpanded && hasVariants ? item.totalQuantity.toLocaleString() : '—'}
+                                                                            {isExpanded && hasVariants ? formatQuantityFull(item.totalQuantity) : '—'}
                                                                         </td>
                                                                     )}
                                                                     <td className="px-4 py-3 text-center text-stone-500">{item.unit}</td>
@@ -378,7 +379,7 @@ export default function InventoryByLot() {
                                                                                     </td>
                                                                                     <td className="px-4 py-2 text-right text-stone-400">—</td>
                                                                                     <td className="px-4 py-2 text-right font-medium text-stone-700 dark:text-stone-300">
-                                                                                        {qty.toLocaleString()}
+                                                                                        {formatQuantityFull(qty)}
                                                                                     </td>
                                                                                     <td className="px-4 py-2 text-center text-stone-500">{item.unit}</td>
                                                                                 </tr>

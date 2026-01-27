@@ -1,4 +1,5 @@
 import { Scale, X, Plus } from 'lucide-react'
+import { QuantityInput } from '@/components/ui/QuantityInput'
 import { Database } from '@/lib/database.types'
 
 type Unit = Database['public']['Tables']['units']['Row']
@@ -100,15 +101,12 @@ export function ProductUnits({
 
                         {/* Conversion Factor Input */}
                         <div className="w-24">
-                            <input
-                                type="number"
-                                disabled={readOnly}
+                            <QuantityInput
                                 value={alt.factor}
-                                onChange={(e) => updateAlternativeUnit(index, 'factor', Number(e.target.value))}
+                                onChange={(val) => updateAlternativeUnit(index, 'factor', val)}
                                 className="bg-white border border-stone-300 text-stone-800 text-sm rounded-lg focus:ring-orange-500 focus:border-orange-500 block w-full p-2.5 text-center disabled:bg-stone-100"
                                 placeholder="Tỉ lệ"
-                                min="0.000001"
-                                step="any"
+                                readOnly={readOnly}
                             />
                         </div>
 

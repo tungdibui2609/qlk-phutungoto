@@ -15,6 +15,8 @@ interface PendingInbound {
     date: string
     location_code: string | null
     items: Record<string, any>
+    is_edit?: boolean
+    is_adjustment?: boolean
 }
 
 interface LotInboundBufferProps {
@@ -64,7 +66,9 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
                             supplier_name: inb.supplier_name || 'N/A',
                             date: inb.date,
                             location_code: (lot as any).positions?.[0]?.code || null,
-                            items: inb.items
+                            items: inb.items,
+                            is_edit: inb.is_edit,
+                            is_adjustment: inb.is_adjustment
                         })
                     }
                 })
@@ -176,7 +180,9 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
             const { data: order, error: orderError } = await (supabase.from('inbound_orders') as any).insert({
                 code: orderCode,
                 supplier_id: mainSupplierId,
-                description: `Phiếu nhập tổng gom từ ${toSync.length} lô hàng vừa tạo.`,
+                description: toSync.some(p => p.is_adjustment)
+                    ? `Phiếu điều chỉnh số lượng/thông tin cho ${toSync.length} lô hàng.`
+                    : `Phiếu nhập tổng gom từ ${toSync.length} lô hàng vừa tạo/cập nhật.`,
                 status: 'Completed',
                 system_code: systemType,
                 system_type: systemType,
@@ -322,6 +328,11 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
                                                             }`}>
                                                             {inb.location_code ? `VT: ${inb.location_code}` : "Chưa có vị trí"}
                                                         </span>
+                                                        {inb.is_edit && (
+                                                            <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 font-mono bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
+                                                                {inb.is_adjustment ? "ĐIỀU CHỈNH" : "ĐÃ SỬA"}
+                                                            </span>
+                                                        )}
                                                         <span className="text-[10px] text-slate-400 font-medium">
                                                             {new Date(inb.date).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                                                         </span>

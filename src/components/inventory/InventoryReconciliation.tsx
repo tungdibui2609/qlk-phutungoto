@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Loader2, AlertTriangle, CheckCircle, Printer } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
+import { formatQuantityFull } from '@/lib/numberUtils'
 import MobileReconciliationList from './MobileReconciliationList'
 
 // Types
@@ -239,10 +240,10 @@ export default function InventoryReconciliation() {
                                                     <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-400">{item.productCode}</td>
                                                     <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">{item.productName}</td>
                                                     <td className="px-4 py-3 text-center text-stone-500">{item.unit}</td>
-                                                    <td className="px-4 py-3 text-right tabular-nums text-stone-700 font-medium">{item.accountingBalance.toLocaleString()}</td>
-                                                    <td className="px-4 py-3 text-right tabular-nums text-stone-700 font-medium">{item.lotBalance.toLocaleString()}</td>
+                                                    <td className="px-4 py-3 text-right tabular-nums text-stone-700 font-medium">{formatQuantityFull(item.accountingBalance)}</td>
+                                                    <td className="px-4 py-3 text-right tabular-nums text-stone-700 font-medium">{formatQuantityFull(item.lotBalance)}</td>
                                                     <td className={`px-4 py-3 text-right tabular-nums font-bold ${isDiff ? 'text-red-500' : 'text-stone-400'}`}>
-                                                        {item.diff > 0 ? '+' : ''}{item.diff.toLocaleString()}
+                                                        {item.diff > 0 ? '+' : ''}{formatQuantityFull(item.diff)}
                                                     </td>
                                                     <td className="px-4 py-3 text-center">
                                                         {isDiff ? (
