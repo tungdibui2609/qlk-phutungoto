@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react'
 import { X, Check, Loader2, ShoppingCart, Trash2, AlertTriangle, Layers } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import { unbundleService } from '@/services/inventory/unbundleService'
+import { toBaseAmount as toBaseAmountLogic, ConversionMap, UnitNameMap } from '@/lib/unitConversion'
 import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import { formatQuantityFull } from '@/lib/numberUtils'
@@ -65,10 +67,10 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
         if (!currentSystem?.code) return
 
         const [typesRes, custRes, branchRes, unitRes] = await Promise.all([
-            (supabase.from('order_types') as any).select('*').or(`scope.eq.outbound,scope.eq.both`).or(`system_code.eq.${currentSystem.code},system_code.is.null`).eq('is_active', true).order('name'),
+            (supabase as any).from('order_types').select('*').or(`scope.eq.outbound,scope.eq.both`).or(`system_code.eq.${currentSystem.code},system_code.is.null`).eq('is_active', true).order('name'),
             supabase.from('customers').select('*').eq('system_code', currentSystem.code).order('name'),
             supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'),
-            supabase.from('units').select('*').order('name')
+            supabase.from('units').select('*').eq('is_active', true).order('name')
         ])
 
         if (typesRes.data) setOrderTypes(typesRes.data)
@@ -170,16 +172,147 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
         setSyncing(true)
 
         try {
-            // 1. Generate Order Code
-            const today = new Date()
-            const dateStr = `${String(today.getDate()).padStart(2, '0')}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getFullYear()).slice(-2)}`
-            let prefix = 'BATCH'
-            if (currentSystem?.name) {
-                prefix = currentSystem.name.replace(/^Kho\s+/i, '').split(/\s+/).map(word => word[0]).join('').toUpperCase()
-                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D")
-            }
-            const orderCode = `${prefix}-PXK-${dateStr}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`
+            // --- A. PREPARE DATA FOR UNBUNDLE ---
+            const uniqueProductIds = Array.from(new Set(
+                toSync.flatMap(p => Object.values(p.items).map((item: any) => item.product_id))
+            ))
 
+            // 1. Fetch Products & Unit Configs
+            const { data: productsData, error: prodErr } = await (supabase as any).from('products')
+                .select('id, name, unit, product_units(unit_id, conversion_rate)')
+                .in('id', uniqueProductIds)
+            if (prodErr) throw prodErr
+
+            // 2. Fetch Units (Atomic)
+            const { data: unitsData, error: unitsErr } = await supabase.from('units').select('*').eq('is_active', true)
+            if (unitsErr) throw unitsErr
+
+            // 3. Fetch Inventory Balance via API
+            const invRes = await fetch(`/api/inventory?systemType=${systemType}`).then(res => res.json())
+            const stockData = (invRes.ok && Array.isArray(invRes.items)) ? invRes.items : []
+
+            // 4. Fetch Conversion Type
+            const { data: convType } = await (supabase as any).from('order_types')
+                .select('id')
+                .eq('code', 'CONV')
+                .single()
+
+            // 5. Build necessary maps
+            const localUnitNameMap: UnitNameMap = new Map()
+            unitsData?.forEach((u: any) => localUnitNameMap.set(u.name.toLowerCase().trim(), u.id))
+
+            const localConversionMap: ConversionMap = new Map()
+            productsData?.forEach((p: any) => {
+                const pMap = new Map<string, number>()
+                p.product_units?.forEach((pu: any) => pMap.set(pu.unit_id, pu.conversion_rate))
+                localConversionMap.set(p.id, pMap)
+            })
+
+            const localUnitStockMap: Map<string, number> = new Map()
+            stockData.forEach((s: any) => {
+                const normUnit = (s.unit || '').toLowerCase().trim().replace(/\s+/g, ' ')
+                const key = `${s.productId}_${normUnit}`
+                const current = localUnitStockMap.get(key) || 0
+                localUnitStockMap.set(key, current + (s.balance || 0))
+            })
+
+            console.log('[Unbundle Trace] Data Ready:', {
+                toSyncCount: toSync.length,
+                stockEntries: stockData.length,
+                stockMapSize: localUnitStockMap.size,
+                sampleStockKey: Array.from(localUnitStockMap.keys())[0]
+            })
+
+            // Generate Order Code Helper (Matches useOutboundOrder logic)
+            const generateInternalCode = async (type: 'PNK' | 'PXK') => {
+                const getPrefix = (code: string, name?: string): string => {
+                    if (name) {
+                        const nameWithoutKho = name.replace(/^Kho\s+/i, '')
+                        return nameWithoutKho.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").split(' ').filter(word => word.length > 0).map(word => word[0]).join('').toUpperCase()
+                    }
+                    return code.substring(0, 3).toUpperCase()
+                }
+
+                const today = new Date()
+                const dateStr = `${String(today.getDate()).padStart(2, '0')}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getFullYear()).slice(-2)}`
+                const startOfDay = new Date(today.setHours(0, 0, 0, 0)).toISOString()
+                const endOfDay = new Date(today.setHours(23, 59, 59, 999)).toISOString()
+                const tableName = type === 'PNK' ? 'inbound_orders' : 'outbound_orders'
+
+                const { count, error } = await supabase.from(tableName).select('*', { count: 'exact', head: true }).gte('created_at', startOfDay).lte('created_at', endOfDay)
+
+                const prefix = getPrefix(systemType, currentSystem?.name)
+                if (error) {
+                    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0')
+                    return `${prefix}-${type}-${dateStr}-${random}`
+                }
+                const stt = String((count || 0) + 1).padStart(3, '0')
+                return `${prefix}-${type}-${dateStr}-${stt}`
+            }
+
+            // --- B. GENERATE MAIN ORDER CODE ---
+            const orderCode = await generateInternalCode('PXK')
+
+            // --- C. PROCESS UNBUNDLE FOR EACH ITEM ---
+            for (const p of toSync) {
+                const itemsList = Object.values(p.items)
+                for (const item of itemsList) {
+                    const qtyNum = Number(item.exported_quantity) || 0
+                    console.log(`[Unbundle Trace] Verifying item: ${item.product_name}`, {
+                        reqQty: qtyNum,
+                        reqUnit: item.unit,
+                        currentInStock: localUnitStockMap.get(`${item.product_id}_${item.unit.toLowerCase().trim()}`) || 0
+                    })
+
+                    const check = unbundleService.checkUnbundle({
+                        productId: item.product_id,
+                        unit: item.unit,
+                        qty: qtyNum,
+                        products: productsData || [],
+                        units: unitsData || [],
+                        unitNameMap: localUnitNameMap,
+                        conversionMap: localConversionMap,
+                        unitStockMap: localUnitStockMap
+                    })
+
+                    console.log(`[Unbundle Trace] Unbundle Check for ${item.product_name}:`, check)
+
+                    if (check.needsUnbundle && check.sourceUnit && check.rate) {
+                        showToast(`Thiếu ${item.unit} cho ${item.product_name}. Đang tự bẻ gói từ ${check.sourceUnit}...`, 'info')
+
+                        await unbundleService.executeAutoUnbundle({
+                            supabase,
+                            productId: item.product_id,
+                            productName: item.product_name,
+                            baseUnit: check.sourceUnit,
+                            reqUnit: item.unit,
+                            reqQty: qtyNum,
+                            currentLiquid: localUnitStockMap.get(`${item.product_id}_${item.unit.toLowerCase().trim()}`) || 0,
+                            costPrice: item.cost_price || 0,
+                            rate: check.rate,
+                            warehouseName: quickBranchName || currentSystem?.name || 'Kho chính',
+                            systemCode: systemType,
+                            mainOrderCode: orderCode,
+                            convTypeId: convType?.id,
+                            generateOrderCode: generateInternalCode
+                        })
+
+                        console.log(`[Unbundle Trace] Executed Unbundle for ${item.product_name}`)
+
+                        // Update local stock map for subsequent items in the same batch
+                        const sourceKey = `${item.product_id}_${check.sourceUnit.toLowerCase().trim()}`
+                        const reqKey = `${item.product_id}_${item.unit.toLowerCase().trim()}`
+
+                        const deficit = qtyNum - (localUnitStockMap.get(reqKey) || 0)
+                        const baseToBreak = Math.ceil(deficit / check.rate - 0.000001)
+
+                        localUnitStockMap.set(sourceKey, (localUnitStockMap.get(sourceKey) || 0) - baseToBreak)
+                        localUnitStockMap.set(reqKey, (localUnitStockMap.get(reqKey) || 0) + (baseToBreak * check.rate))
+                    }
+                }
+            }
+
+            // --- D. CREATE FINAL BATCH OUTBOUND ORDER ---
             // 2. Identify Customer
             let mainCustomer = ''
             if (quickCustomerId) {

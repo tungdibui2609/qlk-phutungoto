@@ -23,6 +23,96 @@ export const unbundleService = {
      * 1. Creates a Conversion Outbound Order (PXK) to remove base units.
      * 2. Creates a Conversion Inbound Order (PNK) to add converted smaller units.
      */
+    /**
+     * Checks if a product needs unbundling to fulfill a requested quantity.
+     * Returns metadata about the unbundle operation if needed.
+     */
+    checkUnbundle(params: {
+        productId: string
+        unit: string
+        qty: number
+        products: any[]
+        units: any[]
+        unitNameMap: Map<string, string>
+        conversionMap: Map<string, Map<string, number>>
+        unitStockMap: Map<string, number>
+    }): { needsUnbundle: boolean, unbundleInfo?: string, sourceUnit?: string, rate?: number } {
+        const { productId, unit, qty, products, units, unitNameMap, conversionMap, unitStockMap } = params
+        const product = products.find(p => p.id === productId)
+        if (!product || !unit) return { needsUnbundle: false }
+
+        const normReqUnit = unit.toLowerCase().trim()
+
+        // 1. Check direct liquid stock
+        // Note: unitStockMap keys are formatted as "productId_unitname"
+        const currentLiquid = unitStockMap.get(`${productId}_${normReqUnit}`) || 0
+        if (currentLiquid >= qty - 0.000001) return { needsUnbundle: false }
+
+        const deficit = qty - currentLiquid
+        const baseUnitName = (product.unit || '').toLowerCase().trim()
+
+        // Case 1: Break Base Unit (Official Unit)
+        if (normReqUnit !== baseUnitName) {
+            const currentBase = unitStockMap.get(`${productId}_${baseUnitName}`) || 0
+            if (currentBase > 0) {
+                const rUnitId = unitNameMap.get(normReqUnit)
+                const rateReqStackToBase = conversionMap.get(productId)?.get(rUnitId || '') || 0
+
+                if (rateReqStackToBase > 0) {
+                    const rateBaseToReq = 1 / rateReqStackToBase
+                    const baseToBreak = Math.ceil(deficit / rateBaseToReq - 0.000001)
+
+                    if (currentBase >= baseToBreak) {
+                        return {
+                            needsUnbundle: true,
+                            unbundleInfo: `Tự động: Bẻ ${baseToBreak} ${product.unit} -> ${(baseToBreak * rateBaseToReq).toFixed(2).replace(/\.00$/, '')} ${unit}`,
+                            sourceUnit: product.unit ?? undefined,
+                            rate: rateBaseToReq
+                        }
+                    }
+                }
+            }
+        }
+
+        // Case 2: Break OTHER units
+        for (const pu of product.product_units || []) {
+            const altUnitName = units.find(u => u.id === pu.unit_id)?.name
+            if (!altUnitName) continue
+            const normAltUnit = altUnitName.toLowerCase().trim()
+
+            if (normAltUnit === normReqUnit) continue
+
+            const currentAlt = unitStockMap.get(`${productId}_${normAltUnit}`) || 0
+            if (currentAlt > 0) {
+                const altToBase = pu.conversion_rate
+                const reqUnitId = unitNameMap.get(normReqUnit)
+                const reqToBase = normReqUnit === baseUnitName ? 1 : (conversionMap.get(productId)?.get(reqUnitId || '') || 1)
+
+                const rateAltToReq = altToBase / reqToBase
+
+                if (rateAltToReq > 0) {
+                    const altToBreak = Math.ceil(deficit / rateAltToReq - 0.000001)
+
+                    if (currentAlt >= altToBreak) {
+                        return {
+                            needsUnbundle: true,
+                            unbundleInfo: `Tự động: Bẻ ${altToBreak} ${altUnitName} -> ${(altToBreak * rateAltToReq).toFixed(2).replace(/\.00$/, '')} ${unit}`,
+                            sourceUnit: altUnitName,
+                            rate: rateAltToReq
+                        }
+                    }
+                }
+            }
+        }
+
+        return { needsUnbundle: false }
+    },
+
+    /**
+     * Executes the Auto-Unbundle process:
+     * 1. Creates a Conversion Outbound Order (PXK) to remove base units.
+     * 2. Creates a Conversion Inbound Order (PNK) to add converted smaller units.
+     */
     async executeAutoUnbundle(params: UnbundleParams) {
         const {
             supabase, productId, productName, baseUnit, reqUnit, reqQty,
