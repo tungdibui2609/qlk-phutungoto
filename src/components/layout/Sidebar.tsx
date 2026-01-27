@@ -64,6 +64,7 @@ const menuItems: MenuItem[] = [
             { name: 'Công nợ NCC', href: '/reports/supplier-debts', icon: DollarSign },
             { name: 'Nhật ký xuất nhập KT', href: '/reports/accounting-history', icon: ArrowRightLeft },
             { name: 'Nhật ký xuất nhập lot', href: '/reports/lot-history', icon: History },
+            { name: 'Nhật ký liên kết (Kho - KT)', href: '/reports/linked-journal', icon: ArrowRightLeft },
         ]
     },
     {

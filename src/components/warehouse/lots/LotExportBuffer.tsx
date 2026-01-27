@@ -19,6 +19,7 @@ interface PendingExport {
     location_code: string | null
     items: Record<string, any>
     is_edit?: boolean
+    is_adjustment?: boolean
 }
 
 interface LotExportBufferProps {
@@ -110,7 +111,8 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                             description: exp.description,
                             location_code: exp.location_code || (lot as any).positions?.[0]?.code || null,
                             items: exp.items,
-                            is_edit: exp.is_edit
+                            is_edit: exp.is_edit,
+                            is_adjustment: exp.is_adjustment
                         })
                     }
                 })
@@ -239,7 +241,11 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                 const endOfDay = new Date(today.setHours(23, 59, 59, 999)).toISOString()
                 const tableName = type === 'PNK' ? 'inbound_orders' : 'outbound_orders'
 
-                const { count, error } = await supabase.from(tableName).select('*', { count: 'exact', head: true }).gte('created_at', startOfDay).lte('created_at', endOfDay)
+                const { count, error } = await supabase.from(tableName)
+                    .select('*', { count: 'exact', head: true })
+                    .eq('system_code', systemType)
+                    .gte('created_at', startOfDay)
+                    .lte('created_at', endOfDay)
 
                 const prefix = getPrefix(systemType, currentSystem?.name)
                 if (error) {
@@ -342,21 +348,42 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
 
             if (orderError) throw orderError
 
-            // 4. Create Order Items
-            const allOrderItems: any[] = []
+            // 4. Create Order Items (Aggregated)
+            const aggregatedItemsMap = new Map<string, any>()
+
             toSync.forEach(p => {
                 Object.values(p.items).forEach((item: any) => {
-                    allOrderItems.push({
-                        order_id: order.id,
-                        product_id: item.product_id,
-                        product_name: item.product_name,
-                        unit: item.unit,
-                        quantity: item.exported_quantity,
-                        document_quantity: item.exported_quantity,
-                        price: item.cost_price || 0,
-                        note: `Xuất từ LOT: ${p.lot_code}`
-                    })
+                    const key = `${item.product_id}|${item.unit}`
+                    const qty = item.exported_quantity || 0
+
+                    if (aggregatedItemsMap.has(key)) {
+                        const existing = aggregatedItemsMap.get(key)
+                        existing.quantity += qty
+                        existing.document_quantity += qty
+                        if (!existing.lots.includes(p.lot_code)) {
+                            existing.lots.push(p.lot_code)
+                        }
+                    } else {
+                        aggregatedItemsMap.set(key, {
+                            order_id: order.id,
+                            product_id: item.product_id,
+                            product_name: item.product_name,
+                            unit: item.unit,
+                            quantity: qty,
+                            document_quantity: qty,
+                            price: item.cost_price || 0,
+                            lots: [p.lot_code]
+                        })
+                    }
                 })
+            })
+
+            const allOrderItems = Array.from(aggregatedItemsMap.values()).map(item => {
+                const { lots, ...rest } = item
+                return {
+                    ...rest,
+                    note: `Xuất từ các LOT: ${lots.join(', ')}`
+                }
             })
 
             const { error: itemsError } = await (supabase.from('outbound_order_items') as any).insert(allOrderItems)
@@ -381,8 +408,8 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             onSuccess()
             onClose()
         } catch (e: any) {
-            console.error('Sync error:', e)
-            showToast('Lỗi đồng bộ: ' + e.message, 'error')
+            console.error('Sync error details:', e)
+            showToast('Lỗi đồng bộ: ' + (e.message || JSON.stringify(e)), 'error')
         } finally {
             setSyncing(false)
         }
@@ -478,6 +505,11 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                                                         {exp.is_edit && (
                                                             <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 font-mono bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
                                                                 ĐÃ SỬA
+                                                            </span>
+                                                        )}
+                                                        {exp.is_adjustment && (
+                                                            <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 font-mono bg-purple-50 dark:bg-purple-900/20 px-1.5 py-0.5 rounded">
+                                                                ĐIỀU CHỈNH
                                                             </span>
                                                         )}
                                                         <span className="text-[10px] text-slate-400 font-medium">

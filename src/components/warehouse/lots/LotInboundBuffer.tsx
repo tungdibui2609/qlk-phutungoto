@@ -163,15 +163,35 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
 
         setSyncing(true)
         try {
-            // 1. Generate Order Code
+            // 1. Generate Order Code (Sequential STT)
+            const getPrefix = (code: string, name?: string): string => {
+                if (name) {
+                    const nameWithoutKho = name.replace(/^Kho\s+/i, '')
+                    return nameWithoutKho.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").split(' ').filter(word => word.length > 0).map(word => word[0]).join('').toUpperCase()
+                }
+                return code.substring(0, 3).toUpperCase()
+            }
+
             const today = new Date()
             const dateStr = `${String(today.getDate()).padStart(2, '0')}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getFullYear()).slice(-2)}`
-            let prefix = 'BATCH'
-            if (currentSystem?.name) {
-                prefix = currentSystem.name.replace(/^Kho\s+/i, '').split(/\s+/).map(word => word[0]).join('').toUpperCase()
-                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D")
+            const startOfDay = new Date(today.setHours(0, 0, 0, 0)).toISOString()
+            const endOfDay = new Date(today.setHours(23, 59, 59, 999)).toISOString()
+
+            const { count, error: countErr } = await supabase.from('inbound_orders')
+                .select('*', { count: 'exact', head: true })
+                .eq('system_code', systemType)
+                .gte('created_at', startOfDay)
+                .lte('created_at', endOfDay)
+
+            const prefix = getPrefix(systemType, currentSystem?.name)
+            let orderCode = ''
+            if (countErr) {
+                const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0')
+                orderCode = `${prefix}-PNK-${dateStr}-${random}`
+            } else {
+                const stt = String((count || 0) + 1).padStart(3, '0')
+                orderCode = `${prefix}-PNK-${dateStr}-${stt}`
             }
-            const orderCode = `${prefix}-PNK-${dateStr}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`
 
             // 2. Identify Supplier
             let finalSupplierId = quickSupplierId || null
@@ -206,21 +226,42 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
 
             if (orderError) throw orderError
 
-            // 4. Create Order Items
-            const allOrderItems: any[] = []
+            // 4. Create Order Items (Aggregated)
+            const aggregatedItemsMap = new Map<string, any>()
+
             toSync.forEach(p => {
                 Object.values(p.items).forEach((item: any) => {
-                    allOrderItems.push({
-                        order_id: order.id,
-                        product_id: item.product_id,
-                        product_name: item.product_name,
-                        unit: item.unit,
-                        quantity: item.quantity || item.received_quantity || 0,
-                        document_quantity: item.quantity || item.received_quantity || 0,
-                        price: item.price || 0,
-                        note: `Nhập từ LOT: ${p.lot_code}`
-                    })
+                    const key = `${item.product_id}|${item.unit}`
+                    const qty = item.quantity || item.received_quantity || 0
+
+                    if (aggregatedItemsMap.has(key)) {
+                        const existing = aggregatedItemsMap.get(key)
+                        existing.quantity += qty
+                        existing.document_quantity += qty
+                        if (!existing.lots.includes(p.lot_code)) {
+                            existing.lots.push(p.lot_code)
+                        }
+                    } else {
+                        aggregatedItemsMap.set(key, {
+                            order_id: order.id,
+                            product_id: item.product_id,
+                            product_name: item.product_name,
+                            unit: item.unit,
+                            quantity: qty,
+                            document_quantity: qty,
+                            price: item.price || 0,
+                            lots: [p.lot_code]
+                        })
+                    }
                 })
+            })
+
+            const allOrderItems = Array.from(aggregatedItemsMap.values()).map(item => {
+                const { lots, ...rest } = item
+                return {
+                    ...rest,
+                    note: `Nhập từ các LOT: ${lots.join(', ')}`
+                }
             })
 
             const { error: itemsError } = await (supabase.from('inbound_order_items') as any).insert(allOrderItems)
@@ -246,8 +287,8 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
             onClose()
 
         } catch (e: any) {
-            console.error('Sync error:', e)
-            showToast('Lỗi đồng bộ: ' + e.message, 'error')
+            console.error('Sync error details:', e)
+            showToast('Lỗi đồng bộ: ' + (e.message || JSON.stringify(e)), 'error')
         } finally {
             setSyncing(false)
         }
