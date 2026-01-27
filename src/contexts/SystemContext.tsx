@@ -33,8 +33,6 @@ const SystemContext = createContext<SystemContextType | undefined>(undefined)
 
 // Config fallback (optional, or just empty)
 export const SYSTEM_CONFIG: Record<string, { name: string; color: string }> = {
-  // Keep this for backward compatibility if needed, or remove it.
-  // For now, removing it to force dynamic usage.
 }
 
 export function SystemProvider({ children }: { children: React.ReactNode }) {
@@ -66,18 +64,29 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     if (!accessToken) return // Wait for valid session
 
     async function fetchSystems() {
-      const { data: systemsData, error: sysError } = await (supabase.from('systems') as any).select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
-      const { data: configsData, error: configError } = await (supabase.from('system_configs') as any).select('*')
+      const { data: systemsData } = await (supabase.from('systems') as any).select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
+      const { data: configsData } = await (supabase.from('system_configs') as any).select('*')
 
       if (systemsData) {
         // Merge configs into systems
         const mergedSystems = systemsData.map((sys: any) => {
           const config = configsData?.find((c: any) => c.system_code === sys.code)
+
+          // Smart merge modules to avoid overwriting with empty
+          const sysModules = sys.modules ? (typeof sys.modules === 'string' ? JSON.parse(sys.modules) : sys.modules) : null;
+          const configModules = config?.modules ? (typeof config.modules === 'string' ? JSON.parse(config.modules) : config.modules) : null;
+
+          const finalModules = (configModules && Object.keys(configModules).length > 0)
+            ? configModules
+            : (sysModules || {});
+
           return {
             ...sys,
-            inbound_modules: config?.inbound_modules || [],
-            outbound_modules: config?.outbound_modules || [],
-            dashboard_modules: config?.dashboard_modules || []
+            ...config,
+            modules: finalModules,
+            inbound_modules: config?.inbound_modules || sys.inbound_modules || [],
+            outbound_modules: config?.outbound_modules || sys.outbound_modules || [],
+            dashboard_modules: config?.dashboard_modules || sys.dashboard_modules || []
           }
         })
         setSystems(mergedSystems)
@@ -122,9 +131,6 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     const saved = localStorage.getItem('systemType') as SystemType
     if (saved) {
       setSystemTypeState(saved)
-    } else {
-      // If no saved, default to FROZEN or first loaded system?
-      // Let's rely on 'FROZEN' default for now or wait for systems to load
     }
   }, [])
 

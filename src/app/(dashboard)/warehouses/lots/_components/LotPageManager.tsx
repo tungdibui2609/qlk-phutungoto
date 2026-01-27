@@ -217,6 +217,7 @@ export function LotPageManager() {
                     }}
                     units={units}
                     productUnits={productUnits}
+                    isUtilityEnabled={isUtilityEnabled}
                 />
             )}
 

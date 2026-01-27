@@ -17,9 +17,10 @@ interface LotSplitModalProps {
     onSuccess: () => void
     units: Unit[]
     productUnits: ProductUnit[]
+    isUtilityEnabled?: (utilityId: string) => boolean
 }
 
-export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSuccess, units, productUnits }) => {
+export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSuccess, units, productUnits, isUtilityEnabled }) => {
     const { currentSystem } = useSystem()
     const { toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
     const [splitQuantities, setSplitQuantities] = useState<Record<string, number>>({})
@@ -315,25 +316,30 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                                                 className="w-24 p-2 text-sm font-bold text-center border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all font-mono"
                                                 placeholder="0"
                                             />
-                                            <select
-                                                value={splitUnits[item.id] || ''}
-                                                onChange={(e) => handleUnitChange(item.id, e.target.value)}
-                                                className="p-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all cursor-pointer"
-                                            >
-                                                {/* Get potential units for this product */}
-                                                {[
-                                                    item.products?.unit, // Base Unit
-                                                    ...productUnits
-                                                        .filter(pu => pu.product_id === item.product_id)
-                                                        .map(pu => units.find(u => u.id === pu.unit_id)?.name)
-                                                ]
-                                                    .filter(Boolean)
-                                                    .filter((v, i, a) => a.indexOf(v) === i) // Distinct
-                                                    .map(uName => (
-                                                        <option key={uName} value={uName!}>{uName}</option>
-                                                    ))
-                                                }
-                                            </select>
+                                            {isUtilityEnabled?.('auto_unbundle_lot') ? (
+                                                <select
+                                                    value={splitUnits[item.id] || ''}
+                                                    onChange={(e) => handleUnitChange(item.id, e.target.value)}
+                                                    className="p-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all cursor-pointer"
+                                                >
+                                                    {[
+                                                        item.products?.unit,
+                                                        ...productUnits
+                                                            .filter(pu => pu.product_id === item.product_id)
+                                                            .map(pu => units.find(u => u.id === pu.unit_id)?.name)
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .filter((v, i, a) => a.indexOf(v) === i)
+                                                        .map(uName => (
+                                                            <option key={uName} value={uName!}>{uName}</option>
+                                                        ))
+                                                    }
+                                                </select>
+                                            ) : (
+                                                <span className="p-2 text-xs font-bold bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500">
+                                                    {(item as any).unit || item.products?.unit}
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                     {(() => {

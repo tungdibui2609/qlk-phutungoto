@@ -399,24 +399,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                     >
                         <Tag size={16} />
                     </button>
-                    {isUtilityEnabled('auto_unbundle_lot') && (
-                        <>
-                            <button
-                                onClick={() => onMerge?.(lot)}
-                                className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all border border-transparent"
-                                title="Gộp Lot"
-                            >
-                                <Combine size={16} />
-                            </button>
-                            <button
-                                onClick={() => onSplit?.(lot)}
-                                className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all border border-transparent"
-                                title="Tách Lot"
-                            >
-                                <Split size={16} />
-                            </button>
-                        </>
-                    )}
+
                     <button
                         onClick={() => onExport?.(lot)}
                         className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all border border-transparent"
