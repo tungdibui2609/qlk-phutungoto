@@ -1,28 +1,56 @@
 'use client'
 
 import { InventoryCheck } from '../_hooks/useAudit'
-import { ArrowLeft, CheckCircle, Zap, ShieldCheck, XCircle } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Zap, ShieldCheck, XCircle, RefreshCw, AlertTriangle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useUser } from '@/contexts/UserContext'
 
 interface AuditSessionHeaderProps {
     session: InventoryCheck
+    liveMismatches?: Record<string, number>
     onSubmit: () => void
     onApprove: () => void
     onReject: () => void
     onQuickFill: () => void
+    onCheckLive?: () => void
+    onSyncLive?: () => void
 }
 
-export function AuditSessionHeader({ session, onSubmit, onApprove, onReject, onQuickFill }: AuditSessionHeaderProps) {
+export function AuditSessionHeader({
+    session,
+    liveMismatches = {},
+    onSubmit,
+    onApprove,
+    onReject,
+    onQuickFill,
+    onCheckLive,
+    onSyncLive
+}: AuditSessionHeaderProps) {
     const router = useRouter()
     const { hasPermission } = useUser()
     const canEdit = session.status === 'IN_PROGRESS' || session.status === 'DRAFT'
     const isPendingApproval = session.status === 'WAITING_FOR_APPROVAL'
-    // Simple permission check: Assume 'system.full_access' or 'audit.approve' (if exists) is needed.
     const canApprove = hasPermission('system.full_access') || hasPermission('audit.approve')
+    const hasLiveMismatches = Object.keys(liveMismatches).length > 0
 
     return (
         <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30">
+            {hasLiveMismatches && (
+                <div className="bg-amber-50 dark:bg-amber-900/30 px-4 py-2 flex items-center justify-between text-xs text-amber-800 dark:text-amber-200 border-b border-amber-100 dark:border-amber-800 animate-in slide-in-from-top-2">
+                    <div className="flex items-center gap-2">
+                        <AlertTriangle size={14} />
+                        <span className="font-bold">Cảnh báo:</span> Có {Object.keys(liveMismatches).length} sản phẩm đã thay đổi tồn kho hệ thống trong lúc bạn đang kiểm kê.
+                    </div>
+                    {onSyncLive && (
+                        <button
+                            onClick={onSyncLive}
+                            className="font-bold underline hover:text-amber-600"
+                        >
+                            Cập nhật ngay
+                        </button>
+                    )}
+                </div>
+            )}
             <div className="px-4 py-3 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                     <button
@@ -47,6 +75,18 @@ export function AuditSessionHeader({ session, onSubmit, onApprove, onReject, onQ
                 <div className="flex items-center gap-2">
                     {canEdit && (
                         <>
+                            {onCheckLive && (
+                                <button
+                                    onClick={onCheckLive}
+                                    className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors relative"
+                                    title="Kiểm tra tồn kho thực tế mới nhất"
+                                >
+                                    <RefreshCw size={20} />
+                                    {hasLiveMismatches && (
+                                        <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-ping" />
+                                    )}
+                                </button>
+                            )}
                             <button
                                 onClick={onQuickFill}
                                 className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"

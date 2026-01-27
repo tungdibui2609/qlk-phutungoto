@@ -15,12 +15,15 @@ export default function AuditDetailPage() {
         currentSession,
         sessionItems,
         loading,
+        liveMismatches,
         fetchSessionDetail,
         updateItem,
         submitForApproval,
         approveSession,
         rejectSession,
-        quickFill
+        quickFill,
+        checkLiveInventory,
+        syncSystemQuantity
     } = useAudit()
 
     const [searchTerm, setSearchTerm] = useState('')
@@ -75,10 +78,13 @@ export default function AuditDetailPage() {
         <div className="pb-20 min-h-screen bg-slate-50 dark:bg-black">
             <AuditSessionHeader
                 session={currentSession}
+                liveMismatches={liveMismatches}
                 onSubmit={() => submitForApproval(id)}
                 onApprove={() => setShowApproveModal(true)}
                 onReject={() => rejectSession(id, 'Từ chối bởi quản lý')}
                 onQuickFill={quickFill}
+                onCheckLive={checkLiveInventory}
+                onSyncLive={syncSystemQuantity}
             />
 
             {/* Session Metadata (Participants & Scope) */}
@@ -175,6 +181,7 @@ export default function AuditDetailPage() {
                                     <AuditItemCard
                                         key={item.id}
                                         item={item}
+                                        liveMismatchValue={liveMismatches[item.id]}
                                         onUpdate={updateItem}
                                     />
                                 ))}

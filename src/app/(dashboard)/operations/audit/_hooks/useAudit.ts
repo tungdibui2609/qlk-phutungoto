@@ -554,11 +554,125 @@ export function useAudit() {
          showToast('Đã điền tự động', 'success')
     }
 
+    // Live Inventory Check Logic
+    const [liveMismatches, setLiveMismatches] = useState<Record<string, number>>({})
+
+    const checkLiveInventory = async () => {
+        if (!currentSession || !currentSystem) return
+
+        setLoading(true)
+        try {
+            // Fetch current accounting inventory
+            const dateTo = new Date().toISOString().split('T')[0]
+            let apiUrl = `/api/inventory?dateTo=${dateTo}&systemType=${currentSystem.code}`
+            if (currentSession.warehouse_name) {
+                apiUrl += `&warehouse=${encodeURIComponent(currentSession.warehouse_name)}`
+            }
+
+            const res = await fetch(apiUrl)
+            const data = await res.json()
+
+            if (!data.ok) throw new Error('Failed to fetch live data')
+            const liveItems = data.items || []
+
+            // Build Map for O(1) Lookup: ProductID -> Balance
+            // Note: API aggregates by Product+Warehouse+Unit+Status.
+            // Audit Items are snapshot rows. We match by ProductID (and Unit ideally).
+            const liveMap = new Map<string, number>()
+            liveItems.forEach((li: any) => {
+                // Key needs to be specific enough.
+                // Audit items distinguish by productId.
+                // However, Audit items might have duplicate productIds if unit differs?
+                // Assuming Audit maps 1-to-1 with the API response lines effectively.
+                // Let's match by ProductID for now as primary key.
+                liveMap.set(li.productId, li.balance)
+            })
+
+            const mismatches: Record<string, number> = {}
+            let count = 0
+
+            sessionItems.forEach(item => {
+                // Find live balance for this item's product
+                const liveQty = liveMap.get(item.product_id)
+                // If liveQty exists and differs from stored system_quantity
+                // Note: If liveQty is undefined (product gone?), treat as 0?
+                // Or maybe the API only returns non-zero.
+                // If item.system_quantity is 0 and live is undefined -> match.
+
+                const currentLive = liveQty ?? 0
+                if (currentLive !== item.system_quantity) {
+                    mismatches[item.id] = currentLive
+                    count++
+                }
+            })
+
+            setLiveMismatches(mismatches)
+
+            if (count > 0) {
+                showToast(`Phát hiện ${count} mục thay đổi tồn kho hệ thống`, 'warning')
+            } else {
+                showToast('Dữ liệu hệ thống đã đồng bộ', 'success')
+            }
+
+        } catch (error) {
+            console.error('Check live error:', error)
+            showToast('Lỗi kiểm tra dữ liệu thực tế', 'error')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const syncSystemQuantity = async () => {
+        if (Object.keys(liveMismatches).length === 0) return
+        if (!await showConfirm('Cập nhật số lượng hệ thống mới nhất cho các mục bị lệch?')) return
+
+        setLoading(true)
+        try {
+            // Update DB
+            const updates = Object.entries(liveMismatches).map(([id, newQty]) => {
+                // Calculate new difference if actual exists
+                const item = sessionItems.find(i => i.id === id)
+                const actual = item?.actual_quantity
+                const diff = actual !== null && actual !== undefined ? actual - newQty : 0 - newQty
+
+                return supabase.from('inventory_check_items')
+                    .update({
+                        system_quantity: newQty,
+                        difference: diff
+                    })
+                    .eq('id', id)
+            })
+
+            await Promise.all(updates)
+
+            // Update Local State
+            const newItems = sessionItems.map(item => {
+                if (liveMismatches[item.id] !== undefined) {
+                    const newQty = liveMismatches[item.id]
+                    const diff = item.actual_quantity !== null ? item.actual_quantity - newQty : 0 - newQty
+                    return { ...item, system_quantity: newQty, difference: diff }
+                }
+                return item
+            })
+            setSessionItems(newItems)
+            setLiveMismatches({})
+
+            showToast('Đã cập nhật số lượng hệ thống', 'success')
+
+        } catch (error) {
+            console.error('Sync error:', error)
+            showToast('Lỗi cập nhật', 'error')
+        } finally {
+            setLoading(false)
+        }
+    }
+
     return {
         loading,
         sessions,
         currentSession,
         sessionItems,
+        liveMismatches,
         fetchSessions,
         createSession,
         fetchSessionDetail,
@@ -567,6 +681,8 @@ export function useAudit() {
         approveSession,
         rejectSession,
         deleteSession,
-        quickFill
+        quickFill,
+        checkLiveInventory,
+        syncSystemQuantity
     }
 }

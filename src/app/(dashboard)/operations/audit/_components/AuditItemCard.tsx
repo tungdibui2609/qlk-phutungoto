@@ -7,10 +7,11 @@ import Image from 'next/image'
 
 interface AuditItemCardProps {
     item: InventoryCheckItem
+    liveMismatchValue?: number
     onUpdate: (id: string, qty: number, note?: string) => void
 }
 
-export function AuditItemCard({ item, onUpdate }: AuditItemCardProps) {
+export function AuditItemCard({ item, liveMismatchValue, onUpdate }: AuditItemCardProps) {
     const [qty, setQty] = useState<string>(item.actual_quantity !== null ? item.actual_quantity.toString() : '')
     const [note, setNote] = useState(item.note || '')
     const [showNote, setShowNote] = useState(!!item.note)
@@ -113,6 +114,12 @@ export function AuditItemCard({ item, onUpdate }: AuditItemCardProps) {
                     <span className="font-mono font-bold text-lg text-slate-700 dark:text-slate-300">
                         {item.system_quantity} <span className="text-xs font-normal text-slate-400">{item.unit}</span>
                     </span>
+                    {liveMismatchValue !== undefined && (
+                        <div className="flex items-center gap-1 text-[10px] text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">
+                            <AlertTriangle size={10} />
+                            Mới: {liveMismatchValue}
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex flex-col gap-1 items-end flex-1">
