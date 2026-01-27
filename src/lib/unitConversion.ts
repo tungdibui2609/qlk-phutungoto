@@ -34,10 +34,11 @@ export function toBaseAmount(
     // Look up rate
     const rates = conversionMap.get(productId);
     if (rates && rates.has(uid)) {
-        return qty * rates.get(uid)!;
+        const result = qty * rates.get(uid)!;
+        return Number(result.toFixed(6));
     }
 
-    return qty;
+    return Number(qty.toFixed(6));
 }
 
 /**

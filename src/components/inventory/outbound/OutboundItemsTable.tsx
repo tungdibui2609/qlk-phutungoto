@@ -1,7 +1,10 @@
+import React, { useState } from 'react'
 import { Trash2, ChevronDown } from 'lucide-react'
 import { Combobox } from '@/components/ui/Combobox'
 import { Product, Unit, OrderItem } from '@/components/inventory/types'
 import { ItemUnitSelect } from '../shared/ItemUnitSelect'
+import { QuantityInput } from '@/components/ui/QuantityInput'
+import { formatQuantityFull } from '@/lib/numberUtils'
 
 interface OutboundItemsTableProps {
     items: OrderItem[]
@@ -17,6 +20,23 @@ interface OutboundItemsTableProps {
 export function OutboundItemsTable({
     items, products, units, updateItem, removeItem, targetUnit, hasModule, compact
 }: OutboundItemsTableProps) {
+    const [editingValue, setEditingValue] = useState<{ id: string, field: string, value: string } | null>(null)
+
+    const handleInputFocus = (id: string, field: string, currentVal: number | string | null | undefined) => {
+        const displayVal = currentVal?.toString().replace('.', ',') || ''
+        setEditingValue({ id, field, value: displayVal })
+    }
+
+    const handleInputChange = (id: string, field: keyof OrderItem, rawValue: string) => {
+        setEditingValue({ id, field, value: rawValue })
+        const normalized = rawValue.replace(',', '.')
+        const numericVal = parseFloat(normalized)
+        if (!isNaN(numericVal)) {
+            updateItem(id, field, numericVal)
+        } else if (rawValue === '') {
+            updateItem(id, field, 0)
+        }
+    }
     return (
         <div className="space-y-4">
             <h3 className="font-bold text-stone-900 dark:text-white">Chi tiết hàng hóa</h3>
@@ -83,13 +103,19 @@ export function OutboundItemsTable({
                                                 </div>
                                             )}
                                         />
-                                        {/* Stock Balance Display */}
                                         {product && (
-                                            <div className="mt-1 flex items-center gap-2 text-[10px]">
-                                                <span className="text-stone-500">Tồn kho:</span>
-                                                <span className={`font-medium ${stockAvailable <= 0 ? 'text-red-500' : 'text-blue-600'}`}>
-                                                    {stockAvailable.toLocaleString('vi-VN')} {product.unit}
-                                                </span>
+                                            <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
+                                                <div className="flex items-center gap-1.5 pt-0.5 border-t border-stone-100 dark:border-zinc-800/50 mt-0.5">
+                                                    <span className="text-stone-400">Tồn kho:</span>
+                                                    <span className={`font-bold ${stockAvailable <= 0 ? 'text-red-500' : 'text-blue-600'}`}>
+                                                        {product.stock_details || `${formatQuantityFull(stockAvailable)} ${product.unit}`}
+                                                    </span>
+                                                </div>
+                                                {product.stock_details && product.unit && !product.stock_details.toLowerCase().includes(product.unit.toLowerCase()) && (
+                                                    <div className="text-[9px] text-stone-400 italic">
+                                                        (~ {formatQuantityFull(stockAvailable)} {product.unit})
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </td>
@@ -106,18 +132,18 @@ export function OutboundItemsTable({
                                     <td className="px-4 py-3">
                                         <div className="flex flex-col gap-2">
                                             <div className="relative group/qty">
-                                                <input
-                                                    type="text"
-                                                    value={item.quantity ? item.quantity.toLocaleString('vi-VN') : ''}
-                                                    onChange={e => {
-                                                        const val = e.target.value.replace(/\D/g, '')
-                                                        updateItem(item.id, 'quantity', Number(val))
-                                                    }}
-                                                    className={`w-full bg-transparent outline-none text-right font-medium pr-6 ${isOverStock ? 'text-red-600 font-bold' : ''
-                                                        }`}
+                                                <QuantityInput
+                                                    value={item.quantity}
+                                                    onChange={(val) => updateItem(item.id, 'quantity', val)}
+                                                    className={`bg-transparent border-none text-right font-medium pr-6 focus:ring-0 ${isOverStock ? 'text-red-600 font-bold' : ''}`}
                                                 />
                                                 {/* Warning Indicator */}
-                                                {isOverStock && (
+                                                {item.needsUnbundle && (
+                                                    <div className="text-[10px] text-orange-500 text-right font-medium animate-pulse">
+                                                        {item.unbundleInfo}
+                                                    </div>
+                                                )}
+                                                {isOverStock && !item.needsUnbundle && (
                                                     <div className="text-[10px] text-red-500 text-right font-medium">
                                                         Vượt quá tồn!
                                                     </div>
@@ -137,14 +163,11 @@ export function OutboundItemsTable({
                                             {hasModule('outbound_financials') && item.isDocQtyVisible && (
                                                 <div className="relative animate-in slide-in-from-top-2 duration-200">
                                                     <div className="text-[10px] text-stone-500 text-center mb-0.5">SL yêu cầu</div>
-                                                    <input
-                                                        type="text"
-                                                        value={item.document_quantity ? item.document_quantity.toLocaleString('vi-VN') : ''}
-                                                        onChange={e => {
-                                                            const val = e.target.value.replace(/\D/g, '')
-                                                            updateItem(item.id, 'document_quantity', Number(val))
-                                                        }}
-                                                        className="w-full bg-stone-50 border border-stone-200 rounded px-2 py-1 text-right text-xs text-stone-600 outline-none focus:border-blue-500"
+                                                    <QuantityInput
+                                                        value={item.document_quantity || 0}
+                                                        onChange={(val) => updateItem(item.id, 'document_quantity', val)}
+                                                        className="bg-stone-50 border border-stone-200 rounded px-2 py-1 text-right text-xs text-stone-600 focus:ring-0"
+                                                        placeholder="0"
                                                     />
                                                 </div>
                                             )}
@@ -163,12 +186,12 @@ export function OutboundItemsTable({
                                                     if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
                                                     else return '-'
                                                 }
-                                                if (targetUnit === product.unit) return Number.isInteger(baseQty) ? baseQty : baseQty.toFixed(2)
+                                                if (targetUnit === product.unit) return formatQuantityFull(baseQty)
 
                                                 const targetConfig = product.product_units?.find(pu => units.find(u => u.id === pu.unit_id)?.name === targetUnit)
                                                 if (targetConfig) {
                                                     const val = baseQty / targetConfig.conversion_rate
-                                                    return Number.isInteger(val) ? val : val.toFixed(2)
+                                                    return formatQuantityFull(val)
                                                 }
                                                 return '-'
                                             })()}
@@ -261,13 +284,19 @@ export function OutboundItemsTable({
                                         </div>
                                     )}
                                 />
-                                {/* Stock Balance Display */}
                                 {product && (
-                                    <div className="flex justify-between items-center text-[10px] mt-1 bg-stone-50 dark:bg-zinc-800/50 p-1.5 rounded">
-                                        <span className="text-stone-500">Tồn kho hiện tại:</span>
-                                        <span className={`font-medium ${stockAvailable <= 0 ? 'text-red-500' : 'text-blue-600'}`}>
-                                            {stockAvailable.toLocaleString('vi-VN')} {product.unit}
-                                        </span>
+                                    <div className="mt-1 flex flex-col gap-0.5 text-[10px] bg-stone-50 dark:bg-zinc-800/50 p-2 rounded-lg border border-stone-100 dark:border-zinc-800">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-stone-500">Tồn kho hiện tại:</span>
+                                            <span className={`font-bold ${stockAvailable <= 0 ? 'text-red-500' : 'text-blue-600'}`}>
+                                                {product.stock_details || `${formatQuantityFull(stockAvailable)} ${product.unit}`}
+                                            </span>
+                                        </div>
+                                        {product.stock_details && product.unit && !product.stock_details.toLowerCase().includes(product.unit.toLowerCase()) && (
+                                            <div className="text-right text-[9px] text-stone-400 italic">
+                                                (~ {formatQuantityFull(stockAvailable)} {product.unit})
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -286,14 +315,10 @@ export function OutboundItemsTable({
                                     <label className="text-xs text-stone-500 text-right block">Thực xuất</label>
                                     <div className="flex flex-col gap-2">
                                         <div className="relative group/qty">
-                                            <input
-                                                type="text"
-                                                value={item.quantity ? item.quantity.toLocaleString('vi-VN') : ''}
-                                                onChange={e => {
-                                                    const val = e.target.value.replace(/\D/g, '')
-                                                    updateItem(item.id, 'quantity', Number(val))
-                                                }}
-                                                className={`w-full bg-transparent outline-none text-right font-bold pr-2 border-b border-stone-200 dark:border-zinc-700 py-1 transition-colors ${isOverStock ? 'text-red-600 border-red-200' : 'focus:border-blue-500'}`}
+                                            <QuantityInput
+                                                value={item.quantity}
+                                                onChange={(val) => updateItem(item.id, 'quantity', val)}
+                                                className={`bg-transparent border-none text-right font-bold pr-2 border-b border-stone-200 dark:border-zinc-700 py-1 transition-colors focus:ring-0 ${isOverStock ? 'text-red-600 border-red-200' : 'focus:border-blue-500'}`}
                                                 placeholder="0"
                                             />
                                             {hasModule('outbound_financials') && (
@@ -308,7 +333,12 @@ export function OutboundItemsTable({
                                                 </button>
                                             )}
                                         </div>
-                                        {isOverStock && (
+                                        {item.needsUnbundle && (
+                                            <div className="text-[10px] text-orange-500 text-right font-bold animate-pulse">
+                                                {item.unbundleInfo}
+                                            </div>
+                                        )}
+                                        {isOverStock && !item.needsUnbundle && (
                                             <div className="text-[10px] text-red-500 text-right font-bold animate-pulse">
                                                 Vượt quá tồn kho!
                                             </div>
@@ -316,14 +346,11 @@ export function OutboundItemsTable({
                                         {hasModule('outbound_financials') && item.isDocQtyVisible && (
                                             <div className="relative animate-in slide-in-from-top-2 duration-200 bg-stone-50 p-2 rounded border border-stone-100">
                                                 <div className="text-[10px] text-stone-500 text-center mb-0.5">SL yêu cầu</div>
-                                                <input
-                                                    type="text"
-                                                    value={item.document_quantity ? item.document_quantity.toLocaleString('vi-VN') : ''}
-                                                    onChange={e => {
-                                                        const val = e.target.value.replace(/\D/g, '')
-                                                        updateItem(item.id, 'document_quantity', Number(val))
-                                                    }}
-                                                    className="w-full bg-white border border-stone-200 rounded px-2 py-1 text-right text-xs text-stone-600 outline-none focus:border-blue-500"
+                                                <QuantityInput
+                                                    value={item.document_quantity || 0}
+                                                    onChange={(val) => updateItem(item.id, 'document_quantity', val)}
+                                                    className="bg-white border border-stone-200 rounded px-2 py-1 text-right text-xs text-stone-600 focus:ring-0"
+                                                    placeholder="0"
                                                 />
                                             </div>
                                         )}
@@ -344,12 +371,12 @@ export function OutboundItemsTable({
                                                 if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
                                                 else return '-'
                                             }
-                                            if (targetUnit === product.unit) return Number.isInteger(baseQty) ? baseQty : baseQty.toFixed(2)
+                                            if (targetUnit === product.unit) return formatQuantityFull(baseQty)
 
                                             const targetConfig = product.product_units?.find(pu => units.find(u => u.id === pu.unit_id)?.name === targetUnit)
                                             if (targetConfig) {
                                                 const val = baseQty / targetConfig.conversion_rate
-                                                return Number.isInteger(val) ? val : val.toFixed(2)
+                                                return formatQuantityFull(val)
                                             }
                                             return '-'
                                         })()}

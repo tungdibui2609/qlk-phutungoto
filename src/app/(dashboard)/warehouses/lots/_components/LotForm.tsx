@@ -5,11 +5,13 @@ import { ImageUpload } from '@/components/ui/ImageUpload'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { logActivity } from '@/lib/audit'
+import { parseQuantity } from '@/lib/numberUtils'
+import { QuantityInput } from '@/components/ui/QuantityInput'
 import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '../_hooks/useLotManagement'
 
 interface LotItemInput {
     productId: string
-    quantity: number
+    quantity: number | string
     unit: string
 }
 
@@ -57,6 +59,8 @@ export function LotForm({
     const [images, setImages] = useState<string[]>([])
     const [extraInfo, setExtraInfo] = useState('')
     const [lotItems, setLotItems] = useState<LotItemInput[]>([{ productId: '', quantity: 0, unit: '' }])
+    const [isInitialized, setIsInitialized] = useState(false)
+    const [isPersistent, setIsPersistent] = useState(false)
 
     const formRef = useRef<HTMLDivElement>(null)
 
@@ -116,20 +120,57 @@ export function LotForm({
                 setExtraInfo(meta.extra_info || '')
 
             } else {
-                // Create Mode - Reset
-                resetForm()
-                generateLotCode()
+                // Create Mode - Load sticky values from localStorage
+                const stickyData = localStorage.getItem('LOT_FORM_STICKY_DATA')
+                if (stickyData) {
+                    try {
+                        const parsed = JSON.parse(stickyData)
+                        setIsPersistent(!!parsed.isPersistent)
 
-                // Defaults
-                setInboundDate(new Date().toISOString().split('T')[0])
-                setPeelingDate(new Date().toISOString().split('T')[0])
-                setPackagingDate(new Date().toISOString().split('T')[0])
+                        if (parsed.isPersistent) {
+                            // Reset non-persistent fields first to ensure no leaks
+                            setImages([])
+                            setNewLotNotes('')
 
-                if (branches.length > 0) {
-                    const defaultBranch = branches.find(b => b.is_default)
-                    setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
+                            if (parsed.supplierId) setSelectedSupplierId(parsed.supplierId)
+                            if (parsed.qcId) setSelectedQCId(parsed.qcId)
+                            if (parsed.peelingDate) setPeelingDate(parsed.peelingDate)
+                            if (parsed.packagingDate) setPackagingDate(parsed.packagingDate)
+                            if (parsed.warehouseName) setWarehouseName(parsed.warehouseName)
+                            if (parsed.batchCode) setBatchCode(parsed.batchCode)
+                            if (parsed.extraInfo) setExtraInfo(parsed.extraInfo.toUpperCase())
+                            if (parsed.inboundDate) setInboundDate(parsed.inboundDate)
+                            if (parsed.lotItems) setLotItems(parsed.lotItems)
+                        } else {
+                            resetForm()
+                            setInboundDate(new Date().toISOString().split('T')[0])
+                            setPeelingDate(new Date().toISOString().split('T')[0])
+                            setPackagingDate(new Date().toISOString().split('T')[0])
+
+                            if (branches.length > 0) {
+                                const defaultBranch = branches.find(b => b.is_default)
+                                setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse sticky data', e)
+                    }
+                } else {
+                    // Defaults if no sticky data
+                    resetForm()
+                    setInboundDate(new Date().toISOString().split('T')[0])
+                    setPeelingDate(new Date().toISOString().split('T')[0])
+                    setPackagingDate(new Date().toISOString().split('T')[0])
+
+                    if (branches.length > 0) {
+                        const defaultBranch = branches.find(b => b.is_default)
+                        setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
+                    }
                 }
+
+                generateLotCode()
             }
+            setIsInitialized(true)
 
             // Scroll to form
             setTimeout(() => {
@@ -139,7 +180,40 @@ export function LotForm({
                 }
             }, 100)
         }
-    }, [isVisible, editingLot, branches]) // Depend on isVisible to trigger init
+    }, [isVisible, editingLot, branches])
+
+    // Save sticky values to localStorage in Create Mode
+    useEffect(() => {
+        if (isVisible && !editingLot && isInitialized) {
+            const stickyData = {
+                isPersistent,
+                supplierId: isPersistent ? selectedSupplierId : '',
+                qcId: isPersistent ? selectedQCId : '',
+                peelingDate: isPersistent ? peelingDate : '',
+                packagingDate: isPersistent ? packagingDate : '',
+                warehouseName: isPersistent ? warehouseName : '',
+                batchCode: isPersistent ? batchCode : '',
+                extraInfo: isPersistent ? extraInfo : '',
+                inboundDate: isPersistent ? inboundDate : '',
+                lotItems: isPersistent ? lotItems : []
+            }
+            localStorage.setItem('LOT_FORM_STICKY_DATA', JSON.stringify(stickyData))
+        }
+    }, [
+        isVisible,
+        editingLot,
+        isInitialized,
+        isPersistent,
+        selectedSupplierId,
+        selectedQCId,
+        peelingDate,
+        packagingDate,
+        warehouseName,
+        batchCode,
+        extraInfo,
+        inboundDate,
+        lotItems
+    ])
 
     function resetForm() {
         setNewLotCode('')
@@ -205,11 +279,16 @@ export function LotForm({
     async function handleSubmit() {
         if (!newLotCode.trim()) return
 
-        const validItems = lotItems.filter(item => item.productId && item.quantity > 0)
-        const totalQuantity = validItems.reduce((sum, item) => sum + item.quantity, 0)
+        const processedItems = lotItems.map(item => ({
+            ...item,
+            quantity: parseQuantity(item.quantity)
+        }))
+        const validItems = processedItems.filter(item => item.productId && item.quantity > 0)
+        const totalQuantity = Number(validItems.reduce((sum, item) => sum + item.quantity, 0).toFixed(6))
 
-        // Prepare History Entry if new Lot
-        const systemHistory: any = (editingLot?.metadata as any)?.system_history || { exports: [], inbound: [] }
+        // Prepare History Entry
+        let systemHistory: any = (editingLot?.metadata as any)?.system_history || { exports: [], inbound: [] }
+
         if (!editingLot) {
             const inboundItems: Record<string, any> = {}
             validItems.forEach((item, idx) => {
@@ -233,6 +312,47 @@ export function LotForm({
                 items: inboundItems,
                 draft: true // Marked as draft for the inbound buffer
             })
+        } else {
+            // Edit Mode: Update existing draft or create adjustment
+            const inboundItems: Record<string, any> = {}
+            validItems.forEach((item, idx) => {
+                const product = products.find(p => p.id === item.productId)
+                inboundItems[idx] = {
+                    product_id: item.productId,
+                    product_sku: product?.sku,
+                    product_name: product?.name,
+                    quantity: item.quantity,
+                    unit: item.unit,
+                    price: (product as any)?.cost_price || 0
+                }
+            })
+
+            if (!systemHistory.inbound) systemHistory.inbound = []
+            const existingDraftIdx = systemHistory.inbound.findIndex((inb: any) => inb.draft === true)
+
+            if (existingDraftIdx >= 0) {
+                // Update existing draft to reflect new state
+                systemHistory.inbound[existingDraftIdx] = {
+                    ...systemHistory.inbound[existingDraftIdx],
+                    supplier_id: selectedSupplierId || null,
+                    supplier_name: suppliers.find(s => s.id === selectedSupplierId)?.name || 'N/A',
+                    items: inboundItems,
+                    is_edit: true,
+                    updated_at: new Date().toISOString()
+                }
+            } else {
+                // Original was already finalized, create an adjustment draft
+                systemHistory.inbound.push({
+                    id: crypto.randomUUID(),
+                    date: new Date().toISOString(),
+                    supplier_id: selectedSupplierId || null,
+                    supplier_name: suppliers.find(s => s.id === selectedSupplierId)?.name || 'N/A',
+                    items: inboundItems,
+                    draft: true,
+                    is_edit: true,
+                    is_adjustment: true
+                })
+            }
         }
 
         const lotData = {
@@ -296,7 +416,7 @@ export function LotForm({
             const itemsToInsert = validItems.map(item => ({
                 lot_id: lotId,
                 product_id: item.productId,
-                quantity: item.quantity,
+                quantity: Number(item.quantity.toFixed(6)),
                 unit: item.unit
             }))
 
@@ -523,10 +643,10 @@ export function LotForm({
                                         </label>
                                         <textarea
                                             value={extraInfo}
-                                            onChange={(e) => setExtraInfo(e.target.value)}
-                                            className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all resize-none font-mono text-sm"
+                                            onChange={(e) => setExtraInfo(e.target.value.toUpperCase())}
+                                            className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all resize-none font-mono text-sm uppercase"
                                             rows={5}
-                                            placeholder="Nhập các thông tin phụ khác..."
+                                            placeholder="NHẬP CÁC THÔNG TIN PHỤ KHÁC..."
                                         />
                                     </div>
                                 )}
@@ -553,7 +673,7 @@ export function LotForm({
                         <label className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
                             <span>Danh sách sản phẩm ({lotItems.length})</span>
                             <button
-                                onClick={() => setLotItems([...lotItems, { productId: '', quantity: 0, unit: '' }])}
+                                onClick={() => setLotItems([...lotItems, { productId: '', quantity: '', unit: '' }])}
                                 className="text-xs flex items-center gap-1 text-orange-600 hover:text-orange-700 font-medium px-2 py-1 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
                             >
                                 <Plus size={14} />
@@ -575,16 +695,16 @@ export function LotForm({
                                                 }))}
                                                 value={item.productId}
                                                 onChange={(val) => {
-                                                    const newItems = [...lotItems]
-                                                    newItems[index].productId = val || ''
-
-                                                    // Auto select base unit
-                                                    const product = products.find(p => p.id === val)
-                                                    if (product) {
-                                                        newItems[index].unit = product.unit || ''
-                                                    }
-
-                                                    setLotItems(newItems)
+                                                    setLotItems(prev => {
+                                                        const newItems = [...prev]
+                                                        const product = products.find(p => p.id === val)
+                                                        newItems[index] = {
+                                                            ...newItems[index],
+                                                            productId: val || '',
+                                                            unit: product?.unit || ''
+                                                        }
+                                                        return newItems
+                                                    })
                                                 }}
                                                 placeholder="-- Chọn sản phẩm --"
                                                 className="w-full"
@@ -601,17 +721,16 @@ export function LotForm({
                                     </div>
 
                                     <div className="w-full md:w-32 space-y-1">
-                                        <input
-                                            type="number"
-                                            min="1"
+                                        <QuantityInput
                                             placeholder="SL"
-                                            value={item.quantity || ''}
-                                            onChange={(e) => {
-                                                const newItems = [...lotItems]
-                                                newItems[index].quantity = parseInt(e.target.value) || 0
-                                                setLotItems(newItems)
+                                            value={item.quantity}
+                                            onChange={(val) => {
+                                                setLotItems(prev => {
+                                                    const newItems = [...prev]
+                                                    newItems[index] = { ...newItems[index], quantity: val }
+                                                    return newItems
+                                                })
                                             }}
-                                            className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-sm transition-all"
                                         />
                                     </div>
 
@@ -620,9 +739,12 @@ export function LotForm({
                                         <select
                                             value={item.unit}
                                             onChange={(e) => {
-                                                const newItems = [...lotItems]
-                                                newItems[index].unit = e.target.value
-                                                setLotItems(newItems)
+                                                const val = e.target.value
+                                                setLotItems(prev => {
+                                                    const newItems = [...prev]
+                                                    newItems[index] = { ...newItems[index], unit: val }
+                                                    return newItems
+                                                })
                                             }}
                                             className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-sm transition-all"
                                         >
@@ -665,20 +787,38 @@ export function LotForm({
                     </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-3 mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800">
-                    <button
-                        onClick={onClose}
-                        className="px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition-colors"
-                    >
-                        Hủy bỏ
-                    </button>
-                    <button
-                        onClick={handleSubmit}
-                        disabled={!newLotCode.trim()}
-                        className="px-6 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-medium shadow-lg shadow-orange-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {editingLot ? 'Cập nhật' : 'Lưu LOT'}
-                    </button>
+                <div className="flex items-center justify-between gap-3 mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800">
+                    {!editingLot && (
+                        <label className="flex items-center gap-2 cursor-pointer group">
+                            <div className="relative">
+                                <input
+                                    type="checkbox"
+                                    checked={isPersistent}
+                                    onChange={(e) => setIsPersistent(e.target.checked)}
+                                    className="sr-only peer"
+                                />
+                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-300 dark:peer-focus:ring-orange-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-orange-600"></div>
+                            </div>
+                            <span className="text-sm font-medium text-slate-600 dark:text-slate-400 group-hover:text-orange-600 transition-colors">
+                                Ghi nhớ thông tin cho lô tiếp theo
+                            </span>
+                        </label>
+                    )}
+                    <div className="flex items-center gap-3 ml-auto">
+                        <button
+                            onClick={onClose}
+                            className="px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition-colors"
+                        >
+                            Hủy bỏ
+                        </button>
+                        <button
+                            onClick={handleSubmit}
+                            disabled={!newLotCode.trim()}
+                            className="px-6 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-medium shadow-lg shadow-orange-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {editingLot ? 'Cập nhật' : 'Lưu LOT'}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

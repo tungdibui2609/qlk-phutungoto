@@ -38,8 +38,13 @@ export function AuditSessionList({ sessions, loading, onDelete }: AuditSessionLi
     return (
         <div className="space-y-3">
             {sessions.map(session => (
+<<<<<<< HEAD
                 <Link
                     key={session.id}
+=======
+                <Link
+                    key={session.id}
+>>>>>>> origin/main
                     href={`/operations/audit/${session.id}`}
                     className="block group bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 hover:border-orange-500/50 hover:shadow-lg transition-all duration-200"
                 >
@@ -67,7 +72,11 @@ export function AuditSessionList({ sessions, loading, onDelete }: AuditSessionLi
                                     Toàn hệ thống
                                 </div>
                             )}
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> origin/main
                             <div className="flex items-center gap-3 text-xs text-slate-500">
                                 <span className="flex items-center gap-1">
                                     <User size={12} />

@@ -44,6 +44,7 @@ export function ApproveAuditModal({ isOpen, onClose, onApprove }: ApproveAuditMo
                         {/* Option 2: Accounting Ticket (Default and Only Option for now due to Accounting Snapshot) */}
                         <label className={`
                             flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all
+<<<<<<< HEAD
                             ${method === 'ACCOUNTING_TICKET'
                                 ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
                                 : 'border-slate-200 dark:border-slate-700 hover:border-emerald-200'}
@@ -51,6 +52,15 @@ export function ApproveAuditModal({ isOpen, onClose, onApprove }: ApproveAuditMo
                             <input
                                 type="radio"
                                 name="method"
+=======
+                            ${method === 'ACCOUNTING_TICKET'
+                                ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                                : 'border-slate-200 dark:border-slate-700 hover:border-emerald-200'}
+                        `}>
+                            <input
+                                type="radio"
+                                name="method"
+>>>>>>> origin/main
                                 className="mt-1"
                                 checked={method === 'ACCOUNTING_TICKET'}
                                 onChange={() => setMethod('ACCOUNTING_TICKET')}
@@ -73,13 +83,21 @@ export function ApproveAuditModal({ isOpen, onClose, onApprove }: ApproveAuditMo
                     </div>
 
                     <div className="pt-2 flex gap-3">
+<<<<<<< HEAD
                         <button
+=======
+                        <button
+>>>>>>> origin/main
                             onClick={onClose}
                             className="flex-1 py-2.5 rounded-xl text-slate-600 font-bold hover:bg-slate-100 transition-colors"
                         >
                             Hủy
                         </button>
+<<<<<<< HEAD
                         <button
+=======
+                        <button
+>>>>>>> origin/main
                             onClick={handleConfirm}
                             disabled={loading}
                             className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all disabled:opacity-50"

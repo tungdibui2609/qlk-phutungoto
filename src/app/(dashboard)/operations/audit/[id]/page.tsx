@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+/* eslint-disable @typescript-eslint/no-explicit-any */
+=======
+>>>>>>> origin/main
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
@@ -11,6 +15,7 @@ import { Search, Filter, Layers, Users, Eye } from 'lucide-react'
 export default function AuditDetailPage() {
     const params = useParams()
     const id = params.id as string
+<<<<<<< HEAD
     const {
         currentSession,
         sessionItems,
@@ -24,6 +29,18 @@ export default function AuditDetailPage() {
         quickFill,
         checkLiveInventory,
         syncSystemQuantity
+=======
+    const {
+        currentSession,
+        sessionItems,
+        loading,
+        fetchSessionDetail,
+        updateItem,
+        submitForApproval,
+        approveSession,
+        rejectSession,
+        quickFill
+>>>>>>> origin/main
     } = useAudit()
 
     const [searchTerm, setSearchTerm] = useState('')
@@ -39,7 +56,11 @@ export default function AuditDetailPage() {
     // Filtering
     const filteredItems = useMemo(() => {
         return sessionItems.filter(item => {
+<<<<<<< HEAD
             const matchesSearch =
+=======
+            const matchesSearch =
+>>>>>>> origin/main
                 item.products?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 item.products?.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 item.lots?.code.toLowerCase().includes(searchTerm.toLowerCase())
@@ -76,17 +97,27 @@ export default function AuditDetailPage() {
 
     return (
         <div className="pb-20 min-h-screen bg-slate-50 dark:bg-black">
+<<<<<<< HEAD
             <AuditSessionHeader
                 session={currentSession}
                 liveMismatches={liveMismatches}
+=======
+            <AuditSessionHeader
+                session={currentSession}
+>>>>>>> origin/main
                 onSubmit={() => submitForApproval(id)}
                 onApprove={() => setShowApproveModal(true)}
                 onReject={() => rejectSession(id, 'Từ chối bởi quản lý')}
                 onQuickFill={quickFill}
+<<<<<<< HEAD
                 onCheckLive={checkLiveInventory}
                 onSyncLive={syncSystemQuantity}
             />
 
+=======
+            />
+
+>>>>>>> origin/main
             {/* Session Metadata (Participants & Scope) */}
             {currentSession && (
                 <div className="max-w-3xl mx-auto px-4 pt-4">
@@ -120,7 +151,11 @@ export default function AuditDetailPage() {
                 </div>
             )}
 
+<<<<<<< HEAD
             <ApproveAuditModal
+=======
+            <ApproveAuditModal
+>>>>>>> origin/main
                 isOpen={showApproveModal}
                 onClose={() => setShowApproveModal(false)}
                 onApprove={(method) => approveSession(id, method)}
@@ -131,7 +166,11 @@ export default function AuditDetailPage() {
                 <div className="flex flex-col gap-3 sticky top-[73px] z-20 bg-slate-50 dark:bg-black pb-2">
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+<<<<<<< HEAD
                         <input
+=======
+                        <input
+>>>>>>> origin/main
                             type="text"
                             placeholder="Tìm sản phẩm, SKU, hoặc mã Lot..."
                             className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none shadow-sm transition-all"
@@ -139,6 +178,7 @@ export default function AuditDetailPage() {
                             onChange={e => setSearchTerm(e.target.value)}
                         />
                     </div>
+<<<<<<< HEAD
 
                     <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
                         <FilterButton
@@ -156,6 +196,25 @@ export default function AuditDetailPage() {
                         <FilterButton
                             active={filterMode === 'MISMATCH'}
                             onClick={() => setFilterMode('MISMATCH')}
+=======
+
+                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                        <FilterButton
+                            active={filterMode === 'ALL'}
+                            onClick={() => setFilterMode('ALL')}
+                            label="Tất cả"
+                            count={sessionItems.length}
+                        />
+                        <FilterButton
+                            active={filterMode === 'UNCOUNTED'}
+                            onClick={() => setFilterMode('UNCOUNTED')}
+                            label="Chưa kiểm"
+                            count={sessionItems.filter(i => i.actual_quantity === null).length}
+                        />
+                        <FilterButton
+                            active={filterMode === 'MISMATCH'}
+                            onClick={() => setFilterMode('MISMATCH')}
+>>>>>>> origin/main
                             label="Lệch kho"
                             count={sessionItems.filter(i => i.actual_quantity !== null && i.difference !== 0).length}
                             alert
@@ -178,17 +237,28 @@ export default function AuditDetailPage() {
                             </div>
                             <div className="space-y-3">
                                 {items.map(item => (
+<<<<<<< HEAD
                                     <AuditItemCard
                                         key={item.id}
                                         item={item}
                                         liveMismatchValue={liveMismatches[item.id]}
                                         onUpdate={updateItem}
+=======
+                                    <AuditItemCard
+                                        key={item.id}
+                                        item={item}
+                                        onUpdate={updateItem}
+>>>>>>> origin/main
                                     />
                                 ))}
                             </div>
                         </div>
                     ))}
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> origin/main
                     {filteredItems.length === 0 && (
                         <div className="text-center py-12 text-slate-400">
                             Không tìm thấy sản phẩm nào phù hợp.
@@ -206,8 +276,13 @@ function FilterButton({ active, onClick, label, count, alert }: { active: boolea
             onClick={onClick}
             className={`
                 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all border
+<<<<<<< HEAD
                 ${active
                     ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900'
+=======
+                ${active
+                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900'
+>>>>>>> origin/main
                     : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-800'
                 }
             `}
@@ -215,8 +290,13 @@ function FilterButton({ active, onClick, label, count, alert }: { active: boolea
             {label}
             <span className={`
                 px-1.5 py-0.5 rounded-md text-[10px]
+<<<<<<< HEAD
                 ${active
                     ? 'bg-white/20 text-white'
+=======
+                ${active
+                    ? 'bg-white/20 text-white'
+>>>>>>> origin/main
                     : (alert && count > 0 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500')
                 }
             `}>

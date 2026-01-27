@@ -4,6 +4,7 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useSystem } from '@/contexts/SystemContext'
 import { Loader2 } from 'lucide-react'
+import { formatQuantityFull } from '@/lib/numberUtils'
 
 // Types matching API response
 interface TagInvItem {
@@ -230,7 +231,7 @@ export default function InventoryByTag() {
 
                         <div className="flex items-center gap-3 pl-7 sm:pl-0 self-end sm:self-auto">
                             <span className="text-lg font-bold tabular-nums text-zinc-700 dark:text-zinc-300">
-                                {node.totalQuantity.toLocaleString()}
+                                {formatQuantityFull(node.totalQuantity)}
                             </span>
                             <span className="text-sm text-zinc-500">{node.unit}</span>
                         </div>
@@ -246,7 +247,7 @@ export default function InventoryByTag() {
                                         <span className="text-zinc-700 dark:text-zinc-300">{p.productName}</span>
                                     </div>
                                     <div className="flex items-center gap-4 pl-0 sm:pl-4 self-end sm:self-auto">
-                                        <span className="font-medium">{p.quantity.toLocaleString()}</span>
+                                        <span className="font-medium">{formatQuantityFull(p.quantity)}</span>
                                         <span className="text-xs text-zinc-400">{p.lotCount} LOT</span>
                                     </div>
                                 </div>

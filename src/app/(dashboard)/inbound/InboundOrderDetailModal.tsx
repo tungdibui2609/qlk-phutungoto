@@ -10,6 +10,7 @@ import { useUser } from '@/contexts/UserContext'
 import { useSystem } from '@/contexts/SystemContext'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/Dialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { formatQuantityFull } from '@/lib/numberUtils'
 
 interface InboundOrder {
     id: string
@@ -440,7 +441,7 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                                         <div>{item.product_name || 'N/A'}</div>
                                                     </td>
                                                     <td className="px-4 py-3 text-stone-500">{item.unit || '-'}</td>
-                                                    <td className="px-4 py-3 text-center font-medium">{item.quantity}</td>
+                                                    <td className="px-4 py-3 text-center font-medium">{formatQuantityFull(item.quantity)}</td>
                                                     {/* Conversion Logic */}
                                                     {hasModule('inbound_conversion') && targetUnit && (
                                                         <td className="px-4 py-3 text-center font-medium text-orange-600">
@@ -465,7 +466,7 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
 
                                                                 // 2. Convert to target
                                                                 if (targetUnit === item.products.unit) {
-                                                                    return Number.isInteger(baseQty) ? baseQty : baseQty.toFixed(2)
+                                                                    return formatQuantityFull(baseQty)
                                                                 }
 
                                                                 const targetConfig = item.products.product_units?.find(pu => {
@@ -475,7 +476,7 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
 
                                                                 if (targetConfig) {
                                                                     const result = baseQty / targetConfig.conversion_rate
-                                                                    return Number.isInteger(result) ? result : result.toFixed(2)
+                                                                    return formatQuantityFull(result)
                                                                 }
 
                                                                 return '-'
@@ -484,7 +485,7 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                                     )}
 
                                                     {hasModule('inbound_financials') && (
-                                                        <td className="px-4 py-3 text-right font-medium text-blue-600">{item.document_quantity || item.quantity}</td>
+                                                        <td className="px-4 py-3 text-right font-medium text-blue-600">{formatQuantityFull(item.document_quantity || item.quantity)}</td>
                                                     )}
                                                     {hasModule('inbound_financials') && (
                                                         <>
@@ -545,14 +546,14 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                                     {/* Total Actual Quantity */}
                                                     <td className="px-4 py-3 text-center text-stone-900 dark:text-white">
                                                         <div className="flex flex-col items-center">
-                                                            <span>{!hasModule('inbound_ui_compact') && items.reduce((sum, item) => sum + item.quantity, 0).toLocaleString('vi-VN')}</span>
+                                                            <span>{!hasModule('inbound_ui_compact') && formatQuantityFull(items.reduce((sum, item) => sum + item.quantity, 0))}</span>
                                                         </div>
                                                     </td>
 
                                                     {/* Total Converted */}
                                                     {hasModule('inbound_conversion') && targetUnit && (
                                                         <td className="px-4 py-3 text-center text-orange-600">
-                                                            {items.reduce((sum, item) => {
+                                                            {formatQuantityFull(items.reduce((sum, item) => {
                                                                 if (!item.quantity || !item.unit) return sum
                                                                 const product = item.products
                                                                 if (!product) return sum
@@ -577,14 +578,14 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
 
                                                                 if (targetConfig) return sum + (baseQty / targetConfig.conversion_rate)
                                                                 return sum
-                                                            }, 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}
+                                                            }, 0))}
                                                         </td>
                                                     )}
 
                                                     {/* Document Quantity (If active) */}
                                                     {hasModule('inbound_financials') && (
                                                         <td className="px-4 py-3 text-right text-blue-600">
-                                                            {items.reduce((sum, item) => sum + (item.document_quantity || 0), 0).toLocaleString('vi-VN')}
+                                                            {formatQuantityFull(items.reduce((sum, item) => sum + (item.document_quantity || 0), 0))}
                                                         </td>
                                                     )}
 

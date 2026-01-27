@@ -2,11 +2,15 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { unbundleService } from '@/services/inventory/unbundleService'
+import { formatQuantityFull } from '@/lib/numberUtils'
 import { Product, Customer, Unit, OrderItem } from '../types'
 
 export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, onClose }: any) {
     const { showToast } = useToast()
     const { currentSystem } = useSystem()
+    const { toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
 
     // Form State
     const [code, setCode] = useState('')
@@ -35,6 +39,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
     const [loadingData, setLoadingData] = useState(false)
     const [submitting, setSubmitting] = useState(false)
     const [confirmDialog, setConfirmDialog] = useState<{ isOpen: boolean, title: string, message: string, onConfirm: () => void }>({ isOpen: false, title: '', message: '', onConfirm: () => { } })
+    const [unitStockMap, setUnitStockMap] = useState<Map<string, number>>(new Map()) // "productId_unitName" -> balance
 
     // Helper: Config Check
     const outboundModules = currentSystem?.outbound_modules
@@ -109,9 +114,31 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
             if (prodRes.data) {
                 let productsWithStock: Product[] = prodRes.data as Product[]
                 if (invRes.ok && Array.isArray(invRes.items)) {
-                    const stockMap = new Map<string, number>()
-                    invRes.items.forEach((item: any) => { if (item.productId) stockMap.set(item.productId, item.balance) })
-                    productsWithStock = prodRes.data.map((p: any) => ({ ...p, stock_quantity: stockMap.get(p.id) ?? 0 })) as Product[]
+                    const totalStockMap = new Map<string, number>()
+                    const detailedStockMap = new Map<string, string[]>()
+                    const localUnitStockMap = new Map<string, number>()
+
+                    invRes.items.forEach((item: any) => {
+                        if (item.productId) {
+                            const prod = prodRes.data.find(p => p.id === item.productId)
+                            const baseQty = toBaseAmount(item.productId, item.unit, item.balance, prod?.unit || null)
+                            totalStockMap.set(item.productId, (totalStockMap.get(item.productId) || 0) + baseQty)
+
+                            // Aggregation by Unit (Case-insensitive)
+                            const uKey = `${item.productId}_${(item.unit || '').toLowerCase().trim()}`
+                            localUnitStockMap.set(uKey, (localUnitStockMap.get(uKey) || 0) + item.balance)
+
+                            if (!detailedStockMap.has(item.productId)) detailedStockMap.set(item.productId, [])
+                            detailedStockMap.get(item.productId)!.push(`${formatQuantityFull(item.balance)} ${item.unit}`)
+                        }
+                    })
+
+                    setUnitStockMap(localUnitStockMap)
+                    productsWithStock = prodRes.data.map((p: any) => ({
+                        ...p,
+                        stock_quantity: totalStockMap.get(p.id) ?? 0,
+                        stock_details: detailedStockMap.get(p.id)?.join('; ') || ''
+                    })) as Product[]
                 }
                 setProducts(productsWithStock)
             }
@@ -153,20 +180,85 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         }])
     }
 
+    const checkUnbundle = (productId: string, unit: string, qty: number): { needsUnbundle: boolean, unbundleInfo?: string, sourceUnit?: string, rate?: number } => {
+        const product = products.find(p => p.id === productId)
+        if (!product || !unit) return { needsUnbundle: false }
+
+        const normReqUnit = unit.toLowerCase().trim()
+        const currentLiquid = unitStockMap.get(`${productId}_${normReqUnit}`) || 0
+        if (currentLiquid >= qty - 0.000001) return { needsUnbundle: false }
+
+        // Case 1: Break Base Unit (Official Unit)
+        if (normReqUnit !== (product.unit || '').toLowerCase().trim()) {
+            const currentBase = unitStockMap.get(`${productId}_${(product.unit || '').toLowerCase().trim()}`) || 0
+            if (currentBase > 0) {
+                const rUnitId = unitNameMap.get(normReqUnit)
+                const rate = conversionMap.get(productId)?.get(rUnitId || '') || 1
+                if (rate > 0) {
+                    const deficit = qty - currentLiquid
+                    const baseToBreak = Math.ceil(deficit / rate - 0.000001)
+                    return {
+                        needsUnbundle: true,
+                        unbundleInfo: `Bẻ gói ${baseToBreak} ${product.unit} -> ${baseToBreak * rate} ${unit}`,
+                        sourceUnit: product.unit ?? undefined,
+                        rate
+                    }
+                }
+            }
+        }
+
+        // Case 2: Break OTHER units
+        for (const pu of product.product_units || []) {
+            const altUnitName = units.find(u => u.id === pu.unit_id)?.name
+            if (!altUnitName || altUnitName.toLowerCase().trim() === normReqUnit) continue
+
+            const currentAlt = unitStockMap.get(`${productId}_${altUnitName.toLowerCase().trim()}`) || 0
+            if (currentAlt > 0) {
+                const altToBase = pu.conversion_rate
+                const reqUnitId = unitNameMap.get(normReqUnit)
+                const reqToBase = normReqUnit === (product.unit || '').toLowerCase().trim() ? 1 : (conversionMap.get(productId)?.get(reqUnitId || '') || 1)
+
+                const rateAltToReq = altToBase / reqToBase
+                if (rateAltToReq > 1) {
+                    const deficit = qty - currentLiquid
+                    const altToBreak = Math.ceil(deficit / rateAltToReq - 0.000001)
+                    return {
+                        needsUnbundle: true,
+                        unbundleInfo: `Bẻ gói ${altToBreak} ${altUnitName} -> ${altToBreak * rateAltToReq} ${unit}`,
+                        sourceUnit: altUnitName,
+                        rate: rateAltToReq
+                    }
+                }
+            }
+        }
+
+        return { needsUnbundle: false }
+    }
+
     const updateItem = (id: string, field: keyof OrderItem, value: any) => {
         setItems(prev => prev.map(item => {
             if (item.id !== id) return item
+            let updatedItem = { ...item, [field]: value }
+
             if (field === 'productId') {
                 const prod = products.find(p => p.id === value)
                 let initialUnit = ''
                 if (prod && (!prod.product_units || prod.product_units.length === 0) && prod.unit) initialUnit = prod.unit
-                return { ...item, productId: value, productName: prod?.name || '', unit: initialUnit, price: prod?.cost_price || 0 }
+                updatedItem = { ...updatedItem, productId: value, productName: prod?.name || '', unit: initialUnit, price: prod?.cost_price || 0 }
             }
             if (field === 'quantity') {
                 const newValue = Number(value)
-                return { ...item, quantity: newValue, document_quantity: !item.isDocQtyVisible ? newValue : item.document_quantity }
+                updatedItem = { ...updatedItem, quantity: newValue, document_quantity: !item.isDocQtyVisible ? newValue : item.document_quantity }
             }
-            return { ...item, [field]: value }
+
+            // Always re-check unbundle status when product, unit or quantity changes
+            if (field === 'productId' || field === 'unit' || field === 'quantity') {
+                const { needsUnbundle, unbundleInfo } = checkUnbundle(updatedItem.productId, updatedItem.unit, updatedItem.quantity)
+                updatedItem.needsUnbundle = needsUnbundle
+                updatedItem.unbundleInfo = unbundleInfo
+            }
+
+            return updatedItem
         }))
     }
 
@@ -204,6 +296,42 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         setConfirmDialog(prev => ({ ...prev, isOpen: false }))
         setSubmitting(true)
         try {
+            // Find Conversion Order Type
+            const conversionType = orderTypes.find(t => t.name.toLowerCase().includes('chuyển đổi'))
+            const convTypeId = conversionType?.id
+
+            // Step 1: Check and Perform Auto-Unbundle for items that need it
+            for (const item of items) {
+                const unbundle = checkUnbundle(item.productId, item.unit, item.quantity)
+
+                if (unbundle.needsUnbundle && unbundle.sourceUnit && unbundle.rate) {
+                    const product = products.find(p => p.id === item.productId)
+                    const currentLiquid = unitStockMap.get(`${item.productId}_${item.unit}`) || 0
+
+                    const baseToBreak = await unbundleService.executeAutoUnbundle({
+                        supabase,
+                        productId: item.productId,
+                        productName: item.productName,
+                        baseUnit: unbundle.sourceUnit,
+                        reqUnit: item.unit,
+                        reqQty: item.quantity,
+                        currentLiquid,
+                        costPrice: product?.cost_price || 0,
+                        rate: unbundle.rate,
+                        warehouseName,
+                        systemCode,
+                        mainOrderCode: code,
+                        convTypeId,
+                        generateOrderCode: (type) => generateOrderCode(type, systemCode, currentSystem?.name)
+                    })
+
+                    if (baseToBreak) {
+                        showToast(`Đã tự động bẻ ${baseToBreak} ${unbundle.sourceUnit} sang ${item.unit}`, 'success')
+                    }
+                }
+            }
+
+            // Step 2: Create Main Outbound Order
             const { data: order, error: orderError } = await (supabase.from('outbound_orders') as any).insert({
                 code,
                 customer_name: customerName,

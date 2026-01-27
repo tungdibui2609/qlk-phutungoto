@@ -1,29 +1,53 @@
+<<<<<<< HEAD
+/* eslint-disable */
+=======
+>>>>>>> origin/main
 'use client'
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+<<<<<<< HEAD
+import { X, Loader2, Search, UserPlus, Trash2 } from 'lucide-react'
+=======
 import { X, Loader2, Warehouse, Search, UserPlus, Trash2 } from 'lucide-react'
+>>>>>>> origin/main
 import { useSystem } from '@/contexts/SystemContext'
 
 interface CreateAuditModalProps {
     isOpen: boolean
     onClose: () => void
     onCreate: (
+<<<<<<< HEAD
         warehouseId: string | null,
         warehouseName: string | null,
         note: string,
         scope: 'ALL' | 'PARTIAL',
         productIds: string[],
+=======
+        warehouseId: string | null,
+        warehouseName: string | null,
+        note: string,
+        scope: 'ALL' | 'PARTIAL',
+        productIds: string[],
+>>>>>>> origin/main
         participants: { name: string, role: string }[]
     ) => Promise<any>
 }
 
 export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModalProps) {
     const { currentSystem } = useSystem()
+<<<<<<< HEAD
+
     const [loading, setLoading] = useState(false)
     const [submitting, setSubmitting] = useState(false)
     const [warehouses, setWarehouses] = useState<{ id: string, name: string }[]>([])
 
+=======
+    const [loading, setLoading] = useState(false)
+    const [submitting, setSubmitting] = useState(false)
+    const [warehouses, setWarehouses] = useState<{ id: string, name: string }[]>([])
+
+>>>>>>> origin/main
     // Form State
     const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('')
     const [note, setNote] = useState('')
@@ -38,6 +62,8 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
     const [selectedProducts, setSelectedProducts] = useState<{ id: string, name: string, sku: string }[]>([])
     const [searchingProducts, setSearchingProducts] = useState(false)
 
+<<<<<<< HEAD
+=======
     useEffect(() => {
         if (isOpen && currentSystem) {
             fetchWarehouses()
@@ -51,6 +77,7 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
         return () => clearTimeout(timer)
     }, [productSearch])
 
+>>>>>>> origin/main
     const fetchWarehouses = async () => {
         setLoading(true)
         const { data } = await supabase
@@ -69,11 +96,31 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
             .select('id, name, sku')
             .ilike('name', `%${q}%`)
             .limit(5)
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> origin/main
         if (data) setProducts(data)
         setSearchingProducts(false)
     }
 
+<<<<<<< HEAD
+    useEffect(() => {
+        if (isOpen && currentSystem) {
+            fetchWarehouses()
+        }
+    }, [isOpen, currentSystem])
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (productSearch.trim()) searchProducts(productSearch)
+        }, 500)
+        return () => clearTimeout(timer)
+    }, [productSearch])
+
+=======
+>>>>>>> origin/main
     const addProduct = (prod: { id: string, name: string, sku: string }) => {
         if (!selectedProducts.find(p => p.id === prod.id)) {
             setSelectedProducts([...selectedProducts, prod])
@@ -105,7 +152,11 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         setSubmitting(true)
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> origin/main
         let whName = null
         if (selectedWarehouseId) {
             const wh = warehouses.find(w => w.id === selectedWarehouseId)
@@ -113,11 +164,19 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
         }
 
         await onCreate(
+<<<<<<< HEAD
             selectedWarehouseId || null,
             whName,
             note,
             scope,
             selectedProducts.map(p => p.id),
+=======
+            selectedWarehouseId || null,
+            whName,
+            note,
+            scope,
+            selectedProducts.map(p => p.id),
+>>>>>>> origin/main
             participants.filter(p => p.name.trim() !== '')
         )
         setSubmitting(false)
@@ -141,7 +200,11 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Kho kiểm kê</label>
+<<<<<<< HEAD
                             <select
+=======
+                            <select
+>>>>>>> origin/main
                                 className="w-full h-11 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
                                 value={selectedWarehouseId}
                                 onChange={e => setSelectedWarehouseId(e.target.value)}
@@ -154,7 +217,11 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
                         </div>
                         <div className="space-y-2">
                             <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Phạm vi sản phẩm</label>
+<<<<<<< HEAD
                             <select
+=======
+                            <select
+>>>>>>> origin/main
                                 className="w-full h-11 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
                                 value={scope}
                                 onChange={e => setScope(e.target.value as any)}
@@ -170,7 +237,11 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
                         <div className="space-y-3 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
                             <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Chọn sản phẩm</label>
                             <div className="relative">
+<<<<<<< HEAD
                                 <input
+=======
+                                <input
+>>>>>>> origin/main
                                     className="w-full h-10 pl-10 pr-4 rounded-lg border border-slate-200 dark:border-slate-700 text-sm"
                                     placeholder="Tìm kiếm sản phẩm..."
                                     value={productSearch}
@@ -178,11 +249,19 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
                                 />
                                 <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
                                 {searchingProducts && <Loader2 size={16} className="absolute right-3 top-2.5 animate-spin text-orange-500" />}
+<<<<<<< HEAD
 
                                 {products.length > 0 && (
                                     <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-h-40 overflow-y-auto">
                                         {products.map(p => (
                                             <div
+=======
+
+                                {products.length > 0 && (
+                                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-h-40 overflow-y-auto">
+                                        {products.map(p => (
+                                            <div
+>>>>>>> origin/main
                                                 key={p.id}
                                                 className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer text-sm"
                                                 onClick={() => addProduct(p)}
@@ -193,7 +272,11 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
                                     </div>
                                 )}
                             </div>
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> origin/main
                             {/* Selected List */}
                             <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
                                 {selectedProducts.map(p => (
@@ -218,13 +301,21 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
                         <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                             {participants.map((p, idx) => (
                                 <div key={idx} className="flex gap-2">
+<<<<<<< HEAD
                                     <input
+=======
+                                    <input
+>>>>>>> origin/main
                                         className="flex-1 h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-sm"
                                         placeholder="Họ tên"
                                         value={p.name}
                                         onChange={e => updateParticipant(idx, 'name', e.target.value)}
                                     />
+<<<<<<< HEAD
                                     <input
+=======
+                                    <input
+>>>>>>> origin/main
                                         className="w-1/3 h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-sm"
                                         placeholder="Chức vụ"
                                         value={p.role}
@@ -242,7 +333,11 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
 
                     <div className="space-y-2">
                         <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Ghi chú</label>
+<<<<<<< HEAD
                         <textarea
+=======
+                        <textarea
+>>>>>>> origin/main
                             className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all resize-none"
                             rows={2}
                             placeholder="Nhập lý do kiểm kê, ghi chú..."
@@ -252,8 +347,13 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
                     </div>
 
                     <div className="pt-2">
+<<<<<<< HEAD
                         <button
                             type="submit"
+=======
+                        <button
+                            type="submit"
+>>>>>>> origin/main
                             disabled={submitting}
                             className="w-full h-11 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-xl shadow-lg shadow-orange-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
                         >

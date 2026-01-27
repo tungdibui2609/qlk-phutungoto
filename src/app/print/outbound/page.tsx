@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Printer, Edit3, Loader2 } from 'lucide-react'
+import { formatQuantityFull } from '@/lib/numberUtils'
 
 interface CompanyInfo {
     name: string
@@ -818,7 +819,7 @@ function OutboundPrintContent() {
                                     }
 
                                     if (typeof convertedQty === 'number') {
-                                        convertedQty = Number.isInteger(convertedQty) ? convertedQty : convertedQty.toFixed(2)
+                                        convertedQty = formatQuantityFull(convertedQty)
                                     }
                                 }
 
@@ -841,11 +842,11 @@ function OutboundPrintContent() {
                                             </td>
                                         )}
                                         <td className="border border-gray-400 px-2 py-1.5 text-center">
-                                            {item.quantity.toLocaleString('vi-VN')}
+                                            {formatQuantityFull(item.quantity)}
                                         </td>
                                         {hasModule('outbound_conversion') && targetUnit && (
                                             <td className="border border-gray-400 px-2 py-1.5 text-center text-orange-600">
-                                                {typeof convertedQty === 'number' ? convertedQty.toLocaleString('vi-VN') : convertedQty}
+                                                {typeof convertedQty === 'number' ? formatQuantityFull(convertedQty) : convertedQty}
                                             </td>
                                         )}
                                         {!isInternal && hasModule('outbound_financials') && (
@@ -884,13 +885,13 @@ function OutboundPrintContent() {
 
                                 {/* Quantity Total */}
                                 <td className="border border-gray-400 px-2 py-1.5 text-center">
-                                    {items.reduce((sum, item) => sum + item.quantity, 0).toLocaleString('vi-VN')}
+                                    {formatQuantityFull(items.reduce((sum, item) => sum + item.quantity, 0))}
                                 </td>
 
                                 {/* Converted Total - Placeholder */}
                                 {hasModule('outbound_conversion') && targetUnit && (
                                     <td className="border border-gray-400 px-2 py-1.5 text-center text-orange-600">
-                                        {items.reduce((sum, item) => {
+                                        {formatQuantityFull(items.reduce((sum, item) => {
                                             if (!item.products) return sum
                                             const product = item.products as any
                                             let baseQty = 0
@@ -922,7 +923,7 @@ function OutboundPrintContent() {
                                                 if (targetConfig) converted = baseQty / targetConfig.conversion_rate
                                             }
                                             return sum + converted
-                                        }, 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}
+                                        }, 0))}
                                     </td>
                                 )}
 

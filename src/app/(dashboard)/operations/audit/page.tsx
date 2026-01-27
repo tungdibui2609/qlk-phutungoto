@@ -34,15 +34,26 @@ export default function AuditPage() {
             </div>
 
             {/* List */}
+<<<<<<< HEAD
             <AuditSessionList
                 sessions={sessions}
                 loading={loading}
+=======
+            <AuditSessionList
+                sessions={sessions}
+                loading={loading}
+>>>>>>> origin/main
                 onDelete={deleteSession}
             />
 
             {/* Modal */}
+<<<<<<< HEAD
             <CreateAuditModal
                 isOpen={showCreateModal}
+=======
+            <CreateAuditModal
+                isOpen={showCreateModal}
+>>>>>>> origin/main
                 onClose={() => setShowCreateModal(false)}
                 onCreate={createSession}
             />

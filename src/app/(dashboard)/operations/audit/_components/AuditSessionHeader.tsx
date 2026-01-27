@@ -1,17 +1,25 @@
 'use client'
 
 import { InventoryCheck } from '../_hooks/useAudit'
+<<<<<<< HEAD
 import { ArrowLeft, CheckCircle, Zap, ShieldCheck, XCircle, RefreshCw, AlertTriangle } from 'lucide-react'
+=======
+import { ArrowLeft, CheckCircle, Zap, ShieldCheck, XCircle } from 'lucide-react'
+>>>>>>> origin/main
 import { useRouter } from 'next/navigation'
 import { useUser } from '@/contexts/UserContext'
 
 interface AuditSessionHeaderProps {
     session: InventoryCheck
+<<<<<<< HEAD
     liveMismatches?: Record<string, number>
+=======
+>>>>>>> origin/main
     onSubmit: () => void
     onApprove: () => void
     onReject: () => void
     onQuickFill: () => void
+<<<<<<< HEAD
     onCheckLive?: () => void
     onSyncLive?: () => void
 }
@@ -26,10 +34,16 @@ export function AuditSessionHeader({
     onCheckLive,
     onSyncLive
 }: AuditSessionHeaderProps) {
+=======
+}
+
+export function AuditSessionHeader({ session, onSubmit, onApprove, onReject, onQuickFill }: AuditSessionHeaderProps) {
+>>>>>>> origin/main
     const router = useRouter()
     const { hasPermission } = useUser()
     const canEdit = session.status === 'IN_PROGRESS' || session.status === 'DRAFT'
     const isPendingApproval = session.status === 'WAITING_FOR_APPROVAL'
+<<<<<<< HEAD
     const canApprove = hasPermission('system.full_access') || hasPermission('audit.approve')
     const hasLiveMismatches = Object.keys(liveMismatches).length > 0
 
@@ -54,6 +68,16 @@ export function AuditSessionHeader({
             <div className="px-4 py-3 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                     <button
+=======
+    // Simple permission check: Assume 'system.full_access' or 'audit.approve' (if exists) is needed.
+    const canApprove = hasPermission('system.full_access') || hasPermission('audit.approve')
+
+    return (
+        <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30">
+            <div className="px-4 py-3 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <button
+>>>>>>> origin/main
                         onClick={() => router.back()}
                         className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-500"
                     >
@@ -75,6 +99,7 @@ export function AuditSessionHeader({
                 <div className="flex items-center gap-2">
                     {canEdit && (
                         <>
+<<<<<<< HEAD
                             {onCheckLive && (
                                 <button
                                     onClick={onCheckLive}
@@ -88,13 +113,20 @@ export function AuditSessionHeader({
                                 </button>
                             )}
                             <button
+=======
+                            <button
+>>>>>>> origin/main
                                 onClick={onQuickFill}
                                 className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
                                 title="Tự động điền số lượng hệ thống cho các mục chưa kiểm"
                             >
                                 <Zap size={20} />
                             </button>
+<<<<<<< HEAD
                             <button
+=======
+                            <button
+>>>>>>> origin/main
                                 onClick={onSubmit}
                                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg shadow-blue-500/20 active:scale-95 transition-all flex items-center gap-2"
                             >
@@ -106,14 +138,22 @@ export function AuditSessionHeader({
 
                     {isPendingApproval && canApprove && (
                         <>
+<<<<<<< HEAD
                             <button
+=======
+                            <button
+>>>>>>> origin/main
                                 onClick={onReject}
                                 className="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-2 rounded-xl font-bold text-sm transition-all flex items-center gap-2"
                             >
                                 <XCircle size={18} />
                                 <span className="hidden sm:inline">Từ chối</span>
                             </button>
+<<<<<<< HEAD
                             <button
+=======
+                            <button
+>>>>>>> origin/main
                                 onClick={onApprove}
                                 className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center gap-2 animate-pulse"
                             >

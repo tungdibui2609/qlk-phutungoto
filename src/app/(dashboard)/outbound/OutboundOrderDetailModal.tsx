@@ -10,6 +10,7 @@ import { useUser } from '@/contexts/UserContext'
 import { useSystem } from '@/contexts/SystemContext'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/Dialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { formatQuantityFull } from '@/lib/numberUtils'
 
 interface OutboundOrder {
     id: string
@@ -436,9 +437,9 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                                                     </td>
                                                     <td className="px-4 py-3 text-stone-500">{item.unit || '-'}</td>
                                                     {hasModule('outbound_financials') && (
-                                                        <td className="px-4 py-3 text-right font-medium text-blue-600">{item.document_quantity || item.quantity}</td>
+                                                        <td className="px-4 py-3 text-right font-medium text-blue-600">{formatQuantityFull(item.document_quantity || item.quantity)}</td>
                                                     )}
-                                                    <td className="px-4 py-3 text-center font-medium">{item.quantity}</td>
+                                                    <td className="px-4 py-3 text-center font-medium">{formatQuantityFull(item.quantity)}</td>
 
                                                     {/* Conversion Logic */}
                                                     {hasModule('outbound_conversion') && targetUnit && (
@@ -464,7 +465,7 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
 
                                                                 // 2. Convert to target
                                                                 if (targetUnit === item.products.unit) {
-                                                                    return Number.isInteger(baseQty) ? baseQty : baseQty.toFixed(2)
+                                                                    return formatQuantityFull(baseQty)
                                                                 }
 
                                                                 const targetConfig = item.products.product_units?.find(pu => {
@@ -474,7 +475,7 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
 
                                                                 if (targetConfig) {
                                                                     const result = baseQty / targetConfig.conversion_rate
-                                                                    return Number.isInteger(result) ? result : result.toFixed(2)
+                                                                    return formatQuantityFull(result)
                                                                 }
 
                                                                 return '-'
@@ -541,14 +542,14 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                                                     {/* Total Actual Quantity */}
                                                     <td className="px-4 py-3 text-center text-stone-900 dark:text-white">
                                                         <div className="flex flex-col items-center">
-                                                            <span>{!hasModule('outbound_ui_compact') && items.reduce((sum, item) => sum + item.quantity, 0).toLocaleString('vi-VN')}</span>
+                                                            <span>{!hasModule('outbound_ui_compact') && formatQuantityFull(items.reduce((sum, item) => sum + item.quantity, 0))}</span>
                                                         </div>
                                                     </td>
 
                                                     {/* Total Converted */}
                                                     {hasModule('outbound_conversion') && targetUnit && (
                                                         <td className="px-4 py-3 text-center text-orange-600">
-                                                            {items.reduce((sum, item) => {
+                                                            {formatQuantityFull(items.reduce((sum, item) => {
                                                                 if (!item.quantity || !item.unit) return sum
                                                                 const product = item.products
                                                                 if (!product) return sum
@@ -573,7 +574,7 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
 
                                                                 if (targetConfig) return sum + (baseQty / targetConfig.conversion_rate)
                                                                 return sum
-                                                            }, 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}
+                                                            }, 0))}
                                                         </td>
                                                     )}
 

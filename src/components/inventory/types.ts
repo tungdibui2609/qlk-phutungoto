@@ -2,6 +2,7 @@ import { Database } from '@/lib/database.types'
 
 export type Product = Database['public']['Tables']['products']['Row'] & {
     stock_quantity?: number
+    stock_details?: string
     product_units?: {
         unit_id: string
         conversion_rate: number
@@ -23,6 +24,8 @@ export interface OrderItem {
     note: string
     isDocQtyVisible?: boolean
     isNoteOpen?: boolean
+    needsUnbundle?: boolean
+    unbundleInfo?: string
 }
 
 export interface OrderFormProps<T> {

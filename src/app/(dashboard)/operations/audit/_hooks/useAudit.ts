@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+/* eslint-disable @typescript-eslint/no-explicit-any */
+=======
+>>>>>>> origin/main
 'use client'
 
 import { useState, useCallback } from 'react'
@@ -24,7 +28,11 @@ export function useAudit() {
     const { user } = useUser()
     const { showToast, showConfirm } = useToast()
     const router = useRouter()
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> origin/main
     const [loading, setLoading] = useState(false)
     const [sessions, setSessions] = useState<InventoryCheck[]>([])
     const [currentSession, setCurrentSession] = useState<InventoryCheck | null>(null)
@@ -40,7 +48,11 @@ export function useAudit() {
             .select('*, user_profiles:created_by(full_name)')
             .eq('system_code', currentSystem.code)
             .order('created_at', { ascending: false })
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> origin/main
         if (status && status !== 'ALL') {
             query = query.eq('status', status as any)
         }
@@ -58,8 +70,13 @@ export function useAudit() {
 
     // Create a new session
     const createSession = async (
+<<<<<<< HEAD
         warehouseId: string | null,
         warehouseName: string | null,
+=======
+        warehouseId: string | null,
+        warehouseName: string | null,
+>>>>>>> origin/main
         note: string,
         scope: 'ALL' | 'PARTIAL' = 'ALL',
         productIds: string[] = [],
@@ -74,7 +91,11 @@ export function useAudit() {
             const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, '')
             const randomSuffix = Math.floor(1000 + Math.random() * 9000)
             const code = `KK-${dateStr}-${randomSuffix}`
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> origin/main
             const { data: checkData, error: checkError } = await supabase
                 .from('inventory_checks')
                 .insert({
@@ -102,12 +123,20 @@ export function useAudit() {
             if (warehouseName) {
                 apiUrl += `&warehouse=${encodeURIComponent(warehouseName)}`
             }
+<<<<<<< HEAD
             // Note: The API currently returns ALL aggregated items for the scope.
+=======
+            // Note: The API currently returns ALL aggregated items for the scope.
+>>>>>>> origin/main
             // We do filtering client-side if scope is PARTIAL.
 
             const accRes = await fetch(apiUrl)
             const accData = await accRes.json()
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> origin/main
             if (!accData.ok) {
                 throw new Error('Failed to fetch accounting inventory data')
             }
@@ -130,7 +159,11 @@ export function useAudit() {
                     product_sku: item.productCode,
                     product_name: item.productName,
                     system_quantity: item.balance,
+<<<<<<< HEAD
                     actual_quantity: null,
+=======
+                    actual_quantity: null,
+>>>>>>> origin/main
                     difference: 0 - item.balance,
                     unit: item.unit || 'Cái',
                     note: ''
@@ -143,7 +176,11 @@ export function useAudit() {
                     const { error: insertError } = await supabase
                         .from('inventory_check_items')
                         .insert(chunk)
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> origin/main
                     if (insertError) throw insertError
                 }
             }
@@ -170,7 +207,11 @@ export function useAudit() {
             .select('*, user_profiles:created_by(full_name)')
             .eq('id', id)
             .single()
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> origin/main
         if (checkError) {
             showToast('Không tìm thấy phiếu kiểm kê', 'error')
             setLoading(false)
@@ -196,14 +237,23 @@ export function useAudit() {
             // Manual Join for Lots (Due to loose coupling/missing FKs)
             const items = rawItems as any[]
             const lotIds = Array.from(new Set(items.map(i => i.lot_id).filter(Boolean)))
+<<<<<<< HEAD
+
+            const lotsMap: Record<string, any> = {}
+=======
 
             let lotsMap: Record<string, any> = {}
+>>>>>>> origin/main
             if (lotIds.length > 0) {
                 const { data: lotsData } = await supabase
                    .from('lots')
                    .select('id, code, batch_code')
                    .in('id', lotIds)
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> origin/main
                 if (lotsData) {
                     lotsData.forEach(l => { lotsMap[l.id] = l })
                 }
@@ -228,7 +278,11 @@ export function useAudit() {
 
         const item = sessionItems[targetIndex]
         const difference = actualQty !== null ? actualQty - item.system_quantity : 0 - item.system_quantity
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> origin/main
         const newItem = { ...item, actual_quantity: actualQty, difference, note: note ?? item.note }
         const newItems = [...sessionItems]
         newItems[targetIndex] = newItem
@@ -281,7 +335,11 @@ export function useAudit() {
             .ilike('name', '%Kiểm kê%')
             .limit(1)
             .single()
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> origin/main
         let orderTypeId = typeData?.id
         if (!orderTypeId) {
              // Fallback: Get any valid type
@@ -320,7 +378,11 @@ export function useAudit() {
         const table = type === 'INBOUND' ? 'inbound_orders' : 'outbound_orders'
         const codePrefix = type === 'INBOUND' ? 'NK-KK-' : 'XK-KK-'
         const code = `${codePrefix}${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 1000)}`
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> origin/main
         const headerData: any = {
             code,
             system_code: currentSystem.code,
@@ -518,16 +580,26 @@ export function useAudit() {
             setLoading(false)
         }
     }
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> origin/main
     // Quick Fill (Set all nulls to system qty)
     const quickFill = async () => {
          const itemsToUpdate = sessionItems.filter(i => i.actual_quantity === null)
          if (itemsToUpdate.length === 0) return
 
          if (!await showConfirm(`Tự động điền số lượng hệ thống cho ${itemsToUpdate.length} dòng chưa kiểm?`)) return
+<<<<<<< HEAD
 
          setLoading(true)
 
+=======
+
+         setLoading(true)
+
+>>>>>>> origin/main
          // Optimistic Update
          const newItems = sessionItems.map(item => {
              if (item.actual_quantity === null) {
@@ -541,7 +613,11 @@ export function useAudit() {
          const chunkSize = 50 // Smaller chunks for updates
          for (let i = 0; i < itemsToUpdate.length; i += chunkSize) {
              const chunk = itemsToUpdate.slice(i, i + chunkSize)
+<<<<<<< HEAD
              const promises = chunk.map(item =>
+=======
+             const promises = chunk.map(item =>
+>>>>>>> origin/main
                  supabase.from('inventory_check_items').update({
                      actual_quantity: item.system_quantity,
                      difference: 0
@@ -554,6 +630,7 @@ export function useAudit() {
          showToast('Đã điền tự động', 'success')
     }
 
+<<<<<<< HEAD
     // Live Inventory Check Logic
     const [liveMismatches, setLiveMismatches] = useState<Record<string, number>>({})
 
@@ -667,12 +744,17 @@ export function useAudit() {
         }
     }
 
+=======
+>>>>>>> origin/main
     return {
         loading,
         sessions,
         currentSession,
         sessionItems,
+<<<<<<< HEAD
         liveMismatches,
+=======
+>>>>>>> origin/main
         fetchSessions,
         createSession,
         fetchSessionDetail,
@@ -681,8 +763,12 @@ export function useAudit() {
         approveSession,
         rejectSession,
         deleteSession,
+<<<<<<< HEAD
         quickFill,
         checkLiveInventory,
         syncSystemQuantity
+=======
+        quickFill
+>>>>>>> origin/main
     }
 }

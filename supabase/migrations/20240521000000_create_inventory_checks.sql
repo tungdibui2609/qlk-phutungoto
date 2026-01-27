@@ -20,10 +20,17 @@ begin
     if exists (select 1 from information_schema.table_constraints where constraint_name = 'inventory_checks_warehouse_id_fkey') then
         alter table public.inventory_checks drop constraint inventory_checks_warehouse_id_fkey;
     end if;
+<<<<<<< HEAD
 
     alter table public.inventory_checks
         add constraint inventory_checks_warehouse_id_fkey
         foreign key (warehouse_id)
+=======
+
+    alter table public.inventory_checks
+        add constraint inventory_checks_warehouse_id_fkey
+        foreign key (warehouse_id)
+>>>>>>> origin/main
         references public.branches(id);
 
     -- Fix created_by FK (Should point to user_profiles)
@@ -31,9 +38,15 @@ begin
         alter table public.inventory_checks drop constraint inventory_checks_created_by_fkey;
     end if;
 
+<<<<<<< HEAD
     alter table public.inventory_checks
         add constraint inventory_checks_created_by_fkey
         foreign key (created_by)
+=======
+    alter table public.inventory_checks
+        add constraint inventory_checks_created_by_fkey
+        foreign key (created_by)
+>>>>>>> origin/main
         references public.user_profiles(id);
 end $$;
 
