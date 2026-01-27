@@ -254,13 +254,12 @@ export default function OutboundPage() {
 
                                         {order.status === 'Pending' && (
                                             <>
-                                                {/* Edit Button (Currently not implemented fully in modal, but kept for UI consistency if we want to add edit later) */}
+                                                {/* Edit Button */}
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation()
-                                                        // setEditingOrderId(order.id)
-                                                        // setIsModalOpen(true)
-                                                        showToast('Tính năng chỉnh sửa đang hoàn thiện', 'info')
+                                                        setEditingOrderId(order.id)
+                                                        setIsModalOpen(true)
                                                     }}
                                                     className="p-2 text-stone-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors"
                                                     title="Chỉnh sửa"
@@ -314,7 +313,7 @@ export default function OutboundPage() {
                     setInitialBufferData(null)
                     updateBufferCount()
                 }}
-                // editOrderId={editingOrderId} // Add edit support to modal later if needed
+                editOrderId={editingOrderId}
                 initialData={initialBufferData}
                 systemCode={systemType}
             />

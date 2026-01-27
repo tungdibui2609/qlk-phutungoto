@@ -149,7 +149,23 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                 }
             } else if (initialData) {
                 if (initialData.items) setItems(initialData.items)
-                if (initialData.supplierId) handleSupplierChange(initialData.supplierId)
+
+                // Fix Supplier: Use fetched data instead of waiting for state update
+                if (initialData.supplierId) {
+                    setSupplierId(initialData.supplierId)
+                    const s = (suppRes.data || []).find((x: any) => x.id === initialData.supplierId)
+                    if (s) {
+                        setSupplierAddress(s.address || '')
+                        setSupplierPhone(s.phone || '')
+                    }
+                }
+
+                if (initialData.warehouseName) setWarehouseName(initialData.warehouseName)
+                if (initialData.targetUnit) setTargetUnit(initialData.targetUnit)
+                if (initialData.orderTypeId) setOrderTypeId(initialData.orderTypeId)
+
+                if (initialData.description) setDescription(initialData.description)
+
                 generateOrderCode('PNK', systemCode, currentSystem?.name).then(setCode)
             } else {
                 if (!editOrderId) generateOrderCode('PNK', systemCode, currentSystem?.name).then(setCode)

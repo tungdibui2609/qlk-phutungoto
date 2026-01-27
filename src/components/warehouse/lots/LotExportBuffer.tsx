@@ -1,10 +1,11 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { X, Check, Loader2, ShoppingCart, Trash2, AlertTriangle, Layers, StickyNote } from 'lucide-react'
+import { X, Check, Loader2, ShoppingCart, Trash2, AlertTriangle, Layers } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
+import { formatQuantityFull } from '@/lib/numberUtils'
 
 interface PendingExport {
     lot_id: string
@@ -32,14 +33,53 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
     const [loading, setLoading] = useState(false)
     const [syncing, setSyncing] = useState(false)
 
+    // Data State
+    const [customers, setCustomers] = useState<any[]>([])
+    const [branches, setBranches] = useState<any[]>([])
+    const [units, setUnits] = useState<any[]>([])
+    const [orderTypes, setOrderTypes] = useState<any[]>([])
+
+    // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+    const [quickCustomerId, setQuickCustomerId] = useState<string>('')
+    const [quickBranchName, setQuickBranchName] = useState<string>('')
+    const [quickOrderTypeId, setQuickOrderTypeId] = useState<string>('')
+    const [targetUnit, setTargetUnit] = useState<string>('')
 
     useEffect(() => {
         if (isOpen) {
             fetchPendingExports()
+            fetchCommonData()
             setSelectedIds(new Set())
+            setQuickCustomerId('')
+            setQuickBranchName('')
+            setQuickOrderTypeId('')
+
+            // Load saved unit
+            const savedUnit = localStorage.getItem('lot_export_target_unit')
+            setTargetUnit(savedUnit || '')
         }
     }, [isOpen])
+
+    const fetchCommonData = async () => {
+        if (!currentSystem?.code) return
+
+        const [typesRes, custRes, branchRes, unitRes] = await Promise.all([
+            (supabase.from('order_types') as any).select('*').or(`scope.eq.outbound,scope.eq.both`).or(`system_code.eq.${currentSystem.code},system_code.is.null`).eq('is_active', true).order('name'),
+            supabase.from('customers').select('*').eq('system_code', currentSystem.code).order('name'),
+            supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'),
+            supabase.from('units').select('*').order('name')
+        ])
+
+        if (typesRes.data) setOrderTypes(typesRes.data)
+        if (custRes.data) setCustomers(custRes.data)
+        if (branchRes.data) {
+            setBranches(branchRes.data)
+            const defaultBranch = branchRes.data.find((b: any) => b.is_default) || branchRes.data[0]
+            if (defaultBranch) setQuickBranchName(defaultBranch.name)
+        }
+        if (unitRes.data) setUnits(unitRes.data)
+    }
 
     const fetchPendingExports = async () => {
         setLoading(true)
@@ -118,38 +158,6 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
         }
     }
 
-    const handlePrepareFill = async () => {
-        const toSync = pendingExports.filter(p => selectedIds.has(p.export_id))
-        if (toSync.length === 0) return
-
-        const noLocation = toSync.filter(p => !p.location_code)
-        if (noLocation.length > 0) {
-            if (!await showConfirm(`CẢNH BÁO: Phát hiện ${noLocation.length} lô hàng CHƯA CÓ VỊ TRÍ.\n\nBạn có chắc chắn muốn tiếp tục lập phiếu không?`)) return
-        }
-
-        const customers = Array.from(new Set(toSync.map(p => p.customer)))
-        const mainCustomer = customers.length === 1 ? customers[0] : null
-
-        const items = toSync.flatMap(p =>
-            Object.values(p.items).map((item: any) => ({
-                id: crypto.randomUUID(),
-                productId: item.product_id,
-                productName: item.product_name,
-                unit: item.unit,
-                quantity: item.exported_quantity,
-                document_quantity: item.exported_quantity,
-                price: item.cost_price || 0,
-                note: `Xuất từ LOT: ${p.lot_code}`
-            }))
-        )
-
-        onFillInfo?.({
-            customerName: mainCustomer,
-            items,
-            batchData: toSync.map(p => ({ lot_id: p.lot_id, export_id: p.export_id }))
-        })
-    }
-
     const handleSync = async () => {
         const toSync = pendingExports.filter(p => selectedIds.has(p.export_id))
         if (toSync.length === 0) return
@@ -170,11 +178,16 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                 prefix = currentSystem.name.replace(/^Kho\s+/i, '').split(/\s+/).map(word => word[0]).join('').toUpperCase()
                     .normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D")
             }
-            const orderCode = `${prefix}-EXP-${dateStr}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`
+            const orderCode = `${prefix}-PXK-${dateStr}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`
 
-            // 2. Aggregate unique customers or use a generic "Multiple Customers"
-            const customers = Array.from(new Set(toSync.map(p => p.customer)))
-            const mainCustomer = customers.length === 1 ? customers[0] : `Nhiều khách hàng (${customers.length})`
+            // 2. Identify Customer
+            let mainCustomer = ''
+            if (quickCustomerId) {
+                mainCustomer = customers.find(c => c.id === quickCustomerId)?.name || ''
+            } else {
+                const unique = Array.from(new Set(toSync.map(p => p.customer)))
+                mainCustomer = unique.length === 1 ? unique[0] : `Nhiều khách hàng (${unique.length})`
+            }
 
             // 3. Create Outbound Order
             const { data: order, error: orderError } = await (supabase.from('outbound_orders') as any).insert({
@@ -185,10 +198,12 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                 type: 'Export',
                 system_code: systemType,
                 system_type: systemType,
-                warehouse_name: currentSystem?.name || 'Kho chính',
+                warehouse_name: quickBranchName || currentSystem?.name || 'Kho chính',
+                order_type_id: quickOrderTypeId || null,
                 metadata: {
                     batch_export: true,
-                    merged_exports: toSync.map(p => p.export_id)
+                    merged_exports: toSync.map(p => p.export_id),
+                    targetUnit: targetUnit
                 }
             }).select().single()
 
@@ -337,7 +352,15 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                                                         </span>
                                                     </div>
                                                     <h4 className="font-bold text-slate-900 dark:text-slate-100 mt-1 cursor-help" title={exp.description || 'Không có ghi chú'}>
-                                                        {exp.customer && exp.customer !== 'N/A' ? `Khách: ${exp.customer}` : 'Chưa gán khách hàng'}
+                                                        {(() => {
+                                                            // If selected and using quick customer, show that
+                                                            if (selectedIds.has(exp.export_id) && quickCustomerId) {
+                                                                const quickCust = customers.find(c => c.id === quickCustomerId)
+                                                                return quickCust ? `Khách: ${quickCust.name} (Gán lại)` : `Khách: ${exp.customer}`
+                                                            }
+                                                            // Default
+                                                            return exp.customer && exp.customer !== 'N/A' ? `Khách: ${exp.customer}` : 'Chưa gán khách hàng'
+                                                        })()}
                                                     </h4>
                                                 </div>
                                                 <button
@@ -360,7 +383,7 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                                                             </span>
                                                         </div>
                                                         <div className="text-right whitespace-nowrap">
-                                                            <span className="font-black text-slate-900 dark:text-slate-100">{item.exported_quantity}</span>
+                                                            <span className="font-black text-slate-900 dark:text-slate-100">{formatQuantityFull(item.exported_quantity)}</span>
                                                             <span className="ml-1 text-slate-400 font-bold uppercase text-[9px]">{item.unit}</span>
                                                         </div>
                                                     </div>
@@ -375,15 +398,71 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                 </div>
 
                 {/* Footer */}
-                <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-                    <div className="flex items-center gap-3 bg-amber-50 dark:bg-amber-900/10 p-3 rounded-2xl border border-amber-100 dark:border-amber-900/20 mb-4">
-                        <AlertTriangle className="text-amber-600 shrink-0" size={18} />
-                        <p className="text-[11px] text-amber-700 dark:text-amber-400 font-medium">
-                            Gộp <span className="font-bold text-orange-600">{selectedIds.size}</span> lô hàng đang chọn thành **1 Phiếu Xuất Kho** chính thức.
-                        </p>
-                    </div>
+                <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-4">
 
-                    <div className="flex flex-wrap items-center justify-between gap-4">
+                    {selectedIds.size > 0 && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in slide-in-from-bottom-2 fade-in">
+                            <div>
+                                <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Khách hàng (Gán chung)</label>
+                                <select
+                                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium"
+                                    value={quickCustomerId}
+                                    onChange={e => setQuickCustomerId(e.target.value)}
+                                >
+                                    <option value="">-- Giữ nguyên theo LOT --</option>
+                                    {customers.map(c => (
+                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Chi nhánh ({currentSystem?.name || 'Kho'})</label>
+                                <select
+                                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium"
+                                    value={quickBranchName}
+                                    onChange={e => setQuickBranchName(e.target.value)}
+                                >
+                                    {branches.map(b => (
+                                        <option key={b.id} value={b.name}>{b.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Loại phiếu xuất</label>
+                                <select
+                                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium"
+                                    value={quickOrderTypeId}
+                                    onChange={e => setQuickOrderTypeId(e.target.value)}
+                                >
+                                    <option value="">-- Chọn loại phiếu --</option>
+                                    {orderTypes.map(t => (
+                                        <option key={t.id} value={t.id}>{t.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Hiện quy đổi</label>
+                                <select
+                                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium"
+                                    value={targetUnit}
+                                    onChange={e => {
+                                        const newValue = e.target.value
+                                        setTargetUnit(newValue)
+                                        if (newValue) localStorage.setItem('lot_export_target_unit', newValue)
+                                        else localStorage.removeItem('lot_export_target_unit')
+                                    }}
+                                >
+                                    <option value="">-- Mặc định --</option>
+                                    {units.map(u => (
+                                        <option key={u.id} value={u.name}>{u.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-slate-200/50 dark:border-slate-700/50">
                         <button
                             onClick={onClose}
                             className="px-6 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-700"
@@ -392,14 +471,7 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                         </button>
 
                         <div className="flex items-center gap-3">
-                            <button
-                                onClick={handlePrepareFill}
-                                disabled={selectedIds.size === 0 || syncing}
-                                className="px-6 py-3 bg-white border-2 border-orange-600 text-orange-600 hover:bg-orange-50 rounded-2xl text-sm font-bold transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
-                            >
-                                <StickyNote size={18} />
-                                Điền thông tin & tạo phiếu
-                            </button>
+
 
                             <button
                                 onClick={handleSync}

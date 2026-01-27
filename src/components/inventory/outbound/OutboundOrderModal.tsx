@@ -12,7 +12,7 @@ import { useOutboundOrder } from './useOutboundOrder'
 import { OrderFormProps } from '@/components/inventory/types'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
-export default function OutboundOrderModal(props: OrderFormProps<any>) {
+export default function OutboundOrderModal(props: OrderFormProps<any> & { editOrderId?: string | null }) {
     const {
         code, setCode,
         customerName, setCustomerName,
@@ -30,7 +30,7 @@ export default function OutboundOrderModal(props: OrderFormProps<any>) {
         products, customers, branches, units, orderTypes,
         loadingData, submitting, handleSubmit,
         hasModule, confirmDialog, setConfirmDialog, handleCustomerSelect
-    } = useOutboundOrder(props)
+    } = useOutboundOrder({ ...props, editOrderId: props.editOrderId })
 
     if (!props.isOpen) return null
 
@@ -48,7 +48,7 @@ export default function OutboundOrderModal(props: OrderFormProps<any>) {
                 className="px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold shadow-lg shadow-orange-500/20 flex items-center gap-2 transition-all transform active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
             >
                 <Save size={20} />
-                {submitting ? 'Đang lưu...' : 'Lưu Phiếu Xuất'}
+                {submitting ? 'Đang lưu...' : (props.editOrderId ? 'Cập Nhật Phiếu' : 'Lưu Phiếu Xuất')}
             </button>
         </>
     )
@@ -59,7 +59,7 @@ export default function OutboundOrderModal(props: OrderFormProps<any>) {
                 title={
                     <>
                         <ShoppingCart className="text-orange-600" />
-                        Tạo Phiếu Xuất Mới
+                        {props.editOrderId ? 'Chỉnh Sửa Phiếu Xuất' : 'Tạo Phiếu Xuất Mới'}
                     </>
                 }
                 subtitle="Xuất hàng, bán hàng, chuyển kho"

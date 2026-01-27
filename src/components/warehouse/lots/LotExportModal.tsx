@@ -34,16 +34,27 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
+    // New state for selected item
+    const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+
     useEffect(() => {
-        // Initialize with full quantities and current units
+        // Initialize with 0 quantities but correct units
         const initialQuantities: Record<string, number> = {}
         const initialUnits: Record<string, string> = {}
+
         lot.lot_items?.forEach(item => {
-            initialQuantities[item.id] = item.quantity || 0
+            initialQuantities[item.id] = 0 // Start with 0
             initialUnits[item.id] = item.unit || item.products?.unit || ''
         })
+
         setExportQuantities(initialQuantities)
         setExportUnits(initialUnits)
+
+        // Auto-select if only one item
+        if (lot.lot_items && lot.lot_items.length === 1) {
+            setSelectedItemId(lot.lot_items[0].id)
+        }
+
         fetchCustomers()
     }, [lot, systemType])
 
@@ -60,22 +71,30 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
 
     const handleCustomerChange = (val: string) => {
         setCustomerName(val)
-        if (val.trim()) {
+        // Filter always
+        const filtered = customers.filter(c =>
+            c.name.toLowerCase().includes(val.toLowerCase())
+        )
+        setSuggestions(filtered)
+        setShowSuggestions(true)
+    }
+
+    const handleCustomerFocus = () => {
+        // Show all if empty, or filter if has value
+        if (!customerName.trim()) {
+            setSuggestions(customers)
+        } else {
             const filtered = customers.filter(c =>
-                c.name.toLowerCase().includes(val.toLowerCase())
+                c.name.toLowerCase().includes(customerName.toLowerCase())
             )
             setSuggestions(filtered)
-            setShowSuggestions(true)
-        } else {
-            setSuggestions([])
-            setShowSuggestions(false)
         }
+        setShowSuggestions(true)
     }
 
     const selectCustomer = (customer: any) => {
         setCustomerName(customer.name)
         setShowSuggestions(false)
-        // You could also auto-fill description if needed, or other fields
     }
 
     const getConsumedOriginalQty = (itemId: string, selectedQty: number, selectedUnit: string) => {
@@ -108,54 +127,17 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
         setExportUnits(prev => ({ ...prev, [itemId]: unitName }))
     }
 
-    const handleExportAll = () => {
-        const fullQuantities: Record<string, number> = {}
-        lot.lot_items?.forEach(item => {
-            fullQuantities[item.id] = item.quantity || 0
-        })
-        setExportQuantities(fullQuantities)
-    }
-
-    const generateOrderCode = async () => {
-        const today = new Date()
-        const dateStr = `${String(today.getDate()).padStart(2, '0')}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getFullYear()).slice(-2)}`
-
-        // Get initials from system name
-        let prefix = 'PXK'
-        if (currentSystem?.name) {
-            const cleanName = currentSystem.name.replace(/^Kho\s+/i, '').trim()
-            prefix = cleanName.split(/\s+/).map(word => word[0]).join('').toUpperCase()
-                .normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D")
-            prefix = `${prefix}-PXK`
-        }
-
-        const { data } = await supabase
-            .from('outbound_orders')
-            .select('code')
-            .ilike('code', `${prefix}-${dateStr}-%`)
-            .order('code', { ascending: false })
-            .limit(1)
-
-        let sequence = 1
-        if (data && data.length > 0) {
-            const lastCode = data[0].code
-            const lastSeq = parseInt(lastCode.split('-').pop() || '0')
-            if (!isNaN(lastSeq)) sequence = lastSeq + 1
-        }
-
-        return `${prefix}-${dateStr}-${String(sequence).padStart(3, '0')}`
-    }
-
     const handleExport = async () => {
         const itemsToExport = Object.entries(exportQuantities).filter(([_, qty]) => qty > 0)
         if (itemsToExport.length === 0) {
             setError('Vui lòng nhập số lượng muốn xuất cho ít nhất 1 sản phẩm')
             return
         }
-        if (!customerName.trim()) {
+        // Customer name is optional now
+        /* if (!customerName.trim()) {
             setError('Vui lòng nhập tên khách hàng')
             return
-        }
+        } */
 
         setLoading(true)
         setError(null)
@@ -169,7 +151,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                 const selectedUnit = exportUnits[item.id] || item.unit || item.products?.unit || ''
 
                 const consumedQty = getConsumedOriginalQty(item.id, selectedQty, selectedUnit)
-                const remainingQty = (item.quantity || 0) - consumedQty
+                // const remainingQty = (item.quantity || 0) - consumedQty // Not used locally
 
                 if (selectedQty > 0) {
                     // 1. Track for history buffer
@@ -189,7 +171,8 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                         item,
                         consumedOriginalQty: consumedQty,
                         unitNameMap,
-                        conversionMap
+                        conversionMap,
+                        preferredUnit: selectedUnit // Pass the unit user selected
                     })
                 }
             }
@@ -209,7 +192,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                 originalMetadata: lot.metadata,
                 exportData: {
                     id: crypto.randomUUID(),
-                    customer: customerName,
+                    customer: customerName || 'Khách lẻ', // Default if empty
                     description: description,
                     location_code: lot.positions?.[0]?.code || null,
                     items: exportItemsData
@@ -238,11 +221,16 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
         }
     }
 
+    const selectedItem = lot.lot_items?.find(i => i.id === selectedItemId)
+    const isMultiProduct = (lot.lot_items?.length || 0) > 1
+
+    const NOTE_SUGGESTIONS = ['Bán hàng', 'Xuất sản xuất', 'Phân loại', 'Xuất hủy', 'Điều chuyển']
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white dark:bg-slate-900 rounded-[32px] max-w-lg w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
                 {/* Header */}
-                <div className="p-6 pb-4 flex items-start justify-between">
+                <div className="p-6 pb-4 flex items-start justify-between shrink-0">
                     <div className="flex items-center gap-3">
                         <div className="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
                             <ArrowUpRight size={24} />
@@ -263,19 +251,20 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
 
                 <div className="px-6 py-2 border-t border-slate-100 dark:border-slate-800 flex-1 overflow-y-auto custom-scrollbar">
                     {/* Customer & Info */}
-                    <div className="mt-4 space-y-4">
+                    <div className="mt-4 space-y-4 mb-6">
                         <div className="space-y-1.5">
                             <label className="text-xs font-bold text-slate-400 uppercase ml-1 flex items-center gap-1.5">
                                 <User size={12} />
-                                Khách hàng / Nơi nhận <span className="text-red-500">*</span>
+                                Khách hàng / Nơi nhận
                             </label>
                             <div className="relative">
                                 <input
                                     type="text"
                                     value={customerName}
                                     onChange={(e) => handleCustomerChange(e.target.value)}
+                                    onClick={handleCustomerFocus}
                                     onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                                    onFocus={() => customerName.trim() && setShowSuggestions(true)}
+                                    onFocus={handleCustomerFocus}
                                     className="w-full p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium"
                                     placeholder="Nhập tên khách hàng hoặc bộ phận nhận..."
                                 />
@@ -312,107 +301,175 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                             <textarea
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
-                                className="w-full p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium min-h-[80px] resize-none"
+                                className="w-full p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium min-h-[60px] resize-none"
                                 placeholder="Lý do xuất, ghi chú vận chuyển..."
                             />
+                            <div className="flex flex-wrap gap-2 mt-2">
+                                {NOTE_SUGGESTIONS.map(note => (
+                                    <button
+                                        key={note}
+                                        onClick={() => setDescription(note)}
+                                        className="px-3 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors"
+                                    >
+                                        {note}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </div>
 
-                    <div className="mt-6">
-                        <div className="flex items-center justify-between mb-3 px-1">
-                            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                Chi tiết sản phẩm xuất
-                            </h4>
-                            <button
-                                onClick={handleExportAll}
-                                className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded-lg border border-emerald-100 dark:border-emerald-800 hover:bg-emerald-100 transition-colors"
-                            >
-                                XUẤT TẤT CẢ
-                            </button>
-                        </div>
+                    {/* Product Selection for Multi-Product Lots */}
+                    {isMultiProduct && (
+                        <div className="mb-6">
+                            <label className="text-xs font-bold text-slate-400 uppercase ml-1 mb-2 block">
+                                Chọn sản phẩm cần xuất
+                            </label>
+                            <div className="space-y-2 max-h-[220px] overflow-y-auto custom-scrollbar p-1">
+                                {lot.lot_items?.map(item => {
+                                    const isSelected = selectedItemId === item.id
+                                    const qty = exportQuantities[item.id] || 0
 
-                        <div className="space-y-3">
-                            {lot.lot_items?.map(item => (
-                                <div key={item.id} className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hover:border-emerald-500/50 transition-all">
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="flex-1 min-w-0">
-                                            <div className="font-bold text-slate-900 dark:text-slate-100 truncate">
-                                                {item.products?.sku}
-                                            </div>
-                                            <div className="text-xs text-slate-500 line-clamp-2 mt-0.5">
-                                                {item.products?.name}
-                                            </div>
-                                        </div>
-                                        <div className="text-right shrink-0">
-                                            <div className="text-xs text-slate-400 font-bold uppercase mb-1">Hiện có</div>
-                                            <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                                                {formatQuantityFull(item.quantity)} {(item as any).unit || item.products?.unit}
-                                            </div>
-                                        </div>
-                                    </div>
+                                    // Get tags for this item
+                                    const itemTags = lot.lot_tags?.filter(t => t.lot_item_id === item.id) || []
 
-                                    <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
-                                        <span className="text-xs font-bold text-slate-400 uppercase">Số lượng xuất:</span>
-                                        <div className="flex items-center gap-2">
-                                            <QuantityInput
-                                                value={exportQuantities[item.id] || ''}
-                                                onChange={(val) => handleQuantityChange(item.id, val)}
-                                                className="w-24 p-2 text-sm font-bold text-center border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all font-mono"
-                                                placeholder="0"
-                                            />
-                                            <select
-                                                value={exportUnits[item.id] || ''}
-                                                onChange={(e) => handleUnitChange(item.id, e.target.value)}
-                                                className="p-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all cursor-pointer"
-                                            >
-                                                {[
-                                                    item.products?.unit,
-                                                    ...productUnits
-                                                        .filter(pu => pu.product_id === item.product_id)
-                                                        .map(pu => units.find(u => u.id === pu.unit_id)?.name)
-                                                ]
-                                                    .filter(Boolean)
-                                                    .filter((v, i, a) => a.indexOf(v) === i)
-                                                    .map(uName => (
-                                                        <option key={uName} value={uName!}>{uName}</option>
-                                                    ))
+                                    return (
+                                        <div
+                                            key={item.id}
+                                            onClick={() => setSelectedItemId(item.id)}
+                                            className={`
+                                                p-3 rounded-xl border cursor-pointer transition-all gap-3 relative
+                                                ${isSelected
+                                                    ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-500 ring-1 ring-emerald-500'
+                                                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-emerald-300'
                                                 }
-                                            </select>
-                                        </div>
-                                    </div>
-                                    {(() => {
-                                        const selectedQty = exportQuantities[item.id] || 0
-                                        const consumed = getConsumedOriginalQty(item.id, selectedQty, exportUnits[item.id] || '')
-                                        const isOver = consumed > (item.quantity || 0) + 0.000001
-                                        if (consumed > 0 && Math.abs(consumed - selectedQty) > 0.0001) {
-                                            return (
-                                                <div className={`mt-2 text-[10px] font-bold text-right ${isOver ? 'text-red-500' : 'text-slate-400'}`}>
-                                                    ~ {formatQuantityFull(consumed)} {(item as any).unit || item.products?.unit} (gốc)
-                                                    {isOver && ' - Vượt quá tồn kho!'}
+                                            `}
+                                        >
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-sm text-slate-900 dark:text-slate-100 truncate">
+                                                            {item.products?.sku}
+                                                        </span>
+                                                        {itemTags.length > 0 && (
+                                                            <div className="flex items-center gap-1">
+                                                                {itemTags.map((t, idx) => (
+                                                                    <span key={idx} className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-[10px] font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
+                                                                        {t.tag}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-xs text-slate-500 line-clamp-1 mt-0.5">
+                                                        {item.products?.name}
+                                                    </div>
                                                 </div>
-                                            )
-                                        }
-                                        return null
-                                    })()}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
 
-                    <div className="mt-6 p-4 rounded-2xl bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/20">
-                        <p className="text-xs text-blue-700 dark:text-blue-300 leading-relaxed">
-                            <span className="font-bold">Lưu ý:</span> Khi xác nhận xuất kho:
-                        </p>
-                        <ul className="mt-2 space-y-1 list-disc pl-5 text-[11px] text-blue-600 dark:text-blue-400">
-                            <li>Hệ thống sẽ tạo **Phiếu Xuất Kho** tự động để ghi nhận tồn kho tổng.</li>
-                            <li>Ghi lại lịch sử xuất trong nhật ký LOT.</li>
-                            <li>Nếu xuất hết, LOT sẽ được gỡ khỏi vị trí trên **Sơ đồ kho**.</li>
-                        </ul>
-                    </div>
+                                                <div className="text-right shrink-0">
+                                                    <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                                                        {formatQuantityFull(item.quantity)}
+                                                        <span className="text-[10px] font-normal text-slate-500 ml-1">{(item as any).unit || item.products?.unit}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {qty > 0 && (
+                                                <div className="mt-2 pt-2 border-t border-dashed border-emerald-200 dark:border-emerald-800/50 flex items-center justify-between">
+                                                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">Đang xuất:</span>
+                                                    <div className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/40 rounded-lg text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                                                        {formatQuantityFull(qty)} {exportUnits[item.id]}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Quantity Input Section - Only visible if item selected */}
+                    {selectedItem ? (
+                        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 animate-in slide-in-from-bottom-2 duration-300">
+                            <div className="flex items-start justify-between gap-4 mb-4">
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-xs text-slate-400 font-bold uppercase mb-1">Sản phẩm đang chọn</div>
+                                    <div className="font-bold text-slate-900 dark:text-slate-100 text-lg">
+                                        {selectedItem.products?.sku}
+                                    </div>
+                                    <div className="text-sm text-slate-500 line-clamp-2">
+                                        {selectedItem.products?.name}
+                                    </div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                    <div className="text-xs text-slate-400 font-bold uppercase mb-1">Hiện có</div>
+                                    <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                                        {formatQuantityFull(selectedItem.quantity)}
+                                        <span className="text-sm ml-1 text-slate-500">{(selectedItem as any).unit || selectedItem.products?.unit}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                                <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">
+                                    Nhập số lượng xuất
+                                </label>
+                                <div className="flex items-center gap-3">
+                                    <QuantityInput
+                                        value={exportQuantities[selectedItem.id] || ''}
+                                        onChange={(val) => handleQuantityChange(selectedItem.id, val)}
+                                        className="flex-1 p-3 text-lg font-bold text-center border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-white dark:bg-slate-900 transition-all font-mono"
+                                        placeholder="0"
+                                        autoFocus
+                                    />
+                                    <select
+                                        value={exportUnits[selectedItem.id] || ''}
+                                        onChange={(e) => handleUnitChange(selectedItem.id, e.target.value)}
+                                        className="w-24 p-3 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-white dark:bg-slate-900 transition-all cursor-pointer"
+                                    >
+                                        {[
+                                            selectedItem.products?.unit,
+                                            ...productUnits
+                                                .filter(pu => pu.product_id === selectedItem.product_id)
+                                                .map(pu => units.find(u => u.id === pu.unit_id)?.name)
+                                        ]
+                                            .filter(Boolean)
+                                            .filter((v, i, a) => a.indexOf(v) === i)
+                                            .map(uName => (
+                                                <option key={uName} value={uName!}>{uName}</option>
+                                            ))
+                                        }
+                                    </select>
+                                </div>
+
+                                {/* Validation Message */}
+                                {(() => {
+                                    const selectedQty = exportQuantities[selectedItem.id] || 0
+                                    const consumed = getConsumedOriginalQty(selectedItem.id, selectedQty, exportUnits[selectedItem.id] || '')
+                                    const isOver = consumed > (selectedItem.quantity || 0) + 0.000001
+
+                                    if (isOver) {
+                                        return (
+                                            <div className="mt-2 text-xs font-bold text-red-500 flex items-center gap-1.5 animate-in slide-in-from-top-1">
+                                                <AlertCircle size={12} />
+                                                Vượt quá số lượng tồn kho (Tối đa: {formatQuantityFull(selectedItem.quantity)})
+                                            </div>
+                                        )
+                                    }
+                                    return null
+                                })()}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="p-8 text-center text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+                            <ArrowUpRight size={32} className="mx-auto mb-2 opacity-50" />
+                            <p className="text-sm font-medium">Vui lòng chọn sản phẩm để nhập số lượng</p>
+                        </div>
+                    )}
                 </div>
 
                 {/* Footer */}
-                <div className="p-6 flex items-center justify-end gap-3 mt-auto">
+                <div className="p-6 flex items-center justify-end gap-3 mt-auto bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800">
                     <button
                         onClick={onClose}
                         className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -422,7 +479,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                     </button>
                     <button
                         onClick={handleExport}
-                        disabled={loading || Object.values(exportQuantities).every(v => v === 0) || !customerName.trim()}
+                        disabled={loading || Object.values(exportQuantities).every(v => v === 0)}
                         className="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:shadow-none transition-all active:scale-95 flex items-center gap-2"
                     >
                         {loading ? (

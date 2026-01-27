@@ -342,6 +342,16 @@ export function LotForm({
                 }
             } else {
                 // Original was already finalized, create an adjustment draft
+
+                // Snapshot OLD items for diffing
+                const oldItemsMap: Record<string, number> = {}
+                if (editingLot.lot_items) {
+                    editingLot.lot_items.forEach(li => {
+                        const key = `${li.product_id}-${(li as any).unit || ''}`
+                        oldItemsMap[key] = li.quantity
+                    })
+                }
+
                 systemHistory.inbound.push({
                     id: crypto.randomUUID(),
                     date: new Date().toISOString(),
@@ -350,7 +360,8 @@ export function LotForm({
                     items: inboundItems,
                     draft: true,
                     is_edit: true,
-                    is_adjustment: true
+                    is_adjustment: true,
+                    old_items: oldItemsMap // Snapshot of pre-edit state
                 })
             }
         }

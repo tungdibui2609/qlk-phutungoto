@@ -79,20 +79,23 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
 
     const [items, setItems] = useState<OrderItem[]>([])
     const [units, setUnits] = useState<Unit[]>([])
+    const [orderTypes, setOrderTypes] = useState<any[]>([])
     const [loading, setLoading] = useState(false)
     const [showPrintMenu, setShowPrintMenu] = useState(false)
     const [imageUrl, setImageUrl] = useState<string | null>(null)
     const [uploading, setUploading] = useState(false)
     const [visibleNoteId, setVisibleNoteId] = useState<string | null>(null)
     const [showConfirmApprove, setShowConfirmApprove] = useState(false)
+    const [orderDetails, setOrderDetails] = useState<any>(null)
+
     const fileInputRef = React.useRef<HTMLInputElement>(null)
 
-    const targetUnit = order?.metadata?.targetUnit
+    const targetUnit = orderDetails?.metadata?.targetUnit
 
     useEffect(() => {
+        setOrderDetails(order)
         if (order) {
             fetchItems()
-            // Assume order might have image_url if schema is updated, or we fetch it
             if ('image_url' in order) {
                 setImageUrl((order as any).image_url)
             }
@@ -100,7 +103,6 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
             setItems([])
             setImageUrl(null)
         }
-        // Reset transient UI state
         setShowConfirmApprove(false)
         setShowPrintMenu(false)
         setVisibleNoteId(null)
@@ -113,6 +115,10 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
         // Fetch Units
         const { data: unitsData } = await supabase.from('units').select('*')
         if (unitsData) setUnits(unitsData)
+
+        // Fetch Order Types (Manual fallback)
+        const { data: typesData } = await supabase.from('order_types').select('*')
+        if (typesData) setOrderTypes(typesData)
 
         // Fetch Items with Product Units
         const { data, error } = await supabase
@@ -127,21 +133,19 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
         // Fetch order details again to get extra fields
         const { data: orderData } = await (supabase
             .from('inbound_orders') as any)
-            .select('image_url, images, metadata, order_types(name)')
+            .select('image_url, images, metadata, order_type_id, order_types(name)')
             .eq('id', order.id)
             .single()
 
         if (orderData) {
-            // Merge extra data into the current order object for display
-            Object.assign(order, {
+            setOrderDetails((prev: any) => ({
+                ...prev,
                 image_url: orderData.image_url,
                 images: orderData.images,
                 metadata: orderData.metadata,
-                order_types: orderData.order_types
-            })
-            // Also update local state if needed (though we rely on order prop mostly, but simpler to force update via refetch in parent or just mutate prop for display safely)
-            // Ideally we should have local fullOrder state, but 'order' prop is used.
-            // Let's force a re-render by setting a local state dummy or updating imageUrl separately.
+                order_types: orderData.order_types,
+                order_type_id: orderData.order_type_id
+            }))
             if (orderData.image_url) setImageUrl(orderData.image_url)
         }
 
@@ -149,7 +153,7 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
     }
 
     const handleUploadImage = async (file: File) => {
-        if (!file || !order) return
+        if (!file || !orderDetails) return
 
         setUploading(true)
         try {
@@ -170,7 +174,7 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
             const { error } = await (supabase
                 .from('inbound_orders') as any)
                 .update({ image_url: url })
-                .eq('id', order.id)
+                .eq('id', orderDetails.id)
 
             if (error) throw error
 
@@ -193,7 +197,7 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
     }
 
     const handleRemoveImage = async () => {
-        if (!order) return
+        if (!orderDetails) return
 
         if (!await showConfirm('Bạn có chắc muốn xóa ảnh hóa đơn này?')) return
 
@@ -201,7 +205,7 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
             const { error } = await (supabase
                 .from('inbound_orders') as any)
                 .update({ image_url: null })
-                .eq('id', order.id)
+                .eq('id', orderDetails.id)
 
             if (error) throw error
 
@@ -215,18 +219,18 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
     }
 
     const handleApprove = async () => {
-        if (!order) return
+        if (!orderDetails) return
         setShowConfirmApprove(true)
     }
 
     const onConfirmApprove = async () => {
-        if (!order) return
+        if (!orderDetails) return
 
         try {
             const { data, error } = await (supabase
                 .from('inbound_orders') as any)
                 .update({ status: 'Completed' })
-                .eq('id', order.id)
+                .eq('id', orderDetails.id)
                 .select()
 
             if (error) throw error
@@ -244,27 +248,27 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
 
     const totalAmount = items.reduce((sum, item) => sum + (item.quantity * item.price), 0)
 
-    if (!order) return null
+    if (!orderDetails) return null
 
     return (
         <>
-            <Dialog open={!!order} onOpenChange={onClose}>
+            <Dialog open={!!orderDetails} onOpenChange={onClose}>
                 <DialogContent className={`${hasModule('inbound_ui_compact') ? 'max-w-5xl' : 'max-w-7xl'} max-h-[90vh] overflow-y-auto p-0 gap-0 bg-stone-50 dark:bg-zinc-900 border-none shadow-2xl`}>
-                    <DialogTitle className="sr-only">Chi tiết phiếu {order.code}</DialogTitle>
+                    <DialogTitle className="sr-only">Chi tiết phiếu {orderDetails.code}</DialogTitle>
                     <DialogDescription className="sr-only">
-                        Xem chi tiết thông tin phiếu nhập {order.code}
+                        Xem chi tiết thông tin phiếu nhập {orderDetails.code}
                     </DialogDescription>
                     {/* Header */}
                     <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 bg-white dark:bg-zinc-800 border-b border-stone-100 dark:border-zinc-700 shadow-sm">
                         <div className="flex items-center gap-3">
                             <h2 className="text-2xl font-bold text-orange-600 dark:text-orange-400 font-mono">
-                                {order.code}
+                                {orderDetails.code}
                             </h2>
-                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${order.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' :
-                                order.status === 'Cancelled' ? 'bg-red-50 text-red-700 border-red-200' :
+                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${orderDetails.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' :
+                                orderDetails.status === 'Cancelled' ? 'bg-red-50 text-red-700 border-red-200' :
                                     'bg-yellow-50 text-yellow-700 border-yellow-200'
                                 }`}>
-                                {order.status === 'Pending' ? 'Chờ xử lý' : order.status}
+                                {orderDetails.status === 'Pending' ? 'Chờ xử lý' : orderDetails.status}
                             </span>
                         </div>
                         {hasModule('inbound_conversion') && targetUnit && (
@@ -294,16 +298,16 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                 <label className="text-xs font-semibold text-stone-400 uppercase">Nhà cung cấp</label>
                                 <p className="font-medium text-stone-900 dark:text-gray-200 flex items-center gap-2 mt-1">
                                     <User size={16} className="text-orange-500" />
-                                    {order.supplier?.name || 'N/A'}
+                                    {orderDetails.supplier?.name || 'N/A'}
                                 </p>
-                                {order.supplier_address && (
+                                {orderDetails.supplier_address && (
                                     <p className="text-sm text-stone-500 mt-1 pl-6">
-                                        {order.supplier_address}
+                                        {orderDetails.supplier_address}
                                     </p>
                                 )}
-                                {order.supplier_phone && (
+                                {orderDetails.supplier_phone && (
                                     <p className="text-sm text-stone-500 mt-0.5 pl-6">
-                                        SĐT: {order.supplier_phone}
+                                        SĐT: {orderDetails.supplier_phone}
                                     </p>
                                 )}
                             </div>
@@ -313,52 +317,60 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                 <label className="text-xs font-semibold text-stone-400 uppercase">Kho nhập</label>
                                 <p className="font-medium text-stone-900 dark:text-gray-200 flex items-center gap-2 mt-1">
                                     <Package size={16} className="text-orange-500" />
-                                    {order.warehouse_name || 'N/A'}
+                                    {orderDetails.warehouse_name || 'N/A'}
                                 </p>
                             </div>
 
                             {/* Column 1 */}
-                            {order.order_types?.name && (
-                                <div>
-                                    <label className="text-xs font-semibold text-stone-400 uppercase">Loại phiếu</label>
-                                    <p className="font-medium text-stone-900 dark:text-gray-200 mt-1">
-                                        <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-sm font-semibold border border-blue-100">
-                                            {order.order_types.name}
-                                        </span>
-                                    </p>
-                                </div>
-                            )}
+                            {(() => {
+                                const typeName = Array.isArray(orderDetails?.order_types)
+                                    ? orderDetails.order_types[0]?.name
+                                    : orderDetails?.order_types?.name
+
+                                if (!typeName) return null
+
+                                return (
+                                    <div>
+                                        <label className="text-xs font-semibold text-stone-400 uppercase">Loại phiếu</label>
+                                        <p className="font-medium text-stone-900 dark:text-gray-200 mt-1">
+                                            <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-sm font-semibold border border-blue-100">
+                                                {typeName}
+                                            </span>
+                                        </p>
+                                    </div>
+                                )
+                            })()}
 
                             {/* Column 2 */}
                             <div>
                                 <label className="text-xs font-semibold text-stone-400 uppercase">Ngày tạo</label>
                                 <p className="font-medium text-stone-900 dark:text-gray-200 flex items-center gap-2 mt-1">
                                     <Calendar size={16} className="text-orange-500" />
-                                    {format(new Date(order.created_at), 'dd/MM/yyyy HH:mm')}
+                                    {format(new Date(orderDetails.created_at), 'dd/MM/yyyy HH:mm')}
                                 </p>
                             </div>
 
                             {/* Logistics Info - spans if exists */}
-                            {(order.metadata?.vehicleNumber || order.metadata?.driverName || order.metadata?.containerNumber) && (
+                            {(orderDetails.metadata?.vehicleNumber || orderDetails.metadata?.driverName || orderDetails.metadata?.containerNumber) && (
                                 <div className="md:col-span-2">
                                     <label className="text-xs font-semibold text-stone-400 uppercase">Vận chuyển</label>
                                     <div className="mt-1 flex flex-wrap gap-4 text-sm text-stone-700 dark:text-gray-300">
-                                        {order.metadata.vehicleNumber && (
+                                        {orderDetails.metadata.vehicleNumber && (
                                             <div className="flex items-center gap-2">
                                                 <span className="text-stone-500">Biển số:</span>
-                                                <span className="font-medium bg-stone-100 dark:bg-zinc-700 px-1.5 rounded">{order.metadata.vehicleNumber}</span>
+                                                <span className="font-medium bg-stone-100 dark:bg-zinc-700 px-1.5 rounded">{orderDetails.metadata.vehicleNumber}</span>
                                             </div>
                                         )}
-                                        {order.metadata.driverName && (
+                                        {orderDetails.metadata.driverName && (
                                             <div className="flex items-center gap-2">
                                                 <span className="text-stone-500">Tài xế:</span>
-                                                <span className="font-medium">{order.metadata.driverName}</span>
+                                                <span className="font-medium">{orderDetails.metadata.driverName}</span>
                                             </div>
                                         )}
-                                        {order.metadata.containerNumber && (
+                                        {orderDetails.metadata.containerNumber && (
                                             <div className="flex items-center gap-2">
                                                 <span className="text-stone-500">Container:</span>
-                                                <span className="font-medium font-mono">{order.metadata.containerNumber}</span>
+                                                <span className="font-medium font-mono">{orderDetails.metadata.containerNumber}</span>
                                             </div>
                                         )}
                                     </div>
@@ -371,17 +383,17 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                 <p className="font-medium text-stone-900 dark:text-gray-200 flex items-start gap-2 mt-1">
                                     <FileText size={16} className="text-stone-400 mt-0.5" />
                                     <span className="italic text-stone-600 dark:text-gray-400">
-                                        {order.description || 'Không có ghi chú'}
+                                        {orderDetails.description || 'Không có ghi chú'}
                                     </span>
                                 </p>
                             </div>
 
                             {/* Images Grid - full width */}
-                            {order.images && order.images.length > 0 && (
+                            {orderDetails.images && orderDetails.images.length > 0 && (
                                 <div className="md:col-span-2">
                                     <label className="text-xs font-semibold text-stone-400 uppercase">Hình ảnh đính kèm</label>
                                     <div className="mt-2 grid grid-cols-4 gap-2">
-                                        {order.images.map((img, idx) => (
+                                        {orderDetails.images.map((img: string, idx: number) => (
                                             <img
                                                 key={idx}
                                                 src={img}
@@ -633,7 +645,7 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                     <div className="absolute bottom-full left-0 mb-2 w-56 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-stone-200 dark:border-zinc-700 overflow-hidden z-20">
                                         <button
                                             onClick={() => {
-                                                window.open(`/print/inbound?id=${order.id}&type=internal`, '_blank')
+                                                window.open(`/print/inbound?id=${orderDetails.id}&type=internal`, '_blank')
                                                 setShowPrintMenu(false)
                                             }}
                                             className="w-full px-4 py-3 text-left hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-3 text-stone-700 dark:text-gray-200"
@@ -646,7 +658,7 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                         </button>
                                         <button
                                             onClick={() => {
-                                                window.open(`/print/inbound?id=${order.id}&type=official`, '_blank')
+                                                window.open(`/print/inbound?id=${orderDetails.id}&type=official`, '_blank')
                                                 setShowPrintMenu(false)
                                             }}
                                             className="w-full px-4 py-3 text-left hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-3 text-stone-700 dark:text-gray-200 border-t border-stone-100 dark:border-zinc-700"
@@ -669,7 +681,7 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                             Đóng
                         </button>
 
-                        {order.status === 'Pending' && hasPermission('inbound.approve') && (
+                        {orderDetails.status === 'Pending' && hasPermission('inbound.approve') && (
                             <button
                                 onClick={handleApprove}
                                 className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold shadow-lg shadow-green-500/20 transition-all hover:scale-105 active:scale-95"

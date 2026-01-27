@@ -144,23 +144,39 @@ export function InboundItemsTable({
                                             const product = products.find(p => p.id === item.productId)
                                             if (!product) return '-'
 
-                                            let baseQty = 0
-                                            if (item.unit === product.unit) {
-                                                baseQty = item.quantity
-                                            } else {
-                                                const uConfig = product.product_units?.find(pu => units.find(u => u.id === pu.unit_id)?.name === item.unit)
-                                                if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
-                                                else return '-'
+                                            // Helper to find rate
+                                            const getRate = (unitName: string) => {
+                                                if (!product) return 1
+                                                // 1. Check if it's the base unit of the product (case-insensitive)
+                                                if (product.unit && unitName.toLowerCase() === product.unit.toLowerCase()) return 1
+
+                                                // 2. Map name to ID
+                                                const u = units.find(u => u.name.toLowerCase() === unitName.toLowerCase())
+                                                if (!u) return 1
+
+                                                // 3. Find in product_units
+                                                const pUnit = product.product_units?.find(pu => pu.unit_id === u.id)
+                                                return pUnit?.conversion_rate || 1
                                             }
 
-                                            if (targetUnit === product.unit) return formatQuantityFull(baseQty)
+                                            const sourceRate = getRate(item.unit)
+                                            const targetRate = getRate(targetUnit)
 
-                                            const targetConfig = product.product_units?.find(pu => units.find(u => u.id === pu.unit_id)?.name === targetUnit)
-                                            if (targetConfig) {
-                                                const val = baseQty / targetConfig.conversion_rate
-                                                return formatQuantityFull(val)
+                                            // Avoid misleading 1:1 if lookup failed
+                                            const itemUnitName = item.unit.toLowerCase()
+                                            const targetUnitName = targetUnit.toLowerCase()
+                                            const baseUnitName = (product.unit || '').toLowerCase()
+
+                                            // If both are 1, but neither matches base unit, and they are different units -> specific conversion likely missing
+                                            if (sourceRate === 1 && targetRate === 1
+                                                && itemUnitName !== baseUnitName
+                                                && targetUnitName !== baseUnitName
+                                                && itemUnitName !== targetUnitName) {
+                                                return '-'
                                             }
-                                            return '-'
+
+                                            const val = (item.quantity * sourceRate) / targetRate
+                                            return formatQuantityFull(val)
                                         })()}
                                     </td>
                                 )}
@@ -301,23 +317,31 @@ export function InboundItemsTable({
                                         const product = products.find(p => p.id === item.productId)
                                         if (!product) return '-'
 
-                                        let baseQty = 0
-                                        if (item.unit === product.unit) {
-                                            baseQty = item.quantity
-                                        } else {
-                                            const uConfig = product.product_units?.find(pu => units.find(u => u.id === pu.unit_id)?.name === item.unit)
-                                            if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
-                                            else return '-'
+                                        const getRate = (unitName: string) => {
+                                            if (!product) return 1
+                                            if (product.unit && unitName.toLowerCase() === product.unit.toLowerCase()) return 1
+                                            const u = units.find(u => u.name.toLowerCase() === unitName.toLowerCase())
+                                            if (!u) return 1
+                                            const pUnit = product.product_units?.find(pu => pu.unit_id === u.id)
+                                            return pUnit?.conversion_rate || 1
                                         }
 
-                                        if (targetUnit === product.unit) return formatQuantityFull(baseQty)
+                                        const sourceRate = getRate(item.unit)
+                                        const targetRate = getRate(targetUnit)
 
-                                        const targetConfig = product.product_units?.find(pu => units.find(u => u.id === pu.unit_id)?.name === targetUnit)
-                                        if (targetConfig) {
-                                            const val = baseQty / targetConfig.conversion_rate
-                                            return formatQuantityFull(val)
+                                        const itemUnitName = item.unit.toLowerCase()
+                                        const targetUnitName = targetUnit.toLowerCase()
+                                        const baseUnitName = (product.unit || '').toLowerCase()
+
+                                        if (sourceRate === 1 && targetRate === 1
+                                            && itemUnitName !== baseUnitName
+                                            && targetUnitName !== baseUnitName
+                                            && itemUnitName !== targetUnitName) {
+                                            return '-'
                                         }
-                                        return '-'
+
+                                        const val = (item.quantity * sourceRate) / targetRate
+                                        return formatQuantityFull(val)
                                     })()}
                                 </span>
                             </div>

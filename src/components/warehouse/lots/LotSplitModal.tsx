@@ -209,7 +209,8 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                         item,
                         consumedOriginalQty: consumedQty,
                         unitNameMap,
-                        conversionMap
+                        conversionMap,
+                        preferredUnit: selectedUnit // Pass the unit user selected for the split
                     })
                 }
             }

@@ -7,7 +7,7 @@ import { unbundleService } from '@/services/inventory/unbundleService'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { Product, Customer, Unit, OrderItem } from '../types'
 
-export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, onClose }: any) {
+export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, onClose, editOrderId }: any) {
     const { showToast } = useToast()
     const { currentSystem } = useSystem()
     const { toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
@@ -79,10 +79,62 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
     useEffect(() => {
         if (isOpen) {
             fetchData()
+            if (editOrderId) {
+                fetchOrderDetails(editOrderId)
+            }
         } else {
             resetForm()
         }
-    }, [isOpen, systemCode])
+    }, [isOpen, systemCode, editOrderId])
+
+    async function fetchOrderDetails(id: string) {
+        try {
+            const { data: order, error } = await supabase
+                .from('outbound_orders')
+                .select('*, items:outbound_order_items(*)')
+                .eq('id', id)
+                .single()
+
+            if (error) throw error
+            if (!order) return
+
+            setCode(order.code)
+            setCustomerName(order.customer_name || '')
+            setCustomerAddress(order.customer_address || '')
+            setCustomerPhone(order.customer_phone || '')
+            setWarehouseName(order.warehouse_name || '')
+            setDescription(order.description || '')
+            setImages((order.images as string[]) || [])
+            setOrderTypeId(order.order_type_id || '')
+
+            if (order.metadata) {
+                const meta = order.metadata as any
+                setVehicleNumber(meta.vehicleNumber || '')
+                setDriverName(meta.driverName || '')
+                setContainerNumber(meta.containerNumber || '')
+                setTargetUnit(meta.targetUnit || '')
+            }
+
+            if (order.items) {
+                const formattedItems = order.items.map((i: any) => ({
+                    id: crypto.randomUUID(), // New ID for frontend handling
+                    productId: i.product_id,
+                    productName: i.product_name,
+                    unit: i.unit,
+                    quantity: i.quantity,
+                    document_quantity: i.document_quantity,
+                    price: i.price,
+                    note: i.note,
+                    isDocQtyVisible: i.document_quantity !== i.quantity
+                }))
+                setItems(formattedItems)
+            }
+
+        } catch (e: any) {
+            console.error(e)
+            showToast('Lỗi tải thông tin phiếu: ' + e.message, 'error')
+        }
+    }
 
     function resetForm() {
         setItems([])
@@ -185,48 +237,92 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         if (!product || !unit) return { needsUnbundle: false }
 
         const normReqUnit = unit.toLowerCase().trim()
+
+        // 1. Check direct liquid stock
+        // Note: unitStockMap keys are formatted as "productId_unitname"
         const currentLiquid = unitStockMap.get(`${productId}_${normReqUnit}`) || 0
         if (currentLiquid >= qty - 0.000001) return { needsUnbundle: false }
 
+        const deficit = qty - currentLiquid
+
+        // Helper to get rate Base -> Unit (How many Units in 1 Base)
+        // conversionMap: product -> unitId -> rate (Base/Unit). 1 Unit = Rate Base.
+        // So Rate(Base/Unit) = 1 Unit / Rate Base?? No.
+        // conversionMap stores value from database 'conversion_rate'. Usually "How many Base in 1 Unit".
+        // e.g. Thùng (20kg). Rate = 20.
+        // Product Base = Kg.
+
         // Case 1: Break Base Unit (Official Unit)
-        if (normReqUnit !== (product.unit || '').toLowerCase().trim()) {
-            const currentBase = unitStockMap.get(`${productId}_${(product.unit || '').toLowerCase().trim()}`) || 0
+        // We need to convert FROM Base TO ReqUnit.
+        const baseUnitName = (product.unit || '').toLowerCase().trim()
+        if (normReqUnit !== baseUnitName) {
+            const currentBase = unitStockMap.get(`${productId}_${baseUnitName}`) || 0
             if (currentBase > 0) {
                 const rUnitId = unitNameMap.get(normReqUnit)
-                const rate = conversionMap.get(productId)?.get(rUnitId || '') || 1
-                if (rate > 0) {
-                    const deficit = qty - currentLiquid
-                    const baseToBreak = Math.ceil(deficit / rate - 0.000001)
-                    return {
-                        needsUnbundle: true,
-                        unbundleInfo: `Bẻ gói ${baseToBreak} ${product.unit} -> ${baseToBreak * rate} ${unit}`,
-                        sourceUnit: product.unit ?? undefined,
-                        rate
+                // Rate in Map: 1 ReqUnit = X BaseUnit.
+                const rateReqStackToBase = conversionMap.get(productId)?.get(rUnitId || '') || 0
+
+                if (rateReqStackToBase > 0) {
+                    // We want: How many ReqUnit in 1 BaseUnit?
+                    // 1 Base = 1/X ReqUnit.
+                    const rateBaseToReq = 1 / rateReqStackToBase
+
+                    // deficit is in ReqUnit.
+                    // We need 'baseToBreak' BaseUnits.
+                    // baseToBreak * rateBaseToReq >= deficit.
+                    // baseToBreak >= deficit / rateBaseToReq.
+                    // baseToBreak >= deficit * rateReqStackToBase
+
+                    const baseToBreak = Math.ceil(deficit / rateBaseToReq - 0.000001)
+
+                    // Optimization: Do we have enough Base?
+                    if (currentBase >= baseToBreak) {
+                        return {
+                            needsUnbundle: true,
+                            unbundleInfo: `Tự động: Bẻ ${baseToBreak} ${product.unit} -> ${formatQuantityFull(baseToBreak * rateBaseToReq)} ${unit}`,
+                            sourceUnit: product.unit ?? undefined,
+                            rate: rateBaseToReq // Passing "How many Req in 1 Base"
+                        }
                     }
                 }
             }
         }
 
         // Case 2: Break OTHER units
+        // e.g. Have Thùng. Need Khay.
         for (const pu of product.product_units || []) {
             const altUnitName = units.find(u => u.id === pu.unit_id)?.name
-            if (!altUnitName || altUnitName.toLowerCase().trim() === normReqUnit) continue
+            if (!altUnitName) continue
+            const normAltUnit = altUnitName.toLowerCase().trim()
 
-            const currentAlt = unitStockMap.get(`${productId}_${altUnitName.toLowerCase().trim()}`) || 0
+            if (normAltUnit === normReqUnit) continue
+
+            const currentAlt = unitStockMap.get(`${productId}_${normAltUnit}`) || 0
             if (currentAlt > 0) {
+                // Rate Alt -> Base (e.g. 1 Thùng = 25 Kg)
                 const altToBase = pu.conversion_rate
-                const reqUnitId = unitNameMap.get(normReqUnit)
-                const reqToBase = normReqUnit === (product.unit || '').toLowerCase().trim() ? 1 : (conversionMap.get(productId)?.get(reqUnitId || '') || 1)
 
+                // Rate Req -> Base (e.g. 1 Khay = 2.5 Kg)
+                const reqUnitId = unitNameMap.get(normReqUnit)
+                // If Req is Base, rate is 1. Else lookup.
+                const reqToBase = normReqUnit === baseUnitName ? 1 : (conversionMap.get(productId)?.get(reqUnitId || '') || 1)
+
+                // We want Rate Alt -> Req. (How many Req in 1 Alt)
+                // 1 Alt = altToBase Base.
+                // 1 Req = reqToBase Base.
+                // 1 Alt = (altToBase / reqToBase) Req.
                 const rateAltToReq = altToBase / reqToBase
-                if (rateAltToReq > 1) {
-                    const deficit = qty - currentLiquid
+
+                if (rateAltToReq > 0) {
                     const altToBreak = Math.ceil(deficit / rateAltToReq - 0.000001)
-                    return {
-                        needsUnbundle: true,
-                        unbundleInfo: `Bẻ gói ${altToBreak} ${altUnitName} -> ${altToBreak * rateAltToReq} ${unit}`,
-                        sourceUnit: altUnitName,
-                        rate: rateAltToReq
+
+                    if (currentAlt >= altToBreak) {
+                        return {
+                            needsUnbundle: true,
+                            unbundleInfo: `Tự động: Bẻ ${altToBreak} ${altUnitName} -> ${formatQuantityFull(altToBreak * rateAltToReq)} ${unit}`,
+                            sourceUnit: altUnitName,
+                            rate: rateAltToReq
+                        }
                     }
                 }
             }
@@ -331,33 +427,61 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                 }
             }
 
-            // Step 2: Create Main Outbound Order
-            const { data: order, error: orderError } = await (supabase.from('outbound_orders') as any).insert({
-                code,
-                customer_name: customerName,
-                customer_address: customerAddress,
-                customer_phone: customerPhone,
-                warehouse_name: warehouseName,
-                description,
-                status: 'Pending',
-                type: 'Sale',
-                order_type_id: orderTypeId || null,
-                images,
-                system_code: systemCode,
-                system_type: systemCode,
-                metadata: {
-                    vehicleNumber,
-                    driverName,
-                    containerNumber,
-                    targetUnit
-                }
-            }).select().single()
+            // Step 2: Create or Update Main Outbound Order
+            let orderId = editOrderId
 
-            if (orderError) throw orderError
-            if (!order) throw new Error('Failed to create order')
+            if (editOrderId) {
+                const { error: updateError } = await (supabase.from('outbound_orders') as any).update({
+                    customer_name: customerName,
+                    customer_address: customerAddress,
+                    customer_phone: customerPhone,
+                    warehouse_name: warehouseName,
+                    description,
+                    order_type_id: orderTypeId || null,
+                    images,
+                    metadata: {
+                        vehicleNumber,
+                        driverName,
+                        containerNumber,
+                        targetUnit
+                    }
+                }).eq('id', editOrderId)
+
+                if (updateError) throw updateError
+
+                // Delete old items to replace with new ones
+                const { error: deleteError } = await supabase.from('outbound_order_items').delete().eq('order_id', editOrderId)
+                if (deleteError) throw deleteError
+
+            } else {
+                const { data: order, error: orderError } = await (supabase.from('outbound_orders') as any).insert({
+                    code,
+                    customer_name: customerName,
+                    customer_address: customerAddress,
+                    customer_phone: customerPhone,
+                    warehouse_name: warehouseName,
+                    description,
+                    status: 'Pending',
+                    type: 'Sale',
+                    order_type_id: orderTypeId || null,
+                    images,
+                    system_code: systemCode,
+                    system_type: systemCode,
+                    metadata: {
+                        vehicleNumber,
+                        driverName,
+                        containerNumber,
+                        targetUnit
+                    }
+                }).select().single()
+
+                if (orderError) throw orderError
+                if (!order) throw new Error('Failed to create order')
+                orderId = order.id
+            }
 
             const orderItems = items.map(item => ({
-                order_id: order.id,
+                order_id: orderId,
                 product_id: item.productId,
                 product_name: item.productName,
                 unit: item.unit,
@@ -378,7 +502,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                         const metadata = { ...lot.metadata as any }
                         metadata.system_history.exports = metadata.system_history.exports.map((exp: any) => {
                             if (exp.id === p.export_id) {
-                                return { ...exp, draft: false, order_id: order.id, order_code: code }
+                                return { ...exp, draft: false, order_id: orderId, order_code: code }
                             }
                             return exp
                         })
