@@ -360,6 +360,29 @@ export function useAudit() {
         }
     }
 
+    // Delete Session
+    const deleteSession = async (checkId: string) => {
+        if (!await showConfirm('Bạn có chắc chắn muốn xóa phiếu kiểm kê này? Hành động này không thể hoàn tác.')) return
+
+        setLoading(true)
+        try {
+            const { error } = await supabase
+                .from('inventory_checks')
+                .delete()
+                .eq('id', checkId)
+
+            if (error) throw error
+
+            showToast('Đã xóa phiếu kiểm kê', 'success')
+            setSessions(prev => prev.filter(s => s.id !== checkId))
+        } catch (error: any) {
+            console.error('Error deleting session:', error)
+            showToast('Lỗi xóa phiếu: ' + error.message, 'error')
+        } finally {
+            setLoading(false)
+        }
+    }
+
     // Quick Fill (Set all nulls to system qty)
     const quickFill = async () => {
          const itemsToUpdate = sessionItems.filter(i => i.actual_quantity === null)
@@ -407,6 +430,7 @@ export function useAudit() {
         submitForApproval,
         approveSession,
         rejectSession,
+        deleteSession,
         quickFill
     }
 }
