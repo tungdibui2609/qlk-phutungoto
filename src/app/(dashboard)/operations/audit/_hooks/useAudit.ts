@@ -10,6 +10,8 @@ import { logActivity } from '@/lib/audit'
 
 export type InventoryCheck = TypedDatabase['public']['Tables']['inventory_checks']['Row'] & {
     user_profiles?: { full_name: string | null }
+    scope?: 'ALL' | 'PARTIAL' | null
+    participants?: any
 }
 
 export type InventoryCheckItem = TypedDatabase['public']['Tables']['inventory_check_items']['Row'] & {
@@ -55,7 +57,14 @@ export function useAudit() {
     }, [currentSystem, showToast])
 
     // Create a new session
-    const createSession = async (warehouseId: string | null, warehouseName: string | null, note: string) => {
+    const createSession = async (
+        warehouseId: string | null,
+        warehouseName: string | null,
+        note: string,
+        scope: 'ALL' | 'PARTIAL' = 'ALL',
+        productIds: string[] = [],
+        participants: any[] = []
+    ) => {
         if (!currentSystem?.code || !user) return null
 
         setLoading(true)
@@ -75,7 +84,9 @@ export function useAudit() {
                     note,
                     system_code: currentSystem.code,
                     created_by: user.id,
-                    status: 'IN_PROGRESS'
+                    status: 'IN_PROGRESS',
+                    scope,
+                    participants: participants as any // JSONB
                 })
                 .select()
                 .single()
@@ -86,12 +97,13 @@ export function useAudit() {
             const checkId = checkData.id
 
             // 2. Fetch Accounting Inventory (Snapshot from API)
-            // This aligns with the requirement to check against "Sổ sách kế toán" (Accounting Books)
             const dateTo = new Date().toISOString().split('T')[0]
             let apiUrl = `/api/inventory?dateTo=${dateTo}&systemType=${currentSystem.code}`
             if (warehouseName) {
                 apiUrl += `&warehouse=${encodeURIComponent(warehouseName)}`
             }
+            // Note: The API currently returns ALL aggregated items for the scope.
+            // We do filtering client-side if scope is PARTIAL.
 
             const accRes = await fetch(apiUrl)
             const accData = await accRes.json()
@@ -100,17 +112,16 @@ export function useAudit() {
                 throw new Error('Failed to fetch accounting inventory data')
             }
 
-            const accountingItems = accData.items || []
+            let accountingItems = accData.items || []
+
+            // Filter by selected products if PARTIAL
+            if (scope === 'PARTIAL' && productIds.length > 0) {
+                const allowedIds = new Set(productIds)
+                accountingItems = accountingItems.filter((item: any) => allowedIds.has(item.productId))
+            }
 
             // 3. Prepare Bulk Insert
             if (accountingItems.length > 0) {
-                // Filter items relevant to warehouse if warehouse is selected?
-                // Currently API returns system-wide. If warehouseName is specific, we might need to filter.
-                // However, "Accounting Inventory" is usually system-wide unless the API supports warehouse filter.
-                // The current API (`/api/inventory`) seems to aggregate by system type.
-                // If user selected a warehouse, this might be a mismatch if accounting isn't tracked per warehouse.
-                // For now, we assume Audit matches the scope of the data returned.
-
                 const checkItems = accountingItems.map((item: any) => ({
                     check_id: checkId,
                     lot_id: null, // Accounting is product-based

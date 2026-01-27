@@ -6,7 +6,7 @@ import { useAudit } from '../_hooks/useAudit'
 import { AuditSessionHeader } from '../_components/AuditSessionHeader'
 import { AuditItemCard } from '../_components/AuditItemCard'
 import { ApproveAuditModal } from '../_components/ApproveAuditModal'
-import { Search, Filter, Layers } from 'lucide-react'
+import { Search, Filter, Layers, Users, Eye } from 'lucide-react'
 
 export default function AuditDetailPage() {
     const params = useParams()
@@ -80,6 +80,39 @@ export default function AuditDetailPage() {
                 onReject={() => rejectSession(id, 'Từ chối bởi quản lý')}
                 onQuickFill={quickFill}
             />
+
+            {/* Session Metadata (Participants & Scope) */}
+            {currentSession && (
+                <div className="max-w-3xl mx-auto px-4 pt-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row gap-4 text-sm">
+                        <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-2 text-slate-500 font-medium uppercase text-xs tracking-wider">
+                                <Eye size={14} /> Phạm vi kiểm kê
+                            </div>
+                            <div className="font-semibold text-slate-800 dark:text-slate-200">
+                                {currentSession.scope === 'ALL' ? 'Toàn bộ kho' : 'Tùy chọn sản phẩm'}
+                            </div>
+                        </div>
+                        <div className="flex-[2] space-y-2">
+                            <div className="flex items-center gap-2 text-slate-500 font-medium uppercase text-xs tracking-wider">
+                                <Users size={14} /> Tổ kiểm kê
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {(currentSession.participants as any[])?.length > 0 ? (
+                                    (currentSession.participants as any[]).map((p, i) => (
+                                        <div key={i} className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
+                                            <span className="font-bold text-slate-700 dark:text-slate-300">{p.name}</span>
+                                            <span className="text-slate-400 text-xs border-l border-slate-300 dark:border-slate-600 pl-1.5">{p.role}</span>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <span className="text-slate-400 italic">Chưa cập nhật danh sách</span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <ApproveAuditModal
                 isOpen={showApproveModal}
