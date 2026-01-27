@@ -88,7 +88,12 @@ export function useAudit() {
             // 2. Fetch Accounting Inventory (Snapshot from API)
             // This aligns with the requirement to check against "Sổ sách kế toán" (Accounting Books)
             const dateTo = new Date().toISOString().split('T')[0]
-            const accRes = await fetch(`/api/inventory?dateTo=${dateTo}&systemType=${currentSystem.code}`)
+            let apiUrl = `/api/inventory?dateTo=${dateTo}&systemType=${currentSystem.code}`
+            if (warehouseName) {
+                apiUrl += `&warehouse=${encodeURIComponent(warehouseName)}`
+            }
+
+            const accRes = await fetch(apiUrl)
             const accData = await accRes.json()
 
             if (!accData.ok) {
@@ -164,20 +169,41 @@ export function useAudit() {
         setCurrentSession(check as any)
 
         // Fetch Items
-        const { data: items, error: itemsError } = await supabase
+        const { data: rawItems, error: itemsError } = await supabase
             .from('inventory_check_items')
             .select(`
                 *,
-                lots (code, batch_code),
                 products (name, sku, unit, image_url)
             `)
             .eq('check_id', id)
             .order('created_at')
 
         if (itemsError) {
+            console.error('Error fetching items:', itemsError)
             showToast('Lỗi tải chi tiết sản phẩm', 'error')
         } else {
-            setSessionItems(items as any)
+            // Manual Join for Lots (Due to loose coupling/missing FKs)
+            const items = rawItems as any[]
+            const lotIds = Array.from(new Set(items.map(i => i.lot_id).filter(Boolean)))
+
+            let lotsMap: Record<string, any> = {}
+            if (lotIds.length > 0) {
+                const { data: lotsData } = await supabase
+                   .from('lots')
+                   .select('id, code, batch_code')
+                   .in('id', lotIds)
+
+                if (lotsData) {
+                    lotsData.forEach(l => { lotsMap[l.id] = l })
+                }
+            }
+
+            const mergedItems = items.map(item => ({
+                ...item,
+                lots: item.lot_id ? lotsMap[item.lot_id] : null
+            }))
+
+            setSessionItems(mergedItems)
         }
         setLoading(false)
     }, [showToast])
