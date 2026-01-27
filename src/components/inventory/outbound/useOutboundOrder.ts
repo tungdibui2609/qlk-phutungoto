@@ -51,6 +51,14 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         return outboundModules.includes(moduleId)
     }
 
+    const isUtilityEnabled = (utilityId: string) => {
+        if (!currentSystem?.modules) return false
+        const modules = typeof currentSystem.modules === 'string'
+            ? JSON.parse(currentSystem.modules)
+            : currentSystem.modules
+        return Array.isArray(modules?.utility_modules) && modules.utility_modules.includes(utilityId)
+    }
+
     const generateOrderCode = async (type: 'PNK' | 'PXK', sysCode?: string, sysName?: string) => {
         const getSystemAbbreviation = (code: string, name?: string): string => {
             if (name) {
@@ -263,9 +271,15 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
 
             // Always re-check unbundle status when product, unit or quantity changes
             if (field === 'productId' || field === 'unit' || field === 'quantity') {
-                const { needsUnbundle, unbundleInfo } = checkUnbundle(updatedItem.productId, updatedItem.unit, updatedItem.quantity)
-                updatedItem.needsUnbundle = needsUnbundle
-                updatedItem.unbundleInfo = unbundleInfo
+                const isAutoUnbundleEnabled = isUtilityEnabled('auto_unbundle_order')
+                if (isAutoUnbundleEnabled) {
+                    const { needsUnbundle, unbundleInfo } = checkUnbundle(updatedItem.productId, updatedItem.unit, updatedItem.quantity)
+                    updatedItem.needsUnbundle = needsUnbundle
+                    updatedItem.unbundleInfo = unbundleInfo
+                } else {
+                    updatedItem.needsUnbundle = false
+                    updatedItem.unbundleInfo = undefined
+                }
             }
 
             return updatedItem
@@ -311,32 +325,35 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
             const convTypeId = conversionType?.id
 
             // Step 1: Check and Perform Auto-Unbundle for items that need it
-            for (const item of items) {
-                const unbundle = checkUnbundle(item.productId, item.unit, item.quantity)
+            const isAutoUnbundleEnabled = isUtilityEnabled('auto_unbundle_order')
+            if (isAutoUnbundleEnabled) {
+                for (const item of items) {
+                    const unbundle = checkUnbundle(item.productId, item.unit, item.quantity)
 
-                if (unbundle.needsUnbundle && unbundle.sourceUnit && unbundle.rate) {
-                    const product = products.find(p => p.id === item.productId)
-                    const currentLiquid = unitStockMap.get(`${item.productId}_${item.unit}`) || 0
+                    if (unbundle.needsUnbundle && unbundle.sourceUnit && unbundle.rate) {
+                        const product = products.find(p => p.id === item.productId)
+                        const currentLiquid = unitStockMap.get(`${item.productId}_${item.unit}`) || 0
 
-                    const baseToBreak = await unbundleService.executeAutoUnbundle({
-                        supabase,
-                        productId: item.productId,
-                        productName: item.productName,
-                        baseUnit: unbundle.sourceUnit,
-                        reqUnit: item.unit,
-                        reqQty: item.quantity,
-                        currentLiquid,
-                        costPrice: product?.cost_price || 0,
-                        rate: unbundle.rate,
-                        warehouseName,
-                        systemCode,
-                        mainOrderCode: code,
-                        convTypeId,
-                        generateOrderCode: (type) => generateOrderCode(type, systemCode, currentSystem?.name)
-                    })
+                        const baseToBreak = await unbundleService.executeAutoUnbundle({
+                            supabase,
+                            productId: item.productId,
+                            productName: item.productName,
+                            baseUnit: unbundle.sourceUnit,
+                            reqUnit: item.unit,
+                            reqQty: item.quantity,
+                            currentLiquid,
+                            costPrice: product?.cost_price || 0,
+                            rate: unbundle.rate,
+                            warehouseName,
+                            systemCode,
+                            mainOrderCode: code,
+                            convTypeId,
+                            generateOrderCode: (type) => generateOrderCode(type, systemCode, currentSystem?.name)
+                        })
 
-                    if (baseToBreak) {
-                        showToast(`Đã tự động bẻ ${baseToBreak} ${unbundle.sourceUnit} sang ${item.unit}`, 'success')
+                        if (baseToBreak) {
+                            showToast(`Đã tự động bẻ ${baseToBreak} ${unbundle.sourceUnit} sang ${item.unit}`, 'success')
+                        }
                     }
                 }
             }
@@ -449,6 +466,6 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         targetUnit, setTargetUnit,
         products, customers, branches, units, orderTypes,
         loadingData, submitting, handleSubmit,
-        hasModule, confirmDialog, setConfirmDialog, handleCustomerSelect
+        hasModule, isUtilityEnabled, confirmDialog, setConfirmDialog, handleCustomerSelect
     }
 }

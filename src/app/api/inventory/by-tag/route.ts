@@ -1,24 +1,64 @@
 
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+import { Database } from "@/lib/database.types";
+import { convertUnit as convertUnitLogic } from '@/lib/unitConversion'
 
 export const dynamic = 'force-dynamic';
 
-/**
- * GET /api/inventory/by-tag
- * Query params:
- *   - tag: Filter by specific tag
- *   - warehouse: Filter by warehouse (branch name)
- *   - systemType: Filter by system code
- * 
- * Returns inventory grouped by tag
- */
 export async function GET(req: NextRequest) {
     try {
+        const cookieStore = await cookies()
+        const authHeader = req.headers.get('Authorization')
+
+        const supabase = createServerClient<Database>(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            {
+                cookies: {
+                    get(name: string) {
+                        return cookieStore.get(name)?.value
+                    },
+                    set(name: string, value: string, options: CookieOptions) {
+                        cookieStore.set({ name, value, ...options })
+                    },
+                    remove(name: string, options: CookieOptions) {
+                        cookieStore.set({ name, value: '', ...options })
+                    },
+                },
+                global: {
+                    headers: authHeader ? { Authorization: authHeader } : {}
+                }
+            }
+        )
+
         const searchParams = req.nextUrl.searchParams;
         const tagFilter = searchParams.get("tag") || "";
         const warehouse = searchParams.get("warehouse") || "";
-        const systemType = searchParams.get("systemType") || "";
+        const systemParam = searchParams.get('systemType')
+        const systemType = systemParam || cookieStore.get('systemType')?.value || 'FROZEN'
+        const targetUnitId = searchParams.get('targetUnitId')
+
+        // Fetch Support Data
+        const { data: unitsData } = await supabase.from('units').select('id, name')
+        const { data: productsData } = await supabase.from('products').select('id, sku, name, unit')
+        const { data: prodUnitsData } = await supabase.from('product_units').select('product_id, unit_id, conversion_rate')
+
+        const targetUnit = targetUnitId ? (unitsData as any[])?.find(u => u.id === targetUnitId) : null
+        const unitNameMap = new Map<string, string>()
+            ; (unitsData as any[])?.forEach(u => unitNameMap.set(u.name.toLowerCase(), u.id))
+
+        const productMap = new Map<string, any>()
+            ; (productsData as any[])?.forEach(p => productMap.set(p.id, p))
+
+        const conversionMap = new Map<string, Map<string, number>>()
+            ; (prodUnitsData as any[])?.forEach(pu => {
+                if (!conversionMap.has(pu.product_id)) {
+                    conversionMap.set(pu.product_id, new Map())
+                }
+                conversionMap.get(pu.product_id)!.set(pu.unit_id, pu.conversion_rate)
+            })
 
         // Build query
         let query = supabase
@@ -29,28 +69,21 @@ export async function GET(req: NextRequest) {
                 warehouse_name,
                 lot_items (
                     id,
+                    product_id,
                     quantity,
-                    unit,
-                    products (
-                        id,
-                        code:sku,
-                        name,
-                        unit
-                    )
+                    unit
                 ),
                 lot_tags (
                     tag,
                     lot_item_id
                 )
             `)
-            .eq('status', 'active'); // Assuming there's a status, or just all lots
+            .eq('status', 'active');
 
         if (systemType) {
             query = query.eq('system_code', systemType);
         }
 
-        // We can't easily filter by warehouse name if it's stored loosely, 
-        // but if 'warehouse_name' is the column:
         if (warehouse && warehouse !== "Tất cả") {
             query = query.eq('warehouse_name', warehouse);
         }
@@ -60,29 +93,19 @@ export async function GET(req: NextRequest) {
         if (error) throw error;
         if (!lots) return NextResponse.json({ ok: true, items: [], uniqueTags: [] });
 
-        // Build inventory grouped by tag
-        // Structure: { tag -> { productCode__unit -> { productCode, productName, quantity, unit, lotCodes } } }
         const tagInventory = new Map<string, Map<string, {
             productCode: string;
             productName: string;
-            productType: string;
             quantity: number;
             unit: string;
             lotCodes: string[];
+            isUnconvertible?: boolean;
         }>>();
 
         const allTags = new Set<string>();
 
-        // Process lots
         lots.forEach((lot: any) => {
             if (!lot.lot_items) return;
-
-            // Group tags by lot_item_id
-            // Tags with lot_item_id = null are considered "General Tags" for the Lot
-            // But we only want to count items.
-            // Current strict logic: Tags must be assigned to items to be counted in "Inventory by Tag" for that item?
-            // OR: General tags apply to ALL items in the lot?
-            // Let's assume General Tags apply to all items for now, to be safe/generous.
 
             const generalTags = (lot.lot_tags || [])
                 .filter((t: any) => !t.lot_item_id)
@@ -95,66 +118,81 @@ export async function GET(req: NextRequest) {
             });
 
             lot.lot_items.forEach((item: any) => {
-                const product = item.products;
-                if (!product) return;
+                const pid = item.product_id
+                const prod = productMap.get(pid)
+                if (!prod) return;
 
-                // Combine general tags + specific item tags
                 const specificTags = itemTagsMap.get(item.id) || [];
                 const combinedTags = Array.from(new Set([...generalTags, ...specificTags]));
-
                 if (combinedTags.length === 0) return;
 
-                // If filtering by tag
                 if (tagFilter && !combinedTags.includes(tagFilter)) return;
-
                 combinedTags.forEach(t => allTags.add(t));
 
-                // Composite tag key
                 const compositeTag = combinedTags.sort().join('; ');
-
                 if (!tagInventory.has(compositeTag)) {
                     tagInventory.set(compositeTag, new Map());
                 }
 
-                const productMap = tagInventory.get(compositeTag)!;
-                const unit = (item.unit || product.unit || '').trim();
-                const key = `${product.code}__${unit}`;
+                const productMapForTag = tagInventory.get(compositeTag)!;
+                const uName = (item.unit || '').trim();
 
-                if (!productMap.has(key)) {
-                    productMap.set(key, {
-                        productCode: product.code,
-                        productName: product.name,
-                        productType: '', // Not strictly used right now
+                let quantity = item.quantity
+                let unitDisplay = uName
+                let isUnconvertible = false
+                let key = `${prod.sku}__${uName}`
+
+                const baseUnitName = prod.unit || null
+                const isConvertible = targetUnitId && prod && (
+                    baseUnitName?.toLowerCase() === targetUnit?.name?.toLowerCase() ||
+                    conversionMap.get(pid)?.has(targetUnitId)
+                )
+
+                if (targetUnitId && isConvertible) {
+                    key = `${prod.sku}__${targetUnitId}`
+                    unitDisplay = targetUnit.name
+                    quantity = convertUnitLogic(pid, uName, targetUnit.name, quantity, baseUnitName, unitNameMap, conversionMap)
+                } else {
+                    if (targetUnitId) isUnconvertible = true
+                }
+
+                if (!productMapForTag.has(key)) {
+                    productMapForTag.set(key, {
+                        productCode: prod.sku,
+                        productName: prod.name,
                         quantity: 0,
-                        unit: unit,
-                        lotCodes: []
+                        unit: unitDisplay,
+                        lotCodes: [],
+                        isUnconvertible
                     });
                 }
 
-                const entry = productMap.get(key)!;
-                entry.quantity += item.quantity;
+                const entry = productMapForTag.get(key)!;
+                entry.quantity += quantity;
                 if (!entry.lotCodes.includes(lot.code)) {
                     entry.lotCodes.push(lot.code);
                 }
             });
         });
 
-        // Format Response
         const items: any[] = [];
-        tagInventory.forEach((productMap, tag) => {
+        tagInventory.forEach((productMapForTag, tag) => {
             const products: any[] = [];
             let totalQuantity = 0;
             let primaryUnit = "";
 
-            productMap.forEach(product => {
+            productMapForTag.forEach(product => {
                 products.push({
                     productCode: product.productCode,
                     productName: product.productName,
                     quantity: product.quantity,
                     unit: product.unit,
-                    lotCount: product.lotCodes.length
+                    lotCount: product.lotCodes.length,
+                    isUnconvertible: product.isUnconvertible
                 });
-                totalQuantity += product.quantity;
+                if (!product.isUnconvertible) {
+                    totalQuantity += product.quantity;
+                }
                 if (!primaryUnit) primaryUnit = product.unit;
             });
 
@@ -167,7 +205,6 @@ export async function GET(req: NextRequest) {
         });
 
         items.sort((a, b) => a.tag.localeCompare(b.tag));
-
         return NextResponse.json({
             ok: true,
             items,

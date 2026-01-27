@@ -8,6 +8,7 @@ import { LotMergeHistoryModal } from '@/components/warehouse/lots/LotMergeHistor
 interface LotCardProps {
     lot: Lot
     isModuleEnabled: (moduleId: string) => boolean
+    isUtilityEnabled: (utilityId: string) => boolean
     onEdit: (lot: Lot) => void
     onDelete: (id: string) => void
     onView: (lot: Lot) => void
@@ -19,7 +20,7 @@ interface LotCardProps {
     onExport?: (lot: Lot) => void
 }
 
-export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport }: LotCardProps) {
+export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport }: LotCardProps) {
     const router = useRouter()
     const [isExpanded, setIsExpanded] = useState(false)
     const [historyData, setHistoryData] = useState<any>(null)
@@ -398,20 +399,24 @@ export function LotCard({ lot, isModuleEnabled, onEdit, onDelete, onView, onQr, 
                     >
                         <Tag size={16} />
                     </button>
-                    <button
-                        onClick={() => onMerge?.(lot)}
-                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all border border-transparent"
-                        title="Gộp Lot"
-                    >
-                        <Combine size={16} />
-                    </button>
-                    <button
-                        onClick={() => onSplit?.(lot)}
-                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all border border-transparent"
-                        title="Tách Lot"
-                    >
-                        <Split size={16} />
-                    </button>
+                    {isUtilityEnabled('auto_unbundle_lot') && (
+                        <>
+                            <button
+                                onClick={() => onMerge?.(lot)}
+                                className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all border border-transparent"
+                                title="Gộp Lot"
+                            >
+                                <Combine size={16} />
+                            </button>
+                            <button
+                                onClick={() => onSplit?.(lot)}
+                                className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all border border-transparent"
+                                title="Tách Lot"
+                            >
+                                <Split size={16} />
+                            </button>
+                        </>
+                    )}
                     <button
                         onClick={() => onExport?.(lot)}
                         className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all border border-transparent"

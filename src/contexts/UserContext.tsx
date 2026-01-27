@@ -12,6 +12,7 @@ type UserProfile = {
     permissions: string[] | null
     blocked_routes: string[] | null
     hidden_menus: Record<string, string[]> | null
+    favorite_menus: string[] | null
     allowed_systems: string[] | null
     roles: { name: string } | null
 }
@@ -24,6 +25,7 @@ interface UserContextType {
     isRouteBlocked: (path: string) => boolean
     refreshProfile: () => Promise<void>
     updateProfileSettings: (updates: Partial<UserProfile>) => Promise<void>
+    toggleFavorite: (menuHref: string) => Promise<void>
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined)
@@ -41,7 +43,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             if (authUser) {
                 const { data, error } = await supabase
                     .from('user_profiles')
-                    .select('id, full_name, email, avatar_url, permissions, blocked_routes, hidden_menus, allowed_systems, roles(name)')
+                    .select('id, full_name, email, avatar_url, permissions, blocked_routes, hidden_menus, favorite_menus, allowed_systems, roles(name)')
                     .eq('id', authUser.id)
                     .eq('id', authUser.id)
                     .limit(1)
@@ -130,8 +132,26 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         }
     }
 
+    const toggleFavorite = async (menuHref: string) => {
+        if (!profile) return
+
+        const currentFavorites = profile.favorite_menus || []
+        let newFavorites: string[]
+
+        if (currentFavorites.includes(menuHref)) {
+            newFavorites = currentFavorites.filter(h => h !== menuHref)
+        } else {
+            newFavorites = [...currentFavorites, menuHref]
+        }
+
+        await updateProfileSettings({ favorite_menus: newFavorites })
+    }
+
     return (
-        <UserContext.Provider value={{ user, profile, isLoading, hasPermission, isRouteBlocked, refreshProfile: fetchProfile, updateProfileSettings }}>
+        <UserContext.Provider value={{
+            user, profile, isLoading, hasPermission, isRouteBlocked,
+            refreshProfile: fetchProfile, updateProfileSettings, toggleFavorite
+        }}>
             {children}
         </UserContext.Provider>
     )

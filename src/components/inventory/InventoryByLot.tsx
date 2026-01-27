@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Search, Loader2, Printer, ChevronRight, ChevronDown } from 'lucide-react'
+import { Search, Loader2, Printer, ChevronRight, ChevronDown, Warehouse } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
@@ -34,18 +34,40 @@ interface GroupedProduct {
     lotCodes: string[]
 }
 
-export default function InventoryByLot() {
+export default function InventoryByLot({ units }: { units: any[] }) {
     const [lots, setLots] = useState<Lot[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
+    const [selectedBranch, setSelectedBranch] = useState('Tất cả')
+    const [targetUnitId, setTargetUnitId] = useState<string | null>(null)
     const { systemType } = useSystem()
     const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
-    const [isConvertKg, setIsConvertKg] = useState(false)
-    const { toBaseAmount, getBaseToKgRate, unitNameMap, conversionMap } = useUnitConversion()
+    const { toBaseAmount, getBaseToKgRate, convertUnit, unitNameMap, conversionMap } = useUnitConversion()
+    const [branches, setBranches] = useState<{ id: string, name: string }[]>([])
 
     useEffect(() => {
+        fetchBranches()
         fetchLots()
-    }, [])
+    }, [systemType, selectedBranch])
+
+    async function fetchBranches() {
+        const { data, error } = await supabase
+            .from('branches')
+            .select('id, name, is_default')
+            .order('is_default', { ascending: false })
+            .order('name')
+
+        if (error) {
+            console.error('Error fetching branches:', error)
+        }
+        if (data) {
+            setBranches(data)
+            const defaultBranch = data.find(b => b.is_default)
+            if (defaultBranch) {
+                setSelectedBranch(defaultBranch.name)
+            }
+        }
+    }
 
     async function fetchLots() {
         setLoading(true)
@@ -77,15 +99,22 @@ export default function InventoryByLot() {
         if (error) {
             console.error('Error fetching lots:', error)
         } else if (data) {
-            // Filter by systemType in memory
+            // Filter by systemType & Branch in memory
             const filtered = (data as any[]).filter(lot => {
+                // System Type Filter
+                let systemTypeCheck = true
                 if (systemType) {
-                    // Check main product
-                    if (lot.products && lot.products.system_type === systemType) return true;
-                    // Check items
-                    if (lot.lot_items && lot.lot_items.some((item: any) => item.products?.system_type === systemType)) return true;
-                    return false;
+                    const hasMainMatch = lot.products && lot.products.system_type === systemType
+                    const hasItemMatch = lot.lot_items && lot.lot_items.some((item: any) => item.products?.system_type === systemType)
+                    systemTypeCheck = hasMainMatch || hasItemMatch
                 }
+                if (!systemTypeCheck) return false
+
+                // Branch Filter
+                if (selectedBranch && selectedBranch !== "Tất cả") {
+                    if (lot.warehouse_name !== selectedBranch) return false
+                }
+
                 return true;
             });
             setLots(filtered as unknown as Lot[])
@@ -112,14 +141,19 @@ export default function InventoryByLot() {
                 let key = `${sku}__${unit}`
 
                 // Logic conversion
-                if (isConvertKg && productId && baseUnit) {
-                    const kgRate = getBaseToKgRate(productId, baseUnit)
-                    if (kgRate !== null) {
-                        const baseQty = toBaseAmount(productId, unit, qty, baseUnit)
-                        displayQty = baseQty * kgRate
-                        displayUnit = 'Kg'
-                        key = `${sku}__Kg`
-                    }
+                const targetUnit = targetUnitId ? units.find(u => u.id === targetUnitId) : null
+                const isConvertible = targetUnitId && productId && baseUnit && (
+                    baseUnit.toLowerCase() === targetUnit?.name?.toLowerCase() ||
+                    conversionMap.get(productId)?.has(targetUnitId)
+                )
+
+                if (targetUnitId && isConvertible) {
+                    displayUnit = targetUnit!.name
+                    displayQty = convertUnit(productId, unit, targetUnit!.name, qty, baseUnit)
+                    key = `${sku}__${targetUnitId}`
+                } else if (targetUnitId) {
+                    // Not convertible, keep separate
+                    key = `${sku}__${unit}__UNCONVERTIBLE`
                 }
 
                 if (!groups.has(key)) {
@@ -188,7 +222,7 @@ export default function InventoryByLot() {
         })
 
         // Search Filter
-        const searchLower = searchTerm.toLowerCase()
+        const searchLower = (searchTerm || '').toLowerCase()
         const result = Array.from(groups.values()).filter(g =>
             g.productSku.toLowerCase().includes(searchLower) ||
             g.productName.toLowerCase().includes(searchLower) ||
@@ -198,7 +232,7 @@ export default function InventoryByLot() {
         // Sort by SKU
         return result.sort((a, b) => a.productSku.localeCompare(b.productSku))
 
-    }, [lots, searchTerm, isConvertKg, unitNameMap, conversionMap])
+    }, [lots, searchTerm, targetUnitId, unitNameMap, conversionMap])
 
 
     const toggleExpand = (key: string) => {
@@ -211,8 +245,8 @@ export default function InventoryByLot() {
     return (
         <div className="space-y-4">
             {/* Filters */}
-            <div className="flex flex-col md:flex-row gap-4 items-end bg-white dark:bg-stone-900 p-4 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm">
-                <div className="flex-1 w-full">
+            <div className="flex flex-col xl:flex-row gap-4 xl:items-end bg-white dark:bg-stone-900 p-4 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm transition-all mt-4">
+                <div className="flex-1 w-full xl:w-auto">
                     <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Tìm kiếm</label>
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
@@ -226,34 +260,60 @@ export default function InventoryByLot() {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 pb-2">
-                    <input
-                        type="checkbox"
-                        id="convertCheckLot"
-                        checked={isConvertKg}
-                        onChange={(e) => setIsConvertKg(e.target.checked)}
-                        className="w-4 h-4 text-orange-600 rounded border-stone-300 focus:ring-orange-500"
-                    />
-                    <label htmlFor="convertCheckLot" className="text-sm font-medium text-stone-700 dark:text-stone-300 cursor-pointer select-none whitespace-nowrap">
-                        Quy đổi sang KG
-                    </label>
+                <div className="w-full md:w-1/2 xl:w-48">
+                    <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Chi nhánh / Kho</label>
+                    <div className="relative">
+                        <Warehouse className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                        <select
+                            value={selectedBranch}
+                            onChange={e => setSelectedBranch(e.target.value)}
+                            className="w-full pl-9 pr-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
+                        >
+                            <option value="Tất cả">Tất cả chi nhánh</option>
+                            {branches.map(b => (
+                                <option key={b.id} value={b.name}>{b.name}</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
 
-                <button
-                    onClick={() => {
-                        const params = new URLSearchParams()
-                        params.set('type', 'lot')
-                        if (systemType) params.set('systemType', systemType)
-                        if (searchTerm) params.set('search', searchTerm)
-                        params.set('to', new Date().toISOString().split('T')[0])
-                        window.open(`/print/inventory?${params.toString()}`, '_blank')
-                    }}
-                    className="p-2 text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-md bg-white dark:bg-stone-800"
-                    title="In báo cáo"
-                >
-                    <Printer className="w-5 h-5" />
-                </button>
+                <div className="flex items-center justify-between xl:justify-start gap-4 w-full xl:w-auto pt-2 xl:pt-0">
+                    <div className="w-full xl:w-48">
+                        <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Quy đổi đơn vị</label>
+                        <div className="relative">
+                            <select
+                                value={targetUnitId || ''}
+                                onChange={e => setTargetUnitId(e.target.value || null)}
+                                className="w-full px-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer pr-8"
+                            >
+                                <option value="">Đơn vị gốc</option>
+                                {units.map(u => (
+                                    <option key={u.id} value={u.id}>{u.name}</option>
+                                ))}
+                            </select>
+                            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={() => {
+                            const params = new URLSearchParams()
+                            params.set('type', 'lot')
+                            if (systemType) params.set('systemType', systemType)
+                            if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
+                            if (searchTerm) params.set('search', searchTerm)
+                            if (targetUnitId) params.set('targetUnitId', targetUnitId)
+                            params.set('to', new Date().toISOString().split('T')[0])
+                            window.open(`/print/inventory?${params.toString()}`, '_blank')
+                        }}
+                        className="p-2 mt-6 text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-md transition-all active:scale-95"
+                        title="In báo cáo"
+                    >
+                        <Printer className="w-5 h-5" />
+                    </button>
+                </div>
             </div>
+
 
             {/* Content */}
             {loading ? (

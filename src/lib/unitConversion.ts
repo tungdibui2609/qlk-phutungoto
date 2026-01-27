@@ -85,3 +85,49 @@ export function getBaseToKgRate(
 
     return null;
 }
+
+/**
+ * Converts a quantity from one unit to another for a specific product.
+ * Both source and target units can be either the base unit or any alternative unit.
+ *
+ * @param productId - The ID of the product.
+ * @param fromUnitName - The name of the source unit.
+ * @param toUnitName - The name of the target unit.
+ * @param qty - The quantity to convert.
+ * @param baseUnitName - The name of the product's base unit.
+ * @param unitNameMap - Map of unit names to unit IDs.
+ * @param conversionMap - Map of conversion rates (productId -> unitId -> rate).
+ * @returns The converted quantity, or original if conversion is not possible.
+ */
+export function convertUnit(
+    productId: string | null,
+    fromUnitName: string | null,
+    toUnitName: string | null,
+    qty: number,
+    baseUnitName: string | null,
+    unitNameMap: UnitNameMap,
+    conversionMap: ConversionMap
+): number {
+    if (!productId || !fromUnitName || !toUnitName || !baseUnitName) return qty;
+    if (fromUnitName.toLowerCase() === toUnitName.toLowerCase()) return qty;
+
+    // 1. Convert from source unit to base unit
+    const qtyBase = toBaseAmount(productId, fromUnitName, qty, baseUnitName, unitNameMap, conversionMap);
+
+    // 2. If target is base unit, we are done
+    if (toUnitName.toLowerCase() === baseUnitName.toLowerCase()) return qtyBase;
+
+    // 3. Convert from base unit to target unit
+    const toUnitId = unitNameMap.get(toUnitName.toLowerCase());
+    if (!toUnitId) return qtyBase; // Fallback to base unit amount if target unit ID unknown
+
+    const rates = conversionMap.get(productId);
+    if (rates && rates.has(toUnitId)) {
+        const rate = rates.get(toUnitId)!;
+        if (rate === 0) return qtyBase;
+        const result = qtyBase / rate;
+        return Number(result.toFixed(6));
+    }
+
+    return qtyBase; // Fallback to base unit amount if no conversion rate found
+}

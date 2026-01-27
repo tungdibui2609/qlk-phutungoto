@@ -11,6 +11,7 @@ import OrderConfigSection from '@/components/settings/OrderConfigSection'
 import LotConfigSection from '@/components/settings/LotConfigSection'
 import MenuManagerSection from '@/components/settings/MenuManagerSection'
 import DashboardConfigSection from '@/components/settings/DashboardConfigSection'
+import UtilityConfigSection from '@/components/settings/UtilityConfigSection'
 import {
     Building2,
     Settings as SettingsIcon,
@@ -21,11 +22,12 @@ import {
     ArrowLeft,
     LogOut,
     Box,
-    PieChart
+    PieChart,
+    Sparkles
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type Tab = 'company' | 'branches' | 'systems' | 'product_config' | 'order_config' | 'lot_config' | 'menus' | 'dashboard'
+type Tab = 'company' | 'branches' | 'systems' | 'product_config' | 'order_config' | 'lot_config' | 'menus' | 'dashboard' | 'utilities'
 
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState<Tab>('company')
@@ -38,6 +40,7 @@ export default function SettingsPage() {
         { id: 'product_config' as Tab, label: 'Cấu hình sản phẩm', icon: SettingsIcon },
         { id: 'order_config' as Tab, label: 'Cấu hình phiếu', icon: FileText },
         { id: 'lot_config' as Tab, label: 'Cấu hình LOT', icon: Box },
+        { id: 'utilities' as Tab, label: 'Tiện ích', icon: Sparkles },
         { id: 'dashboard' as Tab, label: 'Cấu hình Dashboard', icon: PieChart },
         { id: 'menus' as Tab, label: 'Menu Sidebar', icon: List },
     ]
@@ -107,6 +110,7 @@ export default function SettingsPage() {
                         {activeTab === 'product_config' && <ProductConfigSection />}
                         {activeTab === 'order_config' && <OrderConfigSection />}
                         {activeTab === 'lot_config' && <LotConfigSection />}
+                        {activeTab === 'utilities' && <UtilityConfigSection />}
                         {activeTab === 'dashboard' && <DashboardConfigSection />}
                         {activeTab === 'menus' && <MenuManagerSection />}
                     </div>

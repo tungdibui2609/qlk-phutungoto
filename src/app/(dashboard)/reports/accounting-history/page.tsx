@@ -5,6 +5,8 @@ import { Search, Download, Calendar, Boxes, Building2, User, FileText, Filter, L
 import { format, startOfMonth, endOfMonth, isBefore, parseISO } from 'date-fns'
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
+import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { Scale } from 'lucide-react'
 
 type OrderType = {
     id: string
@@ -38,10 +40,14 @@ export default function AccountingHistoryPage() {
     const [orderTypes, setOrderTypes] = useState<OrderType[]>([])
     const [movements, setMovements] = useState<ProductMovement[]>([])
     const [selectedVouchersProduct, setSelectedVouchersProduct] = useState<any | null>(null)
+    const [units, setUnits] = useState<any[]>([])
+    const [targetUnitId, setTargetUnitId] = useState<string | null>(null)
+
+    const { convertUnit, conversionMap, unitNameMap, loading: loadingConversion } = useUnitConversion()
 
     useEffect(() => {
         fetchData()
-    }, [systemType, startDate, endDate])
+    }, [systemType, startDate, endDate, targetUnitId])
 
     async function fetchData() {
         setLoading(true)
@@ -60,8 +66,11 @@ export default function AccountingHistoryPage() {
                 .select('*')
                 .eq('is_active', true)
                 .or(`system_code.eq.${systemType},system_code.is.null`)
-
             setOrderTypes(typeData || [])
+
+            // 2b. Fetch All Units
+            const { data: unitData } = await supabase.from('units').select('id, name').order('name')
+            setUnits(unitData || [])
 
             // 3. Fetch Inbound Movements (All history to calculate opening)
             const { data: inboundItems } = await supabase
@@ -69,6 +78,7 @@ export default function AccountingHistoryPage() {
                 .select(`
                     quantity,
                     product_id,
+                    unit,
                     order:inbound_orders(code, created_at, order_type_id, status)
                 `)
                 .eq('order.system_type', systemType)
@@ -80,6 +90,7 @@ export default function AccountingHistoryPage() {
                 .select(`
                     quantity,
                     product_id,
+                    unit,
                     order:outbound_orders(code, created_at, order_type_id, status)
                 `)
                 .eq('order.system_type', systemType)
@@ -90,51 +101,90 @@ export default function AccountingHistoryPage() {
             const end = parseISO(endDate + 'T23:59:59')
 
             const movementMap: Record<string, ProductMovement> = {}
+            const targetUnit = units.find(u => u.id === targetUnitId)
 
-            prodData.forEach(p => {
-                movementMap[p.id] = {
-                    productId: p.id,
-                    sku: p.sku || 'N/A',
-                    name: p.name,
-                    unit: p.unit || '-',
-                    opening: 0,
-                    inboundItems: {},
-                    outboundItems: {},
-                    totalIn: 0,
-                    totalOut: 0,
-                    closing: 0,
-                    vouchers: new Set()
+            // Helper to check if a product can be converted to the target unit
+            const isConvertible = (productId: string) => {
+                if (!targetUnitId) return false
+                const prod = prodData.find(p => p.id === productId)
+                if (!prod || !prod.unit) return false
+
+                const baseUnitId = unitNameMap.get(prod.unit.toLowerCase())
+
+                // Convertible if target is base unit OR a conversion rate exists
+                if (baseUnitId === targetUnitId) return true
+                const rates = conversionMap.get(productId)
+                return !!(rates && rates.has(targetUnitId))
+            }
+
+            // Helper to get or create movement entry
+            const getMovement = (productId: string, unit: string) => {
+                const prod = prodData.find(p => p.id === productId)
+                const canConvert = isConvertible(productId)
+
+                const displayUnit = (targetUnit && canConvert) ? targetUnit.name : (unit || '-')
+                const key = (targetUnit && canConvert) ? productId : `${productId}_${unit}`
+
+                if (!movementMap[key]) {
+                    movementMap[key] = {
+                        productId,
+                        sku: prod?.sku || 'N/A',
+                        name: prod?.name || 'Unknown',
+                        unit: displayUnit,
+                        opening: 0,
+                        inboundItems: {},
+                        outboundItems: {},
+                        totalIn: 0,
+                        totalOut: 0,
+                        closing: 0,
+                        vouchers: new Set()
+                    }
                 }
-            })
+                return movementMap[key]
+            }
 
             // Process Inbound
             inboundItems?.forEach((item: any) => {
-                const mov = movementMap[item.product_id]
+                const mov = getMovement(item.product_id, item.unit || '-')
                 if (!mov) return
+
+                const prod = prodData.find(p => p.id === item.product_id)
+                const canConvert = isConvertible(item.product_id)
+
+                const qty = (targetUnit && canConvert)
+                    ? convertUnit(item.product_id, item.unit || null, targetUnit.name, item.quantity, prod?.unit || null)
+                    : item.quantity
 
                 const orderDate = parseISO(item.order.created_at)
                 if (isBefore(orderDate, start)) {
-                    mov.opening += (item.quantity || 0)
+                    mov.opening += (qty || 0)
                 } else if (isBefore(orderDate, end)) {
                     const typeId = item.order.order_type_id || 'untyped'
-                    mov.inboundItems[typeId] = (mov.inboundItems[typeId] || 0) + (item.quantity || 0)
-                    mov.totalIn += (item.quantity || 0)
+                    mov.inboundItems[typeId] = (mov.inboundItems[typeId] || 0) + (qty || 0)
+                    mov.totalIn += (qty || 0)
                     mov.vouchers.add(item.order.code)
                 }
             })
 
             // Process Outbound
             outboundItems?.forEach((item: any) => {
-                const mov = movementMap[item.product_id]
+                const mov = getMovement(item.product_id, item.unit || '-')
                 if (!mov) return
+
+                const prod = prodData.find(p => p.id === item.product_id)
+                const canConvert = isConvertible(item.product_id)
+
+                const qty = (targetUnit && canConvert)
+                    ? convertUnit(item.product_id, item.unit || null, targetUnit.name, item.quantity, prod?.unit || null)
+                    : item.quantity
 
                 const orderDate = parseISO(item.order.created_at)
                 if (isBefore(orderDate, start)) {
-                    mov.opening -= (item.quantity || 0)
+                    mov.opening -= (qty || 0)
                 } else if (isBefore(orderDate, end)) {
                     const typeId = item.order.order_type_id || 'untyped'
-                    mov.outboundItems[typeId] = (mov.outboundItems[typeId] || 0) + (item.quantity || 0)
-                    mov.totalOut += (item.quantity || 0)
+                    mov.outboundItems[typeId] = (mov.outboundItems[typeId] || 0) + (qty || 0)
+                    mov.totalOut += (qty || 0)
                     mov.vouchers.add(item.order.code)
                 }
             })
@@ -144,7 +194,10 @@ export default function AccountingHistoryPage() {
                 mov.closing = mov.opening + mov.totalIn - mov.totalOut
             })
 
-            setMovements(Object.values(movementMap))
+            // Sort movements by SKU or Name to keep list stable
+            const result = Object.values(movementMap).sort((a, b) => a.sku.localeCompare(b.sku))
+            setMovements(result)
+
 
         } catch (error) {
             console.error('Error fetching NXT data:', error)
@@ -269,10 +322,27 @@ export default function AccountingHistoryPage() {
                 <div className="flex items-center gap-2">
                     <button
                         onClick={() => fetchData()}
-                        className="flex-1 py-2.5 rounded-xl bg-stone-100 dark:bg-slate-800 border border-stone-200 dark:border-slate-700 text-xs font-bold text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-slate-700 transition-all"
+                        className="px-4 py-2.5 rounded-xl bg-stone-100 dark:bg-slate-800 border border-stone-200 dark:border-slate-700 text-xs font-bold text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-slate-700 transition-all font-bold"
                     >
-                        Tải lại dữ liệu
+                        Tải lại
                     </button>
+
+                    <div className="relative flex items-center">
+                        <Scale size={14} className="absolute left-3 text-stone-400 pointer-events-none" />
+                        <select
+                            value={targetUnitId || ''}
+                            onChange={(e) => setTargetUnitId(e.target.value || null)}
+                            className="pl-9 pr-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-stone-200 dark:border-slate-700 text-xs font-bold text-stone-600 dark:text-stone-300 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none appearance-none transition-all cursor-pointer min-w-[160px]"
+                        >
+                            <option value="">Đơn vị gốc</option>
+                            {units.map(u => (
+                                <option key={u.id} value={u.id}>{u.name}</option>
+                            ))}
+                        </select>
+                        <div className="absolute right-3 pointer-events-none text-stone-400">
+                            <ChevronDown size={14} />
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -321,8 +391,8 @@ export default function AccountingHistoryPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-stone-100 dark:divide-slate-800">
-                                {filteredMovements.map(mov => (
-                                    <tr key={mov.productId} className="group hover:bg-indigo-50/20 dark:hover:bg-indigo-900/5 transition-colors">
+                                {filteredMovements.map((mov, idx) => (
+                                    <tr key={`${mov.productId}-${mov.unit}-${idx}`} className="group hover:bg-indigo-50/20 dark:hover:bg-indigo-900/5 transition-colors">
                                         <td className="px-4 py-3 border-r border-stone-100 dark:border-slate-800 font-mono font-bold text-stone-400">{mov.sku}</td>
                                         <td className="px-4 py-3 border-r border-stone-100 dark:border-slate-800">
                                             <div className="font-bold text-stone-800 dark:text-stone-200">{mov.name}</div>
@@ -359,7 +429,7 @@ export default function AccountingHistoryPage() {
                                         <td className="px-4 py-3 text-center">
                                             <div className="flex items-center justify-center">
                                                 <button
-                                                    onClick={() => setSelectedVouchersProduct({ id: mov.productId, name: mov.name, sku: mov.sku })}
+                                                    onClick={() => setSelectedVouchersProduct({ id: mov.productId, name: mov.name, sku: mov.sku, unit: mov.unit })}
                                                     className="p-1 px-2 rounded bg-stone-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-stone-500 hover:text-indigo-600 transition-colors font-bold"
                                                 >
                                                     {mov.vouchers.size}
@@ -411,26 +481,31 @@ export default function AccountingHistoryPage() {
                 isOpen={!!selectedVouchersProduct}
                 onClose={() => setSelectedVouchersProduct(null)}
                 productId={selectedVouchersProduct?.id || ''}
+                unit={selectedVouchersProduct?.unit || ''}
                 productName={selectedVouchersProduct?.name || ''}
                 sku={selectedVouchersProduct?.sku || ''}
                 startDate={startDate}
                 endDate={endDate}
                 systemType={systemType}
                 orderTypes={orderTypes}
+                targetUnitId={targetUnitId}
+                units={units}
+                products={products}
             />
         </div>
     )
 }
 
-function VoucherDetailModal({ isOpen, onClose, productId, productName, sku, startDate, endDate, systemType, orderTypes }: any) {
+function VoucherDetailModal({ isOpen, onClose, productId, unit, productName, sku, startDate, endDate, systemType, orderTypes, targetUnitId, units, products }: any) {
     const [loading, setLoading] = useState(false)
     const [vouchers, setVouchers] = useState<any[]>([])
+    const { convertUnit, conversionMap, unitNameMap } = useUnitConversion()
 
     useEffect(() => {
         if (isOpen && productId) {
             fetchVouchers()
         }
-    }, [isOpen, productId, startDate, endDate])
+    }, [isOpen, productId, unit, startDate, endDate, targetUnitId])
 
     async function fetchVouchers() {
         setLoading(true)
@@ -438,11 +513,20 @@ function VoucherDetailModal({ isOpen, onClose, productId, productName, sku, star
             const start = startDate
             const end = endDate + 'T23:59:59'
 
+            const prod = products.find((p: any) => p.id === productId)
+            const targetUnit = units.find((u: any) => u.id === targetUnitId)
+
+            const baseUnitId = (prod && prod.unit) ? unitNameMap.get(prod.unit.toLowerCase()) : null
+            const canConvert = targetUnitId && prod && (
+                baseUnitId === targetUnitId ||
+                (conversionMap.get(productId)?.has(targetUnitId))
+            )
+
             // Fetch Inbound
-            const { data: inbound } = await supabase
+            const queryIn = supabase
                 .from('inbound_order_items')
                 .select(`
-                    id, quantity,
+                    id, quantity, unit,
                     order:inbound_orders(code, created_at, order_type_id, status)
                 `)
                 .eq('product_id', productId)
@@ -452,10 +536,10 @@ function VoucherDetailModal({ isOpen, onClose, productId, productName, sku, star
                 .lte('order.created_at', end)
 
             // Fetch Outbound
-            const { data: outbound } = await supabase
+            const queryOut = supabase
                 .from('outbound_order_items')
                 .select(`
-                    id, quantity,
+                    id, quantity, unit,
                     order:outbound_orders(code, created_at, order_type_id, status)
                 `)
                 .eq('product_id', productId)
@@ -464,9 +548,27 @@ function VoucherDetailModal({ isOpen, onClose, productId, productName, sku, star
                 .gte('order.created_at', start)
                 .lte('order.created_at', end)
 
+            if (!targetUnitId || !canConvert) {
+                queryIn.eq('unit', unit)
+                queryOut.eq('unit', unit)
+            }
+
+            const { data: inbound } = await queryIn
+            const { data: outbound } = await queryOut
+
             const normalized = [
-                ...(inbound || []).map((v: any) => ({ ...v, type: 'in' })),
-                ...(outbound || []).map((v: any) => ({ ...v, type: 'out' }))
+                ...(inbound || []).map((v: any) => {
+                    const qty = (targetUnit && canConvert)
+                        ? convertUnit(productId, v.unit || null, targetUnit.name, v.quantity, prod?.unit || null)
+                        : v.quantity
+                    return { ...v, quantity: qty, displayUnit: (targetUnit && canConvert) ? targetUnit.name : v.unit, type: 'in' }
+                }),
+                ...(outbound || []).map((v: any) => {
+                    const qty = (targetUnit && canConvert)
+                        ? convertUnit(productId, v.unit || null, targetUnit.name, v.quantity, prod?.unit || null)
+                        : v.quantity
+                    return { ...v, quantity: qty, displayUnit: (targetUnit && canConvert) ? targetUnit.name : v.unit, type: 'out' }
+                })
             ].sort((a, b) => new Date(b.order.created_at).getTime() - new Date(a.order.created_at).getTime())
 
             setVouchers(normalized)
@@ -518,6 +620,7 @@ function VoucherDetailModal({ isOpen, onClose, productId, productName, sku, star
                                                     <span>{typeName}</span>
                                                     <span>•</span>
                                                     <span>{format(parseISO(v.order.created_at), 'dd/MM/yyyy HH:mm')}</span>
+                                                    {!targetUnitId && <span className="ml-2 px-1 rounded bg-stone-100 dark:bg-slate-700 text-stone-500">{v.unit}</span>}
                                                 </div>
                                             </div>
                                         </div>
@@ -526,7 +629,10 @@ function VoucherDetailModal({ isOpen, onClose, productId, productName, sku, star
                                                 }`}>
                                                 {v.type === 'in' ? '+' : '-'}{formatQuantityFull(v.quantity)}
                                             </div>
-                                            <div className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{v.type === 'in' ? 'Nhập kho' : 'Xuất kho'}</div>
+                                            <div className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">
+                                                {v.type === 'in' ? 'Nhập kho' : 'Xuất kho'}
+                                                <span className="ml-1 text-indigo-500">({v.displayUnit})</span>
+                                            </div>
                                         </div>
                                     </div>
                                 )

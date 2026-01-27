@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, ArrowRightLeft, Activity } from 'lucide-react'
+import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, ArrowRightLeft, Activity, Star } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -49,22 +49,28 @@ const menuItems: MenuItem[] = [
             { name: 'Sơ đồ kho', href: '/warehouses/map', icon: Map },
             { name: 'Trạng thái kho', href: '/warehouses/status', icon: BarChart3 },
             { name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes }, // Using Boxes or Barcode/Tags if imported
-            { name: 'Nhập kho (KT)', href: '/inbound', icon: ArrowDownToLine },
-            { name: 'Xuất kho (KT)', href: '/outbound', icon: ArrowUpFromLine },
-            { name: 'Tồn kho', href: '/inventory', icon: Package },
             { name: 'Kiểm kê', href: '/operations/audit', icon: ClipboardCheck },
+        ]
+    },
+    {
+        name: 'Kế toán',
+        icon: FileText,
+        children: [
+            { name: 'Nhập kho', href: '/inbound', icon: ArrowDownToLine },
+            { name: 'Xuất kho', href: '/outbound', icon: ArrowUpFromLine },
         ]
     },
     {
         name: 'Báo cáo',
         icon: BarChart3,
         children: [
+            { name: 'Tồn kho', href: '/inventory', icon: Package },
             { name: 'Lịch sử thao tác', href: '/operation-history', icon: Activity },
             { name: 'Chứng từ khách hàng', href: '/reports/customer-docs', icon: FileText },
             { name: 'Công nợ NCC', href: '/reports/supplier-debts', icon: DollarSign },
-            { name: 'Nhật ký xuất nhập KT', href: '/reports/accounting-history', icon: ArrowRightLeft },
-            { name: 'Nhật ký xuất nhập lot', href: '/reports/lot-history', icon: History },
-            { name: 'Nhật ký liên kết (Kho - KT)', href: '/reports/linked-journal', icon: ArrowRightLeft },
+            { name: 'Nhật ký xuất nhập', href: '/reports/accounting-history', icon: ArrowRightLeft },
+            { name: 'Nhật ký xuất nhập LOT', href: '/reports/lot-history', icon: History },
+            { name: 'Nhật ký liên kết', href: '/reports/linked-journal', icon: ArrowRightLeft },
         ]
     },
     {
@@ -89,7 +95,7 @@ export default function Sidebar() {
     const router = useRouter()
     const { isCollapsed, setCollapsed, isReady, isMobileMenuOpen, setMobileMenuOpen } = useSidebar()
     const { currentSystem, systemType } = useSystem()
-    const { profile } = useUser() // Get profile to check hidden menus
+    const { profile, toggleFavorite } = useUser() // Get profile to check hidden menus and favorites
     const [expandedMenus, setExpandedMenus] = useState<string[]>([])
     const isInitialized = useRef(false)
     const lastExpandedPathRef = useRef<string>('')
@@ -98,7 +104,18 @@ export default function Sidebar() {
     const sidebarRef = useRef<HTMLElement>(null)
     const [companyInfo, setCompanyInfo] = useState<CompanyInfo>({ name: 'Toàn Thắng', logo_url: null })
 
-    // Filter menu items based on hidden_menus from profile (System Specific)
+    // Utility helper
+    const isUtilityEnabled = (utilityId: string) => {
+        if (!currentSystem?.modules) return false
+        const modules = typeof currentSystem.modules === 'string'
+            ? JSON.parse(currentSystem.modules)
+            : currentSystem.modules
+        return Array.isArray(modules?.utility_modules) && modules.utility_modules.includes(utilityId)
+    }
+
+    const isLotSyncEnabled = isUtilityEnabled('lot_accounting_sync')
+
+    // Filter menu items based on hidden_menus from profile (System Specific) and Utility Modules
     const visibleMenuItems = useMemo(() => {
         return menuItems.map(item => {
             // Get hidden menus for current system
@@ -109,14 +126,42 @@ export default function Sidebar() {
 
             // Filter children
             if (item.children) {
-                const visibleChildren = item.children.filter(child => !hiddenMenus.includes(child.name))
+                const visibleChildren = item.children.filter(child => {
+                    // Check profile hidden menus
+                    if (hiddenMenus.includes(child.name)) return false
+
+                    // Check Utility Module Gating
+                    if (child.name === 'Nhật ký liên kết' && !isLotSyncEnabled) return false
+
+                    return true
+                })
                 if (visibleChildren.length === 0) return null // Hide parent if all children hidden
                 return { ...item, children: visibleChildren }
             }
 
             return item
         }).filter(Boolean) as MenuItem[] // Remove nulls
-    }, [profile, systemType])
+    }, [profile, systemType, currentSystem, isLotSyncEnabled])
+
+    // Favorites Logic
+    const favoriteItems = useMemo(() => {
+        const favHrefs = profile?.favorite_menus || []
+        if (favHrefs.length === 0) return []
+
+        const allFlatItems: { name: string; href: string; icon: any }[] = []
+        visibleMenuItems.forEach(item => {
+            if (item.href) {
+                allFlatItems.push({ name: item.name, href: item.href, icon: item.icon })
+            }
+            if (item.children) {
+                item.children.forEach(child => {
+                    allFlatItems.push({ name: child.name, href: child.href, icon: child.icon })
+                })
+            }
+        })
+
+        return allFlatItems.filter(item => favHrefs.includes(item.href))
+    }, [profile?.favorite_menus, visibleMenuItems])
 
     const isMenuActive = (item: MenuItem) => {
         if (item.href) {
@@ -129,6 +174,10 @@ export default function Sidebar() {
         }
         return false
     }
+
+    // Collapsed state logic for rendering
+    const showCollapsed = !isReady || (isCollapsed && !isMobileMenuOpen)
+    const showExpanded = isReady && (!isCollapsed || isMobileMenuOpen)
 
     // Load expanded menus from localStorage on mount
     useEffect(() => {
@@ -319,15 +368,52 @@ export default function Sidebar() {
 
                 {/* NAVIGATION */}
                 <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
+                    {/* Quick Access Section */}
+                    {favoriteItems.length > 0 && (
+                        <div className="mb-4">
+                            <div className={`px-3 mb-1 flex items-center gap-2 ${showCollapsed ? 'hidden' : ''}`}>
+                                <Star size={12} className="text-orange-500 fill-orange-500" />
+                                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Quick Access</span>
+                            </div>
+                            <div className="space-y-0.5">
+                                {favoriteItems.map((item) => {
+                                    const Icon = item.icon
+                                    const isActive = pathname === item.href
+                                    return (
+                                        <Link
+                                            key={`fav-${item.href}`}
+                                            href={item.href}
+                                            onClick={handleLinkClick}
+                                            className={`group relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all duration-200 ${isActive
+                                                ? 'text-white'
+                                                : 'text-stone-600 hover:text-orange-600 hover:bg-orange-50'
+                                                } ${showCollapsed ? 'justify-center px-2' : ''}`}
+                                            style={isActive ? {
+                                                background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                                                boxShadow: '0 2px 8px rgba(249, 115, 22, 0.3)',
+                                            } : {}}
+                                            title={showCollapsed ? item.name : undefined}
+                                        >
+                                            <div className={`p-1 rounded transition-all duration-200 ${isActive
+                                                ? 'bg-white/20'
+                                                : 'bg-stone-100 group-hover:bg-orange-100'
+                                                }`}>
+                                                <Icon size={14} strokeWidth={isActive ? 2.5 : 2} />
+                                            </div>
+                                            {!showCollapsed && <span className="text-xs font-medium truncate flex-1">{item.name}</span>}
+                                        </Link>
+                                    )
+                                })}
+                            </div>
+                            {!showCollapsed && <div className="mx-3 mt-2 border-b border-stone-100" />}
+                        </div>
+                    )}
+
                     {visibleMenuItems.map((item) => {
                         const Icon = item.icon
                         const hasChildren = item.children && item.children.length > 0
-                        // On mobile (isMobileMenuOpen), always show expanded content
-                        const showExpanded = isReady && (!isCollapsed || isMobileMenuOpen)
                         const isExpanded = expandedMenus.includes(item.name) && showExpanded
                         const isActive = isMenuActive(item)
-                        // Collapsed only if not ready or (collapsed AND not mobile open)
-                        const showCollapsed = !isReady || (isCollapsed && !isMobileMenuOpen)
 
                         // Parent menu with children
                         if (hasChildren) {
@@ -390,7 +476,20 @@ export default function Sidebar() {
                                                             }`}>
                                                             <ChildIcon size={14} strokeWidth={isChildActive ? 2.5 : 2} />
                                                         </div>
-                                                        <span className="text-xs font-medium">{child.name}</span>
+                                                        <span className="text-xs font-medium flex-1">{child.name}</span>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.preventDefault()
+                                                                e.stopPropagation()
+                                                                toggleFavorite(child.href)
+                                                            }}
+                                                            className={`p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity ${profile?.favorite_menus?.includes(child.href)
+                                                                ? 'text-yellow-500 opacity-100'
+                                                                : 'text-stone-300 hover:text-orange-400'
+                                                                }`}
+                                                        >
+                                                            <Star size={12} fill={profile?.favorite_menus?.includes(child.href) ? "currentColor" : "none"} />
+                                                        </button>
                                                     </Link>
                                                 )
                                             })}
@@ -437,13 +536,28 @@ export default function Sidebar() {
                                 {showExpanded && (
                                     <>
                                         <span className="text-xs font-medium flex-1">{item.name}</span>
-                                        <ChevronRight
-                                            size={14}
-                                            className={`transition-all duration-200 ${isItemActive
-                                                ? 'opacity-100 text-white/70'
-                                                : 'opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0'
-                                                }`}
-                                        />
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.preventDefault()
+                                                    e.stopPropagation()
+                                                    toggleFavorite(item.href!)
+                                                }}
+                                                className={`p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity ${profile?.favorite_menus?.includes(item.href!)
+                                                    ? 'text-yellow-500 opacity-100'
+                                                    : 'text-stone-300 hover:text-orange-400'
+                                                    }`}
+                                            >
+                                                <Star size={12} fill={profile?.favorite_menus?.includes(item.href!) ? "currentColor" : "none"} />
+                                            </button>
+                                            <ChevronRight
+                                                size={14}
+                                                className={`transition-all duration-200 ${isItemActive
+                                                    ? 'opacity-100 text-white/70'
+                                                    : 'opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0'
+                                                    }`}
+                                            />
+                                        </div>
                                     </>
                                 )}
                             </Link>

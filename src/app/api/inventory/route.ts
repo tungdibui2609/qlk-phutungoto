@@ -2,7 +2,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { Database } from '@/lib/database.types'
-import { toBaseAmount as toBaseAmountLogic, getBaseToKgRate as getBaseToKgRateLogic } from '@/lib/unitConversion'
+import { toBaseAmount as toBaseAmountLogic, getBaseToKgRate as getBaseToKgRateLogic, convertUnit as convertUnitLogic } from '@/lib/unitConversion'
 
 export const dynamic = 'force-dynamic'
 
@@ -143,6 +143,8 @@ export async function GET(request: Request) {
             })
 
         const inventoryMap = new Map<string, InventoryItem>()
+        const targetUnitId = searchParams.get('targetUnitId')
+        const targetUnit = targetUnitId ? (unitsData as any[])?.find(u => u.id === targetUnitId) : null
 
         const processItem = (item: any, type: 'in' | 'out', date: Date) => {
             const isBeforePeriod = from ? date < new Date(from) : false
@@ -158,33 +160,29 @@ export async function GET(request: Request) {
             let unitDisplay = uName
             let isUnconvertible = false
 
-            if (convertToKg) {
-                // Determine if convertible
-                const prod = productMap.get(pid)
-                const baseToKgParams = getBaseToKgRateLogic(pid, prod?.unit || null, unitNameMap, conversionMap)
+            const prod = productMap.get(pid)
+            const baseUnitName = prod?.unit || null
 
-                if (baseToKgParams !== null) {
-                    // CONVERTIBLE
-                    key = `${pid}_${wName}_Kg`
-                    unitDisplay = 'Kg'
+            // Determine if convertible
+            const isConvertible = targetUnitId && prod && (
+                baseUnitName?.toLowerCase() === targetUnit?.name?.toLowerCase() ||
+                conversionMap.get(pid)?.has(targetUnitId)
+            )
 
-                    // 1. Convert Transaction Qty to Base Qty
-                    const baseQty = toBaseAmountLogic(pid, uName, quantity, prod?.unit || null, unitNameMap, conversionMap)
-                    // 2. Convert Base Qty to KG Qty
-                    quantity = baseQty * baseToKgParams
-
-                } else {
-                    // UNCONVERTIBLE - Keep separate
-                    key = `${pid}_${wName}_${uName}_UNCONVERTIBLE`
+            if (targetUnitId && isConvertible) {
+                // CONVERTIBLE
+                key = `${pid}_${wName}_${targetUnitId}`
+                unitDisplay = targetUnit.name
+                quantity = convertUnitLogic(pid, uName, targetUnit.name, quantity, baseUnitName, unitNameMap, conversionMap)
+            } else {
+                // NOT CONVERTIBLE or NO TARGET UNIT
+                key = `${pid}_${wName}_${uName}`
+                if (targetUnitId) {
                     isUnconvertible = true
                 }
-            } else {
-                // NORMAL MODE
-                key = `${pid}_${wName}_${uName}`
             }
 
             if (!inventoryMap.has(key)) {
-                const prod = productMap.get(pid)
                 inventoryMap.set(key, {
                     productId: pid,
                     productCode: prod?.sku || 'N/A',

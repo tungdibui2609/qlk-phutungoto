@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, AlertTriangle, CheckCircle, Printer } from 'lucide-react'
+import { Loader2, AlertTriangle, CheckCircle, Printer, ChevronDown, Warehouse } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import MobileReconciliationList from './MobileReconciliationList'
@@ -26,21 +26,55 @@ interface ItemReconciliation {
     diff: number
 }
 
-export default function InventoryReconciliation() {
+import { useUnitConversion } from '@/hooks/useUnitConversion'
+
+export default function InventoryReconciliation({ units }: { units: any[] }) {
+    const { convertUnit, unitNameMap, conversionMap } = useUnitConversion()
     const { systemType } = useSystem()
     const [loading, setLoading] = useState(true)
     const [items, setItems] = useState<ItemReconciliation[]>([])
     const [showOnlyDiff, setShowOnlyDiff] = useState(false)
+    const [targetUnitId, setTargetUnitId] = useState<string | null>(null)
+    const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0])
+    const [selectedBranch, setSelectedBranch] = useState('Tất cả')
+    const [branches, setBranches] = useState<{ id: string, name: string, is_default?: boolean }[]>([])
+
+    // Fetch Branches
+    useEffect(() => {
+        async function fetchBranches() {
+            const { data, error } = await supabase
+                .from('branches')
+                .select('id, name, is_default')
+                .order('is_default', { ascending: false })
+                .order('name')
+
+            if (data) {
+                setBranches(data as any)
+                const defaultBranch = data.find(b => b.is_default)
+                if (defaultBranch) {
+                    setSelectedBranch(defaultBranch.name)
+                }
+            }
+        }
+        fetchBranches()
+    }, [])
 
     useEffect(() => {
         fetchAndCompare()
-    }, [systemType])
+    }, [systemType, targetUnitId, dateTo, selectedBranch])
 
     async function fetchAndCompare() {
         setLoading(true)
         try {
             // 1. Fetch Accounting Inventory
-            const accRes = await fetch(`/api/inventory?dateTo=${new Date().toISOString().split('T')[0]}&systemType=${systemType}`)
+            const finalDate = dateTo || new Date().toISOString().split('T')[0]
+            const params = new URLSearchParams()
+            params.set('dateTo', finalDate)
+            params.set('systemType', systemType)
+            if (targetUnitId) params.set('targetUnitId', targetUnitId)
+            if (selectedBranch && selectedBranch !== "Tất cả") params.set('warehouse', selectedBranch)
+
+            const accRes = await fetch(`/api/inventory?${params.toString()}`)
             const accData = await accRes.json()
             const rawAccountingItems: AccountingItem[] = accData.ok ? accData.items : []
 
@@ -54,12 +88,13 @@ export default function InventoryReconciliation() {
             })
 
             // 2. Fetch LOT Inventory (Active lots with their items)
-            const { data: lots, error } = await supabase
+            let lotQuery = supabase
                 .from('lots')
                 .select(`
                     id,
                     product_id,
                     quantity,
+                    warehouse_name,
                     lot_items (
                         product_id,
                         quantity,
@@ -71,45 +106,70 @@ export default function InventoryReconciliation() {
                 .eq('status', 'active')
                 .eq('system_code', systemType)
 
+            if (selectedBranch && selectedBranch !== "Tất cả") {
+                lotQuery = lotQuery.eq('warehouse_name', selectedBranch)
+            }
+
+            const { data: lots, error } = await lotQuery
+
             if (error) throw error
 
             // 3. Aggregate Lot Data by Product + Unit
             const lotQtyMap = new Map<string, { qty: number, code: string, name: string, unit: string, productId: string }>()
 
-            lots?.forEach((lot: any) => {
-                if (lot.lot_items && lot.lot_items.length > 0) {
-                    // Multi-product lot logic
-                    lot.lot_items.forEach((item: any) => {
-                        const pid = item.product_id
-                        const unit = item.unit || item.products?.unit || ''
-                        if (!pid) return
+            const targetUnit = targetUnitId ? units.find(u => u.id === targetUnitId) : null
 
-                        const key = `${pid}_${unit}`
-                        const current = lotQtyMap.get(key) || {
-                            qty: 0,
-                            code: item.products?.sku || 'N/A',
-                            name: item.products?.name || 'Unknown',
-                            unit: unit,
-                            productId: pid
-                        }
-                        current.qty += (item.quantity || 0)
-                        lotQtyMap.set(key, current)
-                    })
-                } else if (lot.product_id) {
-                    // Legacy single-product lot logic
-                    const pid = lot.product_id
-                    const unit = lot.products?.unit || ''
-                    const key = `${pid}_${unit}`
+            lots?.forEach((lot: any) => {
+                const processItem = (pid: string, qty: number, unit: string, sku: string, name: string, baseUnit: string) => {
+                    let displayQty = qty
+                    let displayUnit = unit
+                    let key = `${pid}_${unit}`
+
+                    const isConvertible = targetUnitId && pid && (
+                        baseUnit?.toLowerCase() === targetUnit?.name?.toLowerCase() ||
+                        conversionMap.get(pid)?.has(targetUnitId)
+                    )
+
+                    if (targetUnitId && isConvertible) {
+                        displayUnit = targetUnit!.name
+                        displayQty = convertUnit(pid, unit, targetUnit!.name, qty, baseUnit)
+                        key = `${pid}_${targetUnitId}`
+                    } else if (targetUnitId) {
+                        key = `${pid}_${unit}_UNCONVERTIBLE`
+                    }
 
                     const current = lotQtyMap.get(key) || {
                         qty: 0,
-                        code: lot.products?.sku || 'N/A',
-                        name: lot.products?.name || 'Unknown',
-                        unit: unit,
+                        code: sku,
+                        name: name,
+                        unit: displayUnit,
                         productId: pid
                     }
-                    current.qty += (lot.quantity || 0)
+                    current.qty += displayQty
                     lotQtyMap.set(key, current)
+                }
+
+                if (lot.lot_items && lot.lot_items.length > 0) {
+                    lot.lot_items.forEach((item: any) => {
+                        if (!item.product_id) return
+                        processItem(
+                            item.product_id,
+                            item.quantity || 0,
+                            item.unit || item.products?.unit || '',
+                            item.products?.sku || 'N/A',
+                            item.products?.name || 'Unknown',
+                            item.products?.unit || ''
+                        )
+                    })
+                } else if (lot.product_id) {
+                    processItem(
+                        lot.product_id,
+                        lot.quantity || 0,
+                        lot.products?.unit || '',
+                        lot.products?.sku || 'N/A',
+                        lot.products?.name || 'Unknown',
+                        lot.products?.unit || ''
+                    )
                 }
             })
 
@@ -163,32 +223,80 @@ export default function InventoryReconciliation() {
     }, [items, showOnlyDiff])
 
     return (
-        <div className="space-y-4">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-white dark:bg-stone-900 p-4 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm">
-                <div>
-                    <h3 className="font-medium text-stone-900 dark:text-stone-100">Bảng đối chiếu tồn kho</h3>
-                    <p className="text-sm text-stone-500">So sánh Tồn kho Kế toán (nhập/xuất) và Tổng tồn kho theo LOT thực tế.</p>
+        <div className="space-y-6">
+
+
+            {/* Filters Bar */}
+            <div className="flex flex-wrap gap-4 items-end bg-white dark:bg-stone-900 p-4 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm">
+                <div className="w-full md:w-1/2 xl:w-48">
+                    <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block italic">Chi nhánh / Kho</label>
+                    <div className="relative">
+                        <Warehouse className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                        <select
+                            value={selectedBranch}
+                            onChange={e => setSelectedBranch(e.target.value)}
+                            className="w-full pl-9 pr-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
+                        >
+                            <option value="Tất cả">Tất cả chi nhánh</option>
+                            {branches.map(b => (
+                                <option key={b.id} value={b.name}>{b.name}</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
-                <div className="flex items-center justify-between w-full md:w-auto gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-stone-700 dark:text-stone-300">
-                        <input
-                            type="checkbox"
-                            checked={showOnlyDiff}
-                            onChange={e => setShowOnlyDiff(e.target.checked)}
-                            className="rounded border-stone-300 text-orange-600 focus:ring-orange-500"
-                        />
+
+                <div className="w-full md:w-32">
+                    <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block italic">Ngày đối chiếu</label>
+                    <input
+                        type="date"
+                        value={dateTo}
+                        onChange={e => setDateTo(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                </div>
+
+                <div className="w-full xl:w-40">
+                    <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block italic">Quy đổi đơn vị</label>
+                    <div className="relative">
+                        <select
+                            value={targetUnitId || ''}
+                            onChange={e => setTargetUnitId(e.target.value || null)}
+                            className="w-full px-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer pr-8"
+                        >
+                            <option value="">Đơn vị gốc</option>
+                            {units.map(u => (
+                                <option key={u.id} value={u.id}>{u.name}</option>
+                            ))}
+                        </select>
+                        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
+                    </div>
+                </div>
+
+                <div className="flex items-center space-x-2 pb-2">
+                    <input
+                        type="checkbox"
+                        id="show-only-diff-main"
+                        checked={showOnlyDiff}
+                        onChange={(e) => setShowOnlyDiff(e.target.checked)}
+                        className="w-4 h-4 text-orange-600 border-stone-300 rounded focus:ring-orange-500"
+                    />
+                    <label htmlFor="show-only-diff-main" className="text-sm font-medium text-stone-700 dark:text-stone-300 italic">
                         Chỉ hiện sai lệch
                     </label>
+                </div>
 
+                <div className="ml-auto pb-1">
                     <button
                         onClick={() => {
                             const params = new URLSearchParams()
                             params.set('type', 'reconciliation')
                             if (systemType) params.set('systemType', systemType)
-                            params.set('to', new Date().toISOString().split('T')[0])
+                            if (dateTo) params.set('to', dateTo)
+                            if (targetUnitId) params.set('targetUnitId', targetUnitId)
+                            if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
                             window.open(`/print/inventory?${params.toString()}`, '_blank')
                         }}
-                        className="p-2 text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-md bg-white dark:bg-stone-800"
+                        className="p-2 text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-md transition-all active:scale-95 bg-white dark:bg-stone-800 shadow-sm"
                         title="In báo cáo"
                     >
                         <Printer className="w-5 h-5" />

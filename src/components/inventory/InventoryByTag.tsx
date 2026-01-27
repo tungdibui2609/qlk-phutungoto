@@ -1,9 +1,9 @@
-
 'use client'
 
 import React, { useEffect, useState, useMemo } from 'react'
+import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
-import { Loader2 } from 'lucide-react'
+import { Search, Loader2, Warehouse, ChevronDown, ChevronRight, Printer } from 'lucide-react'
 import { formatQuantityFull } from '@/lib/numberUtils'
 
 // Types matching API response
@@ -17,6 +17,7 @@ interface TagInvItem {
         quantity: number
         unit: string
         lotCount: number
+        isUnconvertible?: boolean
     }>
 }
 
@@ -31,11 +32,37 @@ interface HierarchyNode {
     productDetails?: TagInvItem['products'][0]
 }
 
-export default function InventoryByTag() {
+export default function InventoryByTag({ units }: { units: any[] }) {
     const { systemType } = useSystem()
     const [tagItems, setTagItems] = useState<TagInvItem[]>([])
     const [loading, setLoading] = useState(false)
     const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set())
+    const [targetUnitId, setTargetUnitId] = useState<string | null>(null)
+    const [selectedBranch, setSelectedBranch] = useState('Tất cả')
+    const [branches, setBranches] = useState<{ id: string, name: string }[]>([])
+
+    // Fetch Branches
+    useEffect(() => {
+        async function fetchBranches() {
+            const { data, error } = await supabase
+                .from('branches')
+                .select('id, name, is_default')
+                .order('is_default', { ascending: false })
+                .order('name')
+
+            if (error) {
+                console.error('Error fetching branches:', error)
+            }
+            if (data) {
+                setBranches(data)
+                const defaultBranch = data.find(b => b.is_default)
+                if (defaultBranch) {
+                    setSelectedBranch(defaultBranch.name)
+                }
+            }
+        }
+        fetchBranches()
+    }, [])
 
     // Fetch Data
     useEffect(() => {
@@ -44,6 +71,8 @@ export default function InventoryByTag() {
             try {
                 const params = new URLSearchParams()
                 if (systemType) params.set('systemType', systemType)
+                if (targetUnitId) params.set('targetUnitId', targetUnitId)
+                if (selectedBranch && selectedBranch !== "Tất cả") params.set('warehouse', selectedBranch)
 
                 const res = await fetch(`/api/inventory/by-tag?${params.toString()}`)
                 const j = await res.json()
@@ -64,7 +93,7 @@ export default function InventoryByTag() {
         if (systemType) {
             loadTagInventory()
         }
-    }, [systemType])
+    }, [systemType, targetUnitId, selectedBranch])
 
     // Build hierarchical tree
     const hierarchicalTags = useMemo(() => {
@@ -88,220 +117,229 @@ export default function InventoryByTag() {
                             name: part,
                             fullPath: currentPath,
                             totalQuantity: 0,
-                            unit: tagItem.unit,
+                            unit: product.unit || tagItem.unit,
                             products: [],
-                            children: [],
-                            isProductNode: false
+                            children: []
                         }
                         nodeMap.set(currentPath, node)
 
-                        if (parentPath) {
-                            const parent = nodeMap.get(parentPath)
-                            if (parent && !parent.children.find(c => c.fullPath === currentPath)) {
-                                parent.children.push(node)
-                            }
+                        if (parentPath === '') {
+                            roots.push(node)
                         } else {
-                            if (!roots.find(r => r.fullPath === currentPath)) {
-                                roots.push(node)
-                            }
+                            nodeMap.get(parentPath)?.children.push(node)
                         }
                     }
 
-                    // Check if node is product level
-                    const node = nodeMap.get(currentPath)
-                    if (node && part === product.productCode) {
+                    const node = nodeMap.get(currentPath)!
+                    node.totalQuantity += product.quantity
+
+                    // Only add product info to the leaf node
+                    if (i === parts.length - 1) {
+                        node.products.push(product)
                         node.isProductNode = true
                         node.productDetails = product
                     }
                 }
-
-                // Add quantity to leaf node
-                const leafNode = nodeMap.get(currentPath) // expandedTag might map to currentPath logic above?
-                // Wait, currentPath at end of loop IS the full path equal to expandedTag (normalized with ' > ')
-
-                if (leafNode) {
-                    leafNode.totalQuantity += product.quantity
-                    // Add product details to leaf if not exists
-                    if (!leafNode.products.find(p => p.productCode === product.productCode)) {
-                        leafNode.products.push(product)
-                    }
-                }
             }
         }
-
-        // Aggregate totals up the tree
-        function aggregateNode(node: HierarchyNode): number {
-            let total = node.totalQuantity
-            // If leaf node, it already has quantity summing from products loop above
-            // But if it has children, we must sum children too?
-            // Actually, in the loop above, we only added qty to the LEAF node of that specific path.
-            // Parent nodes were initialized with 0.
-            // So we strictly sum children for parents.
-
-            // Wait, what if a tag is a subset? e.g. "A" and "A > B".
-            // If we have products assigned to "A" directly, they would be added to node "A".
-            // If we have products assigned to "A > B", they are added to node "B" (child of A).
-            // So Total(A) = Direct(A) + Total(B).
-
-            // My loop above: `leafNode.totalQuantity += product.quantity`
-            // `leafNode` is the node corresponding to `expandedTag`.
-            // So yes, direct assignment is captured.
-            // Now we just need to add children totals.
-
-            for (const child of node.children) {
-                total += aggregateNode(child)
-            }
-            node.totalQuantity = total
-            return total
-        }
-
-        roots.forEach(aggregateNode)
         return roots
     }, [tagItems])
 
-    // Recursive Node Component
-    const TagTreeNode = ({
-        node,
-        level,
-        expandedTags,
-        setExpandedTags
-    }: {
-        node: HierarchyNode
-        level: number
-        expandedTags: Set<string>
-        setExpandedTags: React.Dispatch<React.SetStateAction<Set<string>>>
-    }) => {
-        const isExpanded = expandedTags.has(node.fullPath)
-        const hasChildren = node.children.length > 0
-        const hasProducts = node.products.length > 0
-        const isProductNode = node.isProductNode
-
-        const canExpand = hasChildren || hasProducts
-
-        const toggleExpand = () => {
-            if (!canExpand) return
-            const newSet = new Set(expandedTags)
-            if (isExpanded) newSet.delete(node.fullPath)
-            else newSet.add(node.fullPath)
-            setExpandedTags(newSet)
-        }
-
-        // bg colors based on level
-        const bgColors = [
-            'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-            'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-            'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-            'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-        ]
-
-        return (
-            <div style={{ marginLeft: level * 24 }} className={level > 0 ? 'mt-2' : ''}>
-                <div className={`rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden`}>
-                    <div
-                        onClick={toggleExpand}
-                        className={`w-full px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-colors ${canExpand ? 'cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50' : ''}`}
-                    >
-                        <div className="flex items-start sm:items-center gap-3 w-full">
-                            {/* Icon */}
-                            <div className="mt-1 sm:mt-0 shrink-0">
-                                {canExpand ? (
-                                    <svg
-                                        className={`w-4 h-4 text-zinc-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                                        fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                                    >
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                    </svg>
-                                ) : <span className="w-4 h-4 inline-block" />}
-                            </div>
-
-                            {isProductNode ? (
-                                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-left w-full">
-                                    <div className="font-mono text-sm font-bold text-emerald-700 dark:text-emerald-400 shrink-0">{node.name}</div>
-                                    <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 break-words">{node.productDetails?.productName}</div>
-                                </div>
-                            ) : (
-                                <div className="flex flex-wrap items-center gap-2 w-full">
-                                    <span className={`px-2.5 py-1 rounded-full text-sm font-medium ${bgColors[level % bgColors.length]}`}>
-                                        {node.name}
-                                    </span>
-                                    {hasChildren && <span className="text-xs text-zinc-400 whitespace-nowrap">({node.children.length} nhóm con)</span>}
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="flex items-center gap-3 pl-7 sm:pl-0 self-end sm:self-auto">
-                            <span className="text-lg font-bold tabular-nums text-zinc-700 dark:text-zinc-300">
-                                {formatQuantityFull(node.totalQuantity)}
-                            </span>
-                            <span className="text-sm text-zinc-500">{node.unit}</span>
-                        </div>
-                    </div>
-
-                    {/* Breakdown of direct products (if expanded) - only show if NOT a product node to avoid duplicate info, or if needed */}
-                    {isExpanded && hasProducts && !isProductNode && (
-                        <div className="border-t border-dashed border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
-                            {node.products.map((p, idx) => (
-                                <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2 pl-12 border-b border-dashed border-zinc-200 dark:border-zinc-800 last:border-0 text-sm gap-1">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <span className="font-mono text-zinc-500">{p.productCode}</span>
-                                        <span className="text-zinc-700 dark:text-zinc-300">{p.productName}</span>
-                                    </div>
-                                    <div className="flex items-center gap-4 pl-0 sm:pl-4 self-end sm:self-auto">
-                                        <span className="font-medium">{formatQuantityFull(p.quantity)}</span>
-                                        <span className="text-xs text-zinc-400">{p.lotCount} LOT</span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
-                {/* Children */}
-                {isExpanded && hasChildren && (
-                    <div className="mt-1">
-                        {node.children.map(child => (
-                            <TagTreeNode
-                                key={child.fullPath}
-                                node={child}
-                                level={level + 1}
-                                expandedTags={expandedTags}
-                                setExpandedTags={setExpandedTags}
-                            />
-                        ))}
-                    </div>
-                )}
-            </div>
-        )
+    const toggleExpand = (path: string) => {
+        const newSet = new Set(expandedTags)
+        if (newSet.has(path)) newSet.delete(path)
+        else newSet.add(path)
+        setExpandedTags(newSet)
     }
 
-    if (loading) {
+    if (loading && tagItems.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-emerald-500 mb-2" />
-                <span className="text-stone-500">Đang tải dữ liệu...</span>
-            </div>
-        )
-    }
-
-    if (hierarchicalTags.length === 0) {
-        return (
-            <div className="p-8 text-center border-2 border-dashed border-stone-200 dark:border-stone-800 rounded-xl">
-                <p className="text-stone-500">Không có dữ liệu tồn kho theo mã phụ</p>
+            <div className="flex justify-center p-8">
+                <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
             </div>
         )
     }
 
     return (
         <div className="space-y-4">
-            {hierarchicalTags.map(root => (
-                <TagTreeNode
-                    key={root.fullPath}
-                    node={root}
-                    level={0}
-                    expandedTags={expandedTags}
-                    setExpandedTags={setExpandedTags}
-                />
-            ))}
+            {/* Filters */}
+            <div className="flex flex-col md:flex-row gap-4 items-end bg-white dark:bg-stone-900 p-4 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm mt-4">
+                <div className="w-full md:w-1/2 xl:w-48">
+                    <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Chi nhánh / Kho</label>
+                    <div className="relative">
+                        <Warehouse className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                        <select
+                            value={selectedBranch}
+                            onChange={e => setSelectedBranch(e.target.value)}
+                            className="w-full pl-9 pr-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
+                        >
+                            <option value="Tất cả">Tất cả chi nhánh</option>
+                            {branches.map(b => (
+                                <option key={b.id} value={b.name}>{b.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+
+                <div className="flex items-center justify-between xl:justify-start gap-4 w-full xl:w-auto pt-2 xl:pt-0">
+                    <div className="w-full xl:w-48">
+                        <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Quy đổi đơn vị</label>
+                        <div className="relative">
+                            <select
+                                value={targetUnitId || ''}
+                                onChange={e => setTargetUnitId(e.target.value || null)}
+                                className="w-full px-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer pr-8"
+                            >
+                                <option value="">Đơn vị gốc</option>
+                                {units.map(u => (
+                                    <option key={u.id} value={u.id}>{u.name}</option>
+                                ))}
+                            </select>
+                            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={() => {
+                            const params = new URLSearchParams()
+                            params.set('type', 'tags')
+                            if (systemType) params.set('systemType', systemType)
+                            if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
+                            if (targetUnitId) params.set('targetUnitId', targetUnitId)
+                            params.set('to', new Date().toISOString().split('T')[0])
+                            window.open(`/print/inventory?${params.toString()}`, '_blank')
+                        }}
+                        className="p-2 mt-6 text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-md transition-all active:scale-95"
+                        title="In báo cáo"
+                    >
+                        <Printer className="w-5 h-5" />
+                    </button>
+                </div>
+            </div>
+
+            <div className="bg-white dark:bg-stone-900 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                        <thead>
+                            <tr className="bg-stone-50 dark:bg-stone-800 font-medium text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-800">
+                                <th className="px-4 py-3 min-w-[300px]">Phân loại mã phụ</th>
+                                <th className="px-4 py-3 text-right">Tồn kho</th>
+                                <th className="px-4 py-3 text-center">Đơn vị</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {hierarchicalTags.length === 0 ? (
+                                <tr>
+                                    <td colSpan={3} className="px-4 py-8 text-center text-stone-500">
+                                        Không tìm thấy dữ liệu tồn kho theo mã phụ
+                                    </td>
+                                </tr>
+                            ) : (
+                                hierarchicalTags.map(root => (
+                                    <TagTreeNode
+                                        key={root.fullPath}
+                                        node={root}
+                                        expandedTags={expandedTags}
+                                        onToggle={toggleExpand}
+                                        level={0}
+                                    />
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
+    )
+}
+
+function TagTreeNode({ node, expandedTags, onToggle, level }: {
+    node: HierarchyNode
+    expandedTags: Set<string>
+    onToggle: (path: string) => void
+    level: number
+}) {
+    const isExpanded = expandedTags.has(node.fullPath)
+    const hasChildren = node.children.length > 0 || node.isProductNode
+
+    return (
+        <>
+            <tr
+                className={`
+                    border-b border-stone-100 dark:border-stone-800 hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors
+                    ${level === 0 ? 'bg-white dark:bg-stone-900 font-semibold' : ''}
+                `}
+            >
+                <td className="px-4 py-3">
+                    <div
+                        className="flex items-center gap-2 cursor-pointer select-none"
+                        style={{ paddingLeft: `${level * 20}px` }}
+                        onClick={() => onToggle(node.fullPath)}
+                    >
+                        {hasChildren ? (
+                            <ChevronDown
+                                className={`w-4 h-4 text-stone-400 transition-transform ${isExpanded ? '' : '-rotate-90'}`}
+                            />
+                        ) : (
+                            <div className="w-4 h-4" />
+                        )}
+                        <span className={level === 0 ? 'text-orange-600 dark:text-orange-500' : 'text-stone-700 dark:text-stone-300'}>
+                            {node.name}
+                        </span>
+                    </div>
+                </td>
+                <td className="px-4 py-3 text-right font-mono font-medium text-stone-900 dark:text-stone-100 italic">
+                    {formatQuantityFull(node.totalQuantity)}
+                </td>
+                <td className="px-4 py-3 text-center text-stone-500 font-medium">
+                    {node.unit}
+                </td>
+            </tr>
+
+            {isExpanded && (
+                <>
+                    {node.children.map(child => (
+                        <TagTreeNode
+                            key={child.fullPath}
+                            node={child}
+                            expandedTags={expandedTags}
+                            onToggle={onToggle}
+                            level={level + 1}
+                        />
+                    ))}
+                    {node.isProductNode && node.products.map(p => (
+                        <tr key={p.productCode} className="bg-stone-50/50 dark:bg-stone-800/20 border-b border-stone-100 dark:border-stone-800">
+                            <td className="px-4 py-2" style={{ paddingLeft: `${(level + 1) * 20 + 24}px` }}>
+                                <div className="flex flex-col">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-stone-500 dark:text-stone-400 bg-stone-200 dark:bg-stone-700 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                            {p.productCode}
+                                        </span>
+                                        <span className="text-sm text-stone-600 dark:text-stone-400 font-medium">
+                                            {p.productName}
+                                        </span>
+                                        {p.isUnconvertible && (
+                                            <span className="text-[10px] bg-red-100 text-red-600 px-1 rounded uppercase font-bold border border-red-200">
+                                                Lỗi quy đổi
+                                            </span>
+                                        )}
+                                    </div>
+                                    <span className="text-[10px] text-stone-400 italic flex items-center gap-1 mt-0.5 ml-0.5">
+                                        <div className="w-1 h-1 rounded-full bg-stone-300" />
+                                        {p.lotCount} LOT
+                                    </span>
+                                </div>
+                            </td>
+                            <td className="px-4 py-2 text-right font-mono text-stone-600 dark:text-stone-400">
+                                {formatQuantityFull(p.quantity)}
+                            </td>
+                            <td className="px-4 py-2 text-center text-stone-400 text-xs">
+                                {p.unit}
+                            </td>
+                        </tr>
+                    ))}
+                </>
+            )}
+        </>
     )
 }

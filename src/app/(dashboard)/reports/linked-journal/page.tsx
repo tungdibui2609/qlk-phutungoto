@@ -140,7 +140,7 @@ export default function LinkedJournalPage() {
                         <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-xl text-orange-600 dark:text-orange-400 shadow-sm">
                             <LinkIcon size={24} strokeWidth={2.5} />
                         </div>
-                        Nhật ký liên kết (Kho - KT)
+                        Nhật ký liên kết
                     </h1>
                     <p className="text-stone-500 dark:text-stone-400 text-sm mt-1 ml-11">
                         Đối soát liên kết giữa các lô hàng (LOT) và chứng từ kế toán (PNK/PXK).

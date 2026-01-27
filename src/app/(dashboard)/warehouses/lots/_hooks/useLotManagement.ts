@@ -163,6 +163,17 @@ export function useLotManagement() {
         return lotModules.includes(moduleId)
     }
 
+    /**
+     * Checks if a specific logic utility is enabled (stored in systems.modules.utility_modules)
+     */
+    const isUtilityEnabled = (utilityId: string) => {
+        if (!currentSystem?.modules) return false
+        const modules = typeof currentSystem.modules === 'string'
+            ? JSON.parse(currentSystem.modules)
+            : currentSystem.modules
+        return Array.isArray(modules?.utility_modules) && modules.utility_modules.includes(utilityId)
+    }
+
     const filteredLots = lots.filter(lot =>
         lot.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (lot.notes && lot.notes.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -190,6 +201,7 @@ export function useLotManagement() {
         handleDeleteLot,
         handleToggleStar,
         isModuleEnabled,
+        isUtilityEnabled,
         fetchCommonData
     }
 }

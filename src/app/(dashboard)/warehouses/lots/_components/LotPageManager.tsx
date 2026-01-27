@@ -30,6 +30,7 @@ export function LotPageManager() {
         handleDeleteLot,
         handleToggleStar,
         isModuleEnabled,
+        isUtilityEnabled,
         products,
         suppliers,
         qcList,
@@ -152,6 +153,7 @@ export function LotPageManager() {
                 loading={loading}
                 lots={lots}
                 isModuleEnabled={isModuleEnabled}
+                isUtilityEnabled={isUtilityEnabled}
                 onEdit={handleEdit}
                 onDelete={handleDeleteLot}
                 onView={setViewingLot}

@@ -36,6 +36,14 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
     const [loading, setLoading] = useState(false)
     const [syncing, setSyncing] = useState(false)
 
+    const isUtilityEnabled = (utilityId: string) => {
+        if (!currentSystem?.modules) return false
+        const modules = currentSystem.modules as any
+        return Array.isArray(modules.utility_modules) && modules.utility_modules.includes(utilityId)
+    }
+
+    const syncEnabled = isUtilityEnabled('lot_accounting_sync')
+
     // Data State
     const [customers, setCustomers] = useState<any[]>([])
     const [branches, setBranches] = useState<any[]>([])
@@ -443,6 +451,18 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+                    {!syncEnabled && pendingExports.length > 0 && (
+                        <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl flex items-start gap-3">
+                            <AlertTriangle className="text-amber-600 dark:text-amber-400 mt-0.5" size={20} />
+                            <div>
+                                <h4 className="text-sm font-bold text-amber-900 dark:text-amber-200">Tính năng Đồng bộ đang tắt</h4>
+                                <p className="text-xs text-amber-700 dark:text-amber-400 mt-1 leading-relaxed">
+                                    Tính năng "Đồng bộ Kho - Kế toán (LOT)" hiện đang được tắt cho phân hệ này trong phần Cài đặt.
+                                    Bạn vẫn có thể xóa các hàng chờ này, nhưng không thể thực hiện đồng bộ sang PXK trừ khi bật lại tiện ích.
+                                </p>
+                            </div>
+                        </div>
+                    )}
                     {loading ? (
                         <div className="p-20 text-center">
                             <Loader2 className="animate-spin mx-auto text-orange-500 mb-4" size={32} />
@@ -640,20 +660,19 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
 
                             <button
                                 onClick={handleSync}
-                                disabled={selectedIds.size === 0 || syncing}
+                                disabled={selectedIds.size === 0 || syncing || !syncEnabled}
                                 className="px-8 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl text-sm font-bold shadow-lg shadow-orange-500/20 disabled:opacity-50 transition-all flex items-center gap-2 active:scale-95"
-                            >
-                                {syncing ? (
-                                    <>
-                                        <Loader2 size={18} className="animate-spin" />
-                                        Đang xử lý...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Check size={18} />
-                                        Gộp & Tạo phiếu ({selectedIds.size})
-                                    </>
-                                )}
+                            >                    {syncing ? (
+                                <>
+                                    <Loader2 size={18} className="animate-spin" />
+                                    Đang xử lý...
+                                </>
+                            ) : (
+                                <>
+                                    <Check size={18} />
+                                    Gộp & Tạo phiếu ({selectedIds.size})
+                                </>
+                            )}
                             </button>
                         </div>
                     </div>

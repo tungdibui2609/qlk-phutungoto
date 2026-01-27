@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { toBaseAmount as toBaseAmountLogic, getBaseToKgRate as getBaseToKgRateLogic, UnitNameMap, ConversionMap } from '@/lib/unitConversion'
+import { toBaseAmount as toBaseAmountLogic, getBaseToKgRate as getBaseToKgRateLogic, convertUnit as convertUnitLogic, UnitNameMap, ConversionMap } from '@/lib/unitConversion'
 
 interface Unit {
     id: string
@@ -64,10 +64,15 @@ export function useUnitConversion() {
         return getBaseToKgRateLogic(productId, baseUnitName, unitNameMap, conversionMap)
     }, [unitNameMap, conversionMap])
 
+    const convertUnit = useCallback((productId: string | null, fromUnit: string | null, toUnit: string | null, qty: number, baseUnit: string | null): number => {
+        return convertUnitLogic(productId, fromUnit, toUnit, qty, baseUnit, unitNameMap, conversionMap)
+    }, [unitNameMap, conversionMap])
+
     return {
         loading,
         toBaseAmount,
         getBaseToKgRate,
+        convertUnit,
         unitNameMap, // Export maps if needed for memoization dependencies
         conversionMap
     }

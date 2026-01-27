@@ -6,6 +6,7 @@ interface LotListProps {
     loading: boolean
     lots: Lot[]
     isModuleEnabled: (moduleId: string) => boolean
+    isUtilityEnabled: (utilityId: string) => boolean
     onEdit: (lot: Lot) => void
     onDelete: (id: string) => void
     onView: (lot: Lot) => void
@@ -17,7 +18,7 @@ interface LotListProps {
     onExport?: (lot: Lot) => void
 }
 
-export function LotList({ loading, lots, isModuleEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport }: LotListProps) {
+export function LotList({ loading, lots, isModuleEnabled, isUtilityEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport }: LotListProps) {
     if (loading) {
         return (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -46,6 +47,7 @@ export function LotList({ loading, lots, isModuleEnabled, onEdit, onDelete, onVi
                     key={lot.id}
                     lot={lot}
                     isModuleEnabled={isModuleEnabled}
+                    isUtilityEnabled={isUtilityEnabled}
                     onEdit={onEdit}
                     onDelete={onDelete}
                     onView={onView}

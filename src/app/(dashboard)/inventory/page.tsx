@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useMemo } from 'react'
-import { Search, Loader2, Printer, Warehouse } from 'lucide-react'
+import { Search, Loader2, Printer, Warehouse, ChevronDown } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
@@ -37,13 +37,14 @@ export default function InventoryPage() {
 
     // Branches
     const [branches, setBranches] = useState<Branch[]>([])
-    const [selectedBranch, setSelectedBranch] = useState<string>('')
+    const [selectedBranch, setSelectedBranch] = useState<string>('Tất cả')
 
     // Filters
     const [q, setQ] = useState('')
     const [dateFrom, setDateFrom] = useState('')
     const [dateTo, setDateTo] = useState('')
-    const [isConvertKg, setIsConvertKg] = useState(false)
+    const [units, setUnits] = useState<any[]>([])
+    const [targetUnitId, setTargetUnitId] = useState<string | null>(null)
 
     // Load Branches
     useEffect(() => {
@@ -54,19 +55,29 @@ export default function InventoryPage() {
                 .order('is_default', { ascending: false })
                 .order('name')
 
-            if (data && !error) {
+            if (error) {
+                console.error('Error fetching branches:', error)
+            }
+            if (data) {
                 const branchList = data as Branch[]
                 setBranches(branchList)
                 // Set default branch
                 const defaultBranch = branchList.find(b => b.is_default)
                 if (defaultBranch) {
                     setSelectedBranch(defaultBranch.name)
-                } else if (branchList.length > 0) {
-                    setSelectedBranch(branchList[0].name)
                 }
             }
         }
         fetchBranches()
+    }, [])
+
+    // Load Units
+    useEffect(() => {
+        async function fetchUnits() {
+            const { data } = await supabase.from('units').select('id, name')
+            if (data) setUnits(data)
+        }
+        fetchUnits()
     }, [])
 
     // Date defaults: Last 7 days to today
@@ -96,7 +107,7 @@ export default function InventoryPage() {
             if (dateTo) params.set('dateTo', dateTo)
             if (selectedBranch) params.set('warehouse', selectedBranch)
             if (systemType) params.set('systemType', systemType)
-            if (isConvertKg) params.set('convertToKg', 'true')
+            if (targetUnitId) params.set('targetUnitId', targetUnitId)
 
             const res = await fetch(`/api/inventory?${params.toString()}`)
             const data = await res.json()
@@ -122,7 +133,7 @@ export default function InventoryPage() {
             }
         }, 300)
         return () => clearTimeout(timer)
-    }, [q, dateFrom, dateTo, activeTab, selectedBranch, systemType, isConvertKg])
+    }, [q, dateFrom, dateTo, activeTab, selectedBranch, systemType, targetUnitId])
 
     // Calculate Totals
     const totals = useMemo(() => {
@@ -144,6 +155,7 @@ export default function InventoryPage() {
             </div>
 
             {/* Tabs */}
+            {/* Tabs Navigation */}
             <div className="border-b border-stone-200 dark:border-stone-800 overflow-x-auto">
                 <nav className="-mb-px flex space-x-4 md:space-x-8 min-w-max px-1" aria-label="Tabs">
                     {(
@@ -231,17 +243,21 @@ export default function InventoryPage() {
                         </div>
 
                         <div className="flex items-center justify-between xl:justify-start gap-4 w-full xl:w-auto pt-2 xl:pt-0">
-                            <div className="flex items-center gap-2">
-                                <input
-                                    type="checkbox"
-                                    id="convertCheck"
-                                    checked={isConvertKg}
-                                    onChange={(e) => setIsConvertKg(e.target.checked)}
-                                    className="w-4 h-4 text-orange-600 rounded border-stone-300 focus:ring-orange-500"
-                                />
-                                <label htmlFor="convertCheck" className="text-sm font-medium text-stone-700 dark:text-stone-300 cursor-pointer select-none">
-                                    Quy đổi sang KG
-                                </label>
+                            <div className="w-full xl:w-48">
+                                <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Quy đổi đơn vị</label>
+                                <div className="relative">
+                                    <select
+                                        value={targetUnitId || ''}
+                                        onChange={e => setTargetUnitId(e.target.value || null)}
+                                        className="w-full px-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
+                                    >
+                                        <option value="">Đơn vị gốc</option>
+                                        {units.map(u => (
+                                            <option key={u.id} value={u.id}>{u.name}</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
+                                </div>
                             </div>
 
                             <button
@@ -253,10 +269,10 @@ export default function InventoryPage() {
                                     if (dateTo) params.set('to', dateTo)
                                     if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
                                     if (q) params.set('search', q)
-                                    if (isConvertKg) params.set('convertToKg', 'true')
+                                    if (targetUnitId) params.set('targetUnitId', targetUnitId)
                                     window.open(`/print/inventory?${params.toString()}`, '_blank')
                                 }}
-                                className="p-2 text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-md"
+                                className="p-2 mt-6 text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-md"
                                 title="In báo cáo"
                             >
                                 <Printer className="w-5 h-5" />
@@ -353,15 +369,15 @@ export default function InventoryPage() {
 
             {/* Placeholder for other tabs */}
             {activeTab === 'lot' && (
-                <InventoryByLot />
+                <InventoryByLot units={units} />
             )}
 
             {activeTab === 'tags' && (
-                <InventoryByTag />
+                <InventoryByTag units={units} />
             )}
 
             {activeTab === 'reconciliation' && (
-                <InventoryReconciliation />
+                <InventoryReconciliation units={units} />
             )}
 
 

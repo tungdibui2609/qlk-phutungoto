@@ -38,9 +38,19 @@ export default function OutboundPage() {
     const [editingOrderId, setEditingOrderId] = useState<string | null>(null)
     const [initialBufferData, setInitialBufferData] = useState<any>(null)
     const { showToast, showConfirm } = useToast()
-    const { systemType } = useSystem()
+    const { systemType, currentSystem } = useSystem()
     const [bufferOpen, setBufferOpen] = useState(false)
     const [bufferCount, setBufferCount] = useState(0)
+
+    const isUtilityEnabled = (utilityId: string) => {
+        if (!currentSystem?.modules) return false
+        const modules = typeof currentSystem.modules === 'string'
+            ? JSON.parse(currentSystem.modules)
+            : currentSystem.modules
+        return Array.isArray(modules?.utility_modules) && modules.utility_modules.includes(utilityId)
+    }
+
+    const isLotSyncEnabled = isUtilityEnabled('lot_accounting_sync')
 
     useEffect(() => {
         fetchOrders()
@@ -100,21 +110,23 @@ export default function OutboundPage() {
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => setBufferOpen(true)}
-                        className={`flex items-center gap-2.5 px-6 py-2.5 rounded-xl border border-stone-200 dark:border-zinc-700 font-bold text-sm shadow-sm relative group active:scale-95 transition-all ${bufferCount > 0
-                            ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/50 hover:bg-amber-100'
-                            : 'bg-white dark:bg-zinc-800 text-stone-400 hover:bg-stone-50'
-                            }`}
-                    >
-                        <ShoppingCart size={18} className={bufferCount > 0 ? "group-hover:rotate-12 transition-transform" : ""} />
-                        <span>Hàng chờ xuất</span>
-                        {bufferCount > 0 && (
-                            <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-orange-600 text-white text-[10px] flex items-center justify-center border-2 border-white dark:border-zinc-900 animate-in zoom-in shadow-lg">
-                                {bufferCount}
-                            </span>
-                        )}
-                    </button>
+                    {isLotSyncEnabled && (
+                        <button
+                            onClick={() => setBufferOpen(true)}
+                            className={`flex items-center gap-2.5 px-6 py-2.5 rounded-xl border border-stone-200 dark:border-zinc-700 font-bold text-sm shadow-sm relative group active:scale-95 transition-all ${bufferCount > 0
+                                ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/50 hover:bg-amber-100'
+                                : 'bg-white dark:bg-zinc-800 text-stone-400 hover:bg-stone-50'
+                                }`}
+                        >
+                            <ShoppingCart size={18} className={bufferCount > 0 ? "group-hover:rotate-12 transition-transform" : ""} />
+                            <span>Hàng chờ xuất</span>
+                            {bufferCount > 0 && (
+                                <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-orange-600 text-white text-[10px] flex items-center justify-center border-2 border-white dark:border-zinc-900 animate-in zoom-in shadow-lg">
+                                    {bufferCount}
+                                </span>
+                            )}
+                        </button>
+                    )}
 
                     <button
                         onClick={() => {
