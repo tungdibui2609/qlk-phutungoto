@@ -32,6 +32,8 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
         hasModule, confirmDialog, setConfirmDialog, handleCustomerSelect
     } = useOutboundOrder({ ...props, editOrderId: props.editOrderId })
 
+    const selectedCustomerId = customers.find(c => c.name === customerName)?.id || ""
+
     if (!props.isOpen) return null
 
     const footerButtons = (
@@ -87,7 +89,7 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
                             type="customer"
                             label="Khách hàng"
                             partners={customers}
-                            selectedId="" // Customer select is tricky because it allows custom names
+                            selectedId={selectedCustomerId}
                             onSelect={handleCustomerSelect}
                             address={customerAddress}
                             setAddress={setCustomerAddress}
