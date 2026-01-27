@@ -442,21 +442,43 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                                     </select>
                                 </div>
 
-                                {/* Validation Message */}
+                                {/* Preview & Validation Section */}
                                 {(() => {
                                     const selectedQty = exportQuantities[selectedItem.id] || 0
+                                    if (selectedQty <= 0) return null
+
                                     const consumed = getConsumedOriginalQty(selectedItem.id, selectedQty, exportUnits[selectedItem.id] || '')
                                     const isOver = consumed > (selectedItem.quantity || 0) + 0.000001
 
-                                    if (isOver) {
-                                        return (
-                                            <div className="mt-2 text-xs font-bold text-red-500 flex items-center gap-1.5 animate-in slide-in-from-top-1">
-                                                <AlertCircle size={12} />
-                                                Vượt quá số lượng tồn kho (Tối đa: {formatQuantityFull(selectedItem.quantity)})
-                                            </div>
-                                        )
-                                    }
-                                    return null
+                                    const splitResult = lotService.calculateSplitResult({
+                                        item: selectedItem,
+                                        consumedOriginalQty: consumed,
+                                        unitNameMap,
+                                        conversionMap,
+                                        preferredUnit: exportUnits[selectedItem.id]
+                                    })
+
+                                    return (
+                                        <div className="mt-3 flex flex-col items-end gap-1.5 px-1 animate-in fade-in slide-in-from-top-1">
+                                            {consumed > 0 && Math.abs(consumed - selectedQty) > 0.000001 && (
+                                                <div className={`text-[10px] sm:text-[11px] font-bold flex items-center gap-1.5 ${isOver ? 'text-red-500' : 'text-slate-500'}`}>
+                                                    {isOver ? (
+                                                        <>
+                                                            <AlertCircle size={14} />
+                                                            <span>Vượt quá tồn kho! (~ {formatQuantityFull(consumed)} {selectedItem.unit || selectedItem.products?.unit} gốc)</span>
+                                                        </>
+                                                    ) : (
+                                                        <span>Tương đương: {formatQuantityFull(consumed)} {selectedItem.unit || selectedItem.products?.unit} (gốc)</span>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {splitResult && !isOver && (
+                                                <div className="text-[10px] sm:text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2 rounded-xl border border-emerald-100 dark:border-emerald-800/50 shadow-sm">
+                                                    Còn lại dự kiến: <span className="text-emerald-700 dark:text-emerald-300 underline underline-offset-2 decoration-emerald-500/30">{splitResult.displayLabel}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
                                 })()}
                             </div>
                         </div>

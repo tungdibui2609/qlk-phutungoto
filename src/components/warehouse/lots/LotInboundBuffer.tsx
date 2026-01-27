@@ -174,19 +174,23 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
             const orderCode = `${prefix}-PNK-${dateStr}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`
 
             // 2. Identify Supplier
-            let mainSupplierName = ''
-            if (quickSupplierId) {
-                mainSupplierName = suppliers.find(s => s.id === quickSupplierId)?.name || ''
-            } else {
-                const unique = Array.from(new Set(toSync.map(p => p.supplier_name)))
-                mainSupplierName = unique.length === 1 ? unique[0] : `Nhiều NCC (${unique.length})`
+            let finalSupplierId = quickSupplierId || null
+            let descriptionSuffix = ''
+
+            if (!finalSupplierId) {
+                const uniqueIds = Array.from(new Set(toSync.map(p => p.supplier_id).filter(Boolean)))
+                if (uniqueIds.length === 1) {
+                    finalSupplierId = uniqueIds[0] as string
+                } else if (uniqueIds.length > 1) {
+                    descriptionSuffix = ` (Bao gồm nhiều NCC: ${uniqueIds.length})`
+                }
             }
 
             // 3. Create Inbound Order
             const { data: order, error: orderError } = await (supabase.from('inbound_orders') as any).insert({
                 code: orderCode,
-                supplier_name: mainSupplierName,
-                description: `Phiếu nhập tổng cho ${toSync.length} lô hàng.`,
+                supplier_id: finalSupplierId,
+                description: `Phiếu nhập tổng cho ${toSync.length} lô hàng.${descriptionSuffix}`,
                 status: 'Completed',
                 type: 'Import',
                 system_code: systemType,

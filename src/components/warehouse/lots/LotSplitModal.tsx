@@ -338,17 +338,37 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                                     </div>
                                     {(() => {
                                         const selectedQty = splitQuantities[item.id] || 0
+                                        if (selectedQty <= 0) return null
+
                                         const consumed = getConsumedOriginalQty(item.id, selectedQty, splitUnits[item.id] || '')
                                         const isOver = consumed > (item.quantity || 0) + 0.000001
-                                        if (consumed > 0 && Math.abs(consumed - selectedQty) > 0.0001) {
-                                            return (
-                                                <div className={`mt-2 text-[10px] font-bold text-right ${isOver ? 'text-red-500' : 'text-slate-400'}`}>
-                                                    ~ {formatQuantityFull(consumed)} {(item as any).unit || item.products?.unit} (gốc)
-                                                    {isOver && ' - Vượt quá tồn kho!'}
-                                                </div>
-                                            )
-                                        }
-                                        return null
+
+                                        const splitResult = lotService.calculateSplitResult({
+                                            item,
+                                            consumedOriginalQty: consumed,
+                                            unitNameMap,
+                                            conversionMap,
+                                            preferredUnit: splitUnits[item.id]
+                                        })
+
+                                        return (
+                                            <div className="mt-2 flex flex-col items-end gap-1.5 px-1">
+                                                {consumed > 0 && Math.abs(consumed - selectedQty) > 0.000001 && (
+                                                    <div className={`text-[10px] font-bold ${isOver ? 'text-red-500' : 'text-slate-400'}`}>
+                                                        {isOver ? (
+                                                            <span>Vượt quá tồn kho! (~ {formatQuantityFull(consumed)} {item.unit || item.products?.unit} gốc)</span>
+                                                        ) : (
+                                                            <span>Tương đương: {formatQuantityFull(consumed)} {item.unit || item.products?.unit} (gốc)</span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {splitResult && !isOver && (
+                                                    <div className="text-[10px] sm:text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2.5 py-1.5 rounded-xl border border-emerald-100 dark:border-emerald-800/50 shadow-sm animate-in fade-in slide-in-from-top-1 duration-200">
+                                                        Còn lại dự kiến: <span className="text-emerald-700 dark:text-emerald-300 underline underline-offset-2 decoration-emerald-500/30">{splitResult.displayLabel}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )
                                     })()}
                                 </div>
                             ))}
@@ -378,7 +398,7 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                                     const summary = items.reduce((acc: Record<string, number>, item: any) => {
                                         const qty = splitQuantities[item.id] || 0
                                         if (qty === 0) return acc
-                                        const unit = (item as any).unit || item.products?.unit || 'Đơn vị';
+                                        const unit = splitUnits[item.id] || (item as any).unit || item.products?.unit || 'Đơn vị';
                                         acc[unit] = (acc[unit] || 0) + qty;
                                         return acc;
                                     }, {});

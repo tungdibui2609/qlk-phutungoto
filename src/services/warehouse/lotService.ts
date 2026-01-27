@@ -9,6 +9,14 @@ export interface LotServiceParams {
     conversionMap: Map<string, Map<string, number>>
 }
 
+export interface SplitPreviewResult {
+    remainingQtyInteger: number
+    remainingUnitInteger: string
+    remainingQtyFractional: number
+    remainingUnitFractional: string
+    displayLabel: string
+}
+
 /**
  * Standardized logic for Lot operations
  */
@@ -65,6 +73,76 @@ export const lotService = {
     },
 
     /**
+     * Calculates what the remaining breakdown will be after a split
+     */
+    calculateSplitResult(params: {
+        item: any
+        consumedOriginalQty: number
+        unitNameMap: Map<string, string>
+        conversionMap: Map<string, Map<string, number>>
+        preferredUnit?: string
+    }): SplitPreviewResult | null {
+        const { item, consumedOriginalQty, unitNameMap, conversionMap, preferredUnit } = params
+        const remainingQty = (item.quantity || 0) - consumedOriginalQty
+        const baseUnit = item.products?.unit || ''
+        const originalUnit = item.unit || baseUnit
+
+        if (remainingQty <= 0.000001) return null
+
+        const floorRemaining = Math.floor(remainingQty + 0.000001)
+        const fractionalRemaining = remainingQty - floorRemaining
+
+        if (fractionalRemaining > 0.000001) {
+            let targetUnit = baseUnit
+            let targetQty = 0
+
+            const getRate = (uName: string) => {
+                const uid = unitNameMap.get(uName.toLowerCase())
+                const rates = conversionMap.get(item.product_id || '')
+                return uid ? (rates?.get(uid) || 1) : 1
+            }
+
+            const currentRate = getRate(originalUnit)
+            const fractionalBase = fractionalRemaining * currentRate
+
+            if (preferredUnit && preferredUnit.toLowerCase() !== baseUnit.toLowerCase()) {
+                const preferredRate = getRate(preferredUnit)
+                if (preferredRate > 0) {
+                    targetUnit = preferredUnit
+                    targetQty = fractionalBase / preferredRate
+                } else {
+                    targetQty = fractionalBase
+                }
+            } else {
+                targetQty = fractionalBase
+            }
+
+            let displayLabel = ""
+            if (floorRemaining > 0) {
+                displayLabel = `${floorRemaining} ${originalUnit} và ${Number(targetQty.toFixed(6))} ${targetUnit}`
+            } else {
+                displayLabel = `${Number(targetQty.toFixed(6))} ${targetUnit}`
+            }
+
+            return {
+                remainingQtyInteger: floorRemaining,
+                remainingUnitInteger: originalUnit,
+                remainingQtyFractional: Number(targetQty.toFixed(6)),
+                remainingUnitFractional: targetUnit,
+                displayLabel
+            }
+        } else {
+            return {
+                remainingQtyInteger: Number(floorRemaining.toFixed(6)),
+                remainingUnitInteger: originalUnit,
+                remainingQtyFractional: 0,
+                remainingUnitFractional: originalUnit,
+                displayLabel: `${Number(floorRemaining.toFixed(6))} ${originalUnit}`
+            }
+        }
+    },
+
+    /**
      * Updates Lot items with Auto-Split logic:
      * If remaining quantity is fractional, converts it to Base Unit (e.g., Kg)
      * and creates a new line item.
@@ -79,22 +157,27 @@ export const lotService = {
         preferredUnit?: string
     }) {
         const { supabase, lotId, item, consumedOriginalQty, unitNameMap, conversionMap, preferredUnit } = params
-        const remainingQty = (item.quantity || 0) - consumedOriginalQty
-        const baseUnit = item.products?.unit || ''
+        const result = this.calculateSplitResult({
+            item,
+            consumedOriginalQty,
+            unitNameMap,
+            conversionMap,
+            preferredUnit
+        })
 
-        if (remainingQty <= 0.000001) {
+        if (!result) {
             const { error: delError } = await supabase.from('lot_items').delete().eq('id', item.id)
             if (delError) throw delError
             return
         }
 
-        const floorRemaining = Math.floor(remainingQty + 0.000001)
-        const fractionalRemaining = remainingQty - floorRemaining
-
-        if (fractionalRemaining > 0.000001) {
+        if (result.remainingQtyFractional > 0) {
             // 1. Update/Delete current row for Integer part
-            if (floorRemaining > 0) {
-                const { error: updError } = await supabase.from('lot_items').update({ quantity: floorRemaining }).eq('id', item.id)
+            if (result.remainingQtyInteger > 0) {
+                const { error: updError } = await supabase.from('lot_items').update({
+                    quantity: result.remainingQtyInteger,
+                    unit: result.remainingUnitInteger
+                }).eq('id', item.id)
                 if (updError) throw updError
             } else {
                 const { error: delError } = await supabase.from('lot_items').delete().eq('id', item.id)
@@ -102,56 +185,19 @@ export const lotService = {
             }
 
             // 2. Create new row for Fractional part
-            // Logic: Try to use Preferred Unit if possible, otherwise Base Unit
-            let targetUnit = baseUnit
-            let targetQty = 0
-
-            // Helper to get rate: 1 FromUnit = rate * BaseUnit
-            const getRate = (uName: string) => {
-                const uid = unitNameMap.get(uName.toLowerCase())
-                const rates = conversionMap.get(item.product_id || '')
-                return uid ? (rates?.get(uid) || 1) : 1
-            }
-
-            if (preferredUnit && preferredUnit.toLowerCase() !== baseUnit.toLowerCase()) {
-                // Check if we can convert back to preferred unit cleanly?
-                // Actually, user wants the "leftover" to be in 'preferredUnit' if compatible.
-                // We have 'fractionalRemaining' in OriginalUnit (currently item.unit).
-
-                // Convert Fractional(OriginalUnit) -> Base -> Preferred
-
-                // 1. To Base
-                const currentRate = getRate(item.unit || baseUnit)
-                const fractionalBase = fractionalRemaining * currentRate
-
-                // 2. To Preferred
-                // 1 Preferred = preferredRate * Base
-                // So 1 Base = 1/preferredRate Preferred
-                const preferredRate = getRate(preferredUnit)
-
-                if (preferredRate > 0) {
-                    targetUnit = preferredUnit
-                    targetQty = fractionalBase / preferredRate
-                } else {
-                    // Fallback to base
-                    targetQty = fractionalBase
-                }
-            } else {
-                // Use Base Unit
-                const currentRate = getRate(item.unit || baseUnit)
-                targetQty = fractionalRemaining * currentRate
-            }
-
             const { error: insError } = await supabase.from('lot_items').insert({
                 lot_id: lotId,
                 product_id: item.product_id,
-                quantity: Number(targetQty.toFixed(6)),
-                unit: targetUnit
+                quantity: result.remainingQtyFractional,
+                unit: result.remainingUnitFractional
             })
             if (insError) throw insError
         } else {
             // Simple update for integer remaining
-            const { error: updError } = await supabase.from('lot_items').update({ quantity: Number(floorRemaining.toFixed(6)) }).eq('id', item.id)
+            const { error: updError } = await supabase.from('lot_items').update({
+                quantity: result.remainingQtyInteger,
+                unit: result.remainingUnitInteger
+            }).eq('id', item.id)
             if (updError) throw updError
         }
     },
