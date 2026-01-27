@@ -34,6 +34,13 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
     const [description, setDescription] = useState('')
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [exportAll, setExportAll] = useState<Record<string, boolean>>({})
+    const [autoExportAll, setAutoExportAll] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('lot_auto_export_all') === 'true'
+        }
+        return false
+    })
 
     useEffect(() => {
         // Initialize with 0 quantities but correct units
@@ -47,6 +54,18 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
 
         setExportQuantities(initialQuantities)
         setExportUnits(initialUnits)
+
+        // Auto export all if enabled
+        if (autoExportAll) {
+            const allExportAll: Record<string, boolean> = {}
+            const maxQuantities: Record<string, number> = {}
+            lot.lot_items?.forEach(item => {
+                allExportAll[item.id] = true
+                maxQuantities[item.id] = item.quantity || 0
+            })
+            setExportAll(allExportAll)
+            setExportQuantities(maxQuantities)
+        }
 
         fetchCustomers()
     }, [lot, systemType])
@@ -242,9 +261,37 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                 <div className="px-6 py-2 border-t border-slate-100 dark:border-slate-800 flex-1 overflow-y-auto custom-scrollbar">
                     {/* Product Selection - Same design as Split Modal */}
                     <div className="mt-4">
-                        <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-3">
-                            Chọn dòng sản phẩm muốn xuất
-                        </h4>
+                        <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                Chọn dòng sản phẩm muốn xuất
+                            </h4>
+                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input
+                                    type="checkbox"
+                                    checked={autoExportAll}
+                                    onChange={(e) => {
+                                        const checked = e.target.checked
+                                        setAutoExportAll(checked)
+                                        localStorage.setItem('lot_auto_export_all', checked ? 'true' : 'false')
+                                        if (checked) {
+                                            // Apply immediately
+                                            const allExportAll: Record<string, boolean> = {}
+                                            const maxQuantities: Record<string, number> = {}
+                                            lot.lot_items?.forEach(item => {
+                                                allExportAll[item.id] = true
+                                                maxQuantities[item.id] = item.quantity || 0
+                                            })
+                                            setExportAll(allExportAll)
+                                            setExportQuantities(maxQuantities)
+                                        }
+                                    }}
+                                    className="w-4 h-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-500/20"
+                                />
+                                <span className="text-xs font-medium text-slate-500 dark:text-slate-400 text-center">
+                                    Tự động xuất hết<br /><span className="text-[10px] opacity-70">(cho lần sau)</span>
+                                </span>
+                            </label>
+                        </div>
 
                         <div className="space-y-3">
                             {lot.lot_items?.map(item => (
@@ -270,10 +317,24 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                                             <span className="text-xs font-bold text-slate-400 uppercase">Xuất:</span>
                                             <button
                                                 type="button"
-                                                onClick={() => handleQuantityChange(item.id, item.quantity || 0)}
-                                                className="px-2 py-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg border border-emerald-200 dark:border-emerald-800 transition-colors"
+                                                onClick={() => {
+                                                    const isCurrentlyAll = exportAll[item.id]
+                                                    if (isCurrentlyAll) {
+                                                        // Turn off - reset to 0
+                                                        setExportAll(prev => ({ ...prev, [item.id]: false }))
+                                                        handleQuantityChange(item.id, 0)
+                                                    } else {
+                                                        // Turn on - set to max
+                                                        setExportAll(prev => ({ ...prev, [item.id]: true }))
+                                                        handleQuantityChange(item.id, item.quantity || 0)
+                                                    }
+                                                }}
+                                                className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition-colors ${exportAll[item.id]
+                                                    ? 'text-white bg-emerald-500 border-emerald-500 hover:bg-emerald-600'
+                                                    : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border-emerald-200 dark:border-emerald-800'
+                                                    }`}
                                             >
-                                                Xuất hết
+                                                {exportAll[item.id] ? '✓ Xuất hết' : 'Xuất hết'}
                                             </button>
                                         </div>
                                         <div className="flex items-center gap-2">
