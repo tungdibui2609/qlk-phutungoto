@@ -212,14 +212,46 @@ export function useAudit() {
         }
     }
 
-    // Complete Session
-    const completeSession = async (checkId: string) => {
-         if (!await showConfirm('Bạn có chắc chắn muốn hoàn thành và cân bằng kho? Hành động này sẽ cập nhật số lượng tồn kho thực tế.')) return
+    // Submit for Approval (Previously Complete Session)
+    const submitForApproval = async (checkId: string) => {
+        if (!await showConfirm('Bạn có chắc chắn muốn hoàn thành kiểm đếm và gửi duyệt phiếu này?')) return
 
-         setLoading(true)
-         try {
-             // 1. Get latest items state
-             const { data: items, error: itemsError } = await supabase
+        setLoading(true)
+        try {
+            await supabase
+                .from('inventory_checks')
+                .update({
+                    status: 'WAITING_FOR_APPROVAL',
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', checkId)
+
+            showToast('Đã gửi phiếu kiểm kê chờ duyệt', 'success')
+            router.push('/operations/audit')
+        } catch (error: any) {
+            console.error('Error submitting session:', error)
+            showToast('Lỗi gửi duyệt: ' + error.message, 'error')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    // Approve Session
+    const approveSession = async (checkId: string, method: 'DIRECT_ADJUSTMENT' | 'ACCOUNTING_TICKET') => {
+        if (!user) return
+
+        if (method === 'ACCOUNTING_TICKET') {
+            // Stub for future feature
+            showToast('Tính năng tạo phiếu kế toán chưa khả dụng. Vui lòng chọn cân bằng trực tiếp.', 'info')
+            return
+        }
+
+        if (!await showConfirm('Xác nhận duyệt phiếu và cân bằng kho?')) return
+
+        setLoading(true)
+        try {
+            // 1. Get latest items state
+            const { data: items, error: itemsError } = await supabase
                 .from('inventory_check_items')
                 .select('*')
                 .eq('check_id', checkId)
@@ -228,26 +260,27 @@ export function useAudit() {
 
             const affectedLotIds = new Set<string>()
 
-            // 2. Iterate and Update Lot Items
-            for (const item of items) {
+            // 2. Iterate and Update Lot Items (Parallel)
+            const updatePromises = items.map(async (item) => {
                 // Only process items that have been counted (actual_quantity !== null) AND have a difference
                 if (item.actual_quantity !== null && item.difference !== 0 && item.lot_item_id) {
-                     // Update Lot Item Quantity
-                     const { error: updateError } = await supabase
+                    // Update Lot Item Quantity
+                    const { error: updateError } = await supabase
                         .from('lot_items')
                         .update({ quantity: item.actual_quantity })
                         .eq('id', item.lot_item_id)
 
-                     if (updateError) {
-                         console.error(`Failed to update lot item ${item.lot_item_id}`, updateError)
-                     } else {
-                         affectedLotIds.add(item.lot_id)
-                     }
+                    if (updateError) {
+                        console.error(`Failed to update lot item ${item.lot_item_id}`, updateError)
+                    } else {
+                        affectedLotIds.add(item.lot_id)
+                    }
                 }
-            }
+            })
+            await Promise.all(updatePromises)
 
-            // 3. Sync Lots Quantity and Log Activity
-            for (const lotId of Array.from(affectedLotIds)) {
+            // 3. Sync Lots Quantity and Log Activity (Parallel by Lot)
+            const syncPromises = Array.from(affectedLotIds).map(async (lotId) => {
                 // Recalculate total quantity for the lot
                 const { data: lotItemsData } = await supabase
                     .from('lot_items')
@@ -269,30 +302,62 @@ export function useAudit() {
                         tableName: 'lots',
                         recordId: lotId,
                         action: 'UPDATE',
-                        newData: { quantity: newTotalQty, note: 'Inventory Audit Adjustment' },
-                        oldData: { note: 'Previous Quantity Unknown' } // Simplified for now
+                        newData: { quantity: newTotalQty, note: 'Inventory Audit Adjustment (Approved)' },
+                        oldData: { note: 'Previous Quantity Unknown' }
                     })
                 }
-            }
+            })
+            await Promise.all(syncPromises)
 
-            // 4. Mark Completed
-             await supabase
+            // 4. Mark Approved and Completed
+            await supabase
                 .from('inventory_checks')
                 .update({
                     status: 'COMPLETED',
+                    approval_status: 'APPROVED',
+                    reviewer_id: user.id,
+                    reviewed_at: new Date().toISOString(),
                     completed_at: new Date().toISOString()
                 })
                 .eq('id', checkId)
 
-             showToast('Đã hoàn thành kiểm kê', 'success')
-             router.push('/operations/audit')
+            showToast('Đã duyệt và cân bằng kho thành công', 'success')
+            router.push('/operations/audit')
 
-         } catch (error: any) {
-             console.error('Error completing session:', error)
-             showToast('Lỗi: ' + error.message, 'error')
-         } finally {
-             setLoading(false)
-         }
+        } catch (error: any) {
+            console.error('Error approving session:', error)
+            showToast('Lỗi duyệt phiếu: ' + error.message, 'error')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    // Reject Session
+    const rejectSession = async (checkId: string, reason: string) => {
+        if (!user) return
+        if (!await showConfirm('Xác nhận từ chối duyệt phiếu này?')) return
+
+        setLoading(true)
+        try {
+            await supabase
+                .from('inventory_checks')
+                .update({
+                    status: 'REJECTED',
+                    approval_status: 'REJECTED',
+                    reviewer_id: user.id,
+                    reviewed_at: new Date().toISOString(),
+                    rejection_reason: reason
+                })
+                .eq('id', checkId)
+
+            showToast('Đã từ chối phiếu kiểm kê', 'success')
+            router.push('/operations/audit')
+        } catch (error: any) {
+            console.error('Error rejecting session:', error)
+            showToast('Lỗi từ chối phiếu: ' + error.message, 'error')
+        } finally {
+            setLoading(false)
+        }
     }
 
     // Quick Fill (Set all nulls to system qty)
@@ -339,7 +404,9 @@ export function useAudit() {
         createSession,
         fetchSessionDetail,
         updateItem,
-        completeSession,
+        submitForApproval,
+        approveSession,
+        rejectSession,
         quickFill
     }
 }

@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { useAudit } from '../_hooks/useAudit'
 import { AuditSessionHeader } from '../_components/AuditSessionHeader'
 import { AuditItemCard } from '../_components/AuditItemCard'
+import { ApproveAuditModal } from '../_components/ApproveAuditModal'
 import { Search, Filter, Layers } from 'lucide-react'
 
 export default function AuditDetailPage() {
@@ -16,11 +17,14 @@ export default function AuditDetailPage() {
         loading,
         fetchSessionDetail,
         updateItem,
-        completeSession,
+        submitForApproval,
+        approveSession,
+        rejectSession,
         quickFill
     } = useAudit()
 
     const [searchTerm, setSearchTerm] = useState('')
+    const [showApproveModal, setShowApproveModal] = useState(false)
     const [filterMode, setFilterMode] = useState<'ALL' | 'MISMATCH' | 'UNCOUNTED'>('ALL')
 
     useEffect(() => {
@@ -71,8 +75,16 @@ export default function AuditDetailPage() {
         <div className="pb-20 min-h-screen bg-slate-50 dark:bg-black">
             <AuditSessionHeader
                 session={currentSession}
-                onComplete={() => completeSession(id)}
+                onSubmit={() => submitForApproval(id)}
+                onApprove={() => setShowApproveModal(true)}
+                onReject={() => rejectSession(id, 'Từ chối bởi quản lý')}
                 onQuickFill={quickFill}
+            />
+
+            <ApproveAuditModal
+                isOpen={showApproveModal}
+                onClose={() => setShowApproveModal(false)}
+                onApprove={(method) => approveSession(id, method)}
             />
 
             <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">

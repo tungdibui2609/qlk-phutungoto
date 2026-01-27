@@ -53,39 +53,51 @@ type InventoryChecksTable = {
         code: string
         warehouse_id: string | null
         warehouse_name: string | null
-        status: 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
+        status: 'DRAFT' | 'IN_PROGRESS' | 'WAITING_FOR_APPROVAL' | 'COMPLETED' | 'CANCELLED' | 'REJECTED'
         note: string | null
         created_by: string | null
         created_at: string
         updated_at: string
         completed_at: string | null
         system_code: string
+        reviewer_id: string | null
+        reviewed_at: string | null
+        rejection_reason: string | null
+        approval_status: 'PENDING' | 'APPROVED' | 'REJECTED' | null
     }
     Insert: {
         id?: string
         code: string
         warehouse_id?: string | null
         warehouse_name?: string | null
-        status?: 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
+        status?: 'DRAFT' | 'IN_PROGRESS' | 'WAITING_FOR_APPROVAL' | 'COMPLETED' | 'CANCELLED' | 'REJECTED'
         note?: string | null
         created_by?: string | null
         created_at?: string
         updated_at?: string
         completed_at?: string | null
         system_code: string
+        reviewer_id?: string | null
+        reviewed_at?: string | null
+        rejection_reason?: string | null
+        approval_status?: 'PENDING' | 'APPROVED' | 'REJECTED' | null
     }
     Update: {
         id?: string
         code?: string
         warehouse_id?: string | null
         warehouse_name?: string | null
-        status?: 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
+        status?: 'DRAFT' | 'IN_PROGRESS' | 'WAITING_FOR_APPROVAL' | 'COMPLETED' | 'CANCELLED' | 'REJECTED'
         note?: string | null
         created_by?: string | null
         created_at?: string
         updated_at?: string
         completed_at?: string | null
         system_code?: string
+        reviewer_id?: string | null
+        reviewed_at?: string | null
+        rejection_reason?: string | null
+        approval_status?: 'PENDING' | 'APPROVED' | 'REJECTED' | null
     }
     Relationships: [
         {
