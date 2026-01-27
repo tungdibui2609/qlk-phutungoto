@@ -25,12 +25,12 @@ export default function MobileReconciliationList({ items }: MobileReconciliation
 
     return (
         <div className="space-y-4">
-            {items.map((item) => {
+            {items.map((item, index) => {
                 const isDiff = item.diff !== 0
 
                 return (
                     <div
-                        key={item.productId}
+                        key={`${item.productId}_${item.unit}_${index}`}
                         className={`bg-white p-4 rounded-xl border shadow-sm space-y-3 ${isDiff ? 'border-orange-200 ring-1 ring-orange-200' : 'border-stone-200'}`}
                     >
                         {/* Header */}
