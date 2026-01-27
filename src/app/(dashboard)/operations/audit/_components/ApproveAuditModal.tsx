@@ -68,7 +68,7 @@ export function ApproveAuditModal({ isOpen, onClose, onApprove }: ApproveAuditMo
 
                         {/* Option 2: Accounting Ticket */}
                         <label className={`
-                            flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all opacity-60
+                            flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all
                             ${method === 'ACCOUNTING_TICKET'
                                 ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
                                 : 'border-slate-200 dark:border-slate-700 hover:border-emerald-200'}
@@ -79,7 +79,6 @@ export function ApproveAuditModal({ isOpen, onClose, onApprove }: ApproveAuditMo
                                 className="mt-1"
                                 checked={method === 'ACCOUNTING_TICKET'}
                                 onChange={() => setMethod('ACCOUNTING_TICKET')}
-                                disabled // Disabled for now as per plan
                             />
                             <div>
                                 <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -87,7 +86,7 @@ export function ApproveAuditModal({ isOpen, onClose, onApprove }: ApproveAuditMo
                                     Tạo phiếu Nhập/Xuất (Kế toán)
                                 </div>
                                 <p className="text-xs text-slate-500 mt-1">
-                                    Tạo phiếu Nhập kho (thừa) và Xuất kho (thiếu) để cân đối sổ sách kế toán. (Tính năng đang phát triển)
+                                    Hệ thống sẽ tự động tạo Phiếu Nhập (cho hàng thừa) và Phiếu Xuất (cho hàng thiếu) để cân bằng sổ sách kế toán.
                                 </p>
                             </div>
                         </label>

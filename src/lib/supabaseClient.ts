@@ -64,6 +64,8 @@ type InventoryChecksTable = {
         reviewed_at: string | null
         rejection_reason: string | null
         approval_status: 'PENDING' | 'APPROVED' | 'REJECTED' | null
+        adjustment_inbound_order_id: string | null
+        adjustment_outbound_order_id: string | null
     }
     Insert: {
         id?: string
@@ -81,6 +83,8 @@ type InventoryChecksTable = {
         reviewed_at?: string | null
         rejection_reason?: string | null
         approval_status?: 'PENDING' | 'APPROVED' | 'REJECTED' | null
+        adjustment_inbound_order_id?: string | null
+        adjustment_outbound_order_id?: string | null
     }
     Update: {
         id?: string
@@ -98,6 +102,8 @@ type InventoryChecksTable = {
         reviewed_at?: string | null
         rejection_reason?: string | null
         approval_status?: 'PENDING' | 'APPROVED' | 'REJECTED' | null
+        adjustment_inbound_order_id?: string | null
+        adjustment_outbound_order_id?: string | null
     }
     Relationships: [
         {

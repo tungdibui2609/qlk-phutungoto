@@ -236,16 +236,98 @@ export function useAudit() {
         }
     }
 
+    // Helper to create tickets
+    const createAdjustmentTicket = async (checkId: string, items: any[], type: 'INBOUND' | 'OUTBOUND') => {
+        if (!user || !currentSystem) return null
+
+        // 1. Fetch appropriate Order Type
+        const { data: typeData } = await (supabase.from('order_types') as any)
+            .select('id')
+            .eq('system_code', currentSystem.code)
+            .eq('scope', type)
+            .ilike('name', '%Kiểm kê%')
+            .limit(1)
+            .single()
+
+        let orderTypeId = typeData?.id
+        if (!orderTypeId) {
+             // Fallback: Get any valid type
+             const { data: anyType } = await (supabase.from('order_types') as any)
+                .select('id')
+                .eq('system_code', currentSystem.code)
+                .eq('scope', type)
+                .limit(1)
+                .single()
+             orderTypeId = anyType?.id
+        }
+
+        if (!orderTypeId) {
+            console.error(`Cannot find order type for ${type}`)
+            return null
+        }
+
+        // 2. Fetch/Define Supplier or Customer
+        // For Inbound: Need Supplier. Try finding 'Kho nội bộ' or take first.
+        let supplierId = null
+        if (type === 'INBOUND') {
+             const { data: supp } = await supabase.from('suppliers')
+                .select('id')
+                .eq('system_code', currentSystem.code)
+                .ilike('name', '%Nội bộ%')
+                .limit(1)
+                .single()
+             supplierId = supp?.id
+             if (!supplierId) {
+                 const { data: firstSupp } = await supabase.from('suppliers').select('id').eq('system_code', currentSystem.code).limit(1).single()
+                 supplierId = firstSupp?.id
+             }
+        }
+
+        // 3. Create Header
+        const table = type === 'INBOUND' ? 'inbound_orders' : 'outbound_orders'
+        const codePrefix = type === 'INBOUND' ? 'NK-KK-' : 'XK-KK-'
+        const code = `${codePrefix}${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 1000)}`
+
+        const headerData: any = {
+            code,
+            system_code: currentSystem.code,
+            created_by: user.id,
+            status: 'COMPLETED', // Auto-complete
+            order_type_id: orderTypeId,
+            description: `Phiếu ${type === 'INBOUND' ? 'nhập' : 'xuất'} điều chỉnh từ kiểm kê (Ref: ${checkId})`
+        }
+
+        if (type === 'INBOUND') headerData.supplier_id = supplierId
+        if (type === 'OUTBOUND') headerData.customer_name = 'Điều chỉnh kiểm kê'
+
+        const { data: order, error: orderError } = await (supabase.from(table as any) as any)
+            .insert(headerData)
+            .select()
+            .single()
+
+        if (orderError || !order) {
+            console.error(`Error creating ${type} ticket:`, orderError)
+            return null
+        }
+
+        // 4. Create Items
+        const itemsTable = type === 'INBOUND' ? 'inbound_order_items' : 'outbound_order_items'
+        const orderItems = items.map(item => ({
+            order_id: order.id,
+            product_id: item.product_id,
+            quantity: Math.abs(item.difference), // Always positive for ticket
+            unit: item.unit,
+            note: item.note
+        }))
+
+        await (supabase.from(itemsTable as any) as any).insert(orderItems)
+
+        return order.id
+    }
+
     // Approve Session
     const approveSession = async (checkId: string, method: 'DIRECT_ADJUSTMENT' | 'ACCOUNTING_TICKET') => {
         if (!user) return
-
-        if (method === 'ACCOUNTING_TICKET') {
-            // Stub for future feature
-            showToast('Tính năng tạo phiếu kế toán chưa khả dụng. Vui lòng chọn cân bằng trực tiếp.', 'info')
-            return
-        }
-
         if (!await showConfirm('Xác nhận duyệt phiếu và cân bằng kho?')) return
 
         setLoading(true)
@@ -259,12 +341,18 @@ export function useAudit() {
             if (itemsError) throw itemsError
 
             const affectedLotIds = new Set<string>()
+            const surplusItems: any[] = []
+            const lossItems: any[] = []
 
             // 2. Iterate and Update Lot Items (Parallel)
             const updatePromises = items.map(async (item) => {
                 // Only process items that have been counted (actual_quantity !== null) AND have a difference
                 if (item.actual_quantity !== null && item.difference !== 0 && item.lot_item_id) {
-                    // Update Lot Item Quantity
+                    // Classify for Ticket
+                    if (item.difference > 0) surplusItems.push(item)
+                    else if (item.difference < 0) lossItems.push(item)
+
+                    // Update Lot Item Quantity (Execution Phase - Always update physical stock)
                     const { error: updateError } = await supabase
                         .from('lot_items')
                         .update({ quantity: item.actual_quantity })
@@ -309,7 +397,20 @@ export function useAudit() {
             })
             await Promise.all(syncPromises)
 
-            // 4. Mark Approved and Completed
+            // 4. Handle Accounting Tickets if requested
+            let inboundId = null
+            let outboundId = null
+
+            if (method === 'ACCOUNTING_TICKET') {
+                if (surplusItems.length > 0) {
+                    inboundId = await createAdjustmentTicket(checkId, surplusItems, 'INBOUND')
+                }
+                if (lossItems.length > 0) {
+                    outboundId = await createAdjustmentTicket(checkId, lossItems, 'OUTBOUND')
+                }
+            }
+
+            // 5. Mark Approved and Completed
             await supabase
                 .from('inventory_checks')
                 .update({
@@ -317,7 +418,9 @@ export function useAudit() {
                     approval_status: 'APPROVED',
                     reviewer_id: user.id,
                     reviewed_at: new Date().toISOString(),
-                    completed_at: new Date().toISOString()
+                    completed_at: new Date().toISOString(),
+                    adjustment_inbound_order_id: inboundId,
+                    adjustment_outbound_order_id: outboundId
                 })
                 .eq('id', checkId)
 
