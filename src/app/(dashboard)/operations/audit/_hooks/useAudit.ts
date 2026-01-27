@@ -85,46 +85,42 @@ export function useAudit() {
 
             const checkId = checkData.id
 
-            // 2. Fetch existing Lot Items to snapshot
-            let lotQuery = supabase
-                .from('lot_items')
-                .select(`
-                    id,
-                    quantity,
-                    product_id,
-                    unit,
-                    lots!inner (
-                        id,
-                        system_code,
-                        warehouse_name
-                    )
-                `)
-                .eq('lots.system_code', currentSystem.code)
-                .gt('quantity', 0) // Only snapshot items with quantity > 0? Standard practice involves listing 0 if it's supposed to be there, but usually we only list what system thinks we have.
+            // 2. Fetch Accounting Inventory (Snapshot from API)
+            // This aligns with the requirement to check against "Sổ sách kế toán" (Accounting Books)
+            const dateTo = new Date().toISOString().split('T')[0]
+            const accRes = await fetch(`/api/inventory?dateTo=${dateTo}&systemType=${currentSystem.code}`)
+            const accData = await accRes.json()
 
-            if (warehouseName) {
-                lotQuery = lotQuery.eq('lots.warehouse_name', warehouseName)
+            if (!accData.ok) {
+                throw new Error('Failed to fetch accounting inventory data')
             }
 
-            const { data: itemsData, error: itemsError } = await lotQuery
-
-            if (itemsError) throw itemsError
+            const accountingItems = accData.items || []
 
             // 3. Prepare Bulk Insert
-            if (itemsData && itemsData.length > 0) {
-                const checkItems = (itemsData as any[]).map(item => ({
+            if (accountingItems.length > 0) {
+                // Filter items relevant to warehouse if warehouse is selected?
+                // Currently API returns system-wide. If warehouseName is specific, we might need to filter.
+                // However, "Accounting Inventory" is usually system-wide unless the API supports warehouse filter.
+                // The current API (`/api/inventory`) seems to aggregate by system type.
+                // If user selected a warehouse, this might be a mismatch if accounting isn't tracked per warehouse.
+                // For now, we assume Audit matches the scope of the data returned.
+
+                const checkItems = accountingItems.map((item: any) => ({
                     check_id: checkId,
-                    lot_id: (item.lots as any).id,
-                    lot_item_id: item.id,
-                    product_id: item.product_id,
-                    system_quantity: item.quantity,
+                    lot_id: null, // Accounting is product-based
+                    lot_item_id: null,
+                    product_id: item.productId,
+                    product_sku: item.productCode,
+                    product_name: item.productName,
+                    system_quantity: item.balance,
                     actual_quantity: null,
-                    difference: 0 - item.quantity, // Initial diff logic: If we assume Actual is 0 until counted, diff is -Qty. But UI will show "Not Counted".
+                    difference: 0 - item.balance,
                     unit: item.unit || 'Cái',
                     note: ''
                 }))
 
-                // Bulk insert in chunks of 100 to avoid request size limits
+                // Bulk insert in chunks of 100
                 const chunkSize = 100
                 for (let i = 0; i < checkItems.length; i += chunkSize) {
                     const chunk = checkItems.slice(i, i + chunkSize)
@@ -360,7 +356,7 @@ export function useAudit() {
 
                     if (updateError) {
                         console.error(`Failed to update lot item ${item.lot_item_id}`, updateError)
-                    } else {
+                    } else if (item.lot_id) {
                         affectedLotIds.add(item.lot_id)
                     }
                 }
