@@ -10,7 +10,7 @@ interface ApproveAuditModalProps {
 }
 
 export function ApproveAuditModal({ isOpen, onClose, onApprove }: ApproveAuditModalProps) {
-    const [method, setMethod] = useState<'DIRECT_ADJUSTMENT' | 'ACCOUNTING_TICKET'>('DIRECT_ADJUSTMENT')
+    const [method, setMethod] = useState<'DIRECT_ADJUSTMENT' | 'ACCOUNTING_TICKET'>('ACCOUNTING_TICKET')
     const [loading, setLoading] = useState(false)
 
     const handleConfirm = async () => {
@@ -41,32 +41,7 @@ export function ApproveAuditModal({ isOpen, onClose, onApprove }: ApproveAuditMo
                     </p>
 
                     <div className="space-y-3">
-                        {/* Option 1: Direct Adjustment */}
-                        <label className={`
-                            flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all
-                            ${method === 'DIRECT_ADJUSTMENT'
-                                ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
-                                : 'border-slate-200 dark:border-slate-700 hover:border-emerald-200'}
-                        `}>
-                            <input
-                                type="radio"
-                                name="method"
-                                className="mt-1"
-                                checked={method === 'DIRECT_ADJUSTMENT'}
-                                onChange={() => setMethod('DIRECT_ADJUSTMENT')}
-                            />
-                            <div>
-                                <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                                    <Scale size={16} />
-                                    Cân bằng trực tiếp (Kho)
-                                </div>
-                                <p className="text-xs text-slate-500 mt-1">
-                                    Cập nhật ngay số lượng tồn kho thực tế của các Lot bị lệch. Không tạo phiếu nhập/xuất kế toán.
-                                </p>
-                            </div>
-                        </label>
-
-                        {/* Option 2: Accounting Ticket */}
+                        {/* Option 2: Accounting Ticket (Default and Only Option for now due to Accounting Snapshot) */}
                         <label className={`
                             flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all
                             ${method === 'ACCOUNTING_TICKET'

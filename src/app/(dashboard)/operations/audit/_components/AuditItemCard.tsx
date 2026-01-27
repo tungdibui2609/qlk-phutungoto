@@ -53,6 +53,11 @@ export function AuditItemCard({ item, onUpdate }: AuditItemCardProps) {
     const isMismatch = item.actual_quantity !== null && item.difference !== 0
     const isUncounted = item.actual_quantity === null
 
+    // Fallbacks for snapshot data if realations are missing
+    const productName = item.products?.name || (item as any).product_name || 'Sản phẩm'
+    const productSku = item.products?.sku || (item as any).product_sku || '---'
+    const imageUrl = item.products?.image_url
+
     return (
         <div className={`
             relative flex flex-col gap-3 p-4 rounded-2xl border transition-all duration-200
@@ -63,10 +68,10 @@ export function AuditItemCard({ item, onUpdate }: AuditItemCardProps) {
             {/* Header: Product Info */}
             <div className="flex gap-3">
                 <div className="w-12 h-12 relative rounded-lg overflow-hidden bg-slate-100 shrink-0 border border-slate-200">
-                    {item.products?.image_url ? (
+                    {imageUrl ? (
                         <Image
-                            src={item.products.image_url}
-                            alt={item.products.name}
+                            src={imageUrl}
+                            alt={productName}
                             fill
                             className="object-cover"
                         />
@@ -79,20 +84,24 @@ export function AuditItemCard({ item, onUpdate }: AuditItemCardProps) {
                 <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                         <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm line-clamp-2">
-                            {item.products?.name}
+                            {productName}
                         </h4>
                         {isMatch && <Check size={16} className="text-emerald-600 shrink-0 mt-0.5" />}
                         {isMismatch && <AlertTriangle size={16} className="text-red-600 shrink-0 mt-0.5" />}
                     </div>
                     <div className="flex flex-wrap items-center gap-2 mt-1">
                         <span className="text-xs font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-400">
-                            {item.products?.sku}
+                            {productSku}
                         </span>
-                        {item.lots && (
+                        {item.lots ? (
                             <span className="text-xs font-medium text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-1.5 py-0.5 rounded border border-orange-100 dark:border-orange-800">
                                 {item.lots.code}
                             </span>
-                        )}
+                        ) : (item as any).lot_code ? (
+                             <span className="text-xs font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                {(item as any).lot_code}
+                            </span>
+                        ) : null}
                     </div>
                 </div>
             </div>

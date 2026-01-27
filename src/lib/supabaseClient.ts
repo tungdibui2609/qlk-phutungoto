@@ -127,7 +127,7 @@ type InventoryCheckItemsTable = {
     Row: {
         id: string
         check_id: string
-        lot_id: string
+        lot_id: string | null
         lot_item_id: string | null
         product_id: string
         system_quantity: number
@@ -136,11 +136,14 @@ type InventoryCheckItemsTable = {
         unit: string | null
         note: string | null
         created_at: string
+        lot_code?: string | null
+        product_sku?: string | null
+        product_name?: string | null
     }
     Insert: {
         id?: string
         check_id: string
-        lot_id: string
+        lot_id?: string | null
         lot_item_id?: string | null
         product_id: string
         system_quantity?: number
@@ -149,11 +152,14 @@ type InventoryCheckItemsTable = {
         unit?: string | null
         note?: string | null
         created_at?: string
+        lot_code?: string | null
+        product_sku?: string | null
+        product_name?: string | null
     }
     Update: {
         id?: string
         check_id?: string
-        lot_id?: string
+        lot_id?: string | null
         lot_item_id?: string | null
         product_id?: string
         system_quantity?: number
@@ -162,6 +168,9 @@ type InventoryCheckItemsTable = {
         unit?: string | null
         note?: string | null
         created_at?: string
+        lot_code?: string | null
+        product_sku?: string | null
+        product_name?: string | null
     }
     Relationships: [
         {
@@ -169,20 +178,6 @@ type InventoryCheckItemsTable = {
             columns: ["check_id"]
             isOneToOne: false
             referencedRelation: "inventory_checks"
-            referencedColumns: ["id"]
-        },
-        {
-            foreignKeyName: "inventory_check_items_lot_id_fkey"
-            columns: ["lot_id"]
-            isOneToOne: false
-            referencedRelation: "lots"
-            referencedColumns: ["id"]
-        },
-        {
-            foreignKeyName: "inventory_check_items_lot_item_id_fkey"
-            columns: ["lot_item_id"]
-            isOneToOne: false
-            referencedRelation: "lot_items"
             referencedColumns: ["id"]
         },
         {
