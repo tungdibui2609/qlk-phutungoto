@@ -18,9 +18,10 @@ interface LotExportModalProps {
     onSuccess: () => void
     units: Unit[]
     productUnits: ProductUnit[]
+    isUtilityEnabled?: (utilityId: string) => boolean
 }
 
-export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, onSuccess, units, productUnits }) => {
+export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, onSuccess, units, productUnits, isUtilityEnabled }) => {
     const { systemType, currentSystem } = useSystem()
     const { showToast } = useToast()
     const { toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
@@ -422,24 +423,30 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                                         placeholder="0"
                                         autoFocus
                                     />
-                                    <select
-                                        value={exportUnits[selectedItem.id] || ''}
-                                        onChange={(e) => handleUnitChange(selectedItem.id, e.target.value)}
-                                        className="w-24 p-3 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-white dark:bg-slate-900 transition-all cursor-pointer"
-                                    >
-                                        {[
-                                            selectedItem.products?.unit,
-                                            ...productUnits
-                                                .filter(pu => pu.product_id === selectedItem.product_id)
-                                                .map(pu => units.find(u => u.id === pu.unit_id)?.name)
-                                        ]
-                                            .filter(Boolean)
-                                            .filter((v, i, a) => a.indexOf(v) === i)
-                                            .map(uName => (
-                                                <option key={uName} value={uName!}>{uName}</option>
-                                            ))
-                                        }
-                                    </select>
+                                    {isUtilityEnabled?.('auto_unbundle_lot') ? (
+                                        <select
+                                            value={exportUnits[selectedItem.id] || ''}
+                                            onChange={(e) => handleUnitChange(selectedItem.id, e.target.value)}
+                                            className="w-24 p-3 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-white dark:bg-slate-900 transition-all cursor-pointer"
+                                        >
+                                            {[
+                                                selectedItem.products?.unit,
+                                                ...productUnits
+                                                    .filter(pu => pu.product_id === selectedItem.product_id)
+                                                    .map(pu => units.find(u => u.id === pu.unit_id)?.name)
+                                            ]
+                                                .filter(Boolean)
+                                                .filter((v, i, a) => a.indexOf(v) === i)
+                                                .map(uName => (
+                                                    <option key={uName} value={uName!}>{uName}</option>
+                                                ))
+                                            }
+                                        </select>
+                                    ) : (
+                                        <span className="w-24 p-3 text-sm font-bold bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 text-center">
+                                            {(selectedItem as any).unit || selectedItem.products?.unit}
+                                        </span>
+                                    )}
                                 </div>
 
                                 {/* Preview & Validation Section */}
