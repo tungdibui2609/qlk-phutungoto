@@ -35,9 +35,6 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
-    // New state for selected item
-    const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
-
     useEffect(() => {
         // Initialize with 0 quantities but correct units
         const initialQuantities: Record<string, number> = {}
@@ -50,11 +47,6 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
 
         setExportQuantities(initialQuantities)
         setExportUnits(initialUnits)
-
-        // Auto-select if only one item
-        if (lot.lot_items && lot.lot_items.length === 1) {
-            setSelectedItemId(lot.lot_items[0].id)
-        }
 
         fetchCustomers()
     }, [lot, systemType])
@@ -222,9 +214,6 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
         }
     }
 
-    const selectedItem = lot.lot_items?.find(i => i.id === selectedItemId)
-    const isMultiProduct = (lot.lot_items?.length || 0) > 1
-
     const NOTE_SUGGESTIONS = ['Bán hàng', 'Xuất sản xuất', 'Phân loại', 'Xuất hủy', 'Điều chuyển']
 
     return (
@@ -251,8 +240,153 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                 </div>
 
                 <div className="px-6 py-2 border-t border-slate-100 dark:border-slate-800 flex-1 overflow-y-auto custom-scrollbar">
-                    {/* Customer & Info */}
-                    <div className="mt-4 space-y-4 mb-6">
+                    {/* Product Selection - Same design as Split Modal */}
+                    <div className="mt-4">
+                        <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-3">
+                            Chọn dòng sản phẩm muốn xuất
+                        </h4>
+
+                        <div className="space-y-3">
+                            {lot.lot_items?.map(item => (
+                                <div key={item.id} className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hover:border-emerald-500/50 transition-all">
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="font-bold text-slate-900 dark:text-slate-100 truncate">
+                                                {item.products?.sku}
+                                            </div>
+                                            <div className="text-xs text-slate-500 line-clamp-2 mt-0.5">
+                                                {item.products?.name}
+                                            </div>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                            <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                                                {formatQuantityFull(item.quantity)} {(item as any).unit || item.products?.unit}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-bold text-slate-400 uppercase">Xuất:</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleQuantityChange(item.id, item.quantity || 0)}
+                                                className="px-2 py-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg border border-emerald-200 dark:border-emerald-800 transition-colors"
+                                            >
+                                                Xuất hết
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <QuantityInput
+                                                value={exportQuantities[item.id] || ''}
+                                                onChange={(val) => handleQuantityChange(item.id, val)}
+                                                className="w-24 p-2 text-sm font-bold text-center border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all font-mono"
+                                                placeholder="0"
+                                            />
+                                            {isUtilityEnabled?.('auto_unbundle_lot') ? (
+                                                <select
+                                                    value={exportUnits[item.id] || ''}
+                                                    onChange={(e) => handleUnitChange(item.id, e.target.value)}
+                                                    className="p-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all cursor-pointer"
+                                                >
+                                                    {[
+                                                        item.products?.unit,
+                                                        ...productUnits
+                                                            .filter(pu => pu.product_id === item.product_id)
+                                                            .map(pu => units.find(u => u.id === pu.unit_id)?.name)
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .filter((v, i, a) => a.indexOf(v) === i)
+                                                        .map(uName => (
+                                                            <option key={uName} value={uName!}>{uName}</option>
+                                                        ))
+                                                    }
+                                                </select>
+                                            ) : (
+                                                <span className="p-2 text-xs font-bold bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500">
+                                                    {(item as any).unit || item.products?.unit}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {(() => {
+                                        const selectedQty = exportQuantities[item.id] || 0
+                                        if (selectedQty <= 0) return null
+
+                                        const consumed = getConsumedOriginalQty(item.id, selectedQty, exportUnits[item.id] || '')
+                                        const isOver = consumed > (item.quantity || 0) + 0.000001
+
+                                        const splitResult = lotService.calculateSplitResult({
+                                            item,
+                                            consumedOriginalQty: consumed,
+                                            unitNameMap,
+                                            conversionMap,
+                                            preferredUnit: exportUnits[item.id]
+                                        })
+
+                                        return (
+                                            <div className="mt-2 flex flex-col items-end gap-1.5 px-1">
+                                                {consumed > 0 && Math.abs(consumed - selectedQty) > 0.000001 && (
+                                                    <div className={`text-[10px] font-bold ${isOver ? 'text-red-500' : 'text-slate-400'}`}>
+                                                        {isOver ? (
+                                                            <span>Vượt quá tồn kho! (~ {formatQuantityFull(consumed)} {item.unit || item.products?.unit} gốc)</span>
+                                                        ) : (
+                                                            <span>Tương đương: {formatQuantityFull(consumed)} {item.unit || item.products?.unit} (gốc)</span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {splitResult && !isOver && (
+                                                    <div className="text-[10px] sm:text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2.5 py-1.5 rounded-xl border border-emerald-100 dark:border-emerald-800/50 shadow-sm animate-in fade-in slide-in-from-top-1 duration-200">
+                                                        Còn lại dự kiến: <span className="text-emerald-700 dark:text-emerald-300 underline underline-offset-2 decoration-emerald-500/30">{splitResult.displayLabel}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )
+                                    })()}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="mt-4 px-1 flex items-center justify-between">
+                        <div className="flex flex-wrap gap-1">
+                            {(() => {
+                                const items = lot.lot_items || [];
+                                const summary = items.reduce((acc: Record<string, number>, item: any) => {
+                                    const unit = (item as any).unit || item.products?.unit || 'Đơn vị';
+                                    acc[unit] = (acc[unit] || 0) + (item.quantity || 0);
+                                    return acc;
+                                }, {});
+                                return Object.entries(summary).map(([unit, total]) => (
+                                    <span key={unit} className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-lg border border-orange-100 dark:border-orange-900/10">
+                                        TỔNG SL GỐC: {formatQuantityFull(total as number)} {unit}
+                                    </span>
+                                ));
+                            })()}
+                        </div>
+                        {Object.values(exportQuantities).some(v => v > 0) && (
+                            <div className="flex flex-wrap gap-1 justify-end">
+                                {(() => {
+                                    const items = lot.lot_items || [];
+                                    const summary = items.reduce((acc: Record<string, number>, item: any) => {
+                                        const qty = exportQuantities[item.id] || 0
+                                        if (qty === 0) return acc
+                                        const unit = exportUnits[item.id] || (item as any).unit || item.products?.unit || 'Đơn vị';
+                                        acc[unit] = (acc[unit] || 0) + qty;
+                                        return acc;
+                                    }, {});
+                                    return Object.entries(summary).map(([unit, total]) => (
+                                        <span key={unit} className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-lg border border-emerald-100 dark:border-emerald-800">
+                                            XUẤT RA: {formatQuantityFull(total as number)} {unit}
+                                        </span>
+                                    ));
+                                })()}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Customer & Info - Moved below product selection */}
+                    <div className="mt-6 space-y-4">
                         <div className="space-y-1.5">
                             <label className="text-xs font-bold text-slate-400 uppercase ml-1 flex items-center gap-1.5">
                                 <User size={12} />
@@ -318,183 +452,6 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                             </div>
                         </div>
                     </div>
-
-                    {/* Product Selection for Multi-Product Lots */}
-                    {isMultiProduct && (
-                        <div className="mb-6">
-                            <label className="text-xs font-bold text-slate-400 uppercase ml-1 mb-2 block">
-                                Chọn sản phẩm cần xuất
-                            </label>
-                            <div className="space-y-2 max-h-[220px] overflow-y-auto custom-scrollbar p-1">
-                                {lot.lot_items?.map(item => {
-                                    const isSelected = selectedItemId === item.id
-                                    const qty = exportQuantities[item.id] || 0
-
-                                    // Get tags for this item
-                                    const itemTags = lot.lot_tags?.filter(t => t.lot_item_id === item.id) || []
-
-                                    return (
-                                        <div
-                                            key={item.id}
-                                            onClick={() => setSelectedItemId(item.id)}
-                                            className={`
-                                                p-3 rounded-xl border cursor-pointer transition-all gap-3 relative
-                                                ${isSelected
-                                                    ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-500 ring-1 ring-emerald-500'
-                                                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-emerald-300'
-                                                }
-                                            `}
-                                        >
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="font-bold text-sm text-slate-900 dark:text-slate-100 truncate">
-                                                            {item.products?.sku}
-                                                        </span>
-                                                        {itemTags.length > 0 && (
-                                                            <div className="flex items-center gap-1">
-                                                                {itemTags.map((t, idx) => (
-                                                                    <span key={idx} className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-[10px] font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
-                                                                        {t.tag}
-                                                                    </span>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <div className="text-xs text-slate-500 line-clamp-1 mt-0.5">
-                                                        {item.products?.name}
-                                                    </div>
-                                                </div>
-
-                                                <div className="text-right shrink-0">
-                                                    <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                                                        {formatQuantityFull(item.quantity)}
-                                                        <span className="text-[10px] font-normal text-slate-500 ml-1">{(item as any).unit || item.products?.unit}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {qty > 0 && (
-                                                <div className="mt-2 pt-2 border-t border-dashed border-emerald-200 dark:border-emerald-800/50 flex items-center justify-between">
-                                                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">Đang xuất:</span>
-                                                    <div className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/40 rounded-lg text-xs font-bold text-emerald-700 dark:text-emerald-400">
-                                                        {formatQuantityFull(qty)} {exportUnits[item.id]}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )
-                                })}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Quantity Input Section - Only visible if item selected */}
-                    {selectedItem ? (
-                        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 animate-in slide-in-from-bottom-2 duration-300">
-                            <div className="flex items-start justify-between gap-4 mb-4">
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-xs text-slate-400 font-bold uppercase mb-1">Sản phẩm đang chọn</div>
-                                    <div className="font-bold text-slate-900 dark:text-slate-100 text-lg">
-                                        {selectedItem.products?.sku}
-                                    </div>
-                                    <div className="text-sm text-slate-500 line-clamp-2">
-                                        {selectedItem.products?.name}
-                                    </div>
-                                </div>
-                                <div className="text-right shrink-0">
-                                    <div className="text-xs text-slate-400 font-bold uppercase mb-1">Hiện có</div>
-                                    <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                                        {formatQuantityFull(selectedItem.quantity)}
-                                        <span className="text-sm ml-1 text-slate-500">{(selectedItem as any).unit || selectedItem.products?.unit}</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                                <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">
-                                    Nhập số lượng xuất
-                                </label>
-                                <div className="flex items-center gap-3">
-                                    <QuantityInput
-                                        value={exportQuantities[selectedItem.id] || ''}
-                                        onChange={(val) => handleQuantityChange(selectedItem.id, val)}
-                                        className="flex-1 p-3 text-lg font-bold text-center border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-white dark:bg-slate-900 transition-all font-mono"
-                                        placeholder="0"
-                                        autoFocus
-                                    />
-                                    {isUtilityEnabled?.('auto_unbundle_lot') ? (
-                                        <select
-                                            value={exportUnits[selectedItem.id] || ''}
-                                            onChange={(e) => handleUnitChange(selectedItem.id, e.target.value)}
-                                            className="w-24 p-3 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-white dark:bg-slate-900 transition-all cursor-pointer"
-                                        >
-                                            {[
-                                                selectedItem.products?.unit,
-                                                ...productUnits
-                                                    .filter(pu => pu.product_id === selectedItem.product_id)
-                                                    .map(pu => units.find(u => u.id === pu.unit_id)?.name)
-                                            ]
-                                                .filter(Boolean)
-                                                .filter((v, i, a) => a.indexOf(v) === i)
-                                                .map(uName => (
-                                                    <option key={uName} value={uName!}>{uName}</option>
-                                                ))
-                                            }
-                                        </select>
-                                    ) : (
-                                        <span className="w-24 p-3 text-sm font-bold bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 text-center">
-                                            {(selectedItem as any).unit || selectedItem.products?.unit}
-                                        </span>
-                                    )}
-                                </div>
-
-                                {/* Preview & Validation Section */}
-                                {(() => {
-                                    const selectedQty = exportQuantities[selectedItem.id] || 0
-                                    if (selectedQty <= 0) return null
-
-                                    const consumed = getConsumedOriginalQty(selectedItem.id, selectedQty, exportUnits[selectedItem.id] || '')
-                                    const isOver = consumed > (selectedItem.quantity || 0) + 0.000001
-
-                                    const splitResult = lotService.calculateSplitResult({
-                                        item: selectedItem,
-                                        consumedOriginalQty: consumed,
-                                        unitNameMap,
-                                        conversionMap,
-                                        preferredUnit: exportUnits[selectedItem.id]
-                                    })
-
-                                    return (
-                                        <div className="mt-3 flex flex-col items-end gap-1.5 px-1 animate-in fade-in slide-in-from-top-1">
-                                            {consumed > 0 && Math.abs(consumed - selectedQty) > 0.000001 && (
-                                                <div className={`text-[10px] sm:text-[11px] font-bold flex items-center gap-1.5 ${isOver ? 'text-red-500' : 'text-slate-500'}`}>
-                                                    {isOver ? (
-                                                        <>
-                                                            <AlertCircle size={14} />
-                                                            <span>Vượt quá tồn kho! (~ {formatQuantityFull(consumed)} {selectedItem.unit || selectedItem.products?.unit} gốc)</span>
-                                                        </>
-                                                    ) : (
-                                                        <span>Tương đương: {formatQuantityFull(consumed)} {selectedItem.unit || selectedItem.products?.unit} (gốc)</span>
-                                                    )}
-                                                </div>
-                                            )}
-                                            {splitResult && !isOver && (
-                                                <div className="text-[10px] sm:text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2 rounded-xl border border-emerald-100 dark:border-emerald-800/50 shadow-sm">
-                                                    Còn lại dự kiến: <span className="text-emerald-700 dark:text-emerald-300 underline underline-offset-2 decoration-emerald-500/30">{splitResult.displayLabel}</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )
-                                })()}
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="p-8 text-center text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
-                            <ArrowUpRight size={32} className="mx-auto mb-2 opacity-50" />
-                            <p className="text-sm font-medium">Vui lòng chọn sản phẩm để nhập số lượng</p>
-                        </div>
-                    )}
                 </div>
 
                 {/* Footer */}
