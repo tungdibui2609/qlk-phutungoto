@@ -356,7 +356,7 @@ export function useAudit() {
 
                     if (updateError) {
                         console.error(`Failed to update lot item ${item.lot_item_id}`, updateError)
-                    } else {
+                    } else if (item.lot_id) {
                         affectedLotIds.add(item.lot_id)
                     }
                 }
