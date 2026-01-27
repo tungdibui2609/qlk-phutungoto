@@ -64,19 +64,20 @@ export async function deleteNote(id: string) {
 }
 
 export async function uploadNoteImage(file: File): Promise<string> {
-    const fileExt = file.name.split('.').pop()
-    const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`
-    const filePath = `${fileName}`
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('folder', 'operational-notes')
 
-    const { error: uploadError } = await supabase.storage
-        .from('note-attachments')
-        .upload(filePath, file)
+    const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+    })
 
-    if (uploadError) throw uploadError
+    if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Upload failed')
+    }
 
-    const { data } = supabase.storage
-        .from('note-attachments')
-        .getPublicUrl(filePath)
-
-    return data.publicUrl
+    const data = await response.json()
+    return data.viewUrl
 }
