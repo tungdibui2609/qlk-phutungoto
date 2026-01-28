@@ -353,7 +353,7 @@ export default function Sidebar() {
                             }}
                         >
                             <Image
-                                src={companyInfo.logo_url || "/logotoanthang.png"}
+                                src={companyInfo.logo_url || "/logoanywarehouse.png"}
                                 alt={companyInfo.name}
                                 fill
                                 sizes="36px"

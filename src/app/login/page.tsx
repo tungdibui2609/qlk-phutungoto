@@ -115,22 +115,16 @@ export default function LoginPage() {
                     <div
                         className="w-20 h-20 mx-auto mb-5 rounded-2xl flex items-center justify-center relative overflow-hidden"
                         style={{
-                            background: 'white', // Changed to white to better show custom logos
+                            background: 'white',
                             boxShadow: '0 8px 25px rgba(0,0,0, 0.1)',
                         }}
                     >
-                        {logoUrl ? (
-                            <Image
-                                src={logoUrl}
-                                alt={companyName}
-                                fill
-                                className="object-contain p-2"
-                            />
-                        ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-stone-50">
-                                <div className="w-8 h-8 rounded-full border-2 border-stone-200 border-t-orange-500 animate-spin" />
-                            </div>
-                        )}
+                        <Image
+                            src="/logoanywarehouse.png"
+                            alt={companyName}
+                            fill
+                            className="object-contain p-2"
+                        />
                     </div>
 
                     <h1 className="text-2xl font-bold text-stone-900 mb-2 tracking-tight">
