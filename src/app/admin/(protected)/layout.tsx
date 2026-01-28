@@ -11,25 +11,38 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const { profile, user, isLoading } = useUser()
     const router = useRouter()
     const [isAuthorized, setIsAuthorized] = useState(false)
+    const [isChecking, setIsChecking] = useState(true)
 
-
-    // Use user.email as primary check because profile might take time to load or be null for super admin
-    const email = user?.email || profile?.email
 
     useEffect(() => {
-        if (!isLoading) {
-            // Trim and lowercase check
-            if (email && email.trim().toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) {
-                setIsAuthorized(true)
-            }
-        }
-    }, [email, isLoading])
+        // If still loading UserContext, wait.
+        if (isLoading) return
 
-    if (isLoading) {
+        const email = user?.email || profile?.email
+
+        if (!email) {
+            // No user found, should have been caught by middleware, but enforce here
+            router.push('/admin')
+            return
+        }
+
+        const isSuperAdmin = email.trim().toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
+
+        if (isSuperAdmin) {
+            setIsAuthorized(true)
+        } else {
+            setIsAuthorized(false)
+        }
+
+        setIsChecking(false)
+
+    }, [user, profile, isLoading, router])
+
+    if (isLoading || isChecking) {
         return (
             <div className="h-screen w-full flex flex-col items-center justify-center gap-4 bg-stone-50 dark:bg-zinc-900">
                 <Loader2 className="animate-spin text-orange-600" size={48} />
-                <p className="text-stone-500 animate-pulse">Verifying Super Admin Access...</p>
+                <p className="text-stone-500 animate-pulse">Verifying Access...</p>
             </div>
         )
     }
@@ -40,10 +53,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <ShieldAlert className="text-red-500" size={64} />
                 <h1 className="text-2xl font-bold">Access Denied</h1>
                 <p className="text-stone-400">Your account does not have Super Admin privileges.</p>
-                <div className="bg-stone-800 p-4 rounded-lg mt-4 border border-stone-700">
-                    <p className="text-xs text-stone-500 uppercase tracking-wider mb-1">Detected Email</p>
-                    <code className="text-orange-400 font-mono text-lg">{email || 'No Session Found'}</code>
-                </div>
                 <div className="flex gap-4 mt-6">
                     <button
                         onClick={() => router.push('/')}
@@ -52,13 +61,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                         Go Home
                     </button>
                     <button
-                        onClick={() => {
-                            // Force logout
-                            router.push('/admin')
-                        }}
+                        onClick={() => router.push('/admin')}
                         className="px-6 py-2 bg-orange-600 rounded-lg hover:bg-orange-700 transition-colors"
                     >
-                        Login as Admin
+                        Re-Login
                     </button>
                 </div>
             </div>
@@ -73,8 +79,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                         <ShieldAlert className="text-orange-600" />
                         Super Admin Console
                     </h1>
-                    <p className="text-xs text-stone-500">Authorized Session: {profile?.email}</p>
+                    <p className="text-xs text-stone-500">Authorized: {user?.email}</p>
                 </div>
+                <button
+                    onClick={() => router.push('/')}
+                    className="text-sm text-stone-500 hover:text-stone-800"
+                >
+                    Back to App
+                </button>
             </header>
             <main className="max-w-7xl mx-auto p-6">
                 {children}

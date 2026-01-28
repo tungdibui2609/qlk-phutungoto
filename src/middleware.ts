@@ -8,7 +8,6 @@ export async function middleware(request: NextRequest) {
         },
     })
 
-    // Create a Supabase client configured to use cookies
     const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -55,26 +54,40 @@ export async function middleware(request: NextRequest) {
         }
     )
 
-    // Refresh session if expired - required for Server Components
-    const { data: { session } } = await supabase.auth.getSession()
+    // IMPORTANT: Use getUser() to validate auth state on server side reliably
+    const { data: { user } } = await supabase.auth.getUser()
 
-    // Protected routes logic
-    // Protected routes logic
-    const isLoginPage = request.nextUrl.pathname === '/login'
-    // The Admin Login page is now exactly '/admin'
-    const isAdminLoginPage = request.nextUrl.pathname === '/admin'
-    const isPublicRoute = isLoginPage || isAdminLoginPage || request.nextUrl.pathname.startsWith('/print')
+    const url = request.nextUrl.clone()
+    const path = url.pathname
 
-    if (!session && !isPublicRoute) {
-        // Handle API routes to return JSON instead of redirecting to HTML login
-        if (request.nextUrl.pathname.startsWith('/api/')) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Constants
+    const SUPER_ADMIN_EMAIL = 'tungdibui2609@gmail.com'
+    const IS_ADMIN_ROUTE = path.startsWith('/admin')
+    const IS_LOGIN_PAGE = path === '/login'
+    const IS_ADMIN_LOGIN_PAGE = path === '/admin' // Exact match
+    const IS_PUBLIC_ASSET = path.startsWith('/_next') || path.startsWith('/static') || path.startsWith('/api') || path.includes('.')
+
+    // Skip static assets and internal next paths
+    if (path.startsWith('/_next') || path.startsWith('/static') || path.includes('.')) {
+        return response
+    }
+
+    // API Routes usually handle their own auth, but let's be safe
+    // We only protect API routes if they are NOT public
+    // existing middleware logic:
+    if (!user && path.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // 1. Unauthenticated User Logic
+    if (!user) {
+        // Allow public routes
+        if (IS_LOGIN_PAGE || IS_ADMIN_LOGIN_PAGE || path.startsWith('/print')) {
+            return response
         }
 
-        // Redirect unauthenticated users to login page
-        const url = request.nextUrl.clone()
-        // Determine where to redirect based on tried path
-        if (request.nextUrl.pathname.startsWith('/admin')) {
+        // Redirect based on target
+        if (IS_ADMIN_ROUTE) {
             url.pathname = '/admin'
         } else {
             url.pathname = '/login'
@@ -82,23 +95,37 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(url)
     }
 
-    // Redirect authenticated users away from login pages
-    if (session) {
-        if (isLoginPage) {
-            const url = request.nextUrl.clone()
-            url.pathname = '/select-system' // Regular users go here by default
+    // 2. Authenticated User Logic
+    if (user) {
+        const isSuperAdmin = user.email?.trim().toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
+
+        // 2.1 Handling Login Pages (Redirect if already logged in)
+        if (IS_LOGIN_PAGE) {
+            url.pathname = '/select-system'
             return NextResponse.redirect(url)
         }
-        if (isAdminLoginPage) {
-            const url = request.nextUrl.clone()
-            if (session.user.email?.toLowerCase().trim() === 'tungdibui2609@gmail.com') {
+
+        if (IS_ADMIN_LOGIN_PAGE) {
+            if (isSuperAdmin) {
+                // If Super Admin, go to dashboard
                 url.pathname = '/admin/companies'
+                return NextResponse.redirect(url)
             } else {
-                // If logged in but not admin, maybe logout or redirect home? 
-                // For now, redirect to home to avoid confusion
+                // If Normal User logic tries to access Admin Login, send them Home
                 url.pathname = '/'
+                return NextResponse.redirect(url)
             }
-            return NextResponse.redirect(url)
+        }
+
+        // 2.2 Protect Admin Routes
+        if (IS_ADMIN_ROUTE && !IS_ADMIN_LOGIN_PAGE) {
+            if (!isSuperAdmin) {
+                // Tenant trying to access admin area -> Kick out
+                console.log(`[Middleware] Unauthorized Admin Access Attempt by: ${user.email}`)
+                url.pathname = '/'
+                return NextResponse.redirect(url)
+            }
+            // Super Admin accessing /admin/* -> Allow (Fallthrough)
         }
     }
 
@@ -107,13 +134,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
     matcher: [
-        /*
-         * Match all request paths except for the ones starting with:
-         * - _next/static (static files)
-         * - _next/image (image optimization files)
-         * - favicon.ico (favicon file)
-         * - api (API routes, if any public ones exist - currently protecting everything else)
-         */
         '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
     ],
 }
