@@ -1,19 +1,21 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
+import { useSystem } from '@/contexts/SystemContext'
 import { OperationalNote, getNotes, createNote } from '@/lib/operationalNotes'
 import NoteInput from './NoteInput'
 import NoteItem from './NoteItem'
 import { Loader2 } from 'lucide-react'
 
 export default function NoteTimeline() {
+    const { currentSystem } = useSystem()
     const [notes, setNotes] = useState<OperationalNote[]>([])
     const [isLoading, setIsLoading] = useState(true)
 
     const fetchNotes = async () => {
         setIsLoading(true)
         try {
-            const data = await getNotes()
+            const data = await getNotes(currentSystem?.code)
             setNotes(data)
         } catch (error) {
             console.error(error)
@@ -24,11 +26,11 @@ export default function NoteTimeline() {
 
     useEffect(() => {
         fetchNotes()
-    }, [])
+    }, [currentSystem?.code])
 
     const handleCreateNote = async (content: string, images: string[]) => {
         try {
-            await createNote(content, null, images)
+            await createNote(content, null, images, currentSystem?.code)
             await fetchNotes()
         } catch (error) {
             console.error(error)
@@ -38,7 +40,7 @@ export default function NoteTimeline() {
 
     const handleReply = async (content: string, images: string[], parentId: string) => {
         try {
-            await createNote(content, parentId, images)
+            await createNote(content, parentId, images, currentSystem?.code)
             await fetchNotes()
         } catch (error) {
             console.error(error)

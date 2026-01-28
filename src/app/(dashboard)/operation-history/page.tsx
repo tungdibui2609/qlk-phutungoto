@@ -1,12 +1,14 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useSystem } from '@/contexts/SystemContext'
 import { getGlobalAuditLogs, getEnrichedAuditLogById } from '@/lib/audit'
 import { supabase } from '@/lib/supabaseClient'
 import HistoryCard from '@/components/history/HistoryCard'
 import { RefreshCw, Calendar as CalendarIcon, Tag, Box, CheckSquare, Clock, Radio, Activity } from 'lucide-react'
 
 export default function OperationHistoryPage() {
+    const { currentSystem } = useSystem()
     const [logs, setLogs] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [isRealtime, setIsRealtime] = useState(true)
@@ -16,7 +18,7 @@ export default function OperationHistoryPage() {
     const fetchLogs = useCallback(async (isInitial = false) => {
         if (isInitial) setLoading(true)
         try {
-            const data = await getGlobalAuditLogs(supabase, 200)
+            const data = await getGlobalAuditLogs(supabase, 200, currentSystem?.code)
             setLogs(data)
             setLastUpdated(new Date())
         } catch (error) {
@@ -24,12 +26,12 @@ export default function OperationHistoryPage() {
         } finally {
             if (isInitial) setLoading(false)
         }
-    }, [])
+    }, [currentSystem?.code])
 
     // Initial Fetch
     useEffect(() => {
         fetchLogs(true)
-    }, [fetchLogs])
+    }, [fetchLogs, currentSystem?.code])
 
     // Realtime Subscription
     useEffect(() => {
@@ -90,10 +92,15 @@ export default function OperationHistoryPage() {
                 <div>
                     <h1 className="text-xl font-bold text-stone-800 flex items-center gap-2">
                         <Clock className="text-green-600" />
-                        Lịch sử thao tác - Theo dõi đồng thời
+                        Lịch sử thao tác - {currentSystem?.name}
+                        {currentSystem && (
+                            <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded-full text-xs font-medium border border-green-100 uppercase tracking-wider ml-2">
+                                {currentSystem.code}
+                            </span>
+                        )}
                     </h1>
                     <p className="text-sm text-stone-500 mt-1">
-                        Tổng {logs.length} thao tác • Cập nhật lúc {lastUpdated.toLocaleTimeString()}
+                        Theo dõi lịch sử vận hành cho hệ thống {currentSystem?.name}
                     </p>
                 </div>
 
@@ -107,17 +114,16 @@ export default function OperationHistoryPage() {
                         onClick={() => fetchLogs()}
                         className="flex items-center gap-2 px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg text-sm font-medium hover:bg-green-100 transition-colors"
                     >
-                        <RefreshCw size={16} className={loading ? 'animate-spin' : ''}/>
+                        <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                         <span>Làm mới</span>
                     </button>
 
-                     <button
+                    <button
                         onClick={() => setIsRealtime(!isRealtime)}
-                        className={`hidden md:flex items-center gap-2 px-3 py-2 border rounded-lg text-sm font-medium transition-colors ${
-                            isRealtime
-                                ? 'bg-red-50 text-red-700 border-red-200'
-                                : 'bg-stone-50 text-stone-600 border-stone-200'
-                        }`}
+                        className={`hidden md:flex items-center gap-2 px-3 py-2 border rounded-lg text-sm font-medium transition-colors ${isRealtime
+                            ? 'bg-red-50 text-red-700 border-red-200'
+                            : 'bg-stone-50 text-stone-600 border-stone-200'
+                            }`}
                         title="Chế độ cập nhật thời gian thực (Realtime)"
                     >
                         {isRealtime ? (
@@ -147,7 +153,7 @@ export default function OperationHistoryPage() {
                         color="orange"
                         icon={<Tag size={18} className="text-orange-600" />}
                     >
-                         {groups.lots.map(log => <HistoryCard key={log.id} log={log} />)}
+                        {groups.lots.map(log => <HistoryCard key={log.id} log={log} />)}
                     </Column>
 
                     <Column
@@ -156,7 +162,7 @@ export default function OperationHistoryPage() {
                         color="amber"
                         icon={<Box size={18} className="text-amber-600" />}
                     >
-                         {groups.warehouse.map(log => <HistoryCard key={log.id} log={log} />)}
+                        {groups.warehouse.map(log => <HistoryCard key={log.id} log={log} />)}
                     </Column>
 
                     <Column
@@ -165,7 +171,7 @@ export default function OperationHistoryPage() {
                         color="stone"
                         icon={<CheckSquare size={18} className="text-stone-600" />}
                     >
-                         {groups.others.map(log => <HistoryCard key={log.id} log={log} />)}
+                        {groups.others.map(log => <HistoryCard key={log.id} log={log} />)}
                     </Column>
                 </div>
             </div>
@@ -188,9 +194,9 @@ function Column({ title, count, children, color = 'blue', icon }: { title: strin
             <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin scrollbar-thumb-stone-200 scrollbar-track-transparent">
                 {children}
                 {React.Children.count(children) === 0 && (
-                     <div className="flex flex-col items-center justify-center h-40 text-stone-400 text-sm italic">
+                    <div className="flex flex-col items-center justify-center h-40 text-stone-400 text-sm italic">
                         <span>Chưa có dữ liệu</span>
-                     </div>
+                    </div>
                 )}
             </div>
         </div>

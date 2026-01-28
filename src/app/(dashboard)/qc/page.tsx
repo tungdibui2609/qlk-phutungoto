@@ -142,7 +142,8 @@ export default function QCPage() {
                     recordId: editingQC.id,
                     action: 'UPDATE',
                     oldData: editingQC,
-                    newData: payload
+                    newData: payload,
+                    systemCode: currentSystem?.code
                 })
 
                 showToast('Cập nhật thành công', 'success')
@@ -164,7 +165,8 @@ export default function QCPage() {
                         tableName: 'qc_info',
                         recordId: data.id,
                         action: 'CREATE',
-                        newData: data
+                        newData: data,
+                        systemCode: data.system_code
                     })
                 }
 
@@ -199,7 +201,8 @@ export default function QCPage() {
                     tableName: 'qc_info',
                     recordId: id,
                     action: 'DELETE',
-                    oldData: itemToDelete
+                    oldData: itemToDelete,
+                    systemCode: itemToDelete.system_code
                 })
             }
 

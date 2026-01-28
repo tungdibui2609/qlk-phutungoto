@@ -94,19 +94,17 @@ export default function ProductForm({ initialData, isEditMode = false, readOnly 
                         inputClass={inputClass}
                     />
 
-                    {hasModule('units_conversion') && (
-                        <ProductUnits
-                            formData={formData}
-                            handleChange={handleChange}
-                            units={units}
-                            alternativeUnits={alternativeUnits}
-                            addAlternativeUnit={addAlternativeUnit}
-                            removeAlternativeUnit={removeAlternativeUnit}
-                            updateAlternativeUnit={updateAlternativeUnit}
-                            readOnly={readOnly}
-                            inputClass={inputClass}
-                        />
-                    )}
+                    <ProductUnits
+                        formData={formData}
+                        handleChange={handleChange}
+                        units={units}
+                        alternativeUnits={alternativeUnits}
+                        addAlternativeUnit={addAlternativeUnit}
+                        removeAlternativeUnit={removeAlternativeUnit}
+                        updateAlternativeUnit={updateAlternativeUnit}
+                        readOnly={readOnly}
+                        inputClass={inputClass}
+                    />
                 </div>
 
                 {/* RIGHT COLUMN */}

@@ -6,6 +6,7 @@ export type OperationalNote = {
     user_id: string
     parent_id: string | null
     images: string[]
+    system_code: string | null
     created_at: string
     user?: {
         full_name: string | null
@@ -14,8 +15,8 @@ export type OperationalNote = {
     } | null
 }
 
-export async function getNotes(): Promise<OperationalNote[]> {
-    const { data, error } = await supabase
+export async function getNotes(systemCode?: string): Promise<OperationalNote[]> {
+    let query = supabase
         .from('operational_notes')
         .select(`
             *,
@@ -25,7 +26,12 @@ export async function getNotes(): Promise<OperationalNote[]> {
                 email
             )
         `)
-        .order('created_at', { ascending: false })
+
+    if (systemCode) {
+        query = query.or(`system_code.eq.${systemCode},system_code.is.null`)
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false })
 
     if (error) {
         console.error('Error fetching notes:', error)
@@ -35,7 +41,7 @@ export async function getNotes(): Promise<OperationalNote[]> {
     return data as unknown as OperationalNote[]
 }
 
-export async function createNote(content: string, parentId: string | null, images: string[] = []) {
+export async function createNote(content: string, parentId: string | null, images: string[] = [], systemCode?: string) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Not authenticated')
 
@@ -45,7 +51,8 @@ export async function createNote(content: string, parentId: string | null, image
             content,
             user_id: user.id,
             parent_id: parentId,
-            images
+            images,
+            system_code: systemCode
         })
         .select()
         .single()

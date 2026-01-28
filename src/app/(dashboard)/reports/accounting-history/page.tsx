@@ -79,7 +79,7 @@ export default function AccountingHistoryPage() {
                     quantity,
                     product_id,
                     unit,
-                    order:inbound_orders(code, created_at, order_type_id, status)
+                    order:inbound_orders!inner(code, created_at, order_type_id, status)
                 `)
                 .eq('order.system_type', systemType)
                 .eq('order.status', 'Completed')
@@ -91,7 +91,7 @@ export default function AccountingHistoryPage() {
                     quantity,
                     product_id,
                     unit,
-                    order:outbound_orders(code, created_at, order_type_id, status)
+                    order:outbound_orders!inner(code, created_at, order_type_id, status)
                 `)
                 .eq('order.system_type', systemType)
                 .eq('order.status', 'Completed')
@@ -145,6 +145,7 @@ export default function AccountingHistoryPage() {
 
             // Process Inbound
             inboundItems?.forEach((item: any) => {
+                if (!item.order) return
                 const mov = getMovement(item.product_id, item.unit || '-')
                 if (!mov) return
 
@@ -168,6 +169,7 @@ export default function AccountingHistoryPage() {
 
             // Process Outbound
             outboundItems?.forEach((item: any) => {
+                if (!item.order) return
                 const mov = getMovement(item.product_id, item.unit || '-')
                 if (!mov) return
 
@@ -527,7 +529,7 @@ function VoucherDetailModal({ isOpen, onClose, productId, unit, productName, sku
                 .from('inbound_order_items')
                 .select(`
                     id, quantity, unit,
-                    order:inbound_orders(code, created_at, order_type_id, status)
+                    order:inbound_orders!inner(code, created_at, order_type_id, status)
                 `)
                 .eq('product_id', productId)
                 .eq('order.system_type', systemType)
@@ -540,7 +542,7 @@ function VoucherDetailModal({ isOpen, onClose, productId, unit, productName, sku
                 .from('outbound_order_items')
                 .select(`
                     id, quantity, unit,
-                    order:outbound_orders(code, created_at, order_type_id, status)
+                    order:outbound_orders!inner(code, created_at, order_type_id, status)
                 `)
                 .eq('product_id', productId)
                 .eq('order.system_type', systemType)
@@ -557,13 +559,13 @@ function VoucherDetailModal({ isOpen, onClose, productId, unit, productName, sku
             const { data: outbound } = await queryOut
 
             const normalized = [
-                ...(inbound || []).map((v: any) => {
+                ...(inbound || []).filter(v => v.order).map((v: any) => {
                     const qty = (targetUnit && canConvert)
                         ? convertUnit(productId, v.unit || null, targetUnit.name, v.quantity, prod?.unit || null)
                         : v.quantity
                     return { ...v, quantity: qty, displayUnit: (targetUnit && canConvert) ? targetUnit.name : v.unit, type: 'in' }
                 }),
-                ...(outbound || []).map((v: any) => {
+                ...(outbound || []).filter(v => v.order).map((v: any) => {
                     const qty = (targetUnit && canConvert)
                         ? convertUnit(productId, v.unit || null, targetUnit.name, v.quantity, prod?.unit || null)
                         : v.quantity

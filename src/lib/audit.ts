@@ -11,6 +11,7 @@ interface LogActivityParams {
     oldData?: any | null
     newData?: any | null
     userId?: string
+    systemCode?: string | null
 }
 
 /**
@@ -23,7 +24,8 @@ export async function logActivity({
     action,
     oldData = null,
     newData = null,
-    userId
+    userId,
+    systemCode
 }: LogActivityParams) {
     try {
         // If userId is not provided, try to get it from the session
@@ -39,7 +41,8 @@ export async function logActivity({
             action,
             old_data: oldData,
             new_data: newData,
-            changed_by: changedBy
+            changed_by: changedBy,
+            system_code: systemCode
         })
 
         if (error) {
@@ -88,9 +91,9 @@ export async function getAuditLogs(
         .in('id', userIds)
 
     if (profileError) {
-         console.warn('Error fetching user profiles for audit logs:', profileError)
-         // Return logs without enriched user data if profile fetch fails
-         return logs
+        console.warn('Error fetching user profiles for audit logs:', profileError)
+        // Return logs without enriched user data if profile fetch fails
+        return logs
     }
 
     // 4. Map profiles to logs
@@ -172,7 +175,7 @@ export async function getUserActivityLogs(
         .single()
 
     if (profileError) {
-         return logs
+        return logs
     }
 
     return logs.map(log => ({
@@ -187,12 +190,19 @@ export async function getUserActivityLogs(
  */
 export async function getGlobalAuditLogs(
     supabase: SupabaseClient<TypedDatabase>,
-    limit: number = 100
+    limit: number = 100,
+    systemCode?: string
 ) {
     // 1. Fetch Logs
-    const { data: logs, error: logError } = await supabase
+    let query = supabase
         .from('audit_logs')
         .select('*')
+
+    if (systemCode) {
+        query = query.or(`system_code.eq.${systemCode},system_code.is.null`)
+    }
+
+    const { data: logs, error: logError } = await query
         .order('created_at', { ascending: false })
         .limit(limit)
 
@@ -215,8 +225,8 @@ export async function getGlobalAuditLogs(
         .in('id', userIds)
 
     if (profileError) {
-         console.warn('Error fetching user profiles for audit logs:', profileError)
-         return logs
+        console.warn('Error fetching user profiles for audit logs:', profileError)
+        return logs
     }
 
     // 4. Map profiles to logs

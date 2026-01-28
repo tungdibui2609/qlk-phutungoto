@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { DollarSign, Search, Download, Building2, AlertCircle, CheckCircle } from 'lucide-react'
+import { DollarSign, Search, Download, Building2, AlertCircle, CheckCircle, Loader2 } from 'lucide-react'
+import { useSystem } from '@/contexts/SystemContext'
 
 interface Supplier {
     id: string
@@ -12,23 +13,29 @@ interface Supplier {
 }
 
 export default function SupplierDebtsPage() {
+    const { currentSystem } = useSystem()
     const [suppliers, setSuppliers] = useState<Supplier[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
 
     useEffect(() => {
-        fetchSuppliers()
-    }, [])
+        if (currentSystem?.code) {
+            fetchSuppliers()
+        }
+    }, [currentSystem?.code])
 
     async function fetchSuppliers() {
+        if (!currentSystem?.code) return
+
         setLoading(true)
         const { data, error } = await supabase
             .from('suppliers')
             .select('*')
             .eq('is_active', true)
+            .or(`system_code.eq.${currentSystem.code},system_code.is.null`)
             .order('name')
 
-        if (data) setSuppliers(data)
+        if (data) setSuppliers(data as Supplier[])
         setLoading(false)
     }
 
@@ -46,7 +53,7 @@ export default function SupplierDebtsPage() {
                 <div>
                     <h1 className="text-xl font-bold text-stone-800 flex items-center gap-2">
                         <DollarSign className="text-orange-500" size={24} />
-                        Công nợ Nhà cung cấp
+                        Công nợ Nhà cung cấp ({currentSystem?.name})
                     </h1>
                     <p className="text-stone-500 text-xs mt-0.5">Theo dõi và quản lý công nợ với NCC</p>
                 </div>

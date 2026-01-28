@@ -52,16 +52,27 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
         ? (typeof currentSystem.modules === 'string' ? JSON.parse(currentSystem.modules) : currentSystem.modules)
         : []
 
-    const hasModule = (moduleId: string) => systemModules.includes(moduleId)
+    const hasModule = (moduleId: string) => {
+        if (Array.isArray(systemModules)) {
+            return systemModules.includes(moduleId)
+        }
+        if (systemModules && typeof systemModules === 'object') {
+            const enabled = systemModules.enabled_modules || []
+            const utility = systemModules.utility_modules || []
+            if (Array.isArray(enabled) && enabled.includes(moduleId)) return true
+            if (Array.isArray(utility) && utility.includes(moduleId)) return true
+            // Support direct property check
+            return !!(systemModules as any)[moduleId]
+        }
+        return false
+    }
 
     useEffect(() => {
         if (systemType) {
             fetchCategories()
         }
-        if (hasModule('units_conversion')) {
-            fetchUnits()
-            if (isEditMode && initialData) fetchProductUnits()
-        }
+        fetchUnits()
+        if (isEditMode && initialData) fetchProductUnits()
         if (hasModule('images') && isEditMode && initialData) {
             fetchMedia()
         }
@@ -79,8 +90,14 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
     }
 
     async function fetchUnits() {
-        const { data } = await (supabase.from('units') as any).select('*').eq('is_active', true).order('name')
-        if (data) setUnits(data)
+        if (!systemType) return
+        const { data } = await supabase
+            .from('units')
+            .select('*')
+            .eq('is_active', true)
+            .or(`system_code.eq.${systemType},system_code.is.null`)
+            .order('name')
+        if (data) setUnits(data as Unit[])
     }
 
     async function fetchProductUnits() {
@@ -205,7 +222,7 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
             }
 
             // Save Units
-            if (productId && hasModule('units_conversion')) {
+            if (productId) {
                 await (supabase.from('product_units') as any).delete().eq('product_id', productId)
                 if (alternativeUnits.length > 0) {
                     const ratesMap = new Map<string, number>()

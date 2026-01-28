@@ -123,14 +123,61 @@ export default function SystemManagerSection() {
     }
 
     const handleDelete = async (code: string) => {
-        if (!await showConfirm('Bạn có chắc chắn muốn xóa kho này? Hành động này có thể gây lỗi nếu đang có dữ liệu liên kết.')) return
+        if (!await showConfirm('Bạn có chắc chắn muốn xóa phân hệ kho này?')) return
 
-        const { error } = await (supabase.from('systems') as any).delete().eq('code', code)
-        if (error) {
-            showToast('Không thể xóa: ' + error.message, 'error')
-        } else {
-            showToast('Đã xóa thành công', 'success')
+        setLoading(true)
+        try {
+            // Bước 1: Thử xóa trực tiếp
+            const { error: deleteError } = await (supabase.from('systems') as any).delete().eq('code', code)
+
+            // Nếu bị lỗi ràng buộc dữ liệu (vẫn còn data bên trong)
+            if (deleteError && deleteError.message.includes('foreign key constraint')) {
+                const forceDeleteConfirm = await showConfirm(
+                    `Kho này đang chứa dữ liệu liên quan. Bạn có muốn XÓA SẠCH toàn bộ dữ liệu của kho "${code}" không?\n\n` +
+                    'Lưu ý:\n' +
+                    '- Chỉ xóa dữ liệu đã phân vào kho này.\n' +
+                    '- Dữ liệu "Chưa phân loại" sẽ được GIỮ LẠI AN TOÀN, không bị ảnh hưởng.\n' +
+                    '- Hành động này không thể hoàn tác.'
+                )
+
+                if (forceDeleteConfirm) {
+                    showToast('Đang dọn dẹp dữ liệu...', 'info')
+
+                    // Danh sách các bảng cần dọn dẹp
+                    const tables = [
+                        'units', 'products', 'customers', 'suppliers',
+                        'inbound_orders', 'outbound_orders', 'order_types',
+                        'qc_info', 'categories', 'locations', 'system_configs'
+                    ]
+
+                    for (const table of tables) {
+                        try {
+                            // Xóa các dòng có system_code hoặc system_type trùng với mã kho
+                            await (supabase as any).from(table)
+                                .delete()
+                                .or(`system_code.eq.${code},system_type.eq.${code}`)
+                        } catch (err) {
+                            // Bỏ qua nếu bảng không có cột hoặc lỗi nhỏ
+                        }
+                    }
+
+                    // Sau khi dọn dẹp xong, thử xóa lại phân hệ kho
+                    const { error: finalError } = await (supabase.from('systems') as any).delete().eq('code', code)
+                    if (finalError) throw finalError
+
+                    showToast('Đã xóa sạch dữ liệu và phân hệ kho', 'success')
+                }
+            } else if (deleteError) {
+                throw deleteError
+            } else {
+                showToast('Đã xóa thành công', 'success')
+            }
+
             fetchSystems()
+        } catch (error: any) {
+            showToast('Lỗi: ' + error.message, 'error')
+        } finally {
+            setLoading(false)
         }
     }
 
@@ -229,44 +276,55 @@ export default function SystemManagerSection() {
                         const isActive = sys.is_active !== false // Default to true if undefined
 
                         return (
-                            <div key={sys.code} className={`bg-white border rounded-xl p-5 shadow-sm hover:shadow-md transition-all relative group ${isActive ? 'border-gray-200' : 'border-gray-100 bg-gray-50 opacity-75'}`}>
-                                <div className="absolute top-4 right-4 flex gap-2">
-                                    <button
-                                        onClick={() => handleToggleActive(sys)}
-                                        className={`p-1.5 rounded-md ${isActive ? 'text-amber-500 hover:bg-amber-50' : 'text-green-600 hover:bg-green-50'}`}
-                                        title={isActive ? "Tạm ngưng" : "Kích hoạt lại"}
-                                    >
-                                        {isActive ? <span className="text-xs font-bold border border-amber-500 px-1 rounded">⏸</span> : <span className="text-xs font-bold border border-green-600 px-1 rounded">▶</span>}
-                                    </button>
-                                    <button
-                                        onClick={() => handleEdit(sys)}
-                                        className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-md"
-                                        title="Chỉnh sửa"
-                                    >
-                                        <Edit size={16} />
-                                    </button>
-                                    {/* Disable delete to encourage soft delete/pause */}
-                                    {/* <button
-                                        onClick={() => handleDelete(sys.code)}
-                                        className="p-1.5 text-red-500 hover:bg-red-50 rounded-md"
-                                    >
-                                        <Trash2 size={16} />
-                                    </button> */}
-                                </div>
-
-                                <div className="flex items-start gap-4">
-                                    <div className={`p-3 rounded-lg ${isActive
+                            <div key={sys.code} className={`bg-white border rounded-xl p-5 shadow-sm hover:shadow-md transition-all group ${isActive ? 'border-gray-200' : 'border-gray-100 bg-gray-50 opacity-75'}`}>
+                                <div className="flex items-start gap-4 h-full">
+                                    {/* Icon */}
+                                    <div className={`p-3 rounded-lg shrink-0 ${isActive
                                         ? (sys.bg_color_class?.replace('bg-', 'bg-opacity-10 text-') || 'bg-gray-100 text-gray-600')
                                         : 'bg-gray-200 text-gray-400'}`}>
                                         <IconComponent size={32} className={isActive ? (sys.bg_color_class?.replace('bg-', 'text-') || 'text-gray-600') : 'text-gray-400'} />
                                     </div>
-                                    <div>
-                                        <div className="flex items-center gap-2">
-                                            <h3 className={`font-bold ${isActive ? 'text-gray-800' : 'text-gray-500'}`}>{sys.name}</h3>
-                                            {!isActive && <span className="text-[10px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded font-medium">Đã ngưng</span>}
+
+                                    {/* Content */}
+                                    <div className="flex-1 min-w-0 flex flex-col h-full">
+                                        <div className="mb-2">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div>
+                                                    <h3 className={`font-bold text-lg leading-tight mb-1 ${isActive ? 'text-gray-800' : 'text-gray-500'}`}>{sys.name}</h3>
+                                                    <div className="flex items-center gap-2">
+                                                        <code className={`text-xs px-1.5 py-0.5 rounded ${isActive ? 'bg-gray-100 text-gray-500' : 'bg-gray-200 text-gray-400'}`}>{sys.code}</code>
+                                                        {!isActive && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-medium whitespace-nowrap">Đã ngưng</span>}
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <code className={`text-xs px-1.5 py-0.5 rounded ${isActive ? 'bg-gray-100 text-gray-500' : 'bg-gray-200 text-gray-400'}`}>{sys.code}</code>
-                                        <p className="text-sm text-gray-500 mt-2 line-clamp-2">{sys.description}</p>
+
+                                        <p className="text-sm text-gray-500 line-clamp-2 mb-3 flex-1">{sys.description}</p>
+
+                                        {/* Actions - Bottom Right */}
+                                        <div className="flex gap-2 justify-end pt-3 border-t border-gray-100 border-dashed border-opacity-50">
+                                            <button
+                                                onClick={() => handleToggleActive(sys)}
+                                                className={`p-2 rounded-lg transition-colors flex items-center justify-center ${isActive ? 'bg-amber-50 text-amber-600 hover:bg-amber-100' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}
+                                                title={isActive ? 'Tạm ngưng' : 'Kích hoạt'}
+                                            >
+                                                {isActive ? <span className="text-sm font-bold">⏸</span> : <span className="text-sm font-bold">▶</span>}
+                                            </button>
+                                            <button
+                                                onClick={() => handleEdit(sys)}
+                                                className="p-2 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex items-center justify-center"
+                                                title="Sửa"
+                                            >
+                                                <Edit size={16} />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(sys.code)}
+                                                className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors flex items-center justify-center"
+                                                title="Xóa"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

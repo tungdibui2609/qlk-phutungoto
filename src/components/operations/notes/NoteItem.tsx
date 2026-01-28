@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { format } from 'date-fns'
 import { vi } from 'date-fns/locale'
 import { OperationalNote } from '@/lib/operationalNotes'
-import { MessageSquare } from 'lucide-react'
+import { MessageSquare, AlertCircle } from 'lucide-react'
 import Image from 'next/image'
 import NoteInput from './NoteInput'
 
@@ -54,6 +54,12 @@ export default function NoteItem({ note, replies, allNotes, onReply }: NoteItemP
                         <span className="text-xs text-stone-400">
                             {format(new Date(note.created_at), "HH:mm dd/MM/yyyy", { locale: vi })}
                         </span>
+                        {!note.system_code && (
+                            <span className="flex items-center gap-1 text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 font-medium">
+                                <AlertCircle size={10} />
+                                Chưa phân loại
+                            </span>
+                        )}
                     </div>
                 </div>
 
@@ -96,17 +102,17 @@ export default function NoteItem({ note, replies, allNotes, onReply }: NoteItemP
                 {replies.length > 0 && (
                     <div className="mt-4 space-y-4 pl-4 border-l-2 border-stone-100">
                         {replies.map(reply => {
-                             // Find replies to this reply
-                             const childReplies = allNotes.filter(n => n.parent_id === reply.id)
-                             return (
-                                 <NoteItem
+                            // Find replies to this reply
+                            const childReplies = allNotes.filter(n => n.parent_id === reply.id)
+                            return (
+                                <NoteItem
                                     key={reply.id}
                                     note={reply}
                                     replies={childReplies}
                                     allNotes={allNotes}
                                     onReply={onReply}
-                                 />
-                             )
+                                />
+                            )
                         })}
                     </div>
                 )}

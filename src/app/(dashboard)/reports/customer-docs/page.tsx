@@ -1,23 +1,34 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { FileText, Search, Download, Building2 } from 'lucide-react'
+import { FileText, Search, Download, Building2, Loader2 } from 'lucide-react'
+import { useSystem } from '@/contexts/SystemContext'
 
 // Note: This report requires additional tables (invoices, delivery_notes, quotes)
 // Currently showing placeholder with instructions
 
 export default function CustomerDocsPage() {
+    const { currentSystem } = useSystem()
     const [customers, setCustomers] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
 
     useEffect(() => {
-        fetchCustomers()
-    }, [])
+        if (currentSystem?.code) {
+            fetchCustomers()
+        }
+    }, [currentSystem?.code])
 
     async function fetchCustomers() {
+        if (!currentSystem?.code) return
+
         setLoading(true)
-        const { data } = await supabase.from('customers').select('*').eq('is_active', true).order('name')
+        const { data } = await supabase
+            .from('customers')
+            .select('*')
+            .eq('is_active', true)
+            .or(`system_code.eq.${currentSystem.code},system_code.is.null`)
+            .order('name')
         if (data) setCustomers(data)
         setLoading(false)
     }
@@ -32,7 +43,7 @@ export default function CustomerDocsPage() {
                 <div>
                     <h1 className="text-xl font-bold text-stone-800 flex items-center gap-2">
                         <FileText className="text-orange-500" size={24} />
-                        Chứng từ Khách hàng
+                        Chứng từ Khách hàng ({currentSystem?.name})
                     </h1>
                     <p className="text-stone-500 text-xs mt-0.5">Quản lý hóa đơn, phiếu xuất, báo giá</p>
                 </div>

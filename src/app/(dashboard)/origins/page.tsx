@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Plus, Search, Globe, Edit, Trash2, Save, X, Loader2 } from 'lucide-react'
+import { useSystem } from '@/contexts/SystemContext'
+import { Plus, Search, Globe, Edit, Trash2, Save, X, Loader2, AlertCircle } from 'lucide-react'
 
 type Origin = {
     id: string
@@ -9,10 +10,13 @@ type Origin = {
     name: string
     code: string | null
     description: string | null
+    system_code: string | null
     is_active: boolean
 }
 
 export default function OriginsPage() {
+    const { currentSystem } = useSystem()
+
     const [origins, setOrigins] = useState<Origin[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
@@ -27,14 +31,18 @@ export default function OriginsPage() {
     const [saving, setSaving] = useState(false)
 
     useEffect(() => {
-        fetchOrigins()
-    }, [])
+        if (currentSystem?.code) {
+            fetchOrigins()
+        }
+    }, [currentSystem?.code])
 
     async function fetchOrigins() {
+        if (!currentSystem?.code) return
         setLoading(true)
         const { data } = await (supabase
             .from('origins') as any)
             .select('*')
+            .or(`system_code.eq.${currentSystem.code},system_code.is.null`)
             .order('name')
 
         if (data) setOrigins(data as Origin[])
@@ -42,13 +50,14 @@ export default function OriginsPage() {
     }
 
     async function addOrigin() {
-        if (!newName.trim()) return
+        if (!newName.trim() || !currentSystem?.code) return
         setSaving(true)
 
         const { error } = await (supabase.from('origins') as any).insert([{
             name: newName.trim(),
             code: newCode.trim() || null,
             description: newDescription.trim() || null,
+            system_code: currentSystem.code,
             is_active: true
         }])
 
@@ -65,13 +74,14 @@ export default function OriginsPage() {
     }
 
     async function updateOrigin(id: string) {
-        if (!editName.trim()) return
+        if (!editName.trim() || !currentSystem?.code) return
         setSaving(true)
 
         const { error } = await (supabase.from('origins') as any).update({
             name: editName.trim(),
             code: editCode.trim() || null,
-            description: editDescription.trim() || null
+            description: editDescription.trim() || null,
+            system_code: currentSystem.code
         }).eq('id', id)
 
         if (error) {
@@ -113,8 +123,15 @@ export default function OriginsPage() {
             {/* HEADER */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-stone-800">Quản lý Xuất xứ</h1>
-                    <p className="text-stone-500 text-sm mt-1">Danh sách quốc gia/nơi sản xuất</p>
+                    <h1 className="text-2xl font-bold text-stone-800 tracking-tight flex items-center gap-2">
+                        Quản lý Xuất xứ
+                        {currentSystem && (
+                            <span className="text-orange-500 bg-orange-50 px-3 py-1 rounded-full text-sm font-medium border border-orange-100">
+                                {currentSystem.name}
+                            </span>
+                        )}
+                    </h1>
+                    <p className="text-stone-500 text-sm mt-1">Danh sách quốc gia/nơi sản xuất cho hệ thống {currentSystem?.name}</p>
                 </div>
                 <button
                     onClick={() => setShowAddForm(true)}
@@ -132,9 +149,11 @@ export default function OriginsPage() {
             {/* ADD FORM */}
             {showAddForm && (
                 <div className="bg-orange-50 rounded-2xl p-5 border border-orange-200 shadow-sm animate-in fade-in slide-in-from-top-2">
-                    <h3 className="font-semibold text-stone-800 mb-4 flex items-center gap-2">
-                        <Plus size={18} className="text-orange-600" />
-                        Thêm xuất xứ mới
+                    <h3 className="font-semibold text-stone-800 mb-4 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Plus size={18} className="text-orange-600" />
+                            Thêm xuất xứ mới cho {currentSystem?.name}
+                        </div>
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
@@ -241,7 +260,15 @@ export default function OriginsPage() {
                                                 <div className="w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center text-stone-400 group-hover:bg-white group-hover:text-orange-500 transition-colors">
                                                     <Globe size={16} />
                                                 </div>
-                                                <span className="font-semibold text-stone-800">{origin.name}</span>
+                                                <div>
+                                                    <span className="font-semibold text-stone-800">{origin.name}</span>
+                                                    {!origin.system_code && (
+                                                        <div className="flex items-center gap-1 text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded mt-0.5 border border-amber-100 w-fit">
+                                                            <AlertCircle size={10} />
+                                                            Chưa phân loại
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
                                     </td>

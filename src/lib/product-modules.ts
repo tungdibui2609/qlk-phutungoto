@@ -21,25 +21,11 @@ export interface ModuleField {
 
 export const PRODUCT_MODULES: ProductModule[] = [
     {
-        id: 'basic_info',
-        name: 'Thông tin cơ bản',
-        description: 'Tên sản phẩm, Mã SKU, Danh mục, Mô tả',
-        icon: Package, // Using Package icon as it fits "Basic Info"
-        fields: [] // Fields are hardcoded in the form
-    },
-    {
         id: 'images',
         name: 'Hình ảnh',
         description: 'Quản lý hình ảnh đại diện sản phẩm',
         icon: ImageIcon,
         fields: [] // Hardcoded in form
-    },
-    {
-        id: 'units_conversion',
-        name: 'Đơn vị & Tỉ lệ',
-        description: 'Thiết lập đơn vị tính và tỉ lệ quy đổi',
-        icon: Scale,
-        fields: []
     },
     {
         id: 'pricing',

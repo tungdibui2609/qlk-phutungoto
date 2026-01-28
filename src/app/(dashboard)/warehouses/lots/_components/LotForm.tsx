@@ -521,7 +521,8 @@ export function LotForm({
                 recordId: lotId || 'unknown',
                 action: editingLot ? 'UPDATE' : 'CREATE',
                 oldData: editingLot ? { ...editingLot, lot_items: editingLot.lot_items } : null,
-                newData: { ...lotData, lot_items: validItems }
+                newData: { ...lotData, lot_items: validItems },
+                systemCode: currentSystem?.code
             })
         } catch (err) {
             console.error('Failed to log activity', err)
