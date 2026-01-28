@@ -109,7 +109,7 @@ export default function SelectSystemPage() {
     return (
         <div className="min-h-screen bg-stone-100 flex items-center justify-center p-4">
             <div className="max-w-5xl w-full">
-                <h1 className="text-3xl font-bold text-center mb-2 text-stone-800">Hệ Thống Quản Lý Kho {companyName}</h1>
+                <h1 className="text-3xl font-bold text-center mb-2 text-stone-800">Hệ Thống Quản Lý Kho</h1>
                 <p className="text-center text-stone-500 mb-10">Vui lòng chọn phân hệ làm việc</p>
 
                 {availableSystems.length === 0 ? (
