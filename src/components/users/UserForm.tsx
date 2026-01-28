@@ -166,7 +166,21 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                 // Create new user with Supabase Auth
                 let submitEmail = formData.email
                 if (!submitEmail && formData.username) {
-                    submitEmail = `${formData.username}@no-email.com`
+                    // Fetch company code to scope username
+                    let companyCode = 'no-email'
+                    if (loggedInProfile?.company_id) {
+                        const { data: company } = await supabase
+                            .from('companies')
+                            .select('code')
+                            .eq('id', loggedInProfile.company_id)
+                            .maybeSingle()
+
+                        if (company?.code) {
+                            companyCode = company.code.toLowerCase()
+                        }
+                    }
+
+                    submitEmail = `${formData.username}@${companyCode}.local`
                 }
 
                 if (!submitEmail || !formData.password) {
