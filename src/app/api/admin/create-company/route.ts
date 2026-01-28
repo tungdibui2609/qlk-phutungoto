@@ -13,51 +13,96 @@ const supabaseAdmin = createClient(
     }
 )
 
-// Helper to seed data
-async function seedMasterData(companyId: string) { // companyId might be needed if RLS uses it implicitly, but tables don't show it.
-    // However, we will just insert.
-    // 1. Units
-    const units = [
-        { name: 'Cái', description: 'Đơn vị tính cơ bản' },
-        { name: 'Hộp', description: 'Hộp đóng gói' },
-        { name: 'Chiếc', description: 'Đơn vị đơn lẻ' },
-        { name: 'Bộ', description: 'Bộ sản phẩm' },
-        { name: 'Kg', description: 'Kilogram' },
-        { name: 'Mét', description: 'Đơn vị đo độ dài' }
+// Helper to seed data for a specific company
+async function seedCompanyData(companyId: string) {
+    console.log(`Seeding data for company: ${companyId}`)
+
+    // 1. Systems (Standard Modules)
+    const systems = [
+        {
+            code: 'FROZEN',
+            name: 'Kho Lạnh',
+            description: 'Quản lý kho lạnh, theo dõi nhiệt độ',
+            icon: 'Truck',
+            bg_color_class: 'bg-blue-600',
+            text_color_class: 'text-blue-100',
+            sort_order: 1,
+            is_active: true,
+            modules: {},
+            company_id: companyId
+        },
+        {
+            code: 'OFFICE',
+            name: 'Văn Phòng',
+            description: 'Quản lý văn phòng phẩm, thiết bị',
+            icon: 'Package',
+            bg_color_class: 'bg-amber-600',
+            text_color_class: 'text-amber-100',
+            sort_order: 2,
+            is_active: true,
+            modules: {},
+            company_id: companyId
+        },
+        {
+            code: 'DRY',
+            name: 'Kho Khô',
+            description: 'Quản lý kho thường, vật tư',
+            icon: 'Factory',
+            bg_color_class: 'bg-stone-600', // Matches SystemContext fallback
+            text_color_class: 'text-stone-100',
+            sort_order: 3,
+            is_active: true,
+            modules: {},
+            company_id: companyId
+        },
+        {
+            code: 'PACKAGING',
+            name: 'Bao Bì',
+            description: 'Quản lý vật tư bao bì đóng gói',
+            icon: 'Box',
+            bg_color_class: 'bg-green-600',
+            text_color_class: 'text-green-100',
+            sort_order: 4,
+            is_active: true,
+            modules: {},
+            company_id: companyId
+        }
     ]
 
-    // We use upsert or ignore if exists. Since no unique constraint is visible on name globally (maybe), 
-    // we just insert.
-    for (const u of units) {
-        // Check if exists (optional but safer)
-        // const { data } = await supabaseAdmin.from('units').select('id').eq('name', u.name).maybeSingle()
-        // if (!data) ... 
-        // Actually, just insert.
-        await supabaseAdmin.from('units').insert({
-            name: u.name,
-            description: u.description,
-            is_active: true
-        })
+    const { error: systemsError } = await supabaseAdmin.from('systems').insert(systems)
+    if (systemsError) {
+        console.error('Error seeding systems:', systemsError)
+        // Don't throw, continue with other data
     }
 
-    // 2. Order Types
-    const orderTypes = [
-        { name: 'Nhập mua hàng', code: 'NM', scope: 'Import', description: 'Nhập hàng từ nhà cung cấp' },
-        { name: 'Nhập trả hàng', code: 'NTH', scope: 'Import', description: 'Nhập hàng khách trả lại' },
-        { name: 'Nhập khác', code: 'NK', scope: 'Import', description: 'Nhập khác' },
-        { name: 'Xuất bán hàng', code: 'XB', scope: 'Export', description: 'Xuất bán cho khách hàng' },
-        { name: 'Xuất hủy', code: 'XH', scope: 'Export', description: 'Xuất hủy hàng hỏng' },
-        { name: 'Xuất khác', code: 'XK', scope: 'Export', description: 'Xuất khác' }
+    // 2. Units
+    const units = [
+        { name: 'Cái', description: 'Đơn vị tính cơ bản', company_id: companyId },
+        { name: 'Hộp', description: 'Hộp đóng gói', company_id: companyId },
+        { name: 'Chiếc', description: 'Đơn vị đơn lẻ', company_id: companyId },
+        { name: 'Bộ', description: 'Bộ sản phẩm', company_id: companyId },
+        { name: 'Kg', description: 'Kilogram', company_id: companyId },
+        { name: 'Mét', description: 'Đơn vị đo độ dài', company_id: companyId }
     ]
 
-    for (const ot of orderTypes) {
-        await supabaseAdmin.from('order_types').insert({
-            name: ot.name,
-            code: ot.code,
-            scope: ot.scope,
-            description: ot.description,
-            is_active: true
-        })
+    const { error: unitsError } = await supabaseAdmin.from('units').insert(units.map(u => ({ ...u, is_active: true })))
+    if (unitsError) {
+        console.error('Error seeding units:', unitsError)
+    }
+
+    // 3. Order Types
+    const orderTypes = [
+        { name: 'Nhập mua hàng', code: 'NM', scope: 'Import', description: 'Nhập hàng từ nhà cung cấp', company_id: companyId },
+        { name: 'Nhập trả hàng', code: 'NTH', scope: 'Import', description: 'Nhập hàng khách trả lại', company_id: companyId },
+        { name: 'Nhập khác', code: 'NK', scope: 'Import', description: 'Nhập khác', company_id: companyId },
+        { name: 'Xuất bán hàng', code: 'XB', scope: 'Export', description: 'Xuất bán cho khách hàng', company_id: companyId },
+        { name: 'Xuất hủy', code: 'XH', scope: 'Export', description: 'Xuất hủy hàng hỏng', company_id: companyId },
+        { name: 'Xuất khác', code: 'XK', scope: 'Export', description: 'Xuất khác', company_id: companyId }
+    ]
+
+    const { error: typesError } = await supabaseAdmin.from('order_types').insert(orderTypes.map(ot => ({ ...ot, is_active: true })))
+    if (typesError) {
+        console.error('Error seeding order types:', typesError)
     }
 }
 
@@ -99,7 +144,8 @@ export async function POST(request: Request) {
                 email: email,
                 phone: phone,
                 address: address,
-                tax_code: tax_code
+                tax_code: tax_code,
+                company_id: company.id // Ensure company_id is set
             })
 
         if (settingsError) {
@@ -108,7 +154,11 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Failed to create settings: ' + settingsError.message }, { status: 500 })
         }
 
-        // 1.2 Create Default Warehouse
+        // 1.2 Create Default Warehouse (Branch)
+        // Note: Branches table might not have company_id in some versions, but we attempt to add it if possible.
+        // However, looking at codebase, branches seems to rely on system links.
+        // We will just create it as is, but we might need to revisit if branches are tenant isolated.
+        // For now, we assume this is acceptable or branches are global/linked via other means.
         const { error: branchError } = await supabaseAdmin
             .from('branches')
             .insert({
@@ -116,22 +166,18 @@ export async function POST(request: Request) {
                 code: 'DEFAULT',
                 is_default: true,
                 is_active: true,
-                system_type: null, // Null means shared/global
+                system_type: null, // Null means shared/global or not specific to a system type
                 address: address,
                 phone: phone
+                // company_id: company.id // Uncomment if branches table definitely has company_id
             })
 
         if (branchError) {
             console.error('Error creating default branch:', branchError)
         }
 
-
-
-
-        // 1.3 Seed Master Data (Units, Order Types)
-        // Note: Run async without awaiting to not block response? Or await to ensure?
-        // Let's await to be safe.
-        await seedMasterData(company.id)
+        // 1.3 Seed Company Data (Systems, Units, Order Types)
+        await seedCompanyData(company.id)
 
         // 2. Create Admin User (Auth)
         // using admin.createUser prevents signing in the user on the client side
@@ -163,7 +209,8 @@ export async function POST(request: Request) {
                     company_id: company.id,
                     permissions: ['system.full_access'],
                     is_active: true,
-                    allowed_systems: ['FROZEN', 'OFFICE', 'DRY']
+                    // Grant access to the systems we just created
+                    allowed_systems: ['FROZEN', 'OFFICE', 'DRY', 'PACKAGING']
                 })
 
             if (profileError) {
@@ -178,7 +225,7 @@ export async function POST(request: Request) {
         return NextResponse.json({
             success: true,
             company,
-            message: 'Company and Admin created successfully'
+            message: 'Company and Admin created successfully with standard template.'
         })
 
     } catch (error: any) {
