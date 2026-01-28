@@ -20,49 +20,13 @@ async function seedCompanyData(companyId: string) {
     // 1. Systems (Standard Modules)
     const systems = [
         {
-            code: 'FROZEN',
-            name: 'Kho Lạnh',
-            description: 'Quản lý kho lạnh, theo dõi nhiệt độ',
-            icon: 'Truck',
+            code: 'DEFAULT',
+            name: 'Kho Mặc Định',
+            description: 'Hệ thống kho mặc định',
+            icon: 'Warehouse',
             bg_color_class: 'bg-blue-600',
             text_color_class: 'text-blue-100',
             sort_order: 1,
-            is_active: true,
-            modules: {},
-            company_id: companyId
-        },
-        {
-            code: 'OFFICE',
-            name: 'Văn Phòng',
-            description: 'Quản lý văn phòng phẩm, thiết bị',
-            icon: 'Package',
-            bg_color_class: 'bg-amber-600',
-            text_color_class: 'text-amber-100',
-            sort_order: 2,
-            is_active: true,
-            modules: {},
-            company_id: companyId
-        },
-        {
-            code: 'DRY',
-            name: 'Kho Khô',
-            description: 'Quản lý kho thường, vật tư',
-            icon: 'Factory',
-            bg_color_class: 'bg-stone-600', // Matches SystemContext fallback
-            text_color_class: 'text-stone-100',
-            sort_order: 3,
-            is_active: true,
-            modules: {},
-            company_id: companyId
-        },
-        {
-            code: 'PACKAGING',
-            name: 'Bao Bì',
-            description: 'Quản lý vật tư bao bì đóng gói',
-            icon: 'Box',
-            bg_color_class: 'bg-green-600',
-            text_color_class: 'text-green-100',
-            sort_order: 4,
             is_active: true,
             modules: {},
             company_id: companyId
@@ -115,6 +79,43 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
         }
 
+        // 0. Pre-check: Verify if Admin Email already acts to prevent "Ghost Company" creation
+        // Note: listUsers is admin-only.
+        const { data: { users: existingUsers }, error: checkError } = await supabaseAdmin.auth.admin.listUsers()
+        if (!checkError && existingUsers) {
+            const existingUser = existingUsers.find(u => u.email?.toLowerCase() === admin_email.toLowerCase())
+
+            if (existingUser) {
+                // Check if this is a "Zombie/Orphan" user (exists in Auth but no Profile or Company)
+                // This happens if Company was deleted but Auth User remained.
+                const { data: profile } = await supabaseAdmin
+                    .from('user_profiles')
+                    .select('id, company_id')
+                    .eq('id', existingUser.id)
+                    .maybeSingle()
+
+                if (!profile) {
+                    // Scenario A: Auth User exists, but NO Profile. -> Zombie.
+                    console.log(`Found Zombie User ${admin_email} (No Profile). Cleaning up...`)
+                    await supabaseAdmin.auth.admin.deleteUser(existingUser.id)
+                    // Proceed to create new user...
+                } else {
+                    // Scenario B: Profile exists. Check if Company exists.
+                    // If company was deleted with cascade, profile should be gone. 
+                    // But if profile remains with null company_id?
+                    if (!profile.company_id) {
+                        console.log(`Found Zombie User ${admin_email} (Profile with no Company). Cleaning up...`)
+                        // Delete profile first to be safe (though deleteUser cascades usually)
+                        await supabaseAdmin.from('user_profiles').delete().eq('id', existingUser.id)
+                        await supabaseAdmin.auth.admin.deleteUser(existingUser.id)
+                    } else {
+                        // Scenario C: User is valid and belongs to a company.
+                        return NextResponse.json({ error: 'Email quản trị viên đã tồn tại và đang thuộc về một công ty khác.' }, { status: 400 })
+                    }
+                }
+            }
+        }
+
         // 1. Create Company
         const { data: company, error: companyError } = await supabaseAdmin
             .from('companies')
@@ -145,7 +146,7 @@ export async function POST(request: Request) {
                 phone: phone,
                 address: address,
                 tax_code: tax_code,
-                company_id: company.id // Ensure company_id is set
+                // company_id is not in the schema, id is the link
             })
 
         if (settingsError) {
@@ -209,8 +210,8 @@ export async function POST(request: Request) {
                     company_id: company.id,
                     permissions: ['system.full_access'],
                     is_active: true,
-                    // Grant access to the systems we just created
-                    allowed_systems: ['FROZEN', 'OFFICE', 'DRY', 'PACKAGING']
+                    // Grant full access to all current and future systems
+                    allowed_systems: ['ALL']
                 })
 
             if (profileError) {

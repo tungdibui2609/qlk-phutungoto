@@ -469,8 +469,9 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                                 `}>
                                     <input
                                         type="checkbox"
-                                        checked={(formData.allowed_systems || []).includes(sys.code)}
+                                        checked={(formData.allowed_systems || []).includes('ALL') || (formData.allowed_systems || []).includes(sys.code)}
                                         onChange={() => handleSystemChange(sys.code)}
+                                        disabled={(formData.allowed_systems || []).includes('ALL')} // Disable individual check if ALL is set
                                         className="w-4 h-4 rounded text-orange-500 focus:ring-orange-400 border-stone-300 accent-orange-500"
                                     />
                                     <span className="text-sm font-medium">{sys.name}</span>

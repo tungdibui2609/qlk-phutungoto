@@ -15,6 +15,7 @@ export default function CompanyInfoSection() {
     const [uploading, setUploading] = useState(false)
     const [info, setInfo] = useState<CompanySettings | null>(null)
     const [logoUrl, setLogoUrl] = useState<string | null>(null)
+    const [logoTimestamp, setLogoTimestamp] = useState<number>(Date.now())
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
@@ -34,6 +35,7 @@ export default function CompanyInfoSection() {
                 const settings = data as any
                 setInfo(settings)
                 setLogoUrl(settings.logo_url)
+                setLogoTimestamp(Date.now())
             }
         } catch (err) {
             console.error('Error fetching info:', err)
@@ -63,6 +65,7 @@ export default function CompanyInfoSection() {
                 .getPublicUrl(filePath)
 
             setLogoUrl(publicUrl)
+            setLogoTimestamp(Date.now())
             showToast('Đã tải lên logo!', 'success')
         } catch (error: any) {
             showToast('Lỗi tải ảnh: ' + error.message, 'error')
@@ -133,7 +136,7 @@ export default function CompanyInfoSection() {
                         {logoUrl ? (
                             <>
                                 <Image
-                                    src={logoUrl}
+                                    src={logoUrl ? `${logoUrl}?t=${logoTimestamp}` : ''}
                                     alt="Logo"
                                     fill
                                     className="object-contain p-2"

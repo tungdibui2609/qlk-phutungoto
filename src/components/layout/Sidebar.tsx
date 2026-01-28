@@ -231,7 +231,7 @@ export default function Sidebar() {
                 const info = data as any
                 setCompanyInfo({
                     name: info.short_name || info.name,
-                    logo_url: info.logo_url
+                    logo_url: info.logo_url ? `${info.logo_url}?t=${new Date().getTime()}` : null
                 })
             }
         }
@@ -246,7 +246,7 @@ export default function Sidebar() {
                     const newData = payload.new as any
                     setCompanyInfo({
                         name: newData.short_name || newData.name,
-                        logo_url: newData.logo_url
+                        logo_url: newData.logo_url ? `${newData.logo_url}?t=${new Date().getTime()}` : null
                     })
                 }
             )

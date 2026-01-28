@@ -40,7 +40,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Error fetching users: ' + fetchError.message }, { status: 500 })
         }
 
-        const userIds = (users || []).map(u => u.id)
+        // Filter out Super Admin to prevent accidental deletion
+        const userIds = (users || [])
+            .filter((u: any) => u.email !== 'tungdibui2609@gmail.com') // Safety check
+            .map(u => u.id)
 
         // Helper to delete by company_id
         const deleteByCompany = async (table: string) => {
@@ -86,8 +89,11 @@ export async function POST(request: Request) {
             deleteByCompany('categories'),
             deleteByCompany('units'),
             deleteByCompany('systems'),
+            deleteByCompany('systems'),
             deleteByCompany('system_configs'),
-            deleteByCompany('company_settings'), // Explicitly delete settings
+            // company_settings uses 'id' as company_id, so we delete by PK explicitly or rely on cascade.
+            // But deleteByCompany expects 'company_id' column.
+            supabaseAdmin.from('company_settings').delete().eq('id', companyId),
             deleteByCompany('master_tags'), // Delete tags
             // user_profiles is deleted via auth delete or explicit delete below
         ])
