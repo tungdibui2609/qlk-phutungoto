@@ -236,12 +236,50 @@ type OperationalNotesTable = {
     ]
 }
 
+type CompaniesTable = {
+    Row: {
+        id: string
+        code: string
+        name: string
+        address: string | null
+        phone: string | null
+        email: string | null
+        tax_code: string | null
+        created_at: string
+        updated_at: string
+    }
+    Insert: {
+        id?: string
+        code: string
+        name: string
+        address?: string | null
+        phone?: string | null
+        email?: string | null
+        tax_code?: string | null
+        created_at?: string
+        updated_at?: string
+    }
+    Update: {
+        id?: string
+        code?: string
+        name?: string
+        address?: string | null
+        phone?: string | null
+        email?: string | null
+        tax_code?: string | null
+        created_at?: string
+        updated_at?: string
+    }
+    Relationships: []
+}
+
 // Extend the existing Tables type using intersection
 type TypedTables = Database['public']['Tables'] & {
     audit_logs: AuditLogsTable
     inventory_checks: InventoryChecksTable
     inventory_check_items: InventoryCheckItemsTable
     operational_notes: OperationalNotesTable
+    companies: CompaniesTable
 }
 
 // Manually extend the Database type
