@@ -65,16 +65,13 @@ export async function middleware(request: NextRequest) {
     const IS_ADMIN_ROUTE = path.startsWith('/admin')
     const IS_LOGIN_PAGE = path === '/login'
     const IS_ADMIN_LOGIN_PAGE = path === '/admin' // Exact match
-    const IS_PUBLIC_ASSET = path.startsWith('/_next') || path.startsWith('/static') || path.startsWith('/api') || path.includes('.')
 
     // Skip static assets and internal next paths
     if (path.startsWith('/_next') || path.startsWith('/static') || path.includes('.')) {
         return response
     }
 
-    // API Routes usually handle their own auth, but let's be safe
-    // We only protect API routes if they are NOT public
-    // existing middleware logic:
+    // API Routes protection
     if (!user && path.startsWith('/api/')) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -101,7 +98,11 @@ export async function middleware(request: NextRequest) {
 
         // 2.1 Handling Login Pages (Redirect if already logged in)
         if (IS_LOGIN_PAGE) {
-            url.pathname = '/select-system'
+            if (isSuperAdmin) {
+                url.pathname = '/admin/companies'
+            } else {
+                url.pathname = '/select-system'
+            }
             return NextResponse.redirect(url)
         }
 
@@ -126,6 +127,15 @@ export async function middleware(request: NextRequest) {
                 return NextResponse.redirect(url)
             }
             // Super Admin accessing /admin/* -> Allow (Fallthrough)
+        }
+
+        // 2.3 Strict Isolation: Prevent Super Admin from accessing Tenant Routes
+        if (isSuperAdmin && !IS_ADMIN_ROUTE && !IS_ADMIN_LOGIN_PAGE && !path.startsWith('/api')) {
+            // If Super Admin tries to access non-admin pages (like /select-system, /inventory, etc.)
+            // Redirect them back to Admin Dashboard
+            console.log(`[Middleware] Super Admin redirected from App Route: ${path}`)
+            url.pathname = '/admin/companies'
+            return NextResponse.redirect(url)
         }
     }
 
