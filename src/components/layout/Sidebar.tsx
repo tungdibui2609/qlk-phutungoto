@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, ArrowRightLeft, Activity, Star, StickyNote, HardHat } from 'lucide-react'
+import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -566,6 +566,23 @@ export default function Sidebar() {
                             </Link>
                         )
                     })}
+                    {/* SUPER ADMIN LINK */}
+                    {profile?.email === 'tungdibui2609@gmail.com' && (
+                        <div className="mt-4 pt-4 border-t border-stone-100 dark:border-zinc-800">
+                            <Link
+                                href="/admin/companies"
+                                onClick={handleLinkClick}
+                                className={`group relative flex items-center gap-2 px-2.5 py-2 rounded-lg transition-all duration-200 text-stone-600 hover:text-orange-600 hover:bg-orange-50 ${showCollapsed ? 'justify-center px-2' : ''}`}
+                                title={showCollapsed ? 'Super Admin' : undefined}
+                            >
+                                <div className="p-1.5 rounded-md bg-stone-100 group-hover:bg-orange-100 transition-colors">
+                                    <ShieldAlert size={16} />
+                                </div>
+                                {showExpanded && <span className="text-xs font-bold text-orange-600 flex-1">Super Admin</span>}
+                            </Link>
+                        </div>
+                    )}
+
                 </nav>
 
                 {/* FOOTER / LOGOUT */}

@@ -21,7 +21,6 @@ export default function SelectSystemPage() {
     // ... (keep helper functions)
 
     async function checkUserPermissions() {
-        // ... (keep implementation)
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) {
             router.push('/login')
@@ -29,15 +28,25 @@ export default function SelectSystemPage() {
         }
         const { data: profile } = await (supabase
             .from('user_profiles') as any)
-            .select('allowed_systems')
+            .select('allowed_systems, permissions') // Added permissions
             .eq('id', user.id)
-            .single()
+            .maybeSingle() // Use maybeSingle to avoid 406 error on older supabase adapters
 
-        if (profile?.allowed_systems) {
-            setAllowedSystems(profile.allowed_systems)
-        } else {
-            setAllowedSystems(['FROZEN', 'PACKAGING', 'MATERIAL', 'GENERAL'])
+        if (!profile) {
+            setLoading(false)
+            return
         }
+
+        // Check for full access permission
+        let systems = profile.allowed_systems || []
+
+        // Super Admin bypass or Permission check
+        if ((profile.permissions && profile.permissions.includes('system.full_access')) ||
+            user.email === 'tungdibui2609@gmail.com') {
+            systems = ['ALL']
+        }
+
+        setAllowedSystems(systems.length > 0 ? systems : ['FROZEN', 'OFFICE', 'DRY']) // Fallback to defaults if empty but valid user
         setLoading(false)
     }
 

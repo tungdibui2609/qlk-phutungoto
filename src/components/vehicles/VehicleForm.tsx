@@ -6,6 +6,7 @@ import { Database } from '@/lib/database.types'
 import { ArrowLeft, Save, Loader2, Car, Calendar, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUser } from '@/contexts/UserContext'
 
 type Vehicle = Database['public']['Tables']['vehicles']['Row']
 
@@ -35,6 +36,7 @@ const BODY_TYPES = [
 export default function VehicleForm({ initialData, isEditMode = false }: VehicleFormProps) {
     const router = useRouter()
     const { systemType } = useSystem()
+    const { profile } = useUser()
     const [loading, setLoading] = useState(false)
 
     const currentYear = new Date().getFullYear()
@@ -75,7 +77,7 @@ export default function VehicleForm({ initialData, isEditMode = false }: Vehicle
             } else {
                 const { error } = await (supabase
                     .from('vehicles') as any)
-                    .insert([{ ...payload, system_code: systemType }])
+                    .insert([{ ...payload, system_code: systemType, company_id: profile?.company_id || null }])
                 if (error) throw error
             }
 

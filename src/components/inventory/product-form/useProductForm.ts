@@ -3,6 +3,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUser } from '@/contexts/UserContext'
 
 type Product = Database['public']['Tables']['products']['Row']
 type Category = Database['public']['Tables']['categories']['Row']
@@ -18,6 +19,7 @@ interface UseProductFormProps {
 export function useProductForm({ initialData, isEditMode, readOnly }: UseProductFormProps) {
     const router = useRouter()
     const { systemType, currentSystem } = useSystem()
+    const { profile } = useUser()
     const [loading, setLoading] = useState(false)
     const [categories, setCategories] = useState<Category[]>([])
 
@@ -208,7 +210,11 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         setLoading(true)
-        const payload = { ...formData, system_type: systemType }
+        const payload = {
+            ...formData,
+            system_type: systemType,
+            company_id: profile?.company_id || null
+        }
 
         try {
             let productId = initialData?.id

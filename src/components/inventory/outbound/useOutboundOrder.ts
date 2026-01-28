@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { useUser } from '@/contexts/UserContext'
 import { unbundleService } from '@/services/inventory/unbundleService'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { Product, Customer, Unit, OrderItem } from '../types'
@@ -10,6 +11,7 @@ import { Product, Customer, Unit, OrderItem } from '../types'
 export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, onClose, editOrderId }: any) {
     const { showToast } = useToast()
     const { currentSystem } = useSystem()
+    const { profile } = useUser()
     const { toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
 
     // Form State
@@ -382,7 +384,8 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                         driverName,
                         containerNumber,
                         targetUnit
-                    }
+                    },
+                    company_id: profile?.company_id || null
                 }).eq('id', editOrderId)
 
                 if (updateError) throw updateError
@@ -410,7 +413,8 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                         driverName,
                         containerNumber,
                         targetUnit
-                    }
+                    },
+                    company_id: profile?.company_id || null
                 }).select().single()
 
                 if (orderError) throw orderError

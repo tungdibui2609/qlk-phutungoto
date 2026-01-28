@@ -9,6 +9,7 @@ import {
     Zap, Anchor, Plane, Shield
 } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
+import { useUser } from '@/contexts/UserContext'
 
 // Icon Options
 const ICON_OPTIONS = [
@@ -55,6 +56,7 @@ export default function SystemManagerSection() {
     const [loading, setLoading] = useState(true)
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [editingSystem, setEditingSystem] = useState<System | null>(null)
+    const { profile } = useUser()
     const { showToast, showConfirm } = useToast()
 
     // Form State
@@ -211,7 +213,8 @@ export default function SystemManagerSection() {
             bg_color_class: color.bg,
             text_color_class: color.text,
             is_active: true,
-            sort_order: formData.sort_order
+            sort_order: formData.sort_order,
+            company_id: profile?.company_id || null
         }
 
         try {

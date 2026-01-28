@@ -69,7 +69,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
 
       if (systemsData) {
         // Merge configs into systems
-        const mergedSystems = systemsData.map((sys: any) => {
+        let mergedSystems = systemsData.map((sys: any) => {
           const config = configsData?.find((c: any) => c.system_code === sys.code)
 
           // Smart merge modules to avoid overwriting with empty
@@ -89,6 +89,45 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
             dashboard_modules: config?.dashboard_modules || sys.dashboard_modules || []
           }
         })
+
+        // Fallback if no systems found (New Company)
+        if (mergedSystems.length === 0) {
+          mergedSystems = [
+            {
+              code: 'FROZEN',
+              name: 'Kho Lạnh',
+              description: 'Quản lý kho lạnh, theo dõi nhiệt độ',
+              bg_color_class: 'bg-blue-600',
+              modules: {},
+              sort_order: 1
+            },
+            {
+              code: 'OFFICE',
+              name: 'Văn Phòng',
+              description: 'Quản lý văn phòng phẩm, thiết bị',
+              bg_color_class: 'bg-amber-600',
+              modules: {},
+              sort_order: 2
+            },
+            {
+              code: 'DRY',
+              name: 'Kho Khô',
+              description: 'Quản lý kho thường, vật tư',
+              bg_color_class: 'bg-stone-600',
+              modules: {},
+              sort_order: 3
+            },
+            {
+              code: 'PACKAGING',
+              name: 'Bao Bì',
+              description: 'Quản lý vật tư bao bì đóng gói',
+              bg_color_class: 'bg-green-600',
+              modules: {},
+              sort_order: 4
+            }
+          ]
+        }
+
         setSystems(mergedSystems)
       }
     }

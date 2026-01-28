@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUser } from '@/contexts/UserContext'
 import { Product, Supplier, Unit, OrderItem } from '../types'
 
 export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, onSuccess, onClose }: any) {
     const { showToast } = useToast()
     const { currentSystem } = useSystem()
+    const { profile } = useUser()
 
     // Form State
     const [code, setCode] = useState('')
@@ -232,7 +234,8 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                 order_type_id: orderTypeId || null,
                 images,
                 updated_at: new Date().toISOString(),
-                metadata: { vehicleNumber, driverName, containerNumber, targetUnit }
+                metadata: { vehicleNumber, driverName, containerNumber, targetUnit },
+                company_id: profile?.company_id || null
             }
 
             if (editOrderId) {

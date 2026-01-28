@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { ArrowLeft, Save, Loader2, User, Phone, Mail, MapPin, FileText, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUser } from '@/contexts/UserContext'
 
 interface Customer {
     id: string
@@ -28,6 +29,7 @@ interface CustomerFormProps {
 export default function CustomerForm({ initialData, isEditMode = false }: CustomerFormProps) {
     const router = useRouter()
     const { systemType, currentSystem } = useSystem()
+    const { profile } = useUser()
     const [loading, setLoading] = useState(false)
     const [generatingCode, setGeneratingCode] = useState(false)
 
@@ -121,7 +123,7 @@ export default function CustomerForm({ initialData, isEditMode = false }: Custom
             } else {
                 const { error } = await (supabase
                     .from('customers') as any)
-                    .insert([{ ...payload, system_code: systemType }])
+                    .insert([{ ...payload, system_code: systemType, company_id: profile?.company_id || null }])
                 if (error) throw error
             }
 

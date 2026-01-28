@@ -6,6 +6,7 @@ import { Database } from '@/lib/database.types'
 import { ArrowLeft, Save, Loader2, Building2, User, Phone, Mail, MapPin, FileText, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUser } from '@/contexts/UserContext'
 
 type Supplier = Database['public']['Tables']['suppliers']['Row']
 
@@ -17,6 +18,7 @@ interface SupplierFormProps {
 export default function SupplierForm({ initialData, isEditMode = false }: SupplierFormProps) {
     const router = useRouter()
     const { systemType, currentSystem } = useSystem()
+    const { profile } = useUser()
     const [loading, setLoading] = useState(false)
     const [generatingCode, setGeneratingCode] = useState(false)
 
@@ -100,7 +102,7 @@ export default function SupplierForm({ initialData, isEditMode = false }: Suppli
             } else {
                 const { error } = await (supabase
                     .from('suppliers') as any)
-                    .insert([{ ...formData, system_code: systemType }])
+                    .insert([{ ...formData, system_code: systemType, company_id: profile?.company_id || null }])
                 if (error) throw error
             }
 

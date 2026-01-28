@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { logActivity } from '@/lib/audit'
+import { useUser } from '@/contexts/UserContext'
 import { ArrowLeft, Save, Loader2, User, Phone, Mail, Shield, Building, Warehouse } from 'lucide-react'
 import Link from 'next/link'
 
@@ -38,6 +39,7 @@ interface UserFormProps {
 
 export default function UserForm({ initialData, isEditMode = false }: UserFormProps) {
     const router = useRouter()
+    const { profile: loggedInProfile } = useUser()
     const [loading, setLoading] = useState(false)
     const [roles, setRoles] = useState<Role[]>([])
     const [systems, setSystems] = useState<System[]>([])
@@ -203,6 +205,7 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                             department: formData.department || null,
                             is_active: formData.is_active,
                             allowed_systems: formData.allowed_systems,
+                            company_id: loggedInProfile?.company_id || null,
                         }
 
                         // 2. Create user profile
@@ -233,6 +236,7 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                         department: formData.department || null,
                         is_active: formData.is_active,
                         allowed_systems: formData.allowed_systems,
+                        company_id: loggedInProfile?.company_id || null,
                     }
 
                     // 2. Create user profile
@@ -255,7 +259,7 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
 
             router.push('/users')
             router.refresh()
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (error: any) {
             alert('Lỗi: ' + error.message)
         } finally {

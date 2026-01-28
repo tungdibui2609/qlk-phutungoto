@@ -59,6 +59,7 @@ export default function LoginPage() {
                 password,
             })
             if (error) throw error
+
             router.push('/select-system')
         } catch (error: any) {
             setMessage({ text: error.message, type: 'error' })
