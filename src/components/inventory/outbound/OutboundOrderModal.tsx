@@ -29,7 +29,8 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
         targetUnit, setTargetUnit,
         products, customers, branches, units, orderTypes,
         loadingData, submitting, handleSubmit,
-        hasModule, confirmDialog, setConfirmDialog, handleCustomerSelect
+        hasModule, confirmDialog, setConfirmDialog, handleCustomerSelect,
+        workerName, setWorkerName, teamName, setTeamName, isUtilityEnabled
     } = useOutboundOrder({ ...props, editOrderId: props.editOrderId })
 
     const selectedCustomerId = customers.find(c => c.name === customerName)?.id || ""
@@ -70,7 +71,7 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
                 footer={footerButtons}
             >
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {(hasModule('outbound_basic') || true) && (
+                    {hasModule('outbound_basic') && (
                         <OrderGeneralInfo
                             type="outbound"
                             code={code} setCode={setCode}
@@ -82,6 +83,37 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
                             units={units}
                             hasModule={hasModule}
                         />
+                    )}
+
+                    {isUtilityEnabled('site_inventory_manager') && (
+                        <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-stone-200 dark:border-zinc-800 shadow-sm flex flex-col gap-4">
+                            <h3 className="font-bold text-stone-800 dark:text-gray-100 flex items-center gap-2">
+                                <span className="text-orange-600">👷</span>
+                                Thông tin cấp phát
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-stone-500 dark:text-gray-400 uppercase">Người nhận / Chỉ huy</label>
+                                    <input
+                                        type="text"
+                                        value={workerName}
+                                        onChange={(e) => setWorkerName(e.target.value)}
+                                        className="w-full p-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl font-medium focus:ring-2 focus:ring-orange-500/20 outline-none transition-all"
+                                        placeholder="Nhập tên người nhận..."
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-stone-500 dark:text-gray-400 uppercase">Tổ đội / Hạng mục</label>
+                                    <input
+                                        type="text"
+                                        value={teamName}
+                                        onChange={(e) => setTeamName(e.target.value)}
+                                        className="w-full p-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl font-medium focus:ring-2 focus:ring-orange-500/20 outline-none transition-all"
+                                        placeholder="Tên tổ đội hoặc hạng mục..."
+                                    />
+                                </div>
+                            </div>
+                        </div>
                     )}
 
                     {hasModule('outbound_customer') && (

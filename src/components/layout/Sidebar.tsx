@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, ArrowRightLeft, Activity, Star, StickyNote } from 'lucide-react'
+import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, ArrowRightLeft, Activity, Star, StickyNote, HardHat } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -51,6 +51,7 @@ const menuItems: MenuItem[] = [
             { name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes }, // Using Boxes or Barcode/Tags if imported
             { name: 'Kiểm kê', href: '/operations/audit', icon: ClipboardCheck },
             { name: 'Ghi chú vận hành', href: '/operations/notes', icon: StickyNote },
+            { name: 'Quản lý Công Trình', href: '/site-inventory', icon: HardHat },
         ]
     },
     {
@@ -133,6 +134,7 @@ export default function Sidebar() {
 
                     // Check Utility Module Gating
                     if (child.name === 'Nhật ký liên kết' && !isLotSyncEnabled) return false
+                    if (child.name === 'Quản lý Công Trình' && !isUtilityEnabled('site_inventory_manager')) return false
 
                     return true
                 })

@@ -25,6 +25,9 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
     const [driverName, setDriverName] = useState('')
     const [containerNumber, setContainerNumber] = useState('')
     const [orderTypeId, setOrderTypeId] = useState('')
+    // Site Inventory State
+    const [workerName, setWorkerName] = useState('')
+    const [teamName, setTeamName] = useState('')
     // Images State
     const [images, setImages] = useState<string[]>([])
     // Conversion State
@@ -121,6 +124,8 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                 setDriverName(meta.driverName || '')
                 setContainerNumber(meta.containerNumber || '')
                 setTargetUnit(meta.targetUnit || '')
+                setWorkerName(meta.workerName || '')
+                setTeamName(meta.teamName || '')
             }
 
             if (order.items) {
@@ -157,6 +162,8 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         setOrderTypeId('')
         setImages([])
         setTargetUnit('')
+        setWorkerName('')
+        setTeamName('')
     }
 
     async function fetchData() {
@@ -464,6 +471,8 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         orderTypeId, setOrderTypeId,
         images, setImages,
         targetUnit, setTargetUnit,
+        workerName, setWorkerName,
+        teamName, setTeamName,
         products, customers, branches, units, orderTypes,
         loadingData, submitting, handleSubmit,
         hasModule, isUtilityEnabled, confirmDialog, setConfirmDialog, handleCustomerSelect

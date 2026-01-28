@@ -25,6 +25,7 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
     const { toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
     const [splitQuantities, setSplitQuantities] = useState<Record<string, number>>({})
     const [splitUnits, setSplitUnits] = useState<Record<string, string>>({}) // lot_item_id -> selected unit name
+    const [splitAll, setSplitAll] = useState<Record<string, boolean>>({}) // Track "split all" per item
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [newLotCode, setNewLotCode] = useState<string>('...')
@@ -308,7 +309,30 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                                     </div>
 
                                     <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
-                                        <span className="text-xs font-bold text-slate-400 uppercase">Tách ra mới:</span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-bold text-slate-400 uppercase">Tách:</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const isCurrentlyAll = splitAll[item.id]
+                                                    if (isCurrentlyAll) {
+                                                        // Turn off - reset to 0
+                                                        setSplitAll(prev => ({ ...prev, [item.id]: false }))
+                                                        handleQuantityChange(item.id, 0)
+                                                    } else {
+                                                        // Turn on - set to max
+                                                        setSplitAll(prev => ({ ...prev, [item.id]: true }))
+                                                        handleQuantityChange(item.id, item.quantity || 0)
+                                                    }
+                                                }}
+                                                className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition-colors ${splitAll[item.id]
+                                                    ? 'text-white bg-purple-500 border-purple-500 hover:bg-purple-600'
+                                                    : 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 hover:bg-purple-100 dark:hover:bg-purple-900/50 border-purple-200 dark:border-purple-800'
+                                                    }`}
+                                            >
+                                                {splitAll[item.id] ? '✓ Tách hết' : 'Tách hết'}
+                                            </button>
+                                        </div>
                                         <div className="flex items-center gap-2">
                                             <QuantityInput
                                                 value={splitQuantities[item.id] || ''}

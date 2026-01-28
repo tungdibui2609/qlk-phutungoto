@@ -1,4 +1,4 @@
-import { Combine, ArrowRightLeft, Scissors } from 'lucide-react'
+import { Combine, ArrowRightLeft, Scissors, HardHat } from 'lucide-react'
 
 export interface UtilityModule {
     id: string
@@ -29,5 +29,12 @@ export const UTILITY_MODULES: UtilityModule[] = [
         description: 'Cho phép thực hiện thao tác chia tách LOT và bẻ đơn vị tính trực tiếp tại sơ đồ kho.',
         icon: Scissors,
         default_enabled: true
+    },
+    {
+        id: 'site_inventory_manager',
+        name: 'Quản lý Cấp Phát Công Trình',
+        description: 'Theo dõi xuất vật tư tiêu hao theo tổ đội và sổ theo dõi mượn/trả công cụ dụng cụ.',
+        icon: HardHat,
+        default_enabled: false
     }
 ]
