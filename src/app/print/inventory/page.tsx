@@ -87,6 +87,7 @@ export default function InventoryPrintPage() {
     const [accountingItems, setAccountingItems] = useState<InventoryItem[]>([])
     const [lotItems, setLotItems] = useState<LotItem[]>([])
     const [reconcileItems, setReconcileItems] = useState<ReconciliationItem[]>([])
+    const [logoSrc, setLogoSrc] = useState<string | null>(null)
 
     // Editable States
     const [editReportTitle, setEditReportTitle] = useState('')
@@ -132,12 +133,38 @@ export default function InventoryPrintPage() {
     }, [type, systemType, dateFrom, dateTo, warehouse, convertToKg])
 
     async function fetchCompanyInfo() {
-        const { data } = await supabase
+        const { data: companyData } = await supabase
             .from('company_settings')
             .select('*')
             .limit(1)
             .single()
-        if (data) setCompanyInfo(data as any)
+        if (companyData) {
+            setCompanyInfo(companyData as any)
+
+            // Handle secure logo loading
+            if ((companyData as any).logo_url) {
+                const url = (companyData as any).logo_url
+                if (token && url.includes('supabase')) {
+                    try {
+                        const res = await fetch(url, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        })
+                        if (res.ok) {
+                            const blob = await res.blob()
+                            setLogoSrc(URL.createObjectURL(blob))
+                        } else {
+                            setLogoSrc(url)
+                        }
+                    } catch (e) {
+                        setLogoSrc(url)
+                    }
+                } else {
+                    setLogoSrc(url)
+                }
+            }
+        } else if (initialCompanyInfo?.logo_url) {
+            setLogoSrc(initialCompanyInfo.logo_url)
+        }
     }
 
     async function fetchData() {
@@ -438,9 +465,9 @@ export default function InventoryPrintPage() {
                 <div className="flex items-center gap-3">
                     {/* Logo */}
                     <div className="shrink-0">
-                        {companyInfo?.logo_url ? (
+                        {logoSrc || companyInfo?.logo_url ? (
                             <img
-                                src={companyInfo.logo_url}
+                                src={logoSrc || companyInfo?.logo_url || ''}
                                 alt="Logo"
                                 className="h-16 w-auto object-contain"
                             />

@@ -236,6 +236,7 @@ function InboundPrintContent() {
     const [docQuantities, setDocQuantities] = useState<Record<string, string>>({})
     const [systemConfig, setSystemConfig] = useState<any>(null)
     const [unitsMap, setUnitsMap] = useState<Record<string, string>>({})
+    const [logoSrc, setLogoSrc] = useState<string | null>(null)
 
     // Module helpers
     const hasModule = (moduleId: string) => {
@@ -317,13 +318,37 @@ function InboundPrintContent() {
                     .from('company_settings')
                     .select('*')
                     .limit(1)
-                    .limit(1)
                     .single()
 
 
                 if (companyData) {
                     setCompanyInfo(companyData as any)
                     setEditLocation((companyData as any).address || '')
+
+                    // Handle secure logo loading
+                    if ((companyData as any).logo_url) {
+                        const url = (companyData as any).logo_url
+                        if (token && url.includes('supabase')) {
+                            try {
+                                const res = await fetch(url, {
+                                    headers: { Authorization: `Bearer ${token}` }
+                                })
+                                if (res.ok) {
+                                    const blob = await res.blob()
+                                    setLogoSrc(URL.createObjectURL(blob))
+                                } else {
+                                    setLogoSrc(url)
+                                }
+                            } catch (e) {
+                                setLogoSrc(url)
+                            }
+                        } else {
+                            setLogoSrc(url)
+                        }
+                    }
+                } else if (initialCompanyInfo?.logo_url) {
+                    // Fallback to params info if fetch fails or no data
+                    setLogoSrc(initialCompanyInfo.logo_url)
                 }
 
                 // Check for order data passed from server (API)
@@ -620,9 +645,9 @@ function InboundPrintContent() {
                     <div className="flex items-center gap-3">
                         {/* Logo */}
                         <div className="shrink-0">
-                            {companyInfo?.logo_url ? (
+                            {logoSrc || companyInfo?.logo_url ? (
                                 <img
-                                    src={companyInfo.logo_url}
+                                    src={logoSrc || companyInfo?.logo_url || ''}
                                     alt="Logo"
                                     className={isInternal ? "h-20 w-auto object-contain" : "h-10 w-auto object-contain"}
                                 />
