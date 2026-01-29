@@ -16,7 +16,7 @@ type UserProfile = {
     allowed_systems: string[] | null
     company_id: string | null
     department: string | null
-    roles: { name: string } | null
+    roles: { name: string; code: string } | null
 }
 
 interface UserContextType {
@@ -45,7 +45,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             if (authUser) {
                 const { data, error } = await supabase
                     .from('user_profiles')
-                    .select('id, full_name, email, avatar_url, permissions, blocked_routes, hidden_menus, favorite_menus, allowed_systems, company_id, department, roles(name)')
+                    .select('id, full_name, email, avatar_url, permissions, blocked_routes, hidden_menus, favorite_menus, allowed_systems, company_id, department, roles(name, code)')
                     .eq('id', authUser.id)
                     .eq('id', authUser.id)
                     .limit(1)

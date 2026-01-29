@@ -28,25 +28,28 @@ export default function SelectSystemPage() {
         }
         const { data: profile } = await (supabase
             .from('user_profiles') as any)
-            .select('allowed_systems, permissions') // Added permissions
+            .select('allowed_systems, permissions, department') // Added department
             .eq('id', user.id)
-            .maybeSingle() // Use maybeSingle to avoid 406 error on older supabase adapters
+            .maybeSingle()
 
         if (!profile) {
             setLoading(false)
             return
         }
 
-        // Check for full access permission
+        // Check for full access permission or department bypass
         let systems = profile.allowed_systems || []
 
-        // Super Admin bypass or Permission check
-        if ((profile.permissions && profile.permissions.includes('system.full_access')) ||
-            user.email === 'tungdibui2609@gmail.com') {
+        const isSuperUser = user.email === 'tungdibui2609@gmail.com'
+        const hasFullAccess = profile.permissions && profile.permissions.includes('system.full_access')
+        const isSystemDept = profile.department === 'Hệ thống'
+
+        if (isSuperUser || hasFullAccess || isSystemDept) {
             systems = ['ALL']
         }
 
-        setAllowedSystems(systems.length > 0 ? systems : ['FROZEN', 'OFFICE', 'DRY']) // Fallback to defaults if empty but valid user
+        // Fallback to a broader set of defaults if empty to avoid accidental lockout
+        setAllowedSystems(systems.length > 0 ? systems : ['DEFAULT', 'FROZEN', 'OFFICE', 'DRY'])
         setLoading(false)
     }
 
@@ -77,10 +80,11 @@ export default function SelectSystemPage() {
     // Helper to get color theme based on bg_color_class from DB
     // Expected DB: bg-blue-600 -> blue
     function getThemeColor(bgClass: string = 'bg-gray-600') {
-        if (bgClass.includes('blue')) return 'blue'
-        if (bgClass.includes('amber') || bgClass.includes('yellow')) return 'amber'
-        if (bgClass.includes('green') || bgClass.includes('emerald')) return 'emerald'
-        if (bgClass.includes('purple')) return 'purple'
+        const safeClass = bgClass || 'bg-gray-600'
+        if (safeClass.includes('blue')) return 'blue'
+        if (safeClass.includes('amber') || safeClass.includes('yellow')) return 'amber'
+        if (safeClass.includes('green') || safeClass.includes('emerald')) return 'emerald'
+        if (safeClass.includes('purple')) return 'purple'
         return 'stone'
     }
 
