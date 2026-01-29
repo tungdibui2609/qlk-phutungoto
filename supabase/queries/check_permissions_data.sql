@@ -1,0 +1,2 @@
+-- CHECK PERMISSIONS TABLE
+SELECT * FROM public.permissions;

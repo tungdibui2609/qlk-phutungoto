@@ -1,0 +1,2 @@
+-- CHECK ROLES TABLE
+SELECT * FROM public.roles;
