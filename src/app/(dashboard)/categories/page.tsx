@@ -5,6 +5,7 @@ import { Database } from '@/lib/database.types'
 import { Plus, Search, FolderTree, Edit, Trash2, Save, X, Loader2 } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUser } from '@/contexts/UserContext'
 
 type Category = Database['public']['Tables']['categories']['Row']
 
@@ -38,6 +39,8 @@ export default function CategoriesPage() {
         setLoading(false)
     }
 
+    const { profile } = useUser()
+
     async function addCategory() {
         if (!newName.trim()) return
         setSaving(true)
@@ -45,7 +48,8 @@ export default function CategoriesPage() {
         const { error } = await (supabase.from('categories') as any).insert([{
             name: newName.trim(),
             description: newDescription.trim() || null,
-            system_type: systemType
+            system_type: systemType,
+            company_id: profile?.company_id
         }])
 
         if (error) {

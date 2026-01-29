@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Plus, Search, Scale, Edit, Trash2, Save, X, Loader2, AlertCircle } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUser } from '@/contexts/UserContext'
 
 // Define the Unit type locally (or extend if needed)
 type Unit = {
@@ -17,6 +18,7 @@ type Unit = {
 
 export default function UnitsPage() {
     const { currentSystem } = useSystem()
+    const { profile } = useUser()
     const [units, setUnits] = useState<Unit[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
@@ -57,7 +59,8 @@ export default function UnitsPage() {
             name: newName.trim(),
             description: newDescription.trim() || null,
             is_active: true,
-            system_code: currentSystem.code
+            system_code: currentSystem.code,
+            company_id: profile?.company_id
         }])
 
         if (error) {

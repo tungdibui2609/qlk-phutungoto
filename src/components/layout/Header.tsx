@@ -194,7 +194,9 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
                             </p>
                             <div className="flex items-center gap-1.5 justify-end">
                                 <p className="text-xs text-stone-500 font-medium bg-stone-100 px-1.5 py-0.5 rounded">
-                                    {(profile as any)?.roles?.name || (profile as any)?.roles?.code || (profile as any)?.role_id ? 'Phân quyền' : 'Nhân viên'}
+                                    {(profile as any)?.account_level === 1 ? 'Super Admin' :
+                                        (profile as any)?.account_level === 2 ? 'Quản trị viên' :
+                                            (profile as any)?.roles?.name || 'Nhân viên'}
                                 </p>
                             </div>
                         </div>

@@ -85,6 +85,13 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             return true
         }
 
+        // LEVEL 1 & 2 BYPASS (Super Admin & Company Admin)
+        // Level 2 is the highest level for a Company context, so they need full access to all features.
+        // Access strictly to Super Admin pages (Level 1) should be handled by route protection/layout checks checking account_level = 1.
+        if (profile?.account_level === 1 || profile?.account_level === 2) {
+            return true
+        }
+
         // PERMISSION LOGIC:
         // 1. If no profile, false
         // 2. If permissions array contains specific code, true.
