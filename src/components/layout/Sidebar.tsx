@@ -119,7 +119,19 @@ export default function Sidebar() {
 
     // Filter menu items based on hidden_menus from profile (System Specific) and Utility Modules
     const visibleMenuItems = useMemo(() => {
+        const isAdmin = profile?.roles?.name === 'Quản trị viên'
+        const isSystemDept = profile?.department === 'Hệ thống'
+        const isSuperUser = profile?.email === 'tungdibui2609@gmail.com'
+
+        // Only Quản trị viên + Hệ thống OR Super User can see "Người dùng" and "Cài đặt"
+        const canAccessAdminMenus = isSuperUser || (isAdmin && isSystemDept)
+
         return menuItems.map(item => {
+            // Check Admin Menu Restriction
+            if ((item.name === 'Người dùng' || item.name === 'Cài đặt') && !canAccessAdminMenus) {
+                return null
+            }
+
             // Get hidden menus for current system
             const hiddenMenus = profile?.hidden_menus?.[systemType] || []
 
