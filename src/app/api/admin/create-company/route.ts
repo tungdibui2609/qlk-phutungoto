@@ -210,6 +210,7 @@ export async function POST(request: Request) {
                     company_id: company.id,
                     permissions: ['system.full_access'],
                     is_active: true,
+                    account_level: 2, // Company Admin level
                     // Grant full access to all current and future systems
                     allowed_systems: ['ALL']
                 })

@@ -19,7 +19,8 @@ export default function CompanyManager() {
 
     const fetchCompanies = async () => {
         setLoading(true)
-        const { data, error } = await (supabase as any).from('companies').select('*').order('created_at', { ascending: false })
+        // Filter out system companies (is_system = true)
+        const { data, error } = await (supabase as any).from('companies').select('*').neq('is_system', true).order('created_at', { ascending: false })
         if (error) {
             showToast('Lỗi tải danh sách công ty: ' + error.message, 'error')
         } else {

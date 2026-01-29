@@ -29,7 +29,10 @@ interface UserProfile {
     roles?: Role | null
 }
 
+import { useUser } from '@/contexts/UserContext'
+
 export default function UsersPage() {
+    const { profile } = useUser()
     const [users, setUsers] = useState<UserProfile[]>([])
     const [roles, setRoles] = useState<Role[]>([])
     const [loading, setLoading] = useState(true)
@@ -38,11 +41,26 @@ export default function UsersPage() {
     const [viewingHistoryId, setViewingHistoryId] = useState<string | null>(null)
 
     async function fetchUsers() {
+        if (!profile) return
+
         setLoading(true)
-        const { data } = await supabase
+        let query = supabase
             .from('user_profiles')
             .select('*, roles(id, code, name)')
             .order('full_name')
+
+        // If NOT Super Admin (Level 1), apply filters
+        if (profile.account_level !== 1) {
+            // Hide Super Admins
+            query = query.neq('account_level', 1)
+
+            // Show only users in same company
+            if (profile.company_id) {
+                query = query.eq('company_id', profile.company_id)
+            }
+        }
+
+        const { data } = await query
 
         if (data) setUsers(data)
         setLoading(false)
@@ -54,11 +72,11 @@ export default function UsersPage() {
     }
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        fetchUsers()
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        fetchRoles()
-    }, [])
+        if (profile) {
+            fetchUsers()
+            fetchRoles()
+        }
+    }, [profile])
 
     async function toggleUserStatus(id: string, currentStatus: boolean) {
         // Fetch old data for audit

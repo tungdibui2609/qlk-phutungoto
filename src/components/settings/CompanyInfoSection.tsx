@@ -230,11 +230,11 @@ export default function CompanyInfoSection() {
                     <div className="relative w-40 h-40 rounded-full border-2 border-dashed border-stone-300 flex items-center justify-center bg-stone-50 overflow-hidden group hover:border-orange-400 transition-colors">
                         {logoUrl ? (
                             <>
-                                <Image
+                                {/* Use standard img for stability */}
+                                <img
                                     src={logoUrl ? `${logoUrl}?t=${logoTimestamp}` : ''}
                                     alt="Logo"
-                                    fill
-                                    className="object-contain p-2"
+                                    className="object-contain p-2 w-full h-full"
                                 />
                                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button
@@ -290,10 +290,10 @@ export default function CompanyInfoSection() {
                                 value={info?.code || ''}
                                 onChange={e => {
                                     const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4)
-                                    setInfo(prev => ({ ...prev!, code: val } as any))
+                                    setInfo(prev => (prev ? { ...prev, code: val } : { code: val } as any))
                                 }}
                                 placeholder="VD: Abcd (4 ký tự)"
-                                className="w-full px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-mono tracking-widest"
+                                className="w-full px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-mono tracking-widest uppercase"
                             />
                             <p className="text-xs text-stone-500 mt-1">
                                 Mã định danh duy nhất (4 ký tự), dùng làm tiền tố tài khoản (VD: <span className="font-medium text-stone-700">{info?.code || 'ABCD'}-USER01</span>).
@@ -307,7 +307,7 @@ export default function CompanyInfoSection() {
                             <input
                                 name="short_name"
                                 value={info?.short_name || ''}
-                                onChange={e => setInfo(prev => ({ ...prev!, short_name: e.target.value } as any))}
+                                onChange={e => setInfo(prev => (prev ? { ...prev, short_name: e.target.value } : { short_name: e.target.value } as any))}
                                 placeholder="VD: AnyWarehouse"
                                 className="w-full px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-medium"
                             />
@@ -324,7 +324,7 @@ export default function CompanyInfoSection() {
                                 name="name"
                                 value={info?.name || ''}
                                 required
-                                onChange={e => setInfo(prev => ({ ...prev!, name: e.target.value } as any))}
+                                onChange={e => setInfo(prev => (prev ? { ...prev, name: e.target.value } : { name: e.target.value } as any))}
                                 placeholder="VD: Công ty TNHH..."
                                 className="w-full px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-medium"
                             />
