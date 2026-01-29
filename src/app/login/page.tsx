@@ -45,8 +45,14 @@ export default function LoginPage() {
             const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signInEmail)
 
             if (!isEmail) {
-                if (companyCode) {
-                    // New logic: Username + Company Code
+                // Check if input follows format "prefix.username" (e.g. any.kho01)
+                const prefixMatch = signInEmail.match(/^([a-z0-9]+)\.([a-z0-9_.-]+)$/i)
+
+                if (prefixMatch) {
+                    // Looks like a prefixed username! Try standard system email.
+                    signInEmail = `${signInEmail}@system.local`
+                } else if (companyCode) {
+                    // Manual company code entry
                     // Construct internal email: username@companycode.local
                     signInEmail = `${signInEmail}@${companyCode.toLowerCase()}.local`
                 } else {
@@ -59,7 +65,7 @@ export default function LoginPage() {
                         // If not found via RPC, suggest entering company code
                         if (!showCompanyInput) {
                             setShowCompanyInput(true)
-                            throw new Error('Nếu là tài khoản nội bộ, vui lòng nhập thêm Mã Doanh Nghiệp.')
+                            throw new Error('Nếu là tài khoản nội bộ (cũ), vui lòng nhập thêm Mã Doanh Nghiệp. Nếu là tài khoản mới, vui lòng nhập đúng định dạng "prefix.username".')
                         }
                         throw new Error('Tài khoản không tồn tại hoặc sai thông tin.')
                     }
@@ -193,13 +199,13 @@ export default function LoginPage() {
                     {/* Toggle Company Code */}
                     {!showCompanyInput && !email.includes('@') && email.length > 0 && (
                         <div className="text-right">
-                             <button
+                            <button
                                 type="button"
                                 onClick={() => setShowCompanyInput(true)}
                                 className="text-xs text-orange-600 hover:text-orange-700 font-medium"
-                             >
+                            >
                                 + Đăng nhập bằng Mã Doanh Nghiệp
-                             </button>
+                            </button>
                         </div>
                     )}
 
@@ -218,7 +224,7 @@ export default function LoginPage() {
                                 placeholder="VD: cty-abc"
                             />
                         </div>
-                         <p className="text-[10px] text-stone-400 mt-1 pl-1">Nhập mã định danh công ty để đăng nhập tài khoản nội bộ</p>
+                        <p className="text-[10px] text-stone-400 mt-1 pl-1">Nhập mã định danh công ty để đăng nhập tài khoản nội bộ</p>
                     </div>
 
                     <div>

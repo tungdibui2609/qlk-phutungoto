@@ -43,6 +43,7 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
     const [loading, setLoading] = useState(false)
     const [roles, setRoles] = useState<Role[]>([])
     const [systems, setSystems] = useState<System[]>([])
+    const [companyPrefix, setCompanyPrefix] = useState('')
 
     const [formData, setFormData] = useState({
         employee_code: initialData?.employee_code || '',
@@ -63,8 +64,27 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
         fetchSystems()
         if (!isEditMode) {
             fetchLatestEmployeeCode()
+            fetchCompanyPrefix()
         }
     }, [isEditMode])
+
+    async function fetchCompanyPrefix() {
+        if (loggedInProfile?.company_id) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data } = await supabase.from('companies' as any)
+                .select('username_prefix, code')
+                .eq('id', loggedInProfile.company_id)
+                .maybeSingle()
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const company = data as any
+            if (company?.username_prefix) {
+                setCompanyPrefix(company.username_prefix)
+            } else if (company?.code) {
+                setCompanyPrefix(company.code.substring(0, 3))
+            }
+        }
+    }
 
     async function fetchSystems() {
         // systems might not be in the default Types yet if generated via introspection only on public schema
@@ -165,108 +185,76 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
             } else {
                 // Create new user with Supabase Auth
                 let submitEmail = formData.email
+                let finalUsername = formData.username
+
+                // Logic for Company Prefix
                 if (!submitEmail && formData.username) {
-                    // Fetch company code to scope username
-                    let companyCode = 'no-email'
+                    let prefix = 'uu' // default if unknown
                     if (loggedInProfile?.company_id) {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         const { data: company } = await supabase
-                            .from('companies')
-                            .select('code')
+                            .from('companies' as any)
+                            .select('code, username_prefix')
                             .eq('id', loggedInProfile.company_id)
                             .maybeSingle()
 
-                        if (company?.code) {
-                            companyCode = company.code.toLowerCase()
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        const companyData = company as any
+                        if (companyData?.username_prefix) {
+                            prefix = companyData.username_prefix.toLowerCase()
+                        } else if (companyData?.code) {
+                            // Fallback if prefix not set
+                            prefix = companyData.code.toLowerCase().substring(0, 3)
                         }
                     }
 
-                    submitEmail = `${formData.username}@${companyCode}.local`
+                    // Enforce prefix on username
+                    finalUsername = `${prefix}.${formData.username}`
+                    // Standardized system email
+                    submitEmail = `${finalUsername}@system.local`
                 }
 
                 if (!submitEmail || !formData.password) {
                     throw new Error('Tài khoản (hoặc Email) và mật khẩu là bắt buộc')
                 }
 
-                // 1. Create auth user
-                const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-                    email: submitEmail,
-                    password: formData.password,
-                    email_confirm: true,
-                    user_metadata: { username: formData.username }
-                })
-
-                if (authError) {
-                    // Fallback: use signUp if admin API not available
-                    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                // 1. Create user via Server API (prevents auto-login)
+                const response = await fetch('/api/admin/create-user', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
                         email: submitEmail,
                         password: formData.password,
-                        options: {
-                            data: { username: formData.username }
-                        }
-                    })
-
-                    if (signUpError) throw signUpError
-
-                    if (signUpData.user) {
-                        const newProfile = {
-                            id: signUpData.user.id,
-                            employee_code: formData.employee_code || null,
-                            username: formData.username || null,
-                            full_name: formData.full_name,
-                            phone: formData.phone || null,
-                            email: submitEmail,
-                            role_id: formData.role_id || null,
-                            department: formData.department || null,
-                            is_active: formData.is_active,
-                            allowed_systems: formData.allowed_systems,
-                            company_id: loggedInProfile?.company_id || null,
-                        }
-
-                        // 2. Create user profile
-                        const { error: profileError } = await supabase
-                            .from('user_profiles')
-                            .insert([newProfile])
-
-                        if (profileError) throw profileError
-
-                        // Log Activity
-                        await logActivity({
-                            supabase,
-                            tableName: 'user_profiles',
-                            recordId: signUpData.user.id,
-                            action: 'CREATE',
-                            newData: newProfile
-                        })
-                    }
-                } else if (authData.user) {
-                    const newProfile = {
-                        id: authData.user.id,
-                        employee_code: formData.employee_code || null,
-                        username: formData.username || null,
+                        username: finalUsername,
                         full_name: formData.full_name,
-                        phone: formData.phone || null,
-                        email: submitEmail,
-                        role_id: formData.role_id || null,
-                        department: formData.department || null,
+                        employee_code: formData.employee_code,
+                        phone: formData.phone,
+                        role_id: formData.role_id,
+                        department: formData.department,
                         is_active: formData.is_active,
                         allowed_systems: formData.allowed_systems,
-                        company_id: loggedInProfile?.company_id || null,
-                    }
+                        company_id: loggedInProfile?.company_id
+                    })
+                })
 
-                    // 2. Create user profile
-                    const { error: profileError } = await supabase
-                        .from('user_profiles')
-                        .insert([newProfile])
+                const result = await response.json()
 
-                    if (profileError) throw profileError
+                if (!response.ok) {
+                    throw new Error(result.error || 'Failed to create user')
+                }
 
-                    // Log Activity
+                // Log Activity (Client side log is fine, or move to server)
+                if (result.user) {
                     await logActivity({
                         supabase,
                         tableName: 'user_profiles',
-                        recordId: authData.user.id,
+                        recordId: result.user.id,
                         action: 'CREATE',
-                        newData: newProfile
+                        newData: {
+                            username: finalUsername,
+                            email: submitEmail,
+                            company_id: loggedInProfile?.company_id
+                        }
                     })
                 }
             }
@@ -336,14 +324,21 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                             <label className="block text-xs font-medium text-stone-700 mb-1.5">
                                 Tên tài khoản (Username) <span className="text-red-500">*</span>
                             </label>
-                            <input
-                                name="username"
-                                required
-                                value={formData.username}
-                                onChange={handleChange}
-                                className={inputClass}
-                                placeholder="VD: user01"
-                            />
+                            <div className="relative">
+                                {companyPrefix && (
+                                    <div className="absolute left-0 top-0 bottom-0 px-3 bg-stone-100 border-r border-stone-200 rounded-l-lg flex items-center text-stone-500 text-sm font-medium">
+                                        {companyPrefix}.
+                                    </div>
+                                )}
+                                <input
+                                    name="username"
+                                    required
+                                    value={formData.username}
+                                    onChange={handleChange}
+                                    className={`${inputClass} ${companyPrefix ? 'pl-16' : ''}`}
+                                    placeholder="VD: user01"
+                                />
+                            </div>
                         </div>
                         <div>
                             <label className="block text-xs font-medium text-stone-700 mb-1.5">

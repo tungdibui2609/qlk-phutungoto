@@ -71,15 +71,17 @@ export async function middleware(request: NextRequest) {
         return response
     }
 
-    // API Routes protection
-    if (!user && path.startsWith('/api/')) {
+    // API Routes protection which requires user session
+    // Exception: /api/restore-admin (Public recovery endpoint) and /api/auth/* (Supabase callback)
+    if (!user && path.startsWith('/api/') && !path.startsWith('/api/restore-admin') && !path.startsWith('/api/auth/')) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // 1. Unauthenticated User Logic
     if (!user) {
         // Allow public routes
-        if (IS_LOGIN_PAGE || IS_ADMIN_LOGIN_PAGE || path.startsWith('/print')) {
+        // API routes are handled separately above (returning 401 if needed), so we allow them to pass here to avoid redirects
+        if (IS_LOGIN_PAGE || IS_ADMIN_LOGIN_PAGE || path.startsWith('/print') || path.startsWith('/api/')) {
             return response
         }
 
