@@ -176,7 +176,8 @@ export function useZoneManager() {
                 level,
                 created_at: new Date().toISOString(),
                 _status: 'new',
-                system_type: systemType
+                system_type: systemType,
+                company_id: null
             })
         }
 
@@ -206,7 +207,8 @@ export function useZoneManager() {
                 level,
                 created_at: new Date().toISOString(),
                 _status: 'new',
-                system_type: systemType
+                system_type: systemType,
+                company_id: null
             })
 
             for (const child of node.children) {
@@ -224,7 +226,8 @@ export function useZoneManager() {
             level: parentLevel + 1,
             created_at: new Date().toISOString(),
             _status: 'new',
-            system_type: systemType
+            system_type: systemType,
+            company_id: null
         })
 
         // Children

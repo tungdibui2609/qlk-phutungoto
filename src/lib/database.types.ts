@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           address: string | null
           code: string
+          company_id: string | null
           created_at: string | null
           id: string
           is_active: boolean | null
@@ -29,6 +30,7 @@ export type Database = {
         Insert: {
           address?: string | null
           code: string
+          company_id?: string | null
           created_at?: string | null
           id?: string
           is_active?: boolean | null
@@ -40,6 +42,7 @@ export type Database = {
         Update: {
           address?: string | null
           code?: string
+          company_id?: string | null
           created_at?: string | null
           id?: string
           is_active?: boolean | null
@@ -338,6 +341,7 @@ export type Database = {
         Row: {
           capacity: number | null
           code: string
+          company_id: string | null
           created_at: string | null
           current_quantity: number | null
           id: string
@@ -350,6 +354,7 @@ export type Database = {
         Insert: {
           capacity?: number | null
           code: string
+          company_id?: string | null
           created_at?: string | null
           current_quantity?: number | null
           id?: string
@@ -362,6 +367,7 @@ export type Database = {
         Update: {
           capacity?: number | null
           code?: string
+          company_id?: string | null
           created_at?: string | null
           current_quantity?: number | null
           id?: string
@@ -431,6 +437,7 @@ export type Database = {
         Row: {
           batch_code: string | null
           code: string
+          company_id: string | null
           created_at: string
           id: string
           inbound_date: string | null
@@ -449,6 +456,7 @@ export type Database = {
         Insert: {
           batch_code?: string | null
           code: string
+          company_id?: string | null
           created_at?: string
           id?: string
           inbound_date?: string | null
@@ -467,6 +475,7 @@ export type Database = {
         Update: {
           batch_code?: string | null
           code?: string
+          company_id?: string | null
           created_at?: string
           id?: string
           inbound_date?: string | null
@@ -1417,6 +1426,7 @@ export type Database = {
         Row: {
           address: string | null
           code: string
+          company_id: string | null
           created_at: string | null
           id: string
           name: string
@@ -1424,6 +1434,7 @@ export type Database = {
         Insert: {
           address?: string | null
           code: string
+          company_id?: string | null
           created_at?: string | null
           id?: string
           name: string
@@ -1431,6 +1442,7 @@ export type Database = {
         Update: {
           address?: string | null
           code?: string
+          company_id?: string | null
           created_at?: string | null
           id?: string
           name?: string
@@ -1445,6 +1457,7 @@ export type Database = {
           child_layout: string | null
           child_width: number | null
           collapsible: boolean | null
+          company_id: string | null
           created_at: string | null
           display_type: string | null
           id: string
@@ -1550,6 +1563,7 @@ export type Database = {
       zones: {
         Row: {
           code: string
+          company_id: string | null
           created_at: string | null
           id: string
           level: number | null
@@ -1559,6 +1573,7 @@ export type Database = {
         }
         Insert: {
           code: string
+          company_id?: string | null
           created_at?: string | null
           id?: string
           level?: number | null
@@ -1568,6 +1583,7 @@ export type Database = {
         }
         Update: {
           code?: string
+          company_id?: string | null
           created_at?: string | null
           id?: string
           level?: number | null

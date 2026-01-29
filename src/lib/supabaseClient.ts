@@ -51,6 +51,7 @@ type InventoryChecksTable = {
     Row: {
         id: string
         code: string
+        company_id: string | null
         warehouse_id: string | null
         warehouse_name: string | null
         status: 'DRAFT' | 'IN_PROGRESS' | 'WAITING_FOR_APPROVAL' | 'COMPLETED' | 'CANCELLED' | 'REJECTED'
@@ -70,6 +71,7 @@ type InventoryChecksTable = {
     Insert: {
         id?: string
         code: string
+        company_id?: string | null
         warehouse_id?: string | null
         warehouse_name?: string | null
         status?: 'DRAFT' | 'IN_PROGRESS' | 'WAITING_FOR_APPROVAL' | 'COMPLETED' | 'CANCELLED' | 'REJECTED'
@@ -89,6 +91,7 @@ type InventoryChecksTable = {
     Update: {
         id?: string
         code?: string
+        company_id?: string | null
         warehouse_id?: string | null
         warehouse_name?: string | null
         status?: 'DRAFT' | 'IN_PROGRESS' | 'WAITING_FOR_APPROVAL' | 'COMPLETED' | 'CANCELLED' | 'REJECTED'
@@ -127,6 +130,7 @@ type InventoryCheckItemsTable = {
     Row: {
         id: string
         check_id: string
+        company_id: string | null
         lot_id: string | null
         lot_item_id: string | null
         product_id: string
@@ -143,6 +147,7 @@ type InventoryCheckItemsTable = {
     Insert: {
         id?: string
         check_id: string
+        company_id?: string | null
         lot_id?: string | null
         lot_item_id?: string | null
         product_id: string
@@ -159,6 +164,7 @@ type InventoryCheckItemsTable = {
     Update: {
         id?: string
         check_id?: string
+        company_id?: string | null
         lot_id?: string | null
         lot_item_id?: string | null
         product_id?: string
