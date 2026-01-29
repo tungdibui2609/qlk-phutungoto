@@ -1,4 +1,5 @@
 import { Edit2, RotateCcw, CloudUpload } from 'lucide-react'
+import Protected from '@/components/auth/Protected'
 
 interface ZoneToolbarProps {
     hasChanges: boolean
@@ -45,25 +46,27 @@ export function ZoneToolbar({ hasChanges, isSaving, handleSaveChanges, handleDis
                 </div>
             </div>
             <div className="flex items-center gap-2">
-                <button
-                    onClick={handleDiscardChanges}
-                    className="px-4 py-2 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 rounded-lg text-sm font-medium flex items-center gap-2"
-                >
-                    <RotateCcw size={16} />
-                    Hủy bỏ
-                </button>
-                <button
-                    onClick={handleSaveChanges}
-                    disabled={isSaving}
-                    className="px-6 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-sm font-bold shadow-md transition-all transform hover:scale-105 flex items-center gap-2"
-                >
-                    {isSaving ? 'Đang lưu...' : (
-                        <>
-                            <CloudUpload size={18} />
-                            Lưu Thay Đổi
-                        </>
-                    )}
-                </button>
+                <Protected permission="warehouse.manage">
+                    <button
+                        onClick={handleDiscardChanges}
+                        className="px-4 py-2 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 rounded-lg text-sm font-medium flex items-center gap-2"
+                    >
+                        <RotateCcw size={16} />
+                        Hủy bỏ
+                    </button>
+                    <button
+                        onClick={handleSaveChanges}
+                        disabled={isSaving}
+                        className="px-6 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-sm font-bold shadow-md transition-all transform hover:scale-105 flex items-center gap-2"
+                    >
+                        {isSaving ? 'Đang lưu...' : (
+                            <>
+                                <CloudUpload size={18} />
+                                Lưu Thay Đổi
+                            </>
+                        )}
+                    </button>
+                </Protected>
             </div>
         </div>
     )

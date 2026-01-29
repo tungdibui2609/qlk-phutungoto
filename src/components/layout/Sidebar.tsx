@@ -14,7 +14,8 @@ type MenuItem = {
     name: string
     href?: string
     icon: any
-    children?: { name: string; href: string; icon: any }[]
+    requiredPermission?: string // [NEW] Permissions key
+    children?: { name: string; href: string; icon: any; requiredPermission?: string }[]
 }
 
 const menuItems: MenuItem[] = [
@@ -23,56 +24,56 @@ const menuItems: MenuItem[] = [
         name: 'Quản lý sản phẩm',
         icon: Package,
         children: [
-            { name: 'Sản phẩm', href: '/products', icon: List },
-            { name: 'Danh mục', href: '/categories', icon: FolderTree },
-            { name: 'Đơn vị', href: '/units', icon: Boxes },
-            { name: 'Xuất xứ', href: '/origins', icon: Globe },
-            { name: 'Mã phụ', href: '/warehouses/lot-codes', icon: Tag },
+            { name: 'Sản phẩm', href: '/products', icon: List, requiredPermission: 'product.view' },
+            { name: 'Danh mục', href: '/categories', icon: FolderTree, requiredPermission: 'product.view' },
+            { name: 'Đơn vị', href: '/units', icon: Boxes, requiredPermission: 'product.view' },
+            { name: 'Xuất xứ', href: '/origins', icon: Globe, requiredPermission: 'product.view' },
+            { name: 'Mã phụ', href: '/warehouses/lot-codes', icon: Tag, requiredPermission: 'product.view' },
         ]
     },
     {
         name: 'Quản lý thông tin',
         icon: BookUser,
         children: [
-            { name: 'Nhà cung cấp', href: '/suppliers', icon: Building2 },
-            { name: 'Dòng xe', href: '/vehicles', icon: Car },
-            { name: 'Khách hàng', href: '/customers', icon: Users },
-            { name: 'Loại phiếu', href: '/order-types', icon: FileText },
-            { name: 'QC', href: '/qc', icon: ShieldCheck },
+            { name: 'Nhà cung cấp', href: '/suppliers', icon: Building2, requiredPermission: 'partner.view' },
+            { name: 'Dòng xe', href: '/vehicles', icon: Car, requiredPermission: 'vehicle.view' },
+            { name: 'Khách hàng', href: '/customers', icon: Users, requiredPermission: 'partner.view' },
+            { name: 'Loại phiếu', href: '/order-types', icon: FileText, requiredPermission: 'warehouse.manage' },
+            { name: 'QC', href: '/qc', icon: ShieldCheck, requiredPermission: 'qc.view' },
         ]
     },
     {
         name: 'Quản lý Kho',
         icon: Warehouse,
         children: [
-            { name: 'Hạ tầng', href: '/warehouses', icon: Warehouse },
-            { name: 'Sơ đồ kho', href: '/warehouses/map', icon: Map },
-            { name: 'Trạng thái kho', href: '/warehouses/status', icon: BarChart3 },
-            { name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes }, // Using Boxes or Barcode/Tags if imported
-            { name: 'Kiểm kê', href: '/operations/audit', icon: ClipboardCheck },
-            { name: 'Ghi chú vận hành', href: '/operations/notes', icon: StickyNote },
-            { name: 'Quản lý Công Trình', href: '/site-inventory', icon: HardHat },
+            { name: 'Hạ tầng', href: '/warehouses', icon: Warehouse, requiredPermission: 'warehouse.view' },
+            { name: 'Sơ đồ kho', href: '/warehouses/map', icon: Map, requiredPermission: 'warehousemap.manage' },
+            { name: 'Trạng thái kho', href: '/warehouses/status', icon: BarChart3, requiredPermission: 'warehouse.view' },
+            { name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes, requiredPermission: 'inventory.view' },
+            { name: 'Kiểm kê', href: '/operations/audit', icon: ClipboardCheck, requiredPermission: 'inventory.manage' },
+            { name: 'Ghi chú vận hành', href: '/operations/notes', icon: StickyNote, requiredPermission: 'warehouse.view' },
+            { name: 'Quản lý Công Trình', href: '/site-inventory', icon: HardHat, requiredPermission: 'site_inventory.view' },
         ]
     },
     {
         name: 'Kế toán',
         icon: FileText,
         children: [
-            { name: 'Nhập kho', href: '/inbound', icon: ArrowDownToLine },
-            { name: 'Xuất kho', href: '/outbound', icon: ArrowUpFromLine },
+            { name: 'Nhập kho', href: '/inbound', icon: ArrowDownToLine, requiredPermission: 'inventory.manage' },
+            { name: 'Xuất kho', href: '/outbound', icon: ArrowUpFromLine, requiredPermission: 'inventory.manage' },
         ]
     },
     {
         name: 'Báo cáo',
         icon: BarChart3,
         children: [
-            { name: 'Tồn kho', href: '/inventory', icon: Package },
-            { name: 'Lịch sử thao tác', href: '/operation-history', icon: Activity },
-            { name: 'Chứng từ khách hàng', href: '/reports/customer-docs', icon: FileText },
-            { name: 'Công nợ NCC', href: '/reports/supplier-debts', icon: DollarSign },
-            { name: 'Nhật ký xuất nhập', href: '/reports/accounting-history', icon: ArrowRightLeft },
-            { name: 'Nhật ký xuất nhập LOT', href: '/reports/lot-history', icon: History },
-            { name: 'Nhật ký liên kết', href: '/reports/linked-journal', icon: ArrowRightLeft },
+            { name: 'Tồn kho', href: '/inventory', icon: Package, requiredPermission: 'inventory.view' },
+            { name: 'Lịch sử thao tác', href: '/operation-history', icon: Activity, requiredPermission: 'report.view' },
+            { name: 'Chứng từ khách hàng', href: '/reports/customer-docs', icon: FileText, requiredPermission: 'report.view' },
+            { name: 'Công nợ NCC', href: '/reports/supplier-debts', icon: DollarSign, requiredPermission: 'report.view' },
+            { name: 'Nhật ký xuất nhập', href: '/reports/accounting-history', icon: ArrowRightLeft, requiredPermission: 'report.view' },
+            { name: 'Nhật ký xuất nhập LOT', href: '/reports/lot-history', icon: History, requiredPermission: 'report.view' },
+            { name: 'Nhật ký liên kết', href: '/reports/linked-journal', icon: ArrowRightLeft, requiredPermission: 'report.view' },
         ]
     },
     {
@@ -123,13 +124,25 @@ export default function Sidebar() {
         // Level 1 = Super Admin, Level 2 = Company Admin, Level 3 = Employee
         const accountLevel = profile?.account_level ?? 3
         const isSuperUser = profile?.email === 'tungdibui2609@gmail.com'
+        const userPermissions = profile?.permissions || []
 
         // Level 1 (Super Admin) and Level 2 (Company Admin) can see admin menus
         const canAccessAdminMenus = isSuperUser || accountLevel <= 2
 
+        // Helper: Check if user has specific permission (or is Admin)
+        const hasPermission = (code?: string) => {
+            if (canAccessAdminMenus) return true // Admins have broad access
+            if (!code) return true // No permission required
+            return userPermissions.includes(code) || userPermissions.includes('system.full_access')
+        }
+
         return menuItems.map(item => {
             // Check Admin Menu Restriction
             if ((item.name === 'Người dùng' || item.name === 'Cài đặt') && !canAccessAdminMenus) {
+                return null
+            }
+            // Check Item Permission
+            if (item.requiredPermission && !hasPermission(item.requiredPermission)) {
                 return null
             }
 
@@ -144,6 +157,9 @@ export default function Sidebar() {
                 const visibleChildren = item.children.filter(child => {
                     // Check profile hidden menus
                     if (hiddenMenus.includes(child.name)) return false
+
+                    // Check Permission
+                    if (child.requiredPermission && !hasPermission(child.requiredPermission)) return false
 
                     // Check Utility Module Gating
                     if (child.name === 'Nhật ký liên kết' && !isLotSyncEnabled) return false

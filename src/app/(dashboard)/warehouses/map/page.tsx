@@ -12,6 +12,7 @@ import { useSystem } from '@/contexts/SystemContext'
 import { LotTagModal } from '@/components/lots/LotTagModal'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { usePositionActionManager } from '@/components/warehouse/map/PositionActionManager'
+import Protected from '@/components/auth/Protected'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -546,16 +547,18 @@ function WarehouseMapContent() {
                 </div>
 
                 {/* Design Mode Toggle */}
-                <button
-                    onClick={() => setIsDesignMode(!isDesignMode)}
-                    className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors ${isDesignMode
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                        }`}
-                >
-                    <Settings size={18} />
-                    {isDesignMode ? 'Thoát Thiết kế' : 'Thiết kế Layout'}
-                </button>
+                <Protected permission="warehousemap.manage">
+                    <button
+                        onClick={() => setIsDesignMode(!isDesignMode)}
+                        className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors ${isDesignMode
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                            }`}
+                    >
+                        <Settings size={18} />
+                        {isDesignMode ? 'Thoát Thiết kế' : 'Thiết kế Layout'}
+                    </button>
+                </Protected>
             </div>
 
             {/* Design mode hint */}

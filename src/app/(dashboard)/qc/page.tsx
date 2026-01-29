@@ -7,6 +7,7 @@ import { logActivity } from '@/lib/audit'
 import AuditLogViewer from '@/components/shared/AuditLogViewer'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
+import Protected from '@/components/auth/Protected'
 
 type QCInfo = {
     id: string
@@ -224,13 +225,15 @@ export default function QCPage() {
                         <p className="text-xs text-stone-500">Phân hệ: {currentSystem?.name}</p>
                     </div>
                 </div>
-                <button
-                    onClick={() => handleOpenModal()}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                    <Plus size={16} />
-                    <span>Thêm mới</span>
-                </button>
+                <Protected permission="qc.manage">
+                    <button
+                        onClick={() => handleOpenModal()}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                        <Plus size={16} />
+                        <span>Thêm mới</span>
+                    </button>
+                </Protected>
             </div>
 
             {/* Content */}
@@ -287,18 +290,20 @@ export default function QCPage() {
                                             </td>
                                             <td className="px-6 py-3">
                                                 <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button
-                                                        onClick={() => handleOpenModal(item)}
-                                                        className="p-1.5 text-stone-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-                                                    >
-                                                        <Edit size={16} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDelete(item.id)}
-                                                        className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
+                                                    <Protected permission="qc.manage">
+                                                        <button
+                                                            onClick={() => handleOpenModal(item)}
+                                                            className="p-1.5 text-stone-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                                        >
+                                                            <Edit size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDelete(item.id)}
+                                                            className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </Protected>
                                                     <button
                                                         onClick={() => setViewingHistoryId(item.id)}
                                                         className="p-1.5 text-stone-400 hover:text-purple-600 hover:bg-purple-50 rounded"

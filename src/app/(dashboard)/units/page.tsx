@@ -5,6 +5,7 @@ import { Database } from '@/lib/database.types'
 import { Plus, Search, Scale, Edit, Trash2, Save, X, Loader2, AlertCircle } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
+import Protected from '@/components/auth/Protected'
 
 // Define the Unit type locally (or extend if needed)
 type Unit = {
@@ -133,67 +134,71 @@ export default function UnitsPage() {
                     <h1 className="text-2xl font-bold text-stone-800">Quản lý Đơn vị ({currentSystem.name})</h1>
                     <p className="text-stone-500 text-sm mt-1">Danh sách đơn vị tính thuộc phân hệ {currentSystem.name}</p>
                 </div>
-                <button
-                    onClick={() => setShowAddForm(true)}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
-                    style={{
-                        background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                        boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)',
-                    }}
-                >
-                    <Plus size={20} />
-                    Thêm đơn vị
-                </button>
+                <Protected permission="unit.manage">
+                    <button
+                        onClick={() => setShowAddForm(true)}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
+                        style={{
+                            background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                            boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)',
+                        }}
+                    >
+                        <Plus size={20} />
+                        Thêm đơn vị
+                    </button>
+                </Protected>
             </div>
 
             {/* ADD FORM */}
-            {showAddForm && (
-                <div className="bg-orange-50 rounded-2xl p-5 border border-orange-200 animation-fade-in-down">
-                    <h3 className="font-semibold text-stone-800 mb-4 flex items-center gap-2">
-                        <Plus className="text-orange-500" size={18} />
-                        Thêm đơn vị mới vào {currentSystem.name}
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-stone-700 mb-2">
-                                Tên đơn vị <span className="text-red-500">*</span>
-                            </label>
-                            <input
-                                value={newName}
-                                onChange={(e) => setNewName(e.target.value)}
-                                className="w-full p-3 rounded-xl bg-white border border-stone-200 text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                                placeholder="VD: Cái, Hộp, Bộ..."
-                                autoFocus
-                            />
+            {
+                showAddForm && (
+                    <div className="bg-orange-50 rounded-2xl p-5 border border-orange-200 animation-fade-in-down">
+                        <h3 className="font-semibold text-stone-800 mb-4 flex items-center gap-2">
+                            <Plus className="text-orange-500" size={18} />
+                            Thêm đơn vị mới vào {currentSystem.name}
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-stone-700 mb-2">
+                                    Tên đơn vị <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    value={newName}
+                                    onChange={(e) => setNewName(e.target.value)}
+                                    className="w-full p-3 rounded-xl bg-white border border-stone-200 text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                                    placeholder="VD: Cái, Hộp, Bộ..."
+                                    autoFocus
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-stone-700 mb-2">Mô tả</label>
+                                <input
+                                    value={newDescription}
+                                    onChange={(e) => setNewDescription(e.target.value)}
+                                    className="w-full p-3 rounded-xl bg-white border border-stone-200 text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                                    placeholder="Mô tả thêm..."
+                                />
+                            </div>
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-stone-700 mb-2">Mô tả</label>
-                            <input
-                                value={newDescription}
-                                onChange={(e) => setNewDescription(e.target.value)}
-                                className="w-full p-3 rounded-xl bg-white border border-stone-200 text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                                placeholder="Mô tả thêm..."
-                            />
+                        <div className="flex gap-3 mt-4">
+                            <button
+                                onClick={addUnit}
+                                disabled={saving || !newName.trim()}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-500 text-white font-medium hover:bg-orange-600 disabled:opacity-50 transition-colors"
+                            >
+                                {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                                Lưu
+                            </button>
+                            <button
+                                onClick={() => { setShowAddForm(false); setNewName(''); setNewDescription('') }}
+                                className="px-4 py-2 rounded-xl bg-stone-100 text-stone-600 font-medium hover:bg-stone-200 transition-colors"
+                            >
+                                Hủy
+                            </button>
                         </div>
                     </div>
-                    <div className="flex gap-3 mt-4">
-                        <button
-                            onClick={addUnit}
-                            disabled={saving || !newName.trim()}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-500 text-white font-medium hover:bg-orange-600 disabled:opacity-50 transition-colors"
-                        >
-                            {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-                            Lưu
-                        </button>
-                        <button
-                            onClick={() => { setShowAddForm(false); setNewName(''); setNewDescription('') }}
-                            className="px-4 py-2 rounded-xl bg-stone-100 text-stone-600 font-medium hover:bg-stone-200 transition-colors"
-                        >
-                            Hủy
-                        </button>
-                    </div>
-                </div>
-            )}
+                )
+            }
 
             {/* SEARCH */}
             <div className="bg-white rounded-2xl p-4 border border-stone-200">
@@ -291,20 +296,22 @@ export default function UnitsPage() {
                                                 </>
                                             ) : (
                                                 <>
-                                                    <button
-                                                        onClick={() => startEdit(unit)}
-                                                        className="p-2 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
-                                                        title="Sửa"
-                                                    >
-                                                        <Edit size={16} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => deleteUnit(unit.id)}
-                                                        className="p-2 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                                        title="Xóa"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
+                                                    <Protected permission="unit.manage">
+                                                        <button
+                                                            onClick={() => startEdit(unit)}
+                                                            className="p-2 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
+                                                            title="Sửa"
+                                                        >
+                                                            <Edit size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => deleteUnit(unit.id)}
+                                                            className="p-2 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                            title="Xóa"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </Protected>
                                                 </>
                                             )}
                                         </div>
@@ -315,6 +322,6 @@ export default function UnitsPage() {
                     </table>
                 )}
             </div>
-        </div>
+        </div >
     )
 }

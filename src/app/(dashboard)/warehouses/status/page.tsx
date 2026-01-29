@@ -8,6 +8,7 @@ import WarehouseStatusMap from '@/components/warehouse/status/WarehouseStatusMap
 import StatusLayoutConfigPanel from '@/components/warehouse/status/StatusLayoutConfigPanel'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { useSystem } from '@/contexts/SystemContext'
+import Protected from '@/components/auth/Protected'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -222,16 +223,18 @@ function WarehouseStatusContent() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => setIsDesignMode(!isDesignMode)}
-                        className={`flex items-center gap-2 px-6 py-2.5 font-bold transition-all shadow-sm ${isDesignMode
-                            ? 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                            }`}
-                    >
-                        {isDesignMode ? <Layout size={18} /> : <Settings size={18} />}
-                        {isDesignMode ? 'ĐANG THIẾT KẾ' : 'THIẾT KẾ LAYOUT'}
-                    </button>
+                    <Protected permission="warehousemap.manage">
+                        <button
+                            onClick={() => setIsDesignMode(!isDesignMode)}
+                            className={`flex items-center gap-2 px-6 py-2.5 font-bold transition-all shadow-sm ${isDesignMode
+                                ? 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                }`}
+                        >
+                            {isDesignMode ? <Layout size={18} /> : <Settings size={18} />}
+                            {isDesignMode ? 'ĐANG THIẾT KẾ' : 'THIẾT KẾ LAYOUT'}
+                        </button>
+                    </Protected>
                 </div>
             </div>
 

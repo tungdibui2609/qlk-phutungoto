@@ -310,7 +310,7 @@ export default function InventoryPage() {
                     <h1 className="text-2xl font-bold text-stone-800 tracking-tight">Sản phẩm</h1>
                     <p className="text-stone-500 mt-1">Quản lý danh mục và thông tin linh kiện, phụ tùng</p>
                 </div>
-                <Protected permission="product.create">
+                <Protected permission="product.manage">
                     <Link
                         href="/products/new"
                         className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
@@ -442,14 +442,16 @@ export default function InventoryPage() {
                                                 >
                                                     <Eye size={16} />
                                                 </button>
-                                                <Link
-                                                    href={`/products/${item.id}`}
-                                                    className="p-2.5 rounded-lg bg-stone-100 text-stone-500 hover:bg-orange-100 hover:text-orange-600 transition-colors"
-                                                    onClick={(e) => e.stopPropagation()}
-                                                >
-                                                    <Edit size={16} />
-                                                </Link>
-                                                <Protected permission="product.delete">
+                                                <Protected permission="product.manage">
+                                                    <Link
+                                                        href={`/products/${item.id}`}
+                                                        className="p-2.5 rounded-lg bg-stone-100 text-stone-500 hover:bg-orange-100 hover:text-orange-600 transition-colors"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        <Edit size={16} />
+                                                    </Link>
+                                                </Protected>
+                                                <Protected permission="product.manage">
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation()

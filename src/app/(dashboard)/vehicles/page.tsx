@@ -6,6 +6,7 @@ import { Database } from '@/lib/database.types'
 import { Plus, Search, Car, Edit, Trash2, Calendar, ChevronDown, ChevronRight } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
+import Protected from '@/components/auth/Protected'
 
 type Vehicle = Database['public']['Tables']['vehicles']['Row']
 
@@ -93,17 +94,19 @@ export default function VehiclesPage() {
                     <h1 className="text-2xl font-bold text-stone-800">Dòng xe</h1>
                     <p className="text-stone-500 text-sm mt-1">Quản lý danh sách dòng xe để tra cứu phụ tùng tương thích</p>
                 </div>
-                <Link
-                    href="/vehicles/new"
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
-                    style={{
-                        background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                        boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)',
-                    }}
-                >
-                    <Plus size={20} />
-                    Thêm mới
-                </Link>
+                <Protected permission="vehicle.manage">
+                    <Link
+                        href="/vehicles/new"
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
+                        style={{
+                            background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                            boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)',
+                        }}
+                    >
+                        <Plus size={20} />
+                        Thêm mới
+                    </Link>
+                </Protected>
             </div>
 
             {/* SEARCH */}
@@ -180,18 +183,20 @@ export default function VehiclesPage() {
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <Link
-                                                    href={`/vehicles/${vehicle.id}`}
-                                                    className="p-2 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
-                                                >
-                                                    <Edit size={16} />
-                                                </Link>
-                                                <button
-                                                    onClick={() => deleteVehicle(vehicle.id)}
-                                                    className="p-2 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
+                                                <Protected permission="vehicle.manage">
+                                                    <Link
+                                                        href={`/vehicles/${vehicle.id}`}
+                                                        className="p-2 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
+                                                    >
+                                                        <Edit size={16} />
+                                                    </Link>
+                                                    <button
+                                                        onClick={() => deleteVehicle(vehicle.id)}
+                                                        className="p-2 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </Protected>
                                             </div>
                                         </div>
                                     ))}

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Plus, Search, Tag, Trash2, ChevronRight, RefreshCw } from 'lucide-react'
 import { TagDisplay } from '@/components/lots/TagDisplay'
+import Protected from '@/components/auth/Protected'
 
 import { useSystem } from '@/contexts/SystemContext'
 
@@ -124,30 +125,32 @@ export default function LotCodesPage() {
             </div>
 
             {/* Create Box */}
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 shadow-sm border border-zinc-200 dark:border-zinc-800">
-                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider mb-4">
-                    Thêm Mã Mới (Nguyên liệu)
-                </h3>
-                <div className="flex gap-3 max-w-md">
-                    <input
-                        value={newTag}
-                        onChange={e => setNewTag(e.target.value.toUpperCase())}
-                        placeholder="VD: CONT1"
-                        className="flex-1 px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 font-mono text-sm uppercase focus:ring-2 focus:ring-emerald-500"
-                        onKeyDown={e => e.key === 'Enter' && handleCreate()}
-                    />
-                    <button
-                        onClick={handleCreate}
-                        disabled={!newTag.trim() || creating}
-                        className="px-4 py-2 bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700 disabled:opacity-50"
-                    >
-                        {creating ? '...' : <Plus size={20} />}
-                    </button>
+            <Protected permission="lotcode.manage">
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 shadow-sm border border-zinc-200 dark:border-zinc-800">
+                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider mb-4">
+                        Thêm Mã Mới (Nguyên liệu)
+                    </h3>
+                    <div className="flex gap-3 max-w-md">
+                        <input
+                            value={newTag}
+                            onChange={e => setNewTag(e.target.value.toUpperCase())}
+                            placeholder="VD: CONT1"
+                            className="flex-1 px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 font-mono text-sm uppercase focus:ring-2 focus:ring-emerald-500"
+                            onKeyDown={e => e.key === 'Enter' && handleCreate()}
+                        />
+                        <button
+                            onClick={handleCreate}
+                            disabled={!newTag.trim() || creating}
+                            className="px-4 py-2 bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                            {creating ? '...' : <Plus size={20} />}
+                        </button>
+                    </div>
+                    <p className="mt-2 text-xs text-zinc-500">
+                        Tạo các mã đơn lẻ (Master Tags) để sử dụng khi xây dựng chuỗi mã phụ cho Lot. Ví dụ: <code>CONT1</code>, <code>KHU_A</code>...
+                    </p>
                 </div>
-                <p className="mt-2 text-xs text-zinc-500">
-                    Tạo các mã đơn lẻ (Master Tags) để sử dụng khi xây dựng chuỗi mã phụ cho Lot. Ví dụ: <code>CONT1</code>, <code>KHU_A</code>...
-                </p>
-            </div>
+            </Protected>
 
             {/* List */}
             <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
@@ -181,13 +184,15 @@ export default function LotCodesPage() {
                                             )}
                                         </div>
                                         {isMaster && (
-                                            <button
-                                                onClick={() => handleDelete(tag)}
-                                                className="p-2 text-zinc-400 hover:text-rose-500 transition"
-                                                title="Xóa khỏi danh sách Master"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
+                                            <Protected permission="lotcode.manage">
+                                                <button
+                                                    onClick={() => handleDelete(tag)}
+                                                    className="p-2 text-zinc-400 hover:text-rose-500 transition"
+                                                    title="Xóa khỏi danh sách Master"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </Protected>
                                         )}
                                     </div>
                                 )

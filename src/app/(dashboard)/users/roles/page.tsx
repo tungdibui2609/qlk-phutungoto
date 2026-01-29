@@ -195,52 +195,63 @@ export default function RolesPage() {
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {roles.map(role => (
-                        <div key={role.id} className="bg-white rounded-xl shadow-sm border border-stone-200 p-5 hover:border-orange-300 transition-all flex flex-col h-full">
-                            <div className="flex items-start justify-between mb-4">
-                                <div>
-                                    <h3 className="font-bold text-lg text-stone-800">{role.name}</h3>
-                                    <span className="text-xs font-mono bg-stone-100 text-stone-500 px-2 py-0.5 rounded border border-stone-200 mt-1 inline-block">
-                                        {role.code}
-                                    </span>
-                                </div>
-                                {role.is_system && (
-                                    <span className="bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider">
-                                        Hệ thống
-                                    </span>
-                                )}
-                            </div>
+                <div className="bg-white rounded-xl shadow-sm border border-stone-200 overflow-hidden">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="bg-stone-50 border-b border-stone-200 text-stone-500 text-sm uppercase tracking-wider">
+                                <th className="px-6 py-4 font-semibold w-1/3">Mã vai trò</th>
+                                <th className="px-6 py-4 font-semibold w-1/3">Chức vụ</th>
+                                <th className="px-6 py-4 font-semibold text-right w-1/3">Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-100">
+                            {roles.map(role => (
+                                <tr key={role.id} className="hover:bg-stone-50 transition-colors">
+                                    <td className="px-6 py-4">
+                                        <span className="font-mono text-stone-600 bg-stone-100 px-2 py-1 rounded text-sm font-medium">
+                                            {role.code}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <span className="font-bold text-stone-800">
+                                            {role.name}
+                                        </span>
+                                        {role.is_system && (
+                                            <span className="ml-2 bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider">
+                                                Hệ thống
+                                            </span>
+                                        )}
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        <div className="flex items-center justify-end gap-2">
+                                            <button
+                                                onClick={() => handleOpenModal(role)}
+                                                className="p-2 text-stone-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                                title="Chỉnh sửa"
+                                            >
+                                                <Pencil size={18} />
+                                            </button>
+                                            {!role.is_system && (
+                                                <button
+                                                    onClick={() => handleDelete(role)}
+                                                    className="p-2 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                                    title="Xóa"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
 
-                            <p className="text-sm text-stone-500 mb-4 flex-1 line-clamp-3">
-                                {role.description || 'Chưa có mô tả'}
-                            </p>
-
-                            <div className="border-t border-stone-100 pt-4 flex items-center justify-between">
-                                <div className="text-xs font-semibold text-stone-500">
-                                    {(role.permissions || []).length} quyền hạn
-                                </div>
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => handleOpenModal(role)}
-                                        className="p-2 text-stone-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                                        title="Chỉnh sửa"
-                                    >
-                                        <Pencil size={18} />
-                                    </button>
-                                    {!role.is_system && (
-                                        <button
-                                            onClick={() => handleDelete(role)}
-                                            className="p-2 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                                            title="Xóa"
-                                        >
-                                            <Trash2 size={18} />
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
+                    {roles.length === 0 && (
+                        <div className="text-center py-12 text-stone-500">
+                            Chưa có vai trò nào được định nghĩa
                         </div>
-                    ))}
+                    )}
                 </div>
             )}
 

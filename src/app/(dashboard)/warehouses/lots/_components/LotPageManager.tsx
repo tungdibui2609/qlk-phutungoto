@@ -11,6 +11,7 @@ import { LotExportModal } from '@/components/warehouse/lots/LotExportModal'
 import { LotExportBuffer } from '@/components/warehouse/lots/LotExportBuffer'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
+import Protected from '@/components/auth/Protected'
 
 // Modular Components
 import { useLotManagement, Lot } from '../_hooks/useLotManagement'
@@ -112,16 +113,18 @@ export function LotPageManager() {
                         Sơ đồ vị trí
                     </Link>
 
-                    <button
-                        onClick={toggleCreateForm}
-                        className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all transform active:scale-95 ${showCreateForm
-                            ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200'
-                            : 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-500/20'
-                            }`}
-                    >
-                        {showCreateForm ? <X size={18} /> : <Plus size={18} />}
-                        {showCreateForm ? 'Đóng form' : 'Tạo LOT mới'}
-                    </button>
+                    <Protected permission="lot.manage">
+                        <button
+                            onClick={toggleCreateForm}
+                            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all transform active:scale-95 ${showCreateForm
+                                ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200'
+                                : 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-500/20'
+                                }`}
+                        >
+                            {showCreateForm ? <X size={18} /> : <Plus size={18} />}
+                            {showCreateForm ? 'Đóng form' : 'Tạo LOT mới'}
+                        </button>
+                    </Protected>
                 </div>
             </div>
 

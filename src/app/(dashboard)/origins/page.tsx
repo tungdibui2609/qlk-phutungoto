@@ -2,7 +2,9 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUser } from '@/contexts/UserContext'
 import { Plus, Search, Globe, Edit, Trash2, Save, X, Loader2, AlertCircle } from 'lucide-react'
+import Protected from '@/components/auth/Protected'
 
 type Origin = {
     id: string
@@ -16,6 +18,7 @@ type Origin = {
 
 export default function OriginsPage() {
     const { currentSystem } = useSystem()
+    const { profile } = useUser()
 
     const [origins, setOrigins] = useState<Origin[]>([])
     const [loading, setLoading] = useState(true)
@@ -133,17 +136,19 @@ export default function OriginsPage() {
                     </h1>
                     <p className="text-stone-500 text-sm mt-1">Danh sách quốc gia/nơi sản xuất cho hệ thống {currentSystem?.name}</p>
                 </div>
-                <button
-                    onClick={() => setShowAddForm(true)}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
-                    style={{
-                        background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                        boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)',
-                    }}
-                >
-                    <Plus size={20} />
-                    Thêm xuất xứ
-                </button>
+                <Protected permission="origin.manage">
+                    <button
+                        onClick={() => setShowAddForm(true)}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
+                        style={{
+                            background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                            boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)',
+                        }}
+                    >
+                        <Plus size={20} />
+                        Thêm xuất xứ
+                    </button>
+                </Protected>
             </div>
 
             {/* ADD FORM */}
@@ -320,20 +325,22 @@ export default function OriginsPage() {
                                                 </>
                                             ) : (
                                                 <>
-                                                    <button
-                                                        onClick={() => startEdit(origin)}
-                                                        className="p-2 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
-                                                        title="Sửa"
-                                                    >
-                                                        <Edit size={16} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => deleteOrigin(origin.id)}
-                                                        className="p-2 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                                        title="Xóa"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
+                                                    <Protected permission="origin.manage">
+                                                        <button
+                                                            onClick={() => startEdit(origin)}
+                                                            className="p-2 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
+                                                            title="Sửa"
+                                                        >
+                                                            <Edit size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => deleteOrigin(origin.id)}
+                                                            className="p-2 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                            title="Xóa"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </Protected>
                                                 </>
                                             )}
                                         </div>

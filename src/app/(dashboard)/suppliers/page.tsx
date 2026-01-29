@@ -7,6 +7,7 @@ import { Plus, Search, Building2, Phone, Mail, MoreHorizontal, Edit, Trash2, Che
 import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import MobileSupplierList from '@/components/suppliers/MobileSupplierList'
+import Protected from '@/components/auth/Protected'
 
 type Supplier = Database['public']['Tables']['suppliers']['Row']
 
@@ -66,17 +67,19 @@ export default function SuppliersPage() {
                     <h1 className="text-2xl font-bold text-stone-800">Nhà cung cấp</h1>
                     <p className="text-stone-500 text-sm mt-1">Quản lý danh sách nhà cung cấp phụ tùng</p>
                 </div>
-                <Link
-                    href="/suppliers/new"
-                    className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
-                    style={{
-                        background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                        boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)',
-                    }}
-                >
-                    <Plus size={20} />
-                    Thêm mới
-                </Link>
+                <Protected permission="partner.manage">
+                    <Link
+                        href="/suppliers/new"
+                        className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
+                        style={{
+                            background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                            boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)',
+                        }}
+                    >
+                        <Plus size={20} />
+                        Thêm mới
+                    </Link>
+                </Protected>
             </div>
 
             {/* FILTERS */}
@@ -180,18 +183,20 @@ export default function SuppliersPage() {
                                         </td>
                                         <td className="px-5 py-4">
                                             <div className="flex items-center justify-center gap-2">
-                                                <Link
-                                                    href={`/suppliers/${supplier.id}`}
-                                                    className="p-2 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
-                                                >
-                                                    <Edit size={16} />
-                                                </Link>
-                                                <button
-                                                    onClick={() => deleteSupplier(supplier.id)}
-                                                    className="p-2 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
+                                                <Protected permission="partner.manage">
+                                                    <Link
+                                                        href={`/suppliers/${supplier.id}`}
+                                                        className="p-2 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
+                                                    >
+                                                        <Edit size={16} />
+                                                    </Link>
+                                                    <button
+                                                        onClick={() => deleteSupplier(supplier.id)}
+                                                        className="p-2 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </Protected>
                                             </div>
                                         </td>
                                     </tr>

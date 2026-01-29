@@ -6,6 +6,7 @@ import { Plus, Search, FolderTree, Edit, Trash2, Save, X, Loader2 } from 'lucide
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
+import Protected from '@/components/auth/Protected'
 
 type Category = Database['public']['Tables']['categories']['Row']
 
@@ -116,63 +117,67 @@ export default function CategoriesPage() {
                     <h1 className="text-2xl font-bold text-stone-800">Danh mục sản phẩm</h1>
                     <p className="text-stone-500 text-sm mt-1">Phân loại phụ tùng theo danh mục</p>
                 </div>
-                <button
-                    onClick={() => setShowAddForm(true)}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
-                    style={{
-                        background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                        boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)',
-                    }}
-                >
-                    <Plus size={20} />
-                    Thêm danh mục
-                </button>
+                <Protected permission="category.manage">
+                    <button
+                        onClick={() => setShowAddForm(true)}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
+                        style={{
+                            background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                            boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)',
+                        }}
+                    >
+                        <Plus size={20} />
+                        Thêm danh mục
+                    </button>
+                </Protected>
             </div>
 
             {/* ADD FORM */}
-            {showAddForm && (
-                <div className="bg-orange-50 rounded-2xl p-5 border border-orange-200">
-                    <h3 className="font-semibold text-stone-800 mb-4">Thêm danh mục mới</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-stone-700 mb-2">
-                                Tên danh mục <span className="text-red-500">*</span>
-                            </label>
-                            <input
-                                value={newName}
-                                onChange={(e) => setNewName(e.target.value)}
-                                className="w-full p-3 rounded-xl bg-white border border-stone-200 text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                                placeholder="VD: Hệ thống phanh"
-                            />
+            {
+                showAddForm && (
+                    <div className="bg-orange-50 rounded-2xl p-5 border border-orange-200">
+                        <h3 className="font-semibold text-stone-800 mb-4">Thêm danh mục mới</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-stone-700 mb-2">
+                                    Tên danh mục <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    value={newName}
+                                    onChange={(e) => setNewName(e.target.value)}
+                                    className="w-full p-3 rounded-xl bg-white border border-stone-200 text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                                    placeholder="VD: Hệ thống phanh"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-stone-700 mb-2">Mô tả</label>
+                                <input
+                                    value={newDescription}
+                                    onChange={(e) => setNewDescription(e.target.value)}
+                                    className="w-full p-3 rounded-xl bg-white border border-stone-200 text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                                    placeholder="Mô tả ngắn về danh mục..."
+                                />
+                            </div>
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-stone-700 mb-2">Mô tả</label>
-                            <input
-                                value={newDescription}
-                                onChange={(e) => setNewDescription(e.target.value)}
-                                className="w-full p-3 rounded-xl bg-white border border-stone-200 text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                                placeholder="Mô tả ngắn về danh mục..."
-                            />
+                        <div className="flex gap-3 mt-4">
+                            <button
+                                onClick={addCategory}
+                                disabled={saving || !newName.trim()}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-500 text-white font-medium hover:bg-orange-600 disabled:opacity-50 transition-colors"
+                            >
+                                {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                                Lưu
+                            </button>
+                            <button
+                                onClick={() => { setShowAddForm(false); setNewName(''); setNewDescription('') }}
+                                className="px-4 py-2 rounded-xl bg-stone-100 text-stone-600 font-medium hover:bg-stone-200 transition-colors"
+                            >
+                                Hủy
+                            </button>
                         </div>
                     </div>
-                    <div className="flex gap-3 mt-4">
-                        <button
-                            onClick={addCategory}
-                            disabled={saving || !newName.trim()}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-500 text-white font-medium hover:bg-orange-600 disabled:opacity-50 transition-colors"
-                        >
-                            {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-                            Lưu
-                        </button>
-                        <button
-                            onClick={() => { setShowAddForm(false); setNewName(''); setNewDescription('') }}
-                            className="px-4 py-2 rounded-xl bg-stone-100 text-stone-600 font-medium hover:bg-stone-200 transition-colors"
-                        >
-                            Hủy
-                        </button>
-                    </div>
-                </div>
-            )}
+                )
+            }
 
             {/* SEARCH */}
             <div className="bg-white rounded-2xl p-4 border border-stone-200">
@@ -255,18 +260,20 @@ export default function CategoriesPage() {
                                                 </>
                                             ) : (
                                                 <>
-                                                    <button
-                                                        onClick={() => startEdit(cat)}
-                                                        className="p-2 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
-                                                    >
-                                                        <Edit size={16} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDeleteClick(cat.id)}
-                                                        className="p-2 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
+                                                    <Protected permission="category.manage">
+                                                        <button
+                                                            onClick={() => startEdit(cat)}
+                                                            className="p-2 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
+                                                        >
+                                                            <Edit size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteClick(cat.id)}
+                                                            className="p-2 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </Protected>
                                                 </>
                                             )}
                                         </div>
@@ -293,6 +300,6 @@ export default function CategoriesPage() {
                 onConfirm={executeDelete}
                 onCancel={() => setDeleteConfirmId(null)}
             />
-        </div>
+        </div >
     )
 }

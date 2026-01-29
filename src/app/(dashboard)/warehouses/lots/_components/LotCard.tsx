@@ -4,6 +4,7 @@ import { Lot } from '../_hooks/useLotManagement'
 import { useRouter } from 'next/navigation'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { LotMergeHistoryModal } from '@/components/warehouse/lots/LotMergeHistoryModal'
+import Protected from '@/components/auth/Protected'
 
 interface LotCardProps {
     lot: Lot
@@ -392,34 +393,36 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                     >
                         <Star size={16} fill={lot.metadata?.is_starred ? "currentColor" : "none"} />
                     </button>
-                    <button
-                        onClick={() => onAssignTag?.(lot)}
-                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-zinc-800 transition-all border border-transparent"
-                        title="Gắn mã phụ"
-                    >
-                        <Tag size={16} />
-                    </button>
-                    <button
-                        onClick={() => onMerge?.(lot)}
-                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all border border-transparent"
-                        title="Gộp Lot"
-                    >
-                        <Combine size={16} />
-                    </button>
-                    <button
-                        onClick={() => onSplit?.(lot)}
-                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all border border-transparent"
-                        title="Tách Lot"
-                    >
-                        <Split size={16} />
-                    </button>
-                    <button
-                        onClick={() => onExport?.(lot)}
-                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all border border-transparent"
-                        title="Xuất Lot"
-                    >
-                        <ArrowUpRight size={16} />
-                    </button>
+                    <Protected permission="lot.manage">
+                        <button
+                            onClick={() => onAssignTag?.(lot)}
+                            className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-zinc-800 transition-all border border-transparent"
+                            title="Gắn mã phụ"
+                        >
+                            <Tag size={16} />
+                        </button>
+                        <button
+                            onClick={() => onMerge?.(lot)}
+                            className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all border border-transparent"
+                            title="Gộp Lot"
+                        >
+                            <Combine size={16} />
+                        </button>
+                        <button
+                            onClick={() => onSplit?.(lot)}
+                            className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all border border-transparent"
+                            title="Tách Lot"
+                        >
+                            <Split size={16} />
+                        </button>
+                        <button
+                            onClick={() => onExport?.(lot)}
+                            className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all border border-transparent"
+                            title="Xuất Lot"
+                        >
+                            <ArrowUpRight size={16} />
+                        </button>
+                    </Protected>
                 </div>
 
                 <div className="flex gap-2">
@@ -430,20 +433,22 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                     >
                         <Eye size={16} />
                     </button>
-                    <button
-                        onClick={() => onEdit(lot)}
-                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
-                        title="Sửa"
-                    >
-                        <Edit size={16} />
-                    </button>
-                    <button
-                        onClick={() => onDelete(lot.id)}
-                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                        title="Xóa"
-                    >
-                        <Trash2 size={16} />
-                    </button>
+                    <Protected permission="lot.manage">
+                        <button
+                            onClick={() => onEdit(lot)}
+                            className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+                            title="Sửa"
+                        >
+                            <Edit size={16} />
+                        </button>
+                        <button
+                            onClick={() => onDelete(lot.id)}
+                            className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                            title="Xóa"
+                        >
+                            <Trash2 size={16} />
+                        </button>
+                    </Protected>
                 </div>
             </div>
             {historyData && (

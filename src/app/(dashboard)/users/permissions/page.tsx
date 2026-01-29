@@ -208,6 +208,27 @@ export default function UserPermissionsPage() {
         }
     }
 
+    // Toggle All Permissions (Global for Level 3 filtered view)
+    const toggleAllAvailablePermissions = () => {
+        // Filter out system permissions exactly as we do in the render loop
+        const availablePermissions = permissions.filter(p => {
+            const isSystemModule = p.module.toUpperCase() === 'HỆ THỐNG' || p.module.toUpperCase() === 'SYSTEM'
+            const isSystemPrefix = p.code.startsWith('system.') || p.code.startsWith('user.')
+            return !isSystemModule && !isSystemPrefix
+        }).map(p => p.code)
+
+        const allSelected = availablePermissions.every(code => selectedPermissions.includes(code))
+
+        if (allSelected) {
+            // Deselect all available
+            setSelectedPermissions(prev => prev.filter(code => !availablePermissions.includes(code)))
+        } else {
+            // Select all available
+            const newSet = new Set([...selectedPermissions, ...availablePermissions])
+            setSelectedPermissions(Array.from(newSet))
+        }
+    }
+
     // Helper to render route tree for blocking
     const renderRouteItem = (item: RouteItem, depth = 0) => {
         const isBlocked = selectedBlockedRoutes.includes(item.path)
@@ -361,81 +382,148 @@ export default function UserPermissionsPage() {
                             {/* Content Area */}
                             <div className="flex-1 overflow-y-auto p-6 bg-stone-50">
                                 {activeTab === 'permissions' ? (
-                                    // PERMISSIONS GRID
-                                    <div className="grid grid-cols-1 gap-6 pb-20">
-                                        {/* FULL ACCESS SPECIAL CARD */}
-                                        <div className="bg-gradient-to-r from-orange-50 to-white rounded-xl shadow-sm border border-orange-200 p-4 flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <div className="bg-orange-100 p-2 rounded-lg">
-                                                    <Shield className="text-orange-600" size={24} />
-                                                </div>
-                                                <div>
-                                                    <h3 className="font-bold text-stone-800 text-base">Toàn quyền hệ thống</h3>
-                                                    <p className="text-sm text-stone-500">Người dùng sẽ có quyền truy cập vào tất cả các chức năng.</p>
-                                                </div>
-                                            </div>
-                                            <label className="flex items-center gap-2 cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedPermissions.includes('system.full_access')}
-                                                    onChange={() => togglePermission('system.full_access')}
-                                                    className="w-6 h-6 rounded border-orange-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
-                                                />
-                                            </label>
+                                    // PERMISSIONS - COMPACT TABLE
+                                    <div className="bg-white rounded-xl shadow-sm border border-stone-200 overflow-hidden pb-20">
+                                        {/* Header */}
+                                        <div className="bg-stone-50/80 px-4 py-3 border-b border-stone-200 flex items-center justify-between">
+                                            <h3 className="font-bold text-stone-700 uppercase tracking-wide text-sm flex items-center gap-2">
+                                                <Shield size={16} className="text-stone-400" />
+                                                Bảng phân quyền
+                                            </h3>
+                                            <button
+                                                onClick={toggleAllAvailablePermissions}
+                                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-stone-200 text-sm font-medium text-stone-600 hover:text-orange-600 hover:border-orange-200 transition-all shadow-sm"
+                                            >
+                                                <Check size={16} />
+                                                Chọn / Bỏ chọn tất cả
+                                            </button>
                                         </div>
 
-                                        {Object.entries(groupedPermissions).map(([moduleName, perms]) => (
-                                            <div key={moduleName} className="bg-white rounded-xl shadow-sm border border-stone-200 overflow-hidden flex flex-col">
-                                                <div className="bg-stone-50/80 px-4 py-3 border-b border-stone-200 flex items-center justify-between">
-                                                    <h3 className="font-bold text-stone-700 uppercase tracking-wide text-sm flex items-center gap-2">
-                                                        <Shield size={16} className="text-stone-400" />
-                                                        {moduleName}
-                                                    </h3>
-                                                    <button
-                                                        onClick={() => toggleModule(moduleName, perms)}
-                                                        className="text-xs font-medium text-orange-600 hover:text-orange-700 hover:bg-orange-50 px-2 py-1 rounded transition-colors"
-                                                    >
-                                                        Chọn tất cả
-                                                    </button>
-                                                </div>
-                                                <div className="p-2 space-y-1">
-                                                    {perms.map(perm => {
-                                                        const isChecked = selectedPermissions.includes(perm.code)
+                                        {/* Table */}
+                                        <table className="w-full text-left">
+                                            <thead>
+                                                <tr className="bg-stone-50 border-b border-stone-200 text-stone-500 text-xs uppercase tracking-wider">
+                                                    <th className="px-4 py-3 font-semibold">Chức năng</th>
+                                                    <th className="px-4 py-3 font-semibold text-center w-24">Xem</th>
+                                                    <th className="px-4 py-3 font-semibold text-center w-24">Quản lý</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-stone-100">
+                                                {(() => {
+                                                    // Group permissions by feature (e.g., product.view + product.manage -> "Sản phẩm")
+                                                    const featureMap: Record<string, { view?: Permission; manage?: Permission; other: Permission[] }> = {}
+
+                                                    permissions
+                                                        .filter(p => {
+                                                            const isSystemModule = p.module.toUpperCase() === 'HỆ THỐNG' || p.module.toUpperCase() === 'SYSTEM'
+                                                            const isSystemPrefix = p.code.startsWith('system.') || p.code.startsWith('user.') || p.code.startsWith('settings.')
+                                                            return !isSystemModule && !isSystemPrefix
+                                                        })
+                                                        .forEach(perm => {
+                                                            // Extract feature name from code (e.g., "product" from "product.view")
+                                                            const [feature, action] = perm.code.split('.')
+
+                                                            if (!featureMap[feature]) {
+                                                                featureMap[feature] = { other: [] }
+                                                            }
+
+                                                            if (action === 'view') {
+                                                                featureMap[feature].view = perm
+                                                            } else if (action === 'manage') {
+                                                                featureMap[feature].manage = perm
+                                                            } else {
+                                                                featureMap[feature].other.push(perm)
+                                                            }
+                                                        })
+
+                                                    // Feature display names
+                                                    const featureNames: Record<string, string> = {
+                                                        warehouse: 'Kho hàng',
+                                                        warehousemap: 'Thiết kế sơ đồ',
+                                                        inventory: 'Tồn kho',
+                                                        product: 'Sản phẩm',
+                                                        category: 'Danh mục',
+                                                        unit: 'Đơn vị tính',
+                                                        origin: 'Xuất xứ',
+                                                        partner: 'Đối tác',
+                                                        vehicle: 'Dòng xe',
+                                                        qc: 'Kiểm hàng (QC)',
+                                                        site_inventory: 'Kho công trình',
+                                                        order: 'Phiếu nhập/xuất',
+                                                        lotcode: 'Mã lô',
+                                                        lot: 'Quản lý LOT',
+                                                        report: 'Báo cáo'
+                                                    }
+
+                                                    return Object.entries(featureMap).map(([feature, { view, manage, other }]) => {
+                                                        const displayName = featureNames[feature] || feature
+                                                        const viewChecked = view && selectedPermissions.includes(view.code)
+                                                        const manageChecked = manage && selectedPermissions.includes(manage.code)
+
+                                                        // Handle special permissions (like warehouse.map)
+                                                        if (!view && !manage && other.length > 0) {
+                                                            return other.map(perm => {
+                                                                const isChecked = selectedPermissions.includes(perm.code)
+                                                                return (
+                                                                    <tr key={perm.id} className="hover:bg-stone-50 transition-colors">
+                                                                        <td className="px-4 py-3">
+                                                                            <span className="font-medium text-stone-800">{perm.name}</span>
+                                                                            <span className="text-xs text-stone-400 ml-2">({perm.module})</span>
+                                                                        </td>
+                                                                        <td className="px-4 py-3 text-center" colSpan={2}>
+                                                                            <label className="inline-flex items-center gap-2 cursor-pointer">
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    checked={isChecked}
+                                                                                    onChange={() => togglePermission(perm.code)}
+                                                                                    className="w-5 h-5 rounded border-stone-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
+                                                                                />
+                                                                                <span className="text-sm text-stone-600">Cho phép</span>
+                                                                            </label>
+                                                                        </td>
+                                                                    </tr>
+                                                                )
+                                                            })
+                                                        }
+
                                                         return (
-                                                            <label
-                                                                key={perm.id}
-                                                                className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-all border ${isChecked
-                                                                    ? 'bg-orange-50/50 border-orange-200'
-                                                                    : 'hover:bg-stone-50 border-transparent'
-                                                                    }`}
-                                                            >
-                                                                <div className="pt-0.5">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={isChecked}
-                                                                        onChange={() => togglePermission(perm.code)}
-                                                                        className="w-5 h-5 rounded border-stone-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
-                                                                    />
-                                                                </div>
-                                                                <div>
-                                                                    <p className={`text-sm font-medium ${isChecked ? 'text-stone-900' : 'text-stone-700'}`}>
-                                                                        {perm.name}
-                                                                    </p>
-                                                                    {perm.description && (
-                                                                        <p className="text-xs text-stone-500 mt-0.5 leading-relaxed">
-                                                                            {perm.description}
-                                                                        </p>
+                                                            <tr key={feature} className="hover:bg-stone-50 transition-colors">
+                                                                <td className="px-4 py-3">
+                                                                    <span className="font-medium text-stone-800">{displayName}</span>
+                                                                    {view && <span className="text-xs text-stone-400 ml-2">({view.module})</span>}
+                                                                </td>
+                                                                <td className="px-4 py-3 text-center">
+                                                                    {view ? (
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={viewChecked}
+                                                                            onChange={() => togglePermission(view.code)}
+                                                                            className="w-5 h-5 rounded border-stone-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
+                                                                            title={view.description || view.name}
+                                                                        />
+                                                                    ) : (
+                                                                        <span className="text-stone-300">—</span>
                                                                     )}
-                                                                    <span className="text-[10px] text-stone-400 font-mono mt-1 block">
-                                                                        {perm.code}
-                                                                    </span>
-                                                                </div>
-                                                            </label>
+                                                                </td>
+                                                                <td className="px-4 py-3 text-center">
+                                                                    {manage ? (
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={manageChecked}
+                                                                            onChange={() => togglePermission(manage.code)}
+                                                                            className="w-5 h-5 rounded border-stone-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
+                                                                            title={manage.description || manage.name}
+                                                                        />
+                                                                    ) : (
+                                                                        <span className="text-stone-300">—</span>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
                                                         )
-                                                    })}
-                                                </div>
-                                            </div>
-                                        ))}
+                                                    })
+                                                })()}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 ) : (
                                     // BLOCKED ROUTES LIST

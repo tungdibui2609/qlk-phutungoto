@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Plus, Search, Users, Edit, Trash2, Phone, Mail, Building2 } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import MobileCustomerList from '@/components/customers/MobileCustomerList'
+import Protected from '@/components/auth/Protected'
 
 interface Customer {
     id: string
@@ -74,17 +75,19 @@ export default function CustomersPage() {
                     <h1 className="text-xl font-bold text-stone-800">Khách hàng</h1>
                     <p className="text-stone-500 text-xs mt-0.5">Quản lý danh sách khách hàng, garage, đại lý</p>
                 </div>
-                <Link
-                    href="/customers/new"
-                    className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
-                    style={{
-                        background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                        boxShadow: '0 2px 8px rgba(249, 115, 22, 0.3)',
-                    }}
-                >
-                    <Plus size={16} />
-                    Thêm mới
-                </Link>
+                <Protected permission="partner.manage">
+                    <Link
+                        href="/customers/new"
+                        className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
+                        style={{
+                            background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                            boxShadow: '0 2px 8px rgba(249, 115, 22, 0.3)',
+                        }}
+                    >
+                        <Plus size={16} />
+                        Thêm mới
+                    </Link>
+                </Protected>
             </div>
 
             {/* SEARCH & FILTER */}
@@ -180,18 +183,20 @@ export default function CustomersPage() {
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex items-center justify-center gap-1">
-                                                <Link
-                                                    href={`/customers/${customer.id}`}
-                                                    className="p-1.5 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
-                                                >
-                                                    <Edit size={14} />
-                                                </Link>
-                                                <button
-                                                    onClick={() => deleteCustomer(customer.id)}
-                                                    className="p-1.5 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                                >
-                                                    <Trash2 size={14} />
-                                                </button>
+                                                <Protected permission="partner.manage">
+                                                    <Link
+                                                        href={`/customers/${customer.id}`}
+                                                        className="p-1.5 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
+                                                    >
+                                                        <Edit size={14} />
+                                                    </Link>
+                                                    <button
+                                                        onClick={() => deleteCustomer(customer.id)}
+                                                        className="p-1.5 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </Protected>
                                             </div>
                                         </td>
                                     </tr>

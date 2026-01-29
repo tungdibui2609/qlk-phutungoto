@@ -1,4 +1,5 @@
 import { ChevronDown, ChevronRight, Layers, Check, X, Edit2, Plus, Save, Copy, Package, Trash2 } from 'lucide-react'
+import Protected from '@/components/auth/Protected'
 import { LocalZone, LocalPosition } from './types'
 import { QuickAddForm } from './QuickAddForm'
 
@@ -101,50 +102,52 @@ export function ZoneNode({ zone, depth = 0, positions, childrenZones, expandedNo
                         </div>
 
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                                onClick={() => { ui.setEditingZone(zone.id); ui.setEditCode(zone.code); ui.setEditName(zone.name) }}
-                                className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded"
-                                title="Đổi tên"
-                            >
-                                <Edit2 size={14} />
-                            </button>
-                            <button
-                                onClick={() => { ui.setAddingUnder(zone.id); ui.setQuickAddCode(''); ui.setQuickAddName(''); ui.setQuickAddCount(1); ui.setSelectedTemplateId('') }}
-                                className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded"
-                                title="Thêm zone con"
-                            >
-                                <Plus size={14} />
-                            </button>
-                            {hasChildren && (
+                            <Protected permission="warehouse.manage">
                                 <button
-                                    onClick={() => { ui.setSavingTemplate(zone.id); ui.setTemplateName('') }}
-                                    className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded"
-                                    title="Lưu làm mẫu"
+                                    onClick={() => { ui.setEditingZone(zone.id); ui.setEditCode(zone.code); ui.setEditName(zone.name) }}
+                                    className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded"
+                                    title="Đổi tên"
                                 >
-                                    <Save size={14} />
+                                    <Edit2 size={14} />
                                 </button>
-                            )}
-                            <button
-                                onClick={() => handlers.handleDuplicate(zone)}
-                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-                                title="Nhân bản"
-                            >
-                                <Copy size={14} />
-                            </button>
-                            <button
-                                onClick={() => { ui.setAddingPositionsTo(zone.id) }} // Missing default prefix logic here, handled in Modal or effect?
-                                className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded"
-                                title="Tạo vị trí hàng loạt"
-                            >
-                                <Package size={14} />
-                            </button>
-                            <button
-                                onClick={() => handlers.handleDelete(zone.id)}
-                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                                title="Xóa"
-                            >
-                                <Trash2 size={14} />
-                            </button>
+                                <button
+                                    onClick={() => { ui.setAddingUnder(zone.id); ui.setQuickAddCode(''); ui.setQuickAddName(''); ui.setQuickAddCount(1); ui.setSelectedTemplateId('') }}
+                                    className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded"
+                                    title="Thêm zone con"
+                                >
+                                    <Plus size={14} />
+                                </button>
+                                {hasChildren && (
+                                    <button
+                                        onClick={() => { ui.setSavingTemplate(zone.id); ui.setTemplateName('') }}
+                                        className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded"
+                                        title="Lưu làm mẫu"
+                                    >
+                                        <Save size={14} />
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => handlers.handleDuplicate(zone)}
+                                    className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                    title="Nhân bản"
+                                >
+                                    <Copy size={14} />
+                                </button>
+                                <button
+                                    onClick={() => { ui.setAddingPositionsTo(zone.id) }} // Missing default prefix logic here, handled in Modal or effect?
+                                    className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded"
+                                    title="Tạo vị trí hàng loạt"
+                                >
+                                    <Package size={14} />
+                                </button>
+                                <button
+                                    onClick={() => handlers.handleDelete(zone.id)}
+                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                    title="Xóa"
+                                >
+                                    <Trash2 size={14} />
+                                </button>
+                            </Protected>
                         </div>
                     </>
                 )}

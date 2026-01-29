@@ -1,4 +1,5 @@
 import { FolderTree, Trash2, Plus } from 'lucide-react'
+import Protected from '@/components/auth/Protected'
 import { LocalZone } from './types'
 import { QuickAddForm } from './QuickAddForm'
 import { ZoneNode } from './ZoneNode'
@@ -48,21 +49,23 @@ export function ZoneTree({ zones, loading, ui, handlers }: ZoneTreeProps) {
                 <div className="p-2 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                     <span className="text-xs text-gray-500">Cấu trúc Zone ({zones.filter(z => z._status !== 'deleted').length} zone)</span>
                     <div className="flex items-center gap-2">
-                        <button
-                            onClick={handlers.handleDeleteAllZones}
-                            className="flex items-center gap-1 px-2 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded text-xs font-medium border border-red-200"
-                            title="Xóa toàn bộ dữ liệu (Reset)"
-                        >
-                            <Trash2 size={12} />
-                            Xóa tất cả
-                        </button>
-                        <button
-                            onClick={() => { ui.setAddingUnder('root'); ui.setQuickAddCode(''); ui.setQuickAddName(''); ui.setQuickAddCount(1); ui.setSelectedTemplateId('') }}
-                            className="flex items-center gap-1 px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded text-xs font-medium"
-                        >
-                            <Plus size={12} />
-                            Thêm Zone gốc
-                        </button>
+                        <Protected permission="warehouse.manage">
+                            <button
+                                onClick={handlers.handleDeleteAllZones}
+                                className="flex items-center gap-1 px-2 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded text-xs font-medium border border-red-200"
+                                title="Xóa toàn bộ dữ liệu (Reset)"
+                            >
+                                <Trash2 size={12} />
+                                Xóa tất cả
+                            </button>
+                            <button
+                                onClick={() => { ui.setAddingUnder('root'); ui.setQuickAddCode(''); ui.setQuickAddName(''); ui.setQuickAddCount(1); ui.setSelectedTemplateId('') }}
+                                className="flex items-center gap-1 px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded text-xs font-medium"
+                            >
+                                <Plus size={12} />
+                                Thêm Zone gốc
+                            </button>
+                        </Protected>
                     </div>
                 </div>
 
