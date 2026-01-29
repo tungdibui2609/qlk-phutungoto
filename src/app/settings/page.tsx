@@ -1,8 +1,7 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import CompanyInfoSection from '@/components/settings/CompanyInfoSection'
 import BranchManagerSection from '@/components/settings/BranchManagerSection'
 import SystemManagerSection from '@/components/settings/SystemManagerSection'
@@ -30,8 +29,8 @@ import { cn } from '@/lib/utils'
 type Tab = 'company' | 'branches' | 'systems' | 'product_config' | 'order_config' | 'lot_config' | 'menus' | 'dashboard' | 'utilities'
 
 export default function SettingsPage() {
-    const [activeTab, setActiveTab] = useState<Tab>('company')
     const router = useRouter()
+    const searchParams = useSearchParams()
 
     const tabs = [
         { id: 'company' as Tab, label: 'Thông tin công ty', icon: Building2 },
@@ -44,6 +43,14 @@ export default function SettingsPage() {
         { id: 'dashboard' as Tab, label: 'Cấu hình Dashboard', icon: PieChart },
         { id: 'menus' as Tab, label: 'Menu Sidebar', icon: List },
     ]
+
+    // Determine active tab from URL or default to 'company'
+    const tabParam = searchParams.get('tab') as Tab
+    const activeTab = tabParam && tabs.some(t => t.id === tabParam) ? tabParam : 'company'
+
+    const handleTabChange = (tabId: Tab) => {
+        router.push(`/settings?tab=${tabId}`)
+    }
 
     return (
         <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
@@ -72,7 +79,7 @@ export default function SettingsPage() {
                         return (
                             <button
                                 key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
+                                onClick={() => handleTabChange(tab.id)}
                                 className={cn(
                                     "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
                                     isActive
