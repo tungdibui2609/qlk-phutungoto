@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Plus, Search, Pencil, Trash2, X, Save, AlertCircle, Shield, Check, Key } from 'lucide-react'
 import Protected from '@/components/auth/Protected'
+import { useUser } from '@/contexts/UserContext'
+
 
 type Role = {
     id: string
@@ -22,6 +24,7 @@ type Permission = {
 }
 
 export default function RolesPage() {
+    const { profile } = useUser()
     const [roles, setRoles] = useState<Role[]>([])
     const [permissions, setPermissions] = useState<Permission[]>([])
     const [loading, setLoading] = useState(true)
@@ -138,7 +141,8 @@ export default function RolesPage() {
                         code: formData.code,
                         name: formData.name,
                         description: formData.description,
-                        permissions: formData.permissions
+                        permissions: formData.permissions,
+                        company_id: profile?.company_id
                     }])
                 if (error) throw error
             }
