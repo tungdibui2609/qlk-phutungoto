@@ -71,8 +71,7 @@ export async function POST(request: Request) {
             deleteByCompany('operational_notes'), // Referencing users
         ])
 
-        // STEP B2: Delete Audit Logs (Manually if no company_id)
-        // Audit logs usually reference auth.users. Since we haven't deleted users yet, we can delete logs by user_id
+        // STEP B2: Delete Audit Logs
         if (userIds.length > 0) {
             console.log('Step B2: Deleting Audit Logs for users...')
             const { error: auditError } = await supabaseAdmin
@@ -83,19 +82,49 @@ export async function POST(request: Request) {
             if (auditError) console.warn('Failed to delete audit_logs:', auditError.message)
         }
 
+        // STEP B3: Delete Company Logo from Storage
+        console.log('Step B3: Deleting Company Logo...')
+        const { data: companySettings } = await supabaseAdmin
+            .from('company_settings')
+            .select('logo_url')
+            .eq('id', companyId)
+            .single()
+
+        if (companySettings?.logo_url) {
+            try {
+                // Extract filename from URL (assumes standard Supabase Storage URL format)
+                // URL: .../company-assets/logo_17381283.png
+                const logoUrl = companySettings.logo_url
+                const fileName = logoUrl.split('/').pop()
+
+                if (fileName) {
+                    const { error: storageError } = await supabaseAdmin
+                        .storage
+                        .from('company-assets')
+                        .remove([fileName])
+
+                    if (storageError) {
+                        console.warn('Failed to delete logo file:', storageError.message)
+                    } else {
+                        console.log('Deleted logo file:', fileName)
+                    }
+                }
+            } catch (err) {
+                console.warn('Error processing logo deletion:', err)
+            }
+        }
+
         // STEP C: Delete Config/Master Data
         console.log('Step C: Deleting Config and Master Data...')
         await Promise.all([
             deleteByCompany('categories'),
             deleteByCompany('units'),
             deleteByCompany('systems'),
-            deleteByCompany('systems'),
+            // deleteByCompany('systems'), // Duplicate line removed
             deleteByCompany('system_configs'),
-            // company_settings uses 'id' as company_id, so we delete by PK explicitly or rely on cascade.
-            // But deleteByCompany expects 'company_id' column.
+            // company_settings uses 'id' as company_id
             supabaseAdmin.from('company_settings').delete().eq('id', companyId),
-            deleteByCompany('master_tags'), // Delete tags
-            // user_profiles is deleted via auth delete or explicit delete below
+            deleteByCompany('master_tags'),
         ])
 
         // STEP D: Delete Auth Users (Now safe because referencing data is gone)

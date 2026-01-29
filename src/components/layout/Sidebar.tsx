@@ -220,11 +220,14 @@ export default function Sidebar() {
 
     // Fetch company info
     useEffect(() => {
+        const companyId = profile?.company_id
+        if (!companyId) return
+
         async function fetchCompanyInfo() {
             const { data } = await supabase
                 .from('company_settings')
                 .select('name, short_name, logo_url')
-                .limit(1)
+                .eq('id', companyId!)
                 .single()
 
             if (data) {
@@ -237,11 +240,16 @@ export default function Sidebar() {
         }
         fetchCompanyInfo()
 
-        // Subscribe to changes (optional, but good for immediate updates)
+        // Subscribe to changes
         const channel = supabase
-            .channel('company_settings_changes')
+            .channel(`company_settings_${companyId}`)
             .on('postgres_changes',
-                { event: 'UPDATE', schema: 'public', table: 'company_settings' },
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'company_settings',
+                    filter: `id=eq.${companyId}`
+                },
                 payload => {
                     const newData = payload.new as any
                     setCompanyInfo({
@@ -255,7 +263,7 @@ export default function Sidebar() {
         return () => {
             supabase.removeChannel(channel)
         }
-    }, [])
+    }, [profile?.company_id])
 
     // Click outside to collapse (Desktop) or close (Mobile)
     useEffect(() => {

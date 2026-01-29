@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
-import { LogIn, Mail, Lock, Loader2, Info, Building } from 'lucide-react'
+import { LogIn, Mail, Lock, Loader2, Info } from 'lucide-react'
 import Image from 'next/image'
 import { COMPANY_INFO } from '@/lib/constants'
 
@@ -10,8 +10,6 @@ export default function LoginPage() {
     const router = useRouter()
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
-    const [companyCode, setCompanyCode] = useState('')
-    const [showCompanyInput, setShowCompanyInput] = useState(false)
     const [loading, setLoading] = useState(false)
     const [message, setMessage] = useState<{ text: string, type: 'error' | 'success' } | null>(null)
     const [companyName, setCompanyName] = useState(COMPANY_INFO.name)
@@ -51,10 +49,6 @@ export default function LoginPage() {
                 if (prefixMatch) {
                     // Looks like a prefixed username! Try standard system email.
                     signInEmail = `${signInEmail}@system.local`
-                } else if (companyCode) {
-                    // Manual company code entry
-                    // Construct internal email: username@companycode.local
-                    signInEmail = `${signInEmail}@${companyCode.toLowerCase()}.local`
                 } else {
                     // Legacy logic: Username only -> Use RPC or assume default
                     // 2. Look it up via Secure RPC (Backward compatibility or legacy users)
@@ -62,11 +56,6 @@ export default function LoginPage() {
                         .rpc('get_user_email_by_username', { p_username: signInEmail })
 
                     if (userError || !userEmail) {
-                        // If not found via RPC, suggest entering company code
-                        if (!showCompanyInput) {
-                            setShowCompanyInput(true)
-                            throw new Error('Nếu là tài khoản nội bộ (cũ), vui lòng nhập thêm Mã Doanh Nghiệp. Nếu là tài khoản mới, vui lòng nhập đúng định dạng "prefix.username".')
-                        }
                         throw new Error('Tài khoản không tồn tại hoặc sai thông tin.')
                     }
                     signInEmail = userEmail
@@ -179,52 +168,12 @@ export default function LoginPage() {
                             <input
                                 type="text"
                                 value={email}
-                                onChange={(e) => {
-                                    setEmail(e.target.value)
-                                    // Auto-show company input if typing a username (no @)
-                                    if (e.target.value.includes('@')) {
-                                        // Likely email, maybe hide company input?
-                                        // setShowCompanyInput(false)
-                                    } else if (e.target.value.length > 3) {
-                                        // Likely username
-                                    }
-                                }}
+                                onChange={(e) => setEmail(e.target.value)}
                                 required
                                 className="w-full pl-12 pr-4 py-3.5 rounded-xl text-stone-800 transition-all duration-200 outline-none bg-stone-50 border border-stone-200 placeholder:text-stone-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                                 placeholder="Nhập email hoặc username..."
                             />
                         </div>
-                    </div>
-
-                    {/* Toggle Company Code */}
-                    {!showCompanyInput && !email.includes('@') && email.length > 0 && (
-                        <div className="text-right">
-                            <button
-                                type="button"
-                                onClick={() => setShowCompanyInput(true)}
-                                className="text-xs text-orange-600 hover:text-orange-700 font-medium"
-                            >
-                                + Đăng nhập bằng Mã Doanh Nghiệp
-                            </button>
-                        </div>
-                    )}
-
-                    {/* Company Code Input (Conditional) */}
-                    <div className={`transition-all duration-300 overflow-hidden ${showCompanyInput ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0'}`}>
-                        <label className="block text-sm font-medium text-stone-700 mb-2">
-                            Mã Doanh Nghiệp (Slug)
-                        </label>
-                        <div className="relative">
-                            <Building className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
-                            <input
-                                type="text"
-                                value={companyCode}
-                                onChange={(e) => setCompanyCode(e.target.value)}
-                                className="w-full pl-12 pr-4 py-3.5 rounded-xl text-stone-800 transition-all duration-200 outline-none bg-stone-50 border border-stone-200 placeholder:text-stone-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                                placeholder="VD: cty-abc"
-                            />
-                        </div>
-                        <p className="text-[10px] text-stone-400 mt-1 pl-1">Nhập mã định danh công ty để đăng nhập tài khoản nội bộ</p>
                     </div>
 
                     <div>

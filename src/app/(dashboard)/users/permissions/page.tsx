@@ -17,6 +17,7 @@ type UserProfile = {
     permissions: string[] | null
     blocked_routes: string[] | null // New column
     roles: { name: string } | null
+    employee_code: string | null
 }
 
 type Permission = {
@@ -51,7 +52,9 @@ export default function UserPermissionsPage() {
                 // 1. Fetch Users
                 const { data: userData, error: userError } = await supabase
                     .from('user_profiles')
-                    .select('id, full_name, email, avatar_url, permissions, blocked_routes, roles(name)')
+                    .select('id, full_name, email, avatar_url, permissions, blocked_routes, roles(name), employee_code')
+                    .not('employee_code', 'is', null)
+                    .neq('employee_code', '')
                     .order('full_name')
 
                 if (userError) throw userError

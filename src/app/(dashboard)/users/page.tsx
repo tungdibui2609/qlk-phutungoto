@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { logActivity } from '@/lib/audit'
 import AuditLogViewer from '@/components/shared/AuditLogViewer'
 import Link from 'next/link'
-import { Plus, Search, Users, Edit, Shield, CheckCircle, XCircle, Mail, Phone, History } from 'lucide-react'
+import { Plus, Search, Users, Edit, Shield, CheckCircle, XCircle, Mail, Phone, History, Copy } from 'lucide-react'
 import Protected from '@/components/auth/Protected'
 import MobileUserList from '@/components/users/MobileUserList'
 
@@ -71,8 +71,8 @@ export default function UsersPage() {
         if (error) {
             alert('Lỗi: ' + error.message)
         } else {
-             // Log Activity
-             if (oldUser) {
+            // Log Activity
+            if (oldUser) {
                 await logActivity({
                     supabase,
                     tableName: 'user_profiles',
@@ -185,7 +185,7 @@ export default function UsersPage() {
                                 <tr>
                                     <th className="text-left px-4 py-3 font-semibold text-stone-600">Người dùng</th>
                                     <th className="text-left px-4 py-3 font-semibold text-stone-600">Mã NV</th>
-                                    <th className="text-left px-4 py-3 font-semibold text-stone-600">Liên hệ</th>
+                                    <th className="text-left px-4 py-3 font-semibold text-stone-600">Tên đăng nhập</th>
                                     <th className="text-left px-4 py-3 font-semibold text-stone-600">Vai trò</th>
                                     <th className="text-left px-4 py-3 font-semibold text-stone-600">Phòng ban</th>
                                     <th className="text-center px-4 py-3 font-semibold text-stone-600">Trạng thái</th>
@@ -211,23 +211,36 @@ export default function UsersPage() {
                                             ) : '-'}
                                         </td>
                                         <td className="px-4 py-3">
-                                            <div className="space-y-0.5">
-                                                {user.email && (
-                                                    <div className="flex items-center gap-1 text-stone-600 text-xs">
-                                                        <Mail size={12} />
-                                                        {user.email}
-                                                    </div>
-                                                )}
-                                                {user.phone && (
-                                                    <div className="flex items-center gap-1 text-stone-600 text-xs">
-                                                        <Phone size={12} />
-                                                        {user.phone}
-                                                    </div>
-                                                )}
-                                            </div>
+                                            {user.email ? (
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-medium text-stone-700 text-sm">
+                                                        {user.email.endsWith('@system.local')
+                                                            ? user.email.replace('@system.local', '')
+                                                            : user.email}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => {
+                                                            const username = user.email?.endsWith('@system.local')
+                                                                ? user.email.replace('@system.local', '')
+                                                                : user.email;
+                                                            navigator.clipboard.writeText(username || '')
+                                                            // Optional: simple visual feedback could be added here
+                                                        }}
+                                                        className="text-stone-400 hover:text-orange-500 transition-colors p-1 rounded-md hover:bg-stone-100"
+                                                        title="Copy Tên đăng nhập"
+                                                    >
+                                                        <Copy size={14} />
+                                                    </button>
+                                                </div>
+                                            ) : '-'}
                                         </td>
                                         <td className="px-4 py-3">
-                                            {user.roles ? (
+                                            {!user.employee_code ? (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-stone-800 text-white shadow-sm">
+                                                    <Shield size={10} />
+                                                    Quản trị viên
+                                                </span>
+                                            ) : user.roles ? (
                                                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getRoleBadgeColor(user.roles.code)}`}>
                                                     <Shield size={10} />
                                                     {user.roles.name}
@@ -237,7 +250,11 @@ export default function UsersPage() {
                                             )}
                                         </td>
                                         <td className="px-4 py-3 text-stone-600">
-                                            {user.department || '-'}
+                                            {!user.employee_code ? (
+                                                <span className="text-stone-500 italic text-xs">Hệ thống</span>
+                                            ) : (
+                                                user.department || '-'
+                                            )}
                                         </td>
                                         <td className="px-4 py-3 text-center">
                                             <Protected permission="user.manage">

@@ -98,13 +98,18 @@ export default function SystemManagerSection() {
 
     const handleCreate = () => {
         setEditingSystem(null)
+        // Calculate next sort order
+        const maxOrder = systems.length > 0
+            ? Math.max(...systems.map(s => s.sort_order || 0))
+            : 0
+
         setFormData({
             code: '',
             name: '',
             description: '',
             icon: 'Warehouse',
             colorIdx: 0,
-            sort_order: 0
+            sort_order: maxOrder + 1
         })
         setIsModalOpen(true)
     }
@@ -168,14 +173,15 @@ export default function SystemManagerSection() {
                     if (finalError) throw finalError
 
                     showToast('Đã xóa sạch dữ liệu và phân hệ kho', 'success')
+                    setSystems(prev => prev.filter(s => s.code !== code))
                 }
             } else if (deleteError) {
                 throw deleteError
             } else {
                 showToast('Đã xóa thành công', 'success')
+                setSystems(prev => prev.filter(s => s.code !== code))
             }
 
-            fetchSystems()
         } catch (error: any) {
             showToast('Lỗi: ' + error.message, 'error')
         } finally {
@@ -195,7 +201,8 @@ export default function SystemManagerSection() {
 
             if (error) throw error
             showToast(`Đã ${action} thành công`, 'success')
-            fetchSystems()
+            // Optimistic update
+            setSystems(prev => prev.map(s => s.code === sys.code ? { ...s, is_active: newStatus } : s))
         } catch (error: any) {
             showToast(`Lỗi: ${error.message}`, 'error')
         }
@@ -220,7 +227,7 @@ export default function SystemManagerSection() {
         try {
             if (editingSystem) {
                 // Update
-                const { error } = await (supabase
+                const { data, error } = await (supabase
                     .from('systems') as any)
                     .update({
                         name: payload.name,
@@ -231,20 +238,35 @@ export default function SystemManagerSection() {
                         sort_order: payload.sort_order
                     })
                     .eq('code', editingSystem.code)
+                    .select()
+                    .single()
 
                 if (error) throw error
+                if (data) {
+                    setSystems(prev => {
+                        const updated = prev.map(s => s.code === editingSystem.code ? data : s)
+                        return updated.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                    })
+                }
                 showToast('Cập nhật thành công', 'success')
             } else {
                 // Create
-                const { error } = await (supabase
+                const { data, error } = await (supabase
                     .from('systems') as any)
                     .insert([payload])
+                    .select()
+                    .single()
 
                 if (error) throw error
+                if (data) {
+                    setSystems(prev => {
+                        const updated = [...prev, data]
+                        return updated.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                    })
+                }
                 showToast('Tạo mới thành công', 'success')
             }
             setIsModalOpen(false)
-            fetchSystems()
         } catch (error: any) {
             showToast('Lỗi: ' + error.message, 'error')
         }

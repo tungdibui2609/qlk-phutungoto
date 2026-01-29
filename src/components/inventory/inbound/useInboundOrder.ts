@@ -127,7 +127,15 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                     setSupplierId(order.supplier_id || '')
                     setSupplierAddress(order.supplier_address || '')
                     setSupplierPhone(order.supplier_phone || '')
-                    setWarehouseName(order.warehouse_name || '')
+                    const storedWarehouseName = order.warehouse_name || ''
+                    const isWarehouseValid = branchesData.some((b: any) => b.name === storedWarehouseName)
+                    if (isWarehouseValid) {
+                        setWarehouseName(storedWarehouseName)
+                    } else if (branchesData.length > 0) {
+                        setWarehouseName(branchesData.find((b: any) => b.is_default)?.name || branchesData[0].name)
+                    } else {
+                        setWarehouseName(storedWarehouseName)
+                    }
                     setOrderTypeId(order.order_type_id || '')
                     setDescription(order.description || '')
                     if (Array.isArray(order.images)) setImages(order.images); else if (order.image_url) setImages([order.image_url])

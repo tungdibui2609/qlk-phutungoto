@@ -4,12 +4,17 @@ import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Loader2, Save, Building2, Globe, Mail, Phone, MapPin, Receipt, Upload, Image as ImageIcon, X } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
+import { useUser } from '@/contexts/UserContext'
 import Image from 'next/image'
 
-type CompanySettings = Database['public']['Tables']['company_settings']['Row']
+type CompanySettingsRow = Database['public']['Tables']['company_settings']['Row']
+interface CompanySettings extends CompanySettingsRow {
+    code?: string | null
+}
 
 export default function CompanyInfoSection() {
     const { showToast } = useToast()
+    const { profile, isLoading: isProfileLoading } = useUser()
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [uploading, setUploading] = useState(false)
@@ -19,16 +24,22 @@ export default function CompanyInfoSection() {
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
-        fetchInfo()
-    }, [])
+        if (!isProfileLoading && profile?.company_id) {
+            fetchInfo()
+        } else if (!isProfileLoading && !profile?.company_id) {
+            setLoading(false)
+        }
+    }, [profile, isProfileLoading])
 
     async function fetchInfo() {
+        if (!profile?.company_id) return
+
         try {
             setLoading(true)
             const { data, error } = await supabase
                 .from('company_settings')
                 .select('*')
-                .limit(1)
+                .eq('id', profile.company_id)
                 .single()
 
             if (data) {
@@ -36,6 +47,9 @@ export default function CompanyInfoSection() {
                 setInfo(settings)
                 setLogoUrl(settings.logo_url)
                 setLogoTimestamp(Date.now())
+            } else {
+                // Determine if error is "not found"
+                setInfo(null)
             }
         } catch (err) {
             console.error('Error fetching info:', err)
@@ -54,6 +68,21 @@ export default function CompanyInfoSection() {
 
         setUploading(true)
         try {
+            // 1. Try to delete old logo if exists
+            if (logoUrl) { // logoUrl is the current state
+                const oldFileName = logoUrl.split('/').pop()
+                if (oldFileName) {
+                    const { error: deleteError } = await supabase.storage
+                        .from('company-assets')
+                        .remove([oldFileName])
+                    if (deleteError) {
+                        console.warn('Could not delete old logo:', deleteError)
+                        // Verify non-fatal, continue upload
+                    }
+                }
+            }
+
+            // 2. Upload new logo
             const { error: uploadError } = await supabase.storage
                 .from('company-assets')
                 .upload(filePath, file)
@@ -64,9 +93,25 @@ export default function CompanyInfoSection() {
                 .from('company-assets')
                 .getPublicUrl(filePath)
 
+            // 3. Auto-save to Database immediately
+            if (profile?.company_id) {
+                const { error: dbError } = await (supabase
+                    .from('company_settings') as any)
+                    .update({
+                        logo_url: publicUrl,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', profile.company_id)
+
+                if (dbError) throw dbError
+            }
+
             setLogoUrl(publicUrl)
             setLogoTimestamp(Date.now())
-            showToast('Đã tải lên logo!', 'success')
+            showToast('Đã cập nhật logo thành công!', 'success')
+
+            // Refresh local info to keep consistent
+            fetchInfo()
         } catch (error: any) {
             showToast('Lỗi tải ảnh: ' + error.message, 'error')
         } finally {
@@ -76,14 +121,30 @@ export default function CompanyInfoSection() {
 
     async function handleSave(e: React.FormEvent) {
         e.preventDefault()
+        if (!profile?.company_id) {
+            showToast('Không tìm thấy thông tin công ty của bạn', 'error')
+            return
+        }
+
         setSaving(true)
         try {
             const form = e.target as HTMLFormElement
             const formData = new FormData(form)
 
+            // Extract code (keep case as typed)
+            let code = (info?.code || '').trim()
+
+            // Auto-generate code if missing (should be handled by input but safe fallback)
+            if (!code || code.length !== 4) {
+                // If missing or invalid length, generate random 4 chars (uppercase for random)
+                const randomCode = Math.random().toString(36).substring(2, 6).toUpperCase()
+                code = randomCode
+            }
+
             const payload = {
                 name: formData.get('name') as string,
                 short_name: formData.get('short_name') as string,
+                code: code,
                 tax_code: formData.get('tax_code') as string,
                 address: formData.get('address') as string,
                 phone: formData.get('phone') as string,
@@ -93,6 +154,36 @@ export default function CompanyInfoSection() {
                 updated_at: new Date().toISOString()
             }
 
+            // Validate Unique Short Name
+            if (payload.short_name) {
+                const { data: existing } = await supabase
+                    .from('company_settings')
+                    .select('id')
+                    .eq('short_name', payload.short_name)
+                    .neq('id', profile.company_id)
+                    .maybeSingle()
+
+                if (existing) {
+                    showToast(`Mã "${payload.short_name}" đã được sử dụng bởi công ty khác. Vui lòng chọn mã khác.`, 'error')
+                    return
+                }
+            }
+
+            // Validate Unique Code
+            if (payload.code) {
+                const { data: existing } = await supabase
+                    .from('company_settings')
+                    .select('id')
+                    .eq('code', payload.code)
+                    .neq('id', profile.company_id)
+                    .maybeSingle()
+
+                if (existing) {
+                    showToast(`Mã "${payload.code}" đã được sử dụng. Vui lòng chọn mã khác.`, 'error')
+                    return
+                }
+            }
+
             if (info?.id) {
                 const { error } = await (supabase
                     .from('company_settings') as any)
@@ -100,9 +191,13 @@ export default function CompanyInfoSection() {
                     .eq('id', info.id)
                 if (error) throw error
             } else {
+                // If inserting new settings, ensure we use the user's company_id
                 const { error } = await (supabase
                     .from('company_settings') as any)
-                    .insert(payload)
+                    .insert({
+                        ...payload,
+                        id: profile.company_id
+                    })
                 if (error) throw error
             }
 
@@ -185,30 +280,62 @@ export default function CompanyInfoSection() {
                 <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="col-span-1 md:col-span-2 space-y-4">
                         <div>
-                            <label className="block text-sm font-medium text-stone-700 mb-1">Tên công ty <span className="text-red-500">*</span></label>
+                            <label className="text-sm font-medium text-gray-700">
+                                Mã Công Ty / Prefix (Duy nhất) <span className="text-red-500">*</span>
+                            </label>
                             <input
-                                name="name"
-                                defaultValue={info?.name || ''}
+                                name="code"
                                 required
-                                placeholder="Công ty TNHH..."
-                                className="w-full px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-medium"
+                                maxLength={4}
+                                value={info?.code || ''}
+                                onChange={e => {
+                                    const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4)
+                                    setInfo(prev => ({ ...prev!, code: val } as any))
+                                }}
+                                placeholder="VD: Abcd (4 ký tự)"
+                                className="w-full px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-mono tracking-widest"
                             />
+                            <p className="text-xs text-stone-500 mt-1">
+                                Mã định danh duy nhất (4 ký tự), dùng làm tiền tố tài khoản (VD: <span className="font-medium text-stone-700">{info?.code || 'ABCD'}-USER01</span>).
+                            </p>
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-stone-700 mb-1">Tên ngắn gọn <span className="text-red-500">*</span></label>
+                            <label className="text-sm font-medium text-gray-700">
+                                Tên ngắn gọn (Hiển thị sidebar)
+                            </label>
                             <input
                                 name="short_name"
-                                defaultValue={info?.short_name || ''}
-                                required
-                                placeholder="Toàn Thắng..."
+                                value={info?.short_name || ''}
+                                onChange={e => setInfo(prev => ({ ...prev!, short_name: e.target.value } as any))}
+                                placeholder="VD: AnyWarehouse"
                                 className="w-full px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-medium"
                             />
+                            <p className="text-xs text-stone-500 mt-1">
+                                Tên hiển thị trên menu bên trái (VD: AnyWarehouse, Toàn Thắng...)
+                            </p>
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-stone-700 mb-1 flex items-center gap-1">
-                                <Receipt size={14} className="text-stone-400" /> Mã số thuế
+                            <label className="text-sm font-medium text-gray-700">
+                                Tên công ty (Tiêu đề báo cáo/in ấn) <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                                name="name"
+                                value={info?.name || ''}
+                                required
+                                onChange={e => setInfo(prev => ({ ...prev!, name: e.target.value } as any))}
+                                placeholder="VD: Công ty TNHH..."
+                                className="w-full px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-medium"
+                            />
+                            <p className="text-xs text-stone-500 mt-1">
+                                Tên này sẽ được dùng làm tiêu đề (Header) cho các mẫu in và báo cáo.
+                            </p>
+                        </div>
+
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 flex items-center gap-1">
+                                <Receipt size={14} className="text-stone-400" /> Mã số thuế (In hóa đơn/CT)
                             </label>
                             <input
                                 name="tax_code"
@@ -219,23 +346,23 @@ export default function CompanyInfoSection() {
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-stone-700 mb-1 flex items-center gap-1">
-                                <MapPin size={14} className="text-stone-400" /> Địa chỉ
+                            <label className="text-sm font-medium text-gray-700 flex items-center gap-1">
+                                <MapPin size={14} className="text-stone-400" /> Địa chỉ (Hiển thị báo cáo)
                             </label>
                             <textarea
                                 name="address"
                                 defaultValue={info?.address || ''}
                                 rows={2}
                                 placeholder="Số nhà, đường, quận/huyện..."
-                                className="w-full px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all"
+                                className="w-full px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-medium"
                             />
                         </div>
                     </div>
 
                     <div className="space-y-4">
                         <div>
-                            <label className="block text-sm font-medium text-stone-700 mb-1 flex items-center gap-1">
-                                <Phone size={14} className="text-stone-400" /> Điện thoại
+                            <label className="text-sm font-medium text-gray-700">
+                                <span className="flex items-center gap-1"><Phone size={14} /> Số điện thoại</span>
                             </label>
                             <input
                                 name="phone"
@@ -246,8 +373,8 @@ export default function CompanyInfoSection() {
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-stone-700 mb-1 flex items-center gap-1">
-                                <Mail size={14} className="text-stone-400" /> Email
+                            <label className="text-sm font-medium text-gray-700">
+                                <span className="flex items-center gap-1"><Mail size={14} /> Email</span>
                             </label>
                             <input
                                 name="email"
@@ -257,12 +384,10 @@ export default function CompanyInfoSection() {
                                 className="w-full px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all"
                             />
                         </div>
-                    </div>
 
-                    <div className="space-y-4">
                         <div>
-                            <label className="block text-sm font-medium text-stone-700 mb-1 flex items-center gap-1">
-                                <Globe size={14} className="text-stone-400" /> Website
+                            <label className="text-sm font-medium text-gray-700">
+                                <span className="flex items-center gap-1"><Globe size={14} /> Website</span>
                             </label>
                             <input
                                 name="website"
