@@ -315,12 +315,27 @@ function OutboundPrintContent() {
                     setEditLocation((companyData as any).address || '')
                 }
 
-                // Fetch order
-                const { data: orderData } = await supabase
-                    .from('outbound_orders')
-                    .select('*')
-                    .eq('id', orderId)
-                    .single()
+                // Check for order data passed from server (API)
+                let passedOrderData: any = null
+                const orderDataParam = searchParams.get('order_data')
+                if (orderDataParam) {
+                    try {
+                        passedOrderData = JSON.parse(decodeURIComponent(orderDataParam))
+                    } catch (e) {
+                        console.error('Failed to parse passed order data', e)
+                    }
+                }
+
+                // Fetch order if not passed
+                let orderData = passedOrderData
+                if (!orderData) {
+                    const { data } = await supabase
+                        .from('outbound_orders')
+                        .select('*')
+                        .eq('id', orderId)
+                        .single()
+                    orderData = data
+                }
 
                 if (orderData) {
                     const o = orderData as any

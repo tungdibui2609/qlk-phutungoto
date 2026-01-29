@@ -134,7 +134,26 @@ export async function GET(req: NextRequest) {
             itemsJson = JSON.stringify(itemsData);
         }
 
-        const targetUrl = `${base}/print/inbound?${params.toString()}&modules=${encodeURIComponent(inboundModules)}&units_data=${encodeURIComponent(unitsJson)}&items_data=${encodeURIComponent(itemsJson)}`;
+        // Serialize order data to pass to client
+        let orderJson = '';
+        if (orderData) {
+            // Need to include supplier name relation which we didn't fetch fully above
+            const { data: fullOrder } = await supabase
+                .from('inbound_orders')
+                .select(`
+                    *,
+                    supplier:suppliers(name),
+                    order_types(name)
+                `)
+                .eq('id', id)
+                .single();
+
+            if (fullOrder) {
+                orderJson = JSON.stringify(fullOrder);
+            }
+        }
+
+        const targetUrl = `${base}/print/inbound?${params.toString()}&modules=${encodeURIComponent(inboundModules)}&units_data=${encodeURIComponent(unitsJson)}&items_data=${encodeURIComponent(itemsJson)}&order_data=${encodeURIComponent(orderJson)}`;
 
         // Call external Puppeteer screenshot service
         const serviceBase = (process.env.SCREENSHOT_SERVICE_URL || '').trim() || 'https://chupanh.onrender.com';
