@@ -234,107 +234,181 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
     }
 
     return (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-zinc-900 rounded-xl w-full max-w-2xl shadow-xl animate-scale-in max-h-[90vh] overflow-y-auto">
-                <div className="flex justify-between items-center p-4 border-b dark:border-zinc-800 sticky top-0 bg-white dark:bg-zinc-900 z-10">
-                    <h3 className="text-lg font-bold">{initialData ? 'Sửa Công Ty & Quản Lý Admin' : 'Thêm Công Ty Mới'}</h3>
-                    <button onClick={onClose}><X size={20} /></button>
+        <div className="fixed inset-0 bg-emerald-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-0 md:p-4">
+            <div className="bg-white rounded-t-3xl md:rounded-2xl w-full max-w-2xl shadow-2xl animate-scale-in max-h-[92vh] md:max-h-[90vh] overflow-y-auto flex flex-col mt-auto md:mt-0">
+                <div className="flex justify-between items-center p-5 border-b border-emerald-50 sticky top-0 bg-white/80 backdrop-blur-md z-10">
+                    <h3 className="text-xl font-black text-emerald-800 tracking-tight">
+                        {initialData ? 'Sửa Công Ty & Quản Lý Admin' : 'Thêm Công Ty Mới'}
+                    </h3>
+                    <button
+                        onClick={onClose}
+                        className="p-2 rounded-full hover:bg-emerald-50 text-emerald-400 transition-colors"
+                    >
+                        <X size={24} />
+                    </button>
                 </div>
 
-                <div className="p-6 space-y-8">
+                <div className="p-5 md:p-8 space-y-10 flex-1">
                     {/* FORM CÔNG TY */}
-                    <form id="company-form" onSubmit={handleSubmit} className="space-y-6">
-                        <div className="space-y-4">
-                            <h4 className="font-semibold flex items-center gap-2 text-stone-700 dark:text-stone-300">
-                                <Building size={18} /> Thông tin Doanh Nghiệp
+                    <form id="company-form" onSubmit={handleSubmit} className="space-y-8">
+                        <div className="space-y-6">
+                            <h4 className="font-black flex items-center gap-2 text-emerald-800 uppercase text-xs tracking-[0.2em]">
+                                <Building size={16} /> Thông tin Doanh Nghiệp
                             </h4>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="col-span-2">
-                                    <label className="block text-sm font-medium mb-1">Tên công ty <span className="text-red-500">*</span></label>
-                                    <input name="name" value={formData.name} onChange={handleChange} className="w-full p-2 border rounded-lg dark:bg-zinc-800 dark:border-zinc-700" required placeholder="Nhập tên doanh nghiệp..." />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div className="md:col-span-2">
+                                    <label className="block text-xs font-black text-emerald-700 uppercase tracking-wider mb-2">Tên công ty <span className="text-orange-500">*</span></label>
+                                    <input
+                                        name="name"
+                                        value={formData.name}
+                                        onChange={handleChange}
+                                        className="w-full p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all text-emerald-900 font-bold placeholder:text-emerald-300"
+                                        required
+                                        placeholder="Nhập tên doanh nghiệp..."
+                                    />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium mb-1">Mã định danh (Slug) <span className="text-red-500">*</span></label>
-                                    <input name="code" value={formData.code} onChange={handleChange} className="w-full p-2 border rounded-lg bg-gray-50 dark:bg-zinc-800 dark:border-zinc-700" required placeholder="tu-dong-tao" />
+                                    <label className="block text-xs font-black text-emerald-700 uppercase tracking-wider mb-2">Mã định danh (Slug) <span className="text-orange-500">*</span></label>
+                                    <input
+                                        name="code"
+                                        value={formData.code}
+                                        onChange={handleChange}
+                                        className="w-full p-3.5 bg-orange-50/30 border border-orange-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all text-orange-700 font-mono font-bold"
+                                        required
+                                        placeholder="tu-dong-tao"
+                                    />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium mb-1">Mã số thuế</label>
-                                    <input name="tax_code" value={formData.tax_code} onChange={handleChange} className="w-full p-2 border rounded-lg dark:bg-zinc-800 dark:border-zinc-700" placeholder="010xxxxxxx" />
+                                    <label className="block text-xs font-black text-emerald-700 uppercase tracking-wider mb-2">Mã số thuế</label>
+                                    <input
+                                        name="tax_code"
+                                        value={formData.tax_code}
+                                        onChange={handleChange}
+                                        className="w-full p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all text-emerald-900 font-bold placeholder:text-emerald-300"
+                                        placeholder="010xxxxxxx"
+                                    />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium mb-1">Số điện thoại</label>
-                                    <input name="phone" value={formData.phone} onChange={handleChange} className="w-full p-2 border rounded-lg dark:bg-zinc-800 dark:border-zinc-700" placeholder="Hotline..." />
+                                    <label className="block text-xs font-black text-emerald-700 uppercase tracking-wider mb-2">Số điện thoại</label>
+                                    <input
+                                        name="phone"
+                                        value={formData.phone}
+                                        onChange={handleChange}
+                                        className="w-full p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all text-emerald-900 font-bold placeholder:text-emerald-300"
+                                        placeholder="Hotline..."
+                                    />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium mb-1">Email liên hệ</label>
-                                    <input name="email" value={formData.email} onChange={handleChange} className="w-full p-2 border rounded-lg dark:bg-zinc-800 dark:border-zinc-700" placeholder="contact@company.com" />
+                                    <label className="block text-xs font-black text-emerald-700 uppercase tracking-wider mb-2">Email liên hệ</label>
+                                    <input
+                                        name="email"
+                                        value={formData.email}
+                                        onChange={handleChange}
+                                        className="w-full p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all text-emerald-900 font-bold placeholder:text-emerald-300"
+                                        placeholder="contact@company.com"
+                                    />
                                 </div>
-                                <div className="col-span-2">
-                                    <label className="block text-sm font-medium mb-1">Địa chỉ trụ sở</label>
-                                    <input name="address" value={formData.address} onChange={handleChange} className="w-full p-2 border rounded-lg dark:bg-zinc-800 dark:border-zinc-700" placeholder="Số nhà, đường, quận/huyện..." />
+                                <div className="md:col-span-2">
+                                    <label className="block text-xs font-black text-emerald-700 uppercase tracking-wider mb-2">Địa chỉ trụ sở</label>
+                                    <input
+                                        name="address"
+                                        value={formData.address}
+                                        onChange={handleChange}
+                                        className="w-full p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all text-emerald-900 font-bold placeholder:text-emerald-300"
+                                        placeholder="Số nhà, đường, quận/huyện..."
+                                    />
                                 </div>
                             </div>
                         </div>
 
                         {/* NEW ADMIN (CREATE MODE) */}
                         {!initialData && (
-                            <div className="space-y-4 pt-4 border-t border-dashed border-stone-200">
-                                <h4 className="font-semibold flex items-center gap-2 text-stone-700 dark:text-stone-300">
-                                    <Shield size={18} className="text-orange-500" /> Tạo Tài khoản Admin Mới
+                            <div className="space-y-6 pt-6 border-t border-dashed border-emerald-100">
+                                <h4 className="font-black flex items-center gap-2 text-emerald-800 uppercase text-xs tracking-[0.2em]">
+                                    <Shield size={16} className="text-orange-500" /> Tạo Tài khoản Admin Mới
                                 </h4>
-                                <div className="p-4 bg-orange-50 dark:bg-zinc-800/50 rounded-xl space-y-4 border border-orange-100 dark:border-zinc-700">
+                                <div className="p-5 bg-orange-50/50 rounded-2xl space-y-5 border border-orange-100">
                                     <div>
-                                        <label className="block text-sm font-medium mb-1">Họ tên Admin <span className="text-red-500">*</span></label>
-                                        <input name="admin_name" value={formData.admin_name} onChange={handleChange} className="w-full p-2 border rounded-lg dark:bg-zinc-800 dark:border-zinc-700" placeholder="Nguyễn Văn Quản Trị" />
+                                        <label className="block text-xs font-black text-orange-700 uppercase tracking-wider mb-2">Họ tên Admin <span className="text-orange-600">*</span></label>
+                                        <input
+                                            name="admin_name"
+                                            value={formData.admin_name}
+                                            onChange={handleChange}
+                                            className="w-full p-3.5 bg-white border border-orange-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all text-orange-800 font-bold placeholder:text-orange-200"
+                                            placeholder="Nguyễn Văn Quản Trị"
+                                        />
                                     </div>
-                                    <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                         <div>
-                                            <label className="block text-sm font-medium mb-1">Email đăng nhập <span className="text-red-500">*</span></label>
-                                            <input name="admin_email" value={formData.admin_email} onChange={handleChange} className="w-full p-2 border rounded-lg dark:bg-zinc-800 dark:border-zinc-700" placeholder="admin@company.com" />
+                                            <label className="block text-xs font-black text-orange-700 uppercase tracking-wider mb-2">Email đăng nhập <span className="text-orange-600">*</span></label>
+                                            <input
+                                                name="admin_email"
+                                                value={formData.admin_email}
+                                                onChange={handleChange}
+                                                className="w-full p-3.5 bg-white border border-orange-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all text-orange-800 font-bold placeholder:text-orange-200"
+                                                placeholder="admin@company.com"
+                                            />
                                         </div>
                                         <div>
-                                            <label className="block text-sm font-medium mb-1">Mật khẩu khởi tạo <span className="text-red-500">*</span></label>
-                                            <input type="password" name="admin_password" value={formData.admin_password} onChange={handleChange} className="w-full p-2 border rounded-lg dark:bg-zinc-800 dark:border-zinc-700" placeholder="Min. 6 ký tự" />
+                                            <label className="block text-xs font-black text-orange-700 uppercase tracking-wider mb-2">Mật khẩu khởi tạo <span className="text-orange-600">*</span></label>
+                                            <input
+                                                type="password"
+                                                name="admin_password"
+                                                value={formData.admin_password}
+                                                onChange={handleChange}
+                                                className="w-full p-3.5 bg-white border border-orange-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all text-orange-800 font-bold placeholder:text-orange-200"
+                                                placeholder="Min. 6 ký tự"
+                                            />
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         )}
-                        <div className="flex justify-end gap-3 pt-4 border-t dark:border-zinc-800">
-                            <button type="button" onClick={onClose} className="px-4 py-2 border rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800">Hủy</button>
-                            <button type="submit" disabled={loading} className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2 font-medium shadow-lg shadow-orange-200">
+                        <div className="flex flex-col-reverse md:flex-row justify-end gap-3 pt-6 border-t border-emerald-50 bottom-0 bg-white z-10">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="px-6 py-3.5 border border-emerald-100 rounded-xl hover:bg-emerald-50 text-emerald-600 font-bold transition-all text-center"
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="px-8 py-3.5 bg-orange-600 text-white rounded-xl hover:bg-orange-700 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 font-black shadow-xl shadow-orange-100 transition-all uppercase tracking-widest text-xs"
+                            >
                                 {loading && <Loader2 className="animate-spin" size={16} />}
-                                {initialData ? 'Lưu Thông Tin Công Ty' : 'Tạo Công Ty & Admin'}
+                                {initialData ? 'Lưu Thông Tin Công Ty' : 'Tạo Đặc Quyền Hệ Thống'}
                             </button>
                         </div>
                     </form>
 
                     {/* EDIT ADMIN (EDIT MODE ONLY) */}
                     {initialData && (
-                        <div className="space-y-4 pt-4 border-t-2 border-dashed border-stone-200 dark:border-zinc-700">
-                            <h4 className="font-semibold flex items-center gap-2 text-stone-700 dark:text-stone-300">
-                                <Shield size={18} className="text-blue-500" /> Quản lý Admin
+                        <div className="space-y-6 pt-8 border-t-2 border-dashed border-emerald-100">
+                            <h4 className="font-black flex items-center gap-2 text-emerald-800 uppercase text-xs tracking-[0.2em]">
+                                <Shield size={16} className="text-orange-500" /> Quản lý Admin
                             </h4>
 
                             {loadingAdmins ? (
-                                <div className="text-sm text-center py-4 text-stone-500"><Loader2 className="animate-spin inline mr-2" /> Đang tải thông tin Admin...</div>
+                                <div className="text-sm text-center py-6 text-emerald-500 font-bold"><Loader2 className="animate-spin inline mr-2" /> Đang tải thông tin Admin...</div>
                             ) : admins.length === 0 ? (
-                                <div className="text-sm text-yellow-600 bg-yellow-50 p-3 rounded-lg border border-yellow-100">
+                                <div className="text-xs font-bold text-orange-700 bg-orange-50 p-4 rounded-xl border border-orange-100">
                                     Công ty này chưa có tài khoản Admin nào.
                                 </div>
                             ) : (
-                                <div className="bg-blue-50 dark:bg-zinc-800/50 rounded-xl p-4 border border-blue-100 dark:border-zinc-700">
+                                <div className="bg-emerald-50/50 rounded-2xl p-5 border border-emerald-100">
 
                                     {/* Admin Selector (if multiple) */}
                                     {admins.length > 1 && (
-                                        <div className="flex gap-2 overflow-x-auto pb-4 mb-4 border-b border-blue-100 dark:border-zinc-700">
+                                        <div className="flex gap-2 overflow-x-auto pb-4 mb-4 border-b border-emerald-100">
                                             {admins.map(admin => (
                                                 <button
                                                     key={admin.id}
                                                     onClick={() => selectAdminForEdit(admin)}
-                                                    className={`px-3 py-1 text-sm rounded-full border transition-colors whitespace-nowrap ${selectedAdmin?.id === admin.id
-                                                        ? 'bg-blue-600 text-white border-blue-600 shadow-md'
-                                                        : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
+                                                    className={`px-4 py-1.5 text-xs font-bold rounded-full border transition-all whitespace-nowrap ${selectedAdmin?.id === admin.id
+                                                        ? 'bg-emerald-800 text-white border-emerald-800 shadow-lg shadow-emerald-100 scale-105'
+                                                        : 'bg-white border-emerald-200 text-emerald-600 hover:bg-white hover:border-emerald-400'
                                                         }`}
                                                 >
                                                     {admin.full_name || admin.email}
@@ -347,7 +421,7 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
                                         <button
                                             type="button"
                                             onClick={() => setIsAddingAdmin(!isAddingAdmin)}
-                                            className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                                            className="text-xs text-orange-600 hover:text-orange-700 font-black uppercase tracking-widest flex items-center gap-1.5 transition-all active:scale-95"
                                         >
                                             {isAddingAdmin ? <><X size={14} /> Hủy thêm mới</> : <><Plus size={14} /> Thêm Admin khác</>}
                                         </button>
@@ -355,38 +429,38 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
 
                                     {/* Add Admin Form */}
                                     {isAddingAdmin && (
-                                        <div className="mt-4 p-4 bg-white rounded-lg border border-blue-200 animate-fade-in">
-                                            <h5 className="text-sm font-bold text-blue-800 mb-3">Thêm Admin Mới</h5>
-                                            <div className="space-y-3">
+                                        <div className="mt-4 p-5 bg-white rounded-2xl border border-orange-100 shadow-xl shadow-emerald-900/5 animate-fade-in">
+                                            <h5 className="text-xs font-black text-orange-700 uppercase tracking-widest mb-4">Thêm Admin Mới</h5>
+                                            <div className="space-y-4">
                                                 <div>
-                                                    <label className="block text-sm font-medium mb-1">Họ tên Admin</label>
+                                                    <label className="block text-xs font-black text-emerald-700 uppercase tracking-wider mb-2">Họ tên Admin</label>
                                                     <input
                                                         name="new_admin_name"
                                                         value={formData.new_admin_name}
                                                         onChange={handleChange}
-                                                        className="w-full p-2 border rounded-lg"
+                                                        className="w-full p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none text-emerald-900 font-bold"
                                                         placeholder="Nguyễn Văn A"
                                                     />
                                                 </div>
-                                                <div className="grid grid-cols-2 gap-3">
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                     <div>
-                                                        <label className="block text-sm font-medium mb-1">Email</label>
+                                                        <label className="block text-xs font-black text-emerald-700 uppercase tracking-wider mb-2">Email</label>
                                                         <input
                                                             name="new_admin_email"
                                                             value={formData.new_admin_email}
                                                             onChange={handleChange}
-                                                            className="w-full p-2 border rounded-lg"
+                                                            className="w-full p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none text-emerald-900 font-bold"
                                                             placeholder="admin2@company.com"
                                                         />
                                                     </div>
                                                     <div>
-                                                        <label className="block text-sm font-medium mb-1">Mật khẩu</label>
+                                                        <label className="block text-xs font-black text-emerald-700 uppercase tracking-wider mb-2">Mật khẩu</label>
                                                         <input
                                                             type="password"
                                                             name="new_admin_password"
                                                             value={formData.new_admin_password}
                                                             onChange={handleChange}
-                                                            className="w-full p-2 border rounded-lg"
+                                                            className="w-full p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none text-emerald-900 font-bold"
                                                             placeholder="Min. 6 ký tự"
                                                         />
                                                     </div>
@@ -396,7 +470,7 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
                                                         type="button"
                                                         onClick={handleAddAdmin}
                                                         disabled={loading}
-                                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2"
+                                                        className="px-6 py-3 bg-orange-600 text-white rounded-xl hover:bg-orange-700 active:scale-95 text-xs font-black uppercase tracking-widest flex items-center gap-2 transition-all shadow-lg shadow-orange-100"
                                                     >
                                                         {loading && <Loader2 className="animate-spin" size={14} />}
                                                         Tạo Tài Khoản
@@ -408,40 +482,40 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
 
                                     {/* Edit Selected Admin */}
                                     {selectedAdmin && !isAddingAdmin && (
-                                        <div className="space-y-4 animate-fade-in mt-4 border-t border-blue-100 pt-4">
+                                        <div className="space-y-5 animate-fade-in mt-6 border-t border-emerald-100 pt-6">
                                             <div className="flex items-center justify-between">
-                                                <h5 className="text-sm font-bold text-blue-800 dark:text-blue-300">
+                                                <h5 className="text-xs font-black text-orange-800 uppercase tracking-[0.15em]">
                                                     Đang sửa: {selectedAdmin.email}
                                                 </h5>
                                             </div>
 
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div className="col-span-2">
-                                                    <label className="block text-sm font-medium mb-1">Họ tên Admin</label>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                                <div className="md:col-span-2">
+                                                    <label className="block text-xs font-black text-emerald-700 uppercase tracking-wider mb-2">Họ tên Admin</label>
                                                     <input
                                                         name="edit_admin_name"
                                                         value={formData.edit_admin_name}
                                                         onChange={handleChange}
-                                                        className="w-full p-2 border rounded-lg dark:bg-zinc-800 dark:border-zinc-700"
+                                                        className="w-full p-3.5 bg-white border border-emerald-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none text-emerald-900 font-bold"
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-sm font-medium mb-1">Email <span className="text-xs text-stone-400">(Tên đăng nhập)</span></label>
+                                                    <label className="block text-xs font-black text-emerald-700 uppercase tracking-wider mb-2">Email <span className="text-[10px] text-orange-400 font-black tracking-normal lowercase">(Tên đăng nhập)</span></label>
                                                     <input
                                                         name="edit_admin_email"
                                                         value={formData.edit_admin_email}
                                                         onChange={handleChange}
-                                                        className="w-full p-2 border rounded-lg dark:bg-zinc-800 dark:border-zinc-700"
+                                                        className="w-full p-3.5 bg-white border border-emerald-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none text-emerald-900 font-bold"
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-sm font-medium mb-1">Đặt Mật khẩu Mới</label>
+                                                    <label className="block text-xs font-black text-emerald-700 uppercase tracking-wider mb-2">Đặt Mật khẩu Mới</label>
                                                     <input
                                                         type="password"
                                                         name="edit_admin_password"
                                                         value={formData.edit_admin_password}
                                                         onChange={handleChange}
-                                                        className="w-full p-2 border rounded-lg dark:bg-zinc-800 dark:border-zinc-700 border-blue-300 focus:ring-blue-200"
+                                                        className="w-full p-3.5 bg-orange-50 border border-orange-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none text-orange-900 font-bold"
                                                         placeholder="Để trống nếu không đổi"
                                                     />
                                                 </div>
@@ -452,7 +526,7 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
                                                     type="button"
                                                     onClick={handleUpdateAdmin}
                                                     disabled={loading}
-                                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium flex items-center gap-2 shadow-sm"
+                                                    className="px-6 py-3 bg-emerald-800 text-white rounded-xl hover:bg-emerald-900 active:scale-95 disabled:opacity-50 text-xs font-black uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-emerald-100 transition-all"
                                                 >
                                                     {loading && <Loader2 className="animate-spin" size={14} />}
                                                     Cập nhật Admin
@@ -462,69 +536,69 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
                                     )}
                                 </div>
                             )}
+                        </div>
+                    )}
 
-                            {/* Empty State Action */}
-                            {initialData && admins.length === 0 && !loadingAdmins && (
-                                <div className="mt-2 text-center">
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsAddingAdmin(!isAddingAdmin)}
-                                        className="text-sm px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-medium inline-flex items-center gap-2"
-                                    >
-                                        {isAddingAdmin ? 'Hủy thêm mới' : <><Plus size={16} /> Thêm tài khoản Admin ngay</>}
-                                    </button>
+                    {/* Empty State Action */}
+                    {initialData && admins.length === 0 && !loadingAdmins && (
+                        <div className="mt-4 text-center">
+                            <button
+                                type="button"
+                                onClick={() => setIsAddingAdmin(!isAddingAdmin)}
+                                className="px-6 py-3 bg-orange-100 text-orange-700 rounded-xl hover:bg-orange-200 font-black uppercase tracking-widest text-[10px] inline-flex items-center gap-2 transition-all active:scale-95"
+                            >
+                                {isAddingAdmin ? 'Hủy thêm mới' : <><Plus size={16} /> Thêm tài khoản Admin ngay</>}
+                            </button>
 
-                                    {isAddingAdmin && (
-                                        <div className="mt-4 p-4 bg-white rounded-lg border border-blue-200 animate-fade-in text-left">
-                                            <h5 className="text-sm font-bold text-blue-800 mb-3">Thêm Admin Mới</h5>
-                                            <div className="space-y-3">
-                                                <div>
-                                                    <label className="block text-sm font-medium mb-1">Họ tên Admin</label>
-                                                    <input
-                                                        name="new_admin_name"
-                                                        value={formData.new_admin_name}
-                                                        onChange={handleChange}
-                                                        className="w-full p-2 border rounded-lg"
-                                                        placeholder="Nguyễn Văn A"
-                                                    />
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-3">
-                                                    <div>
-                                                        <label className="block text-sm font-medium mb-1">Email</label>
-                                                        <input
-                                                            name="new_admin_email"
-                                                            value={formData.new_admin_email}
-                                                            onChange={handleChange}
-                                                            className="w-full p-2 border rounded-lg"
-                                                            placeholder="admin2@company.com"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-sm font-medium mb-1">Mật khẩu</label>
-                                                        <input
-                                                            type="password"
-                                                            name="new_admin_password"
-                                                            value={formData.new_admin_password}
-                                                            onChange={handleChange}
-                                                            className="w-full p-2 border rounded-lg"
-                                                            placeholder="Min. 6 ký tự"
-                                                        />
-                                                    </div>
-                                                </div>
-                                                <div className="flex justify-end pt-2">
-                                                    <button
-                                                        type="button"
-                                                        onClick={handleAddAdmin}
-                                                        disabled={loading}
-                                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2"
-                                                    >
-                                                        {loading && <Loader2 className="animate-spin" size={14} />}
-                                                        Tạo Tài Khoản
-                                                    </button>
-                                                </div>
+                            {isAddingAdmin && (
+                                <div className="mt-6 p-5 bg-white rounded-2xl border border-orange-100 shadow-xl shadow-orange-100/5 animate-fade-in text-left">
+                                    <h5 className="text-xs font-black text-orange-800 uppercase tracking-widest mb-4">Thêm Admin Mới</h5>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-black text-emerald-700 uppercase tracking-wider mb-2">Họ tên Admin</label>
+                                            <input
+                                                name="new_admin_name"
+                                                value={formData.new_admin_name}
+                                                onChange={handleChange}
+                                                className="w-full p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none text-emerald-900 font-bold"
+                                                placeholder="Nguyễn Văn A"
+                                            />
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-black text-emerald-700 uppercase tracking-wider mb-2">Email</label>
+                                                <input
+                                                    name="new_admin_email"
+                                                    value={formData.new_admin_email}
+                                                    onChange={handleChange}
+                                                    className="w-full p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none text-emerald-900 font-bold"
+                                                    placeholder="admin2@company.com"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-black text-emerald-700 uppercase tracking-wider mb-2">Mật khẩu</label>
+                                                <input
+                                                    type="password"
+                                                    name="new_admin_password"
+                                                    value={formData.new_admin_password}
+                                                    onChange={handleChange}
+                                                    className="w-full p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none text-emerald-900 font-bold"
+                                                    placeholder="Min. 6 ký tự"
+                                                />
                                             </div>
                                         </div>
-                                    )}
+                                        <div className="flex justify-end pt-2">
+                                            <button
+                                                type="button"
+                                                onClick={handleAddAdmin}
+                                                disabled={loading}
+                                                className="px-6 py-3 bg-orange-600 text-white rounded-xl hover:bg-orange-700 active:scale-95 text-xs font-black uppercase tracking-widest flex items-center gap-2 transition-all shadow-lg shadow-orange-100"
+                                            >
+                                                {loading && <Loader2 className="animate-spin" size={14} />}
+                                                Tạo Tài Khoản
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                         </div>

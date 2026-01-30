@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import { Session } from '@supabase/supabase-js'
 
 import { supabase } from '@/lib/supabaseClient'
 import { BASIC_MODULE_IDS } from '@/lib/basic-modules'
@@ -41,15 +42,25 @@ export const SYSTEM_CONFIG: Record<string, { name: string; color: string }> = {
 }
 
 export function SystemProvider({ children }: { children: React.ReactNode }) {
-  const [systemType, setSystemTypeState] = useState<SystemType>('FROZEN')
+  const [systemType, setSystemTypeState] = useState<SystemType>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('systemType') as SystemType
+      return saved || 'FROZEN'
+    }
+    return 'FROZEN'
+  })
+
   const [systems, setSystems] = useState<System[]>([])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const [unlockedModules, setUnlockedModules] = useState<string[]>([])
-  const [session, setSession] = useState<any>(null)
+  const [session, setSession] = useState<Session | null>(null)
 
   // [NEW] Use UserContext
-  const { activeModules, profile } = useUser()
+  const { activeModules } = useUser()
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const router = useRouter()
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const pathname = usePathname()
 
   // Track session (Keep existing session logic for systems subscription, though useUser also has user)
@@ -70,6 +81,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
   // [NEW] Sync unlocked modules from UserContext (Initial Load)
   useEffect(() => {
     if (activeModules) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setUnlockedModules(activeModules)
     }
   }, [activeModules])
@@ -81,9 +93,11 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     if (!accessToken) return // Wait for valid session
 
     async function fetchSystems() {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: systemsData } = await (supabase.from('systems') as any).select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
 
       if (systemsData) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let mergedSystems = systemsData.map((sys: any) => {
           let sysModules = sys.modules;
           if (typeof sysModules === 'string') {
@@ -174,10 +188,12 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
           event: 'UPDATE',
           schema: 'public',
           table: 'companies',
+          // eslint-disable-next-line react-hooks/exhaustive-deps
           filter: `id=eq.${session?.user?.user_metadata?.company_id || ''}` // Filter isn't perfect here due to profile fetch delay, but safe enough or use broad filter
         },
         (payload) => {
           // Handle company update
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const newCompany = payload.new as any;
           if (newCompany && newCompany.unlocked_modules) {
             setUnlockedModules(newCompany.unlocked_modules)
@@ -189,15 +205,8 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     return () => {
       supabase.removeChannel(channel)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken])
-
-  useEffect(() => {
-    // Load from local storage on mount
-    const saved = localStorage.getItem('systemType') as SystemType
-    if (saved) {
-      setSystemTypeState(saved)
-    }
-  }, [])
 
   const setSystemType = (type: SystemType) => {
     localStorage.setItem('systemType', type)
@@ -236,23 +245,35 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
 
     // Look in all possible module buckets
     // Handle both Array and NULL cases
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const getArr = (val: any) => Array.isArray(val) ? val : []
 
-    const productModules = getArr(currentSystem.modules)
+    const rawModules = currentSystem.modules
+    let productModules: string[] = []
+    if (Array.isArray(rawModules)) {
+      productModules = rawModules
+    } else if (typeof rawModules === 'object' && rawModules !== null) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      productModules = Array.isArray((rawModules as any).product_modules) ? (rawModules as any).product_modules : []
+    }
     const inboundModules = getArr(currentSystem.inbound_modules)
     const outboundModules = getArr(currentSystem.outbound_modules)
     const dashboardModules = getArr(currentSystem.dashboard_modules)
     const lotModules = getArr(currentSystem.lot_modules)
 
     // Utility modules check (legacy and new structure)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const legacyModules = currentSystem.modules && !Array.isArray(currentSystem.modules) ? currentSystem.modules as any : {}
     const utilityModules = Array.isArray(legacyModules?.utility_modules) ? legacyModules.utility_modules : []
 
     // 3. Strict check for new column types
     if (moduleId.startsWith('inbound_')) {
+      // Enforce Company License Check (unless it's a Core Module, which is handled above)
+      if (!unlockedModules.includes(moduleId)) return false
       return inboundModules.includes(moduleId)
     }
     if (moduleId.startsWith('outbound_')) {
+      if (!unlockedModules.includes(moduleId)) return false
       return outboundModules.includes(moduleId)
     }
 

@@ -55,6 +55,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
                     .single()
 
                 if (!error && data) {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     setProfile(data as any)
 
                     // 2. Fetch Company Unlocked Modules
@@ -101,11 +102,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }, [])
 
     const hasPermission = (permissionCode: string): boolean => {
-        // SUPERUSER BYPASS
-        if (profile?.email === 'tungdibui2609@gmail.com' || user?.email === 'tungdibui2609@gmail.com') {
-            return true
-        }
-
         // LEVEL 1 & 2 BYPASS (Super Admin & Company Admin)
         if (profile?.account_level === 1 || profile?.account_level === 2) {
             return true
@@ -120,11 +116,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
 
     const isRouteBlocked = (path: string): boolean => {
-        // SUPERUSER BYPASS
-        if (profile?.email === 'tungdibui2609@gmail.com' || user?.email === 'tungdibui2609@gmail.com') {
-            return false
-        }
-
         if (!profile || !profile.blocked_routes) return false
 
         return profile.blocked_routes.some(blockedPath =>
@@ -136,6 +127,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         if (!user) return
 
         try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const { error } = await (supabase.from('user_profiles') as any)
                 .update(updates)
                 .eq('id', user.id)
@@ -167,10 +159,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
 
     const checkSubscription = (moduleCode: string): boolean => {
-        // SUPERUSER BYPASS
-        if (profile?.email === 'tungdibui2609@gmail.com' || user?.email === 'tungdibui2609@gmail.com') {
-            return true
-        }
         return activeModules.includes(moduleCode)
     }
 
