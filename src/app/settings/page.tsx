@@ -55,9 +55,52 @@ export default function SettingsPage() {
     }
 
     return (
-        <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
-            {/* Sidebar Menu */}
-            <div className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col shadow-sm z-10">
+        <div className="flex flex-col md:flex-row h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
+            {/* Mobile Header & Navigation */}
+            <div className="block md:hidden bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex-none z-20">
+                <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-700">
+                    <button
+                        onClick={() => router.push('/')}
+                        className="flex items-center gap-2 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors text-sm font-medium"
+                    >
+                        <ArrowLeft size={16} />
+                        <span className="sr-only">Back</span>
+                    </button>
+                    <div className="flex items-center gap-2 text-orange-600 dark:text-orange-500">
+                        <SettingsIcon size={20} />
+                        <span className="font-bold text-base tracking-tight">Cài Đặt</span>
+                    </div>
+                    <div className="w-8" /> {/* Spacer for centering */}
+                </div>
+
+                {/* Horizontal Scrollable Tabs */}
+                <div className="overflow-x-auto scrollbar-hide">
+                    <div className="flex px-4 py-2 gap-2 min-w-max">
+                        {tabs.map((tab) => {
+                            const Icon = tab.icon
+                            const isActive = activeTab === tab.id
+                            return (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => handleTabChange(tab.id)}
+                                    className={cn(
+                                        "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 whitespace-nowrap border",
+                                        isActive
+                                            ? "bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-900/20 dark:border-orange-800 dark:text-orange-400"
+                                            : "bg-white border-gray-200 text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+                                    )}
+                                >
+                                    <Icon size={14} />
+                                    {tab.label}
+                                </button>
+                            )
+                        })}
+                    </div>
+                </div>
+            </div>
+
+            {/* Desktop Sidebar Menu */}
+            <div className="hidden md:flex w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex-col shadow-sm z-10 flex-none">
                 {/* Logo / Header Area */}
                 <div className="p-4 border-b border-gray-100 dark:border-gray-700">
                     <button
@@ -101,18 +144,25 @@ export default function SettingsPage() {
             </div>
 
             {/* Main Content Area */}
-            <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 p-8">
-                <div className="max-w-5xl mx-auto">
-                    <header className="mb-8">
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+            <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 p-4 md:p-8">
+                <div className="max-w-5xl mx-auto pb-20 md:pb-0"> {/* Added padding bottom for mobile if needed */}
+                    <header className="mb-6 md:mb-8 hidden md:block"> {/* Hide redundant header on mobile to save space, or keep it? Let's keep it but maybe simplify. Actually, showing it twice is confusing. Let's hide it on mobile since we have the title in the sticky header? No, the sticky header says "Cài Đặt", this says "Thông tin công ty". Let's keep it but make it smaller on mobile. */}
+                         <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">
                             {tabs.find(t => t.id === activeTab)?.label}
                         </h2>
-                        <p className="text-gray-500 dark:text-gray-400 mt-1">
+                        <p className="text-sm md:text-base text-gray-500 dark:text-gray-400 mt-1">
                             Quản lý các thiết lập cho {tabs.find(t => t.id === activeTab)?.label.toLowerCase()}
                         </p>
                     </header>
 
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
+                    {/* Mobile only sub-header for context */}
+                    <header className="mb-4 md:hidden">
+                         <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                            {tabs.find(t => t.id === activeTab)?.label}
+                        </h2>
+                    </header>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 md:p-6 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
                         {activeTab === 'company' && <CompanyInfoSection />}
                         {activeTab === 'operation_model' && <OperationModelSection />}
                         {activeTab === 'branches' && <BranchManagerSection />}
