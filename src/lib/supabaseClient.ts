@@ -279,6 +279,96 @@ type CompaniesTable = {
     Relationships: []
 }
 
+type ConstructionTeamsTable = {
+    Row: {
+        id: string
+        company_id: string | null
+        code: string | null
+        name: string
+        description: string | null
+        created_at: string
+        created_by: string | null
+        updated_at: string
+    }
+    Insert: {
+        id?: string
+        company_id?: string | null
+        code?: string | null
+        name: string
+        description?: string | null
+        created_at?: string
+        created_by?: string | null
+        updated_at?: string
+    }
+    Update: {
+        id?: string
+        company_id?: string | null
+        code?: string | null
+        name?: string
+        description?: string | null
+        created_at?: string
+        created_by?: string | null
+        updated_at?: string
+    }
+    Relationships: [
+        {
+            foreignKeyName: "construction_teams_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+        }
+    ]
+}
+
+type ConstructionMembersTable = {
+    Row: {
+        id: string
+        company_id: string | null
+        team_id: string | null
+        full_name: string
+        phone: string | null
+        role: string | null
+        is_active: boolean
+        created_at: string
+        created_by: string | null
+        updated_at: string
+    }
+    Insert: {
+        id?: string
+        company_id?: string | null
+        team_id?: string | null
+        full_name: string
+        phone?: string | null
+        role?: string | null
+        is_active?: boolean
+        created_at?: string
+        created_by?: string | null
+        updated_at?: string
+    }
+    Update: {
+        id?: string
+        company_id?: string | null
+        team_id?: string | null
+        full_name?: string
+        phone?: string | null
+        role?: string | null
+        is_active?: boolean
+        created_at?: string
+        created_by?: string | null
+        updated_at?: string
+    }
+    Relationships: [
+        {
+            foreignKeyName: "construction_members_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "construction_teams"
+            referencedColumns: ["id"]
+        }
+    ]
+}
+
 // Extend the existing Tables type using intersection
 type TypedTables = Database['public']['Tables'] & {
     audit_logs: AuditLogsTable
@@ -286,6 +376,8 @@ type TypedTables = Database['public']['Tables'] & {
     inventory_check_items: InventoryCheckItemsTable
     operational_notes: OperationalNotesTable
     companies: CompaniesTable
+    construction_teams: ConstructionTeamsTable
+    construction_members: ConstructionMembersTable
 }
 
 // Manually extend the Database type
