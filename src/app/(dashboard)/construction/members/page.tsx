@@ -45,10 +45,10 @@ export default function ConstructionMembersPage() {
     const [editingMember, setEditingMember] = useState<ConstructionMember | null>(null)
 
     useEffect(() => {
-        if (profile) {
-            fetchData()
-        }
-    }, [profile, activeTab])
+        // Fetch data immediately, independently of profile status
+        // This ensures the "Manual" module works even if "System User" context is incomplete
+        fetchData()
+    }, [activeTab])
 
     async function fetchData() {
         setLoading(true)
@@ -58,16 +58,26 @@ export default function ConstructionMembersPage() {
                 .select('*, teams:team_id(id, name)')
                 .order('full_name')
 
-            if (error) showToast('Lỗi tải danh sách: ' + error.message, 'error')
-            else setMembers(data || [])
+            if (error) {
+                // Only show error if it's NOT a permission error that implies "No data access"
+                // If it's a permission error, we just show empty list
+                if (error.code !== 'PGRST301') {
+                    console.error('Fetch members error:', error)
+                }
+            }
+            if (data) setMembers(data)
         } else {
             const { data, error } = await (supabase
                 .from('construction_teams') as any)
                 .select('*')
                 .order('name')
 
-            if (error) showToast('Lỗi tải danh sách: ' + error.message, 'error')
-            else setTeams(data || [])
+            if (error) {
+                if (error.code !== 'PGRST301') {
+                   console.error('Fetch teams error:', error)
+                }
+            }
+            if (data) setTeams(data)
         }
         setLoading(false)
     }

@@ -369,6 +369,88 @@ type ConstructionMembersTable = {
     ]
 }
 
+type RolesTable = {
+    Row: {
+        id: string
+        code: string
+        name: string
+        description: string | null
+        created_at: string
+    }
+    Insert: {
+        id?: string
+        code: string
+        name: string
+        description?: string | null
+        created_at?: string
+    }
+    Update: {
+        id?: string
+        code?: string
+        name?: string
+        description?: string | null
+        created_at?: string
+    }
+    Relationships: []
+}
+
+type UserProfilesTable = {
+    Row: {
+        id: string
+        email: string | null
+        full_name: string
+        avatar_url: string | null
+        role_id: string | null
+        department: string | null
+        is_active: boolean | null
+        last_login: string | null
+        company_id: string | null
+        created_at: string | null
+        updated_at: string | null
+        employee_code: string | null
+        account_level: number | null
+    }
+    Insert: {
+        id?: string
+        email?: string | null
+        full_name: string
+        avatar_url?: string | null
+        role_id?: string | null
+        department?: string | null
+        is_active?: boolean | null
+        last_login?: string | null
+        company_id?: string | null
+        created_at?: string | null
+        updated_at?: string | null
+        employee_code?: string | null
+        account_level?: number | null
+    }
+    Update: {
+        id?: string
+        email?: string | null
+        full_name?: string
+        avatar_url?: string | null
+        role_id?: string | null
+        department?: string | null
+        is_active?: boolean | null
+        last_login?: string | null
+        company_id?: string | null
+        created_at?: string | null
+        updated_at?: string | null
+        employee_code?: string | null
+        account_level?: number | null
+    }
+    Relationships: [
+        {
+            foreignKeyName: "user_profiles_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "roles"
+            referencedColumns: ["id"]
+        }
+    ]
+}
+
 // Extend the existing Tables type using intersection
 type TypedTables = Database['public']['Tables'] & {
     audit_logs: AuditLogsTable
@@ -378,6 +460,8 @@ type TypedTables = Database['public']['Tables'] & {
     companies: CompaniesTable
     construction_teams: ConstructionTeamsTable
     construction_members: ConstructionMembersTable
+    user_profiles: UserProfilesTable
+    roles: RolesTable
 }
 
 // Manually extend the Database type

@@ -48,6 +48,17 @@ export default function MemberModal({ isOpen, onClose, onSuccess, initialData }:
         setLoading(true)
 
         try {
+            let companyId = profile?.company_id
+
+            // Fallback for company_id if profile is missing
+            if (!companyId) {
+                const { data: userData } = await supabase
+                    .from('user_profiles')
+                    .select('company_id')
+                    .single()
+                if (userData) companyId = userData.company_id
+            }
+
             const payload = {
                 full_name: formData.full_name,
                 phone: formData.phone || null,
@@ -70,7 +81,7 @@ export default function MemberModal({ isOpen, onClose, onSuccess, initialData }:
                 const { error } = await (supabase.from('construction_members') as any)
                     .insert({
                         ...payload,
-                        company_id: profile?.company_id,
+                        company_id: companyId,
                         created_by: profile?.id
                     })
 
