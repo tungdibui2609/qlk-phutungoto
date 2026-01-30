@@ -4,11 +4,13 @@ import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Loader2, Plus, Edit, Trash2, MapPin, Phone, Building, MoreHorizontal, CheckCircle, XCircle, Star } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
+import { useUser } from '@/contexts/UserContext'
 
 type Branch = Database['public']['Tables']['branches']['Row']
 
 export default function BranchManagerSection() {
     const { showToast } = useToast()
+    const { profile } = useUser()
     const [branches, setBranches] = useState<Branch[]>([])
     const [loading, setLoading] = useState(true)
     const [isModalOpen, setIsModalOpen] = useState(false)
@@ -16,16 +18,26 @@ export default function BranchManagerSection() {
     const [saving, setSaving] = useState(false)
 
     useEffect(() => {
-        fetchBranches()
-    }, [])
+        if (profile?.company_id) {
+            fetchBranches()
+        }
+    }, [profile])
 
     async function fetchBranches() {
         setLoading(true)
-        const { data, error } = await supabase
+        let query = supabase
             .from('branches')
             .select('*')
-            .order('is_default', { ascending: false }) // Default first
+            .order('is_default', { ascending: false })
             .order('created_at', { ascending: true })
+
+        // If user has company_id, we can filter explicitly, 
+        // though RLS should handle this.
+        if (profile?.company_id) {
+            query = query.eq('company_id', profile.company_id)
+        }
+
+        const { data, error } = await query
 
         if (error) {
             showToast('Lỗi tải danh sách chi nhánh', 'error')
@@ -59,13 +71,14 @@ export default function BranchManagerSection() {
 
         const isDefault = formData.get('is_default') === 'on'
 
-        const payload = {
+        const payload: any = {
             code: formData.get('code') as string,
             name: formData.get('name') as string,
             address: formData.get('address') as string,
             phone: formData.get('phone') as string,
             is_active: formData.get('is_active') === 'on',
-            is_default: isDefault
+            is_default: isDefault,
+            company_id: profile?.company_id // Linking branch to company
         }
 
         try {
