@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useUser } from '@/contexts/UserContext'
 import { useRouter } from 'next/navigation'
-import { Search, Building2, Package, Shield, Settings, Archive, Plus, Pencil, Power, Trash2, ArrowRight } from 'lucide-react'
+import { Search, Building2, Package, Shield, Settings, Archive, Plus, Pencil, Power, Trash2, ArrowRight, Copy, Check } from 'lucide-react'
 import ModuleConfigModal from '@/components/admin/ModuleConfigModal'
 import CompanyForm from '@/components/admin/CompanyForm'
 import { useToast } from '@/components/ui/ToastProvider'
@@ -37,11 +37,16 @@ export default function AdminDashboard() {
         setLoading(true)
         const { data, error } = await supabase
             .from('companies')
-            .select('*')
+            .select('*, user_profiles(email, account_level)')
             .order('created_at', { ascending: false })
 
         if (data) setCompanies(data)
         setLoading(false)
+    }
+
+    const handleCopy = (text: string) => {
+        navigator.clipboard.writeText(text)
+        showToast('Đã sao chép vào bộ nhớ đệm', 'success')
     }
 
     const handleManageModules = (company: any) => {
@@ -125,7 +130,7 @@ export default function AdminDashboard() {
                         <thead className="bg-stone-50 text-stone-700 uppercase font-medium border-b border-stone-200">
                             <tr>
                                 <th className="px-6 py-4">Doanh Nghiệp</th>
-                                <th className="px-6 py-4">Mã định danh</th>
+                                <th className="px-6 py-4">Tài khoản</th>
                                 <th className="px-6 py-4">Liên hệ</th>
                                 <th className="px-6 py-4 text-center">Trạng thái</th>
                                 <th className="px-6 py-4 text-right">Thao tác</th>
@@ -134,84 +139,100 @@ export default function AdminDashboard() {
                         <tbody className="divide-y divide-stone-100">
                             {companies.filter(c =>
                                 c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                c.code.toLowerCase().includes(searchTerm.toLowerCase())
-                            ).map((company) => (
-                                <tr key={company.id} className="hover:bg-stone-50 transition-colors group">
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-4">
-                                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 flex items-center justify-center text-orange-600 font-bold shrink-0 border border-orange-200 shadow-sm">
-                                                {company.logo_url ? (
-                                                    <img src={company.logo_url} alt="" className="w-full h-full object-contain p-2" />
-                                                ) : (
-                                                    <Building2 size={24} />
-                                                )}
+                                c.email?.toLowerCase().includes(searchTerm.toLowerCase())
+                            ).map((company) => {
+                                // Find Admin User: account_level 2 (Company Admin) or just take first one
+                                const adminUser = company.user_profiles?.find((u: any) => u.account_level === 2) || company.user_profiles?.[0]
+                                const displayEmail = adminUser?.email || company.email || 'Chưa có Admin'
+
+                                return (
+                                    <tr key={company.id} className="hover:bg-stone-50 transition-colors group">
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 flex items-center justify-center text-orange-600 font-bold shrink-0 border border-orange-200 shadow-sm">
+                                                    {company.logo_url ? (
+                                                        <img src={company.logo_url} alt="" className="w-full h-full object-contain p-2" />
+                                                    ) : (
+                                                        <Building2 size={24} />
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <div className="font-bold text-base text-stone-800">{company.name}</div>
+                                                    <div className="text-xs text-stone-500 font-medium">TG: {new Date(company.created_at).toLocaleDateString('vi-VN')}</div>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <div className="font-bold text-base text-stone-800">{company.name}</div>
-                                                <div className="text-xs text-stone-500 font-medium">TG: {new Date(company.created_at).toLocaleDateString('vi-VN')}</div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-col gap-1">
+                                                <span className="font-bold text-stone-800 font-mono tracking-wide">{company.code}</span>
+                                                <span className="text-xs text-stone-500 flex items-center gap-1 group/email">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-stone-300"></span>
+                                                    {displayEmail}
+                                                    {displayEmail !== 'Chưa có Admin' && (
+                                                        <button
+                                                            onClick={() => handleCopy(displayEmail)}
+                                                            className="p-1 hover:bg-stone-200 rounded text-stone-400 hover:text-stone-600 transition-all ml-1"
+                                                            title="Sao chép email"
+                                                        >
+                                                            <Copy size={12} />
+                                                        </button>
+                                                    )}
+                                                </span>
                                             </div>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <span className="font-mono text-xs bg-stone-100 px-2 py-1 rounded text-stone-600 border border-stone-200">
-                                            {company.code}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 text-stone-600">
-                                        <div className="flex flex-col gap-1">
-                                            <span className="font-medium text-stone-900">{company.email || '-'}</span>
-                                            <span className="text-xs text-stone-400">{company.phone || '-'}</span>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 text-center">
-                                        <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold ${company.is_active
+                                        </td>
+                                        <td className="px-6 py-4 text-stone-600">
+                                            <span className="text-sm">{company.phone || 'Chưa cập nhật'}</span>
+                                        </td>
+                                        <td className="px-6 py-4 text-center">
+                                            <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold ${company.is_active
                                                 ? 'bg-green-100 text-green-700 border border-green-200'
                                                 : 'bg-red-100 text-red-700 border border-red-200'
-                                            }`}>
-                                            {company.is_active ? 'Đang hoạt động' : 'Đã khóa'}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 text-right">
-                                        <div className="flex justify-end items-center gap-2 opacity-100 transition-opacity">
-                                            <button
-                                                onClick={() => handleManageModules(company)}
-                                                className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors font-semibold text-xs flex items-center gap-2 border border-blue-200"
-                                                title="Cấu hình Module dịch vụ"
-                                            >
-                                                <Package size={16} />
-                                                Modules
-                                            </button>
+                                                }`}>
+                                                {company.is_active ? 'Đang hoạt động' : 'Đã khóa'}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <div className="flex justify-end items-center gap-2 opacity-100 transition-opacity">
+                                                <button
+                                                    onClick={() => handleManageModules(company)}
+                                                    className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors font-semibold text-xs flex items-center gap-2 border border-blue-200"
+                                                    title="Cấu hình Module dịch vụ"
+                                                >
+                                                    <Package size={16} />
+                                                    Modules
+                                                </button>
 
-                                            <div className="h-4 w-px bg-stone-300 mx-2"></div>
+                                                <div className="h-4 w-px bg-stone-300 mx-2"></div>
 
-                                            <button
-                                                onClick={() => handleEdit(company)}
-                                                className="p-2 rounded-lg text-stone-400 hover:text-stone-800 hover:bg-stone-200 transition-colors"
-                                                title="Sửa thông tin"
-                                            >
-                                                <Pencil size={18} />
-                                            </button>
-                                            <button
-                                                onClick={() => toggleStatus(company.id, company.is_active)}
-                                                className={`p-2 rounded-lg transition-colors ${company.is_active
-                                                    ? 'text-stone-400 hover:text-orange-600 hover:bg-orange-50'
-                                                    : 'text-stone-400 hover:text-green-600 hover:bg-green-50'
-                                                    }`}
-                                                title={company.is_active ? 'Khóa quyền truy cập' : 'Mở quyền truy cập'}
-                                            >
-                                                <Power size={18} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(company)}
-                                                className="p-2 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                                                title="Xóa Công Ty"
-                                            >
-                                                <Trash2 size={18} />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
+                                                <button
+                                                    onClick={() => handleEdit(company)}
+                                                    className="p-2 rounded-lg text-stone-400 hover:text-stone-800 hover:bg-stone-200 transition-colors"
+                                                    title="Sửa thông tin"
+                                                >
+                                                    <Pencil size={18} />
+                                                </button>
+                                                <button
+                                                    onClick={() => toggleStatus(company.id, company.is_active)}
+                                                    className={`p-2 rounded-lg transition-colors ${company.is_active
+                                                        ? 'text-stone-400 hover:text-orange-600 hover:bg-orange-50'
+                                                        : 'text-stone-400 hover:text-green-600 hover:bg-green-50'
+                                                        }`}
+                                                    title={company.is_active ? 'Khóa quyền truy cập' : 'Mở quyền truy cập'}
+                                                >
+                                                    <Power size={18} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(company)}
+                                                    className="p-2 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                                    title="Xóa Công Ty"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )
+                            })}
                             {companies.length === 0 && (
                                 <tr>
                                     <td colSpan={5} className="px-6 py-20 text-center text-stone-500">
