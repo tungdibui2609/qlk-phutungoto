@@ -52,7 +52,15 @@ const menuItems: MenuItem[] = [
             { name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes, requiredPermission: 'inventory.view' },
             { name: 'Kiểm kê', href: '/operations/audit', icon: ClipboardCheck, requiredPermission: 'inventory.manage' },
             { name: 'Ghi chú vận hành', href: '/operations/notes', icon: StickyNote, requiredPermission: 'warehouse.view' },
-            { name: 'Quản lý Công Trình', href: '/site-inventory', icon: HardHat, requiredPermission: 'site_inventory.view' },
+        ]
+    },
+    {
+        name: 'Quản lý Công Trình',
+        icon: HardHat,
+        children: [
+            { name: 'Tổng quan', href: '/construction', icon: LayoutDashboard, requiredPermission: 'site_inventory.view' },
+            { name: 'Cấp phát', href: '/site-inventory', icon: ClipboardCheck, requiredPermission: 'site_inventory.view' },
+            { name: 'Thành viên & Đội', href: '/construction/members', icon: Users, requiredPermission: 'site_inventory.view' },
         ]
     },
     {
@@ -141,6 +149,9 @@ export default function Sidebar() {
             if ((item.name === 'Người dùng' || item.name === 'Cài đặt') && !canAccessAdminMenus) {
                 return null
             }
+            if (item.name === 'Quản lý Công Trình' && !isUtilityEnabled('site_inventory_manager')) {
+                return null
+            }
             // Check Item Permission
             if (item.requiredPermission && !hasPermission(item.requiredPermission)) {
                 return null
@@ -163,7 +174,6 @@ export default function Sidebar() {
 
                     // Check Utility Module Gating
                     if (child.name === 'Nhật ký liên kết' && !isLotSyncEnabled) return false
-                    if (child.name === 'Quản lý Công Trình' && !isUtilityEnabled('site_inventory_manager')) return false
 
                     return true
                 })
