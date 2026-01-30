@@ -29,35 +29,43 @@ ALTER TABLE public.construction_teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.construction_members ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for construction_teams
+DROP POLICY IF EXISTS "Enable read access for users in same company" ON public.construction_teams;
 CREATE POLICY "Enable read access for users in same company" ON public.construction_teams
     FOR SELECT
     USING (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Enable insert access for users in same company" ON public.construction_teams;
 CREATE POLICY "Enable insert access for users in same company" ON public.construction_teams
     FOR INSERT
     WITH CHECK (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Enable update access for users in same company" ON public.construction_teams;
 CREATE POLICY "Enable update access for users in same company" ON public.construction_teams
     FOR UPDATE
     USING (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Enable delete access for users in same company" ON public.construction_teams;
 CREATE POLICY "Enable delete access for users in same company" ON public.construction_teams
     FOR DELETE
     USING (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()));
 
 -- RLS Policies for construction_members
+DROP POLICY IF EXISTS "Enable read access for users in same company" ON public.construction_members;
 CREATE POLICY "Enable read access for users in same company" ON public.construction_members
     FOR SELECT
     USING (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Enable insert access for users in same company" ON public.construction_members;
 CREATE POLICY "Enable insert access for users in same company" ON public.construction_members
     FOR INSERT
     WITH CHECK (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Enable update access for users in same company" ON public.construction_members;
 CREATE POLICY "Enable update access for users in same company" ON public.construction_members
     FOR UPDATE
     USING (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Enable delete access for users in same company" ON public.construction_members;
 CREATE POLICY "Enable delete access for users in same company" ON public.construction_members
     FOR DELETE
     USING (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()));
