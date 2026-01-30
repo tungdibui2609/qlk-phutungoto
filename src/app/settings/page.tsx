@@ -11,6 +11,7 @@ import LotConfigSection from '@/components/settings/LotConfigSection'
 import MenuManagerSection from '@/components/settings/MenuManagerSection'
 import DashboardConfigSection from '@/components/settings/DashboardConfigSection'
 import UtilityConfigSection from '@/components/settings/UtilityConfigSection'
+import OperationModelSection from '@/components/settings/OperationModelSection'
 import {
     Building2,
     Settings as SettingsIcon,
@@ -26,7 +27,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type Tab = 'company' | 'branches' | 'systems' | 'product_config' | 'order_config' | 'lot_config' | 'menus' | 'dashboard' | 'utilities'
+type Tab = 'company' | 'operation_model' | 'branches' | 'systems' | 'product_config' | 'order_config' | 'lot_config' | 'menus' | 'dashboard' | 'utilities'
 
 export default function SettingsPage() {
     const router = useRouter()
@@ -34,12 +35,13 @@ export default function SettingsPage() {
 
     const tabs = [
         { id: 'company' as Tab, label: 'Thông tin công ty', icon: Building2 },
+        { id: 'operation_model' as Tab, label: 'Mô hình Vận hành', icon: Sparkles },
         { id: 'branches' as Tab, label: 'Quản lý Chi nhánh', icon: Store },
         { id: 'systems' as Tab, label: 'Phân hệ Kho', icon: LayoutGrid },
         { id: 'product_config' as Tab, label: 'Cấu hình sản phẩm', icon: SettingsIcon },
         { id: 'order_config' as Tab, label: 'Cấu hình phiếu', icon: FileText },
         { id: 'lot_config' as Tab, label: 'Cấu hình LOT', icon: Box },
-        { id: 'utilities' as Tab, label: 'Tiện ích', icon: Sparkles },
+        { id: 'utilities' as Tab, label: 'Tiện ích (Modules)', icon: Sparkles },
         { id: 'dashboard' as Tab, label: 'Cấu hình Dashboard', icon: PieChart },
         { id: 'menus' as Tab, label: 'Menu Sidebar', icon: List },
     ]
@@ -112,6 +114,7 @@ export default function SettingsPage() {
 
                     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
                         {activeTab === 'company' && <CompanyInfoSection />}
+                        {activeTab === 'operation_model' && <OperationModelSection />}
                         {activeTab === 'branches' && <BranchManagerSection />}
                         {activeTab === 'systems' && <SystemManagerSection />}
                         {activeTab === 'product_config' && <ProductConfigSection />}
