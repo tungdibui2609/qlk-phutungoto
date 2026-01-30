@@ -64,7 +64,7 @@ export async function middleware(request: NextRequest) {
     const SUPER_ADMIN_EMAIL = 'tungdibui2609@gmail.com'
     const IS_ADMIN_ROUTE = path.startsWith('/admin')
     const IS_LOGIN_PAGE = path === '/login'
-    const IS_ADMIN_LOGIN_PAGE = path === '/admin' // Exact match
+    const IS_ADMIN_LOGIN_PAGE = path === '/admin/login' // Updated path
 
     // Skip static assets and internal next paths
     if (path.startsWith('/_next') || path.startsWith('/static') || path.includes('.')) {
@@ -87,7 +87,7 @@ export async function middleware(request: NextRequest) {
 
         // Redirect based on target
         if (IS_ADMIN_ROUTE) {
-            url.pathname = '/admin'
+            url.pathname = '/admin/login' // Redirect to new Admin Login
         } else {
             url.pathname = '/login'
         }
@@ -101,7 +101,7 @@ export async function middleware(request: NextRequest) {
         // 2.1 Handling Login Pages (Redirect if already logged in)
         if (IS_LOGIN_PAGE) {
             if (isSuperAdmin) {
-                url.pathname = '/admin/companies'
+                url.pathname = '/admin/dashboard'
             } else {
                 url.pathname = '/select-system'
             }
@@ -111,7 +111,7 @@ export async function middleware(request: NextRequest) {
         if (IS_ADMIN_LOGIN_PAGE) {
             if (isSuperAdmin) {
                 // If Super Admin, go to dashboard
-                url.pathname = '/admin/companies'
+                url.pathname = '/admin/dashboard'
                 return NextResponse.redirect(url)
             } else {
                 // If Normal User logic tries to access Admin Login, send them Home
@@ -136,7 +136,7 @@ export async function middleware(request: NextRequest) {
             // If Super Admin tries to access non-admin pages (like /select-system, /inventory, etc.)
             // Redirect them back to Admin Dashboard
             console.log(`[Middleware] Super Admin redirected from App Route: ${path}`)
-            url.pathname = '/admin/companies'
+            url.pathname = '/admin/dashboard'
             return NextResponse.redirect(url)
         }
     }
