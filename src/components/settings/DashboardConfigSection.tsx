@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Loader2, Save, PieChart } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { DASHBOARD_MODULES } from '@/lib/dashboard-modules'
+import { useSystem } from '@/contexts/SystemContext'
 
 interface System {
     code: string
@@ -17,6 +18,7 @@ export default function DashboardConfigSection() {
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState<string | null>(null)
     const { showToast } = useToast()
+    const { unlockedModules } = useSystem()
 
     const [dashboardConfig, setDashboardConfig] = useState<Record<string, string[]>>({})
 
@@ -118,37 +120,40 @@ export default function DashboardConfigSection() {
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {DASHBOARD_MODULES.map(mod => {
-                                const isSelected = dashboardConfig[sys.code]?.includes(mod.id)
-                                const ModIcon = mod.icon
+                            {DASHBOARD_MODULES
+                                .filter(mod => mod.is_basic || unlockedModules.includes(mod.id))
+                                .filter(mod => !mod.is_basic)
+                                .map(mod => {
+                                    const isSelected = dashboardConfig[sys.code]?.includes(mod.id)
+                                    const ModIcon = mod.icon
 
-                                return (
-                                    <div
-                                        key={mod.id}
-                                        onClick={() => toggleModule(sys.code, mod.id)}
-                                        className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${isSelected
-                                            ? `border-orange-500 bg-orange-50/50`
-                                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                                            }`}
-                                    >
-                                        <div className={`p-2 rounded-lg ${isSelected ? `bg-white text-orange-600 shadow-sm` : 'bg-gray-100 text-gray-500'}`}>
-                                            <ModIcon size={24} />
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="flex justify-between items-center mb-1">
-                                                <h4 className={`font-semibold ${isSelected ? `text-orange-900` : 'text-gray-700'}`}>
-                                                    {mod.name}
-                                                </h4>
-                                                <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${isSelected ? `bg-orange-500 border-orange-500` : 'border-gray-300 bg-white'
-                                                    }`}>
-                                                    {isSelected && <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                                                </div>
+                                    return (
+                                        <div
+                                            key={mod.id}
+                                            onClick={() => toggleModule(sys.code, mod.id)}
+                                            className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${isSelected
+                                                ? `border-orange-500 bg-orange-50/50`
+                                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                                }`}
+                                        >
+                                            <div className={`p-2 rounded-lg ${isSelected ? `bg-white text-orange-600 shadow-sm` : 'bg-gray-100 text-gray-500'}`}>
+                                                <ModIcon size={24} />
                                             </div>
-                                            <p className="text-sm text-gray-500 leading-relaxed">{mod.description}</p>
+                                            <div className="flex-1">
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <h4 className={`font-semibold ${isSelected ? `text-orange-900` : 'text-gray-700'}`}>
+                                                        {mod.name}
+                                                    </h4>
+                                                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${isSelected ? `bg-orange-500 border-orange-500` : 'border-gray-300 bg-white'
+                                                        }`}>
+                                                        {isSelected && <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                                    </div>
+                                                </div>
+                                                <p className="text-sm text-gray-500 leading-relaxed">{mod.description}</p>
+                                            </div>
                                         </div>
-                                    </div>
-                                )
-                            })}
+                                    )
+                                })}
                         </div>
                     </div>
                 ))}

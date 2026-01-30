@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabaseClient'
 import { useUser } from '@/contexts/UserContext'
 import { useRouter } from 'next/navigation'
 import { Search, Building2, Package, Shield, Settings, Archive, Plus, Pencil, Power, Trash2, ArrowRight, Copy, Check } from 'lucide-react'
-import ModuleConfigModal from '@/components/admin/ModuleConfigModal'
 import CompanyForm from '@/components/admin/CompanyForm'
 import { useToast } from '@/components/ui/ToastProvider'
 
@@ -18,8 +17,7 @@ export default function AdminDashboard() {
     const [loading, setLoading] = useState(true)
 
     // Modal state
-    const [selectedCompany, setSelectedCompany] = useState<any>(null)
-    const [isModuleModalOpen, setIsModuleModalOpen] = useState(false)
+    // Modal state
     const [isCompanyModalOpen, setIsCompanyModalOpen] = useState(false)
     const [editingCompany, setEditingCompany] = useState<any>(null)
 
@@ -50,8 +48,7 @@ export default function AdminDashboard() {
     }
 
     const handleManageModules = (company: any) => {
-        setSelectedCompany(company)
-        setIsModuleModalOpen(true)
+        router.push(`/admin/companies/${company.id}/modules`)
     }
 
     const handleEdit = (company: any) => {
@@ -156,8 +153,11 @@ export default function AdminDashboard() {
                                                         <Building2 size={24} />
                                                     )}
                                                 </div>
-                                                <div>
-                                                    <div className="font-bold text-base text-stone-800">{company.name}</div>
+                                                <div
+                                                    className="cursor-pointer"
+                                                    onClick={() => handleManageModules(company)}
+                                                >
+                                                    <div className="font-bold text-base text-stone-800 hover:text-orange-600 transition-colors">{company.name}</div>
                                                     <div className="text-xs text-stone-500 font-medium">TG: {new Date(company.created_at).toLocaleDateString('vi-VN')}</div>
                                                 </div>
                                             </div>
@@ -193,17 +193,6 @@ export default function AdminDashboard() {
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex justify-end items-center gap-2 opacity-100 transition-opacity">
-                                                <button
-                                                    onClick={() => handleManageModules(company)}
-                                                    className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors font-semibold text-xs flex items-center gap-2 border border-blue-200"
-                                                    title="Cấu hình Module dịch vụ"
-                                                >
-                                                    <Package size={16} />
-                                                    Modules
-                                                </button>
-
-                                                <div className="h-4 w-px bg-stone-300 mx-2"></div>
-
                                                 <button
                                                     onClick={() => handleEdit(company)}
                                                     className="p-2 rounded-lg text-stone-400 hover:text-stone-800 hover:bg-stone-200 transition-colors"
@@ -249,15 +238,6 @@ export default function AdminDashboard() {
                     </table>
                 </div>
             </div>
-
-            {/* Module Config Modal */}
-            {selectedCompany && (
-                <ModuleConfigModal
-                    isOpen={isModuleModalOpen}
-                    onClose={() => setIsModuleModalOpen(false)}
-                    company={selectedCompany}
-                />
-            )}
 
             {/* Company Form Modal */}
             {isCompanyModalOpen && (

@@ -27,6 +27,7 @@ interface SystemContextType {
   setSystemType: (type: SystemType) => void
   systems: System[]
   currentSystem: System | undefined
+  unlockedModules: string[]
 }
 
 const SystemContext = createContext<SystemContextType | undefined>(undefined)
@@ -38,6 +39,7 @@ export const SYSTEM_CONFIG: Record<string, { name: string; color: string }> = {
 export function SystemProvider({ children }: { children: React.ReactNode }) {
   const [systemType, setSystemTypeState] = useState<SystemType>('FROZEN')
   const [systems, setSystems] = useState<System[]>([])
+  const [unlockedModules, setUnlockedModules] = useState<string[]>([])
   const [session, setSession] = useState<any>(null)
   const router = useRouter()
   const pathname = usePathname()
@@ -62,6 +64,26 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!accessToken) return // Wait for valid session
+
+    async function fetchCompanyConfig() {
+      // Get current user's profile to get company_id
+      const { data: profileData } = await supabase
+        .from('user_profiles')
+        .select('company_id')
+        .single()
+
+      if (profileData?.company_id) {
+        const { data: companyData } = await supabase
+          .from('companies')
+          .select('unlocked_modules')
+          .eq('id', profileData.company_id)
+          .single()
+
+        if (companyData) {
+          setUnlockedModules(companyData.unlocked_modules || [])
+        }
+      }
+    }
 
     async function fetchSystems() {
       const { data: systemsData } = await (supabase.from('systems') as any).select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
@@ -121,6 +143,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
         setSystems(mergedSystems)
       }
     }
+    fetchCompanyConfig()
     fetchSystems()
 
     // Realtime subscription
@@ -163,7 +186,8 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     systemType,
     setSystemType,
     systems,
-    currentSystem
+    currentSystem,
+    unlockedModules
   }
 
   return (

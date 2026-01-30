@@ -5,6 +5,7 @@ export interface LotModule {
     name: string
     description: string
     icon: any
+    is_basic?: boolean
 }
 
 export const LOT_MODULES: LotModule[] = [
@@ -18,7 +19,8 @@ export const LOT_MODULES: LotModule[] = [
         id: 'warehouse_name',
         name: 'Kho nhập hàng',
         description: 'Hiển thị và cho phép chọn kho nhập hàng (chi nhánh).',
-        icon: MapPin
+        icon: MapPin,
+        is_basic: true
     },
     {
         id: 'peeling_date',
@@ -48,7 +50,8 @@ export const LOT_MODULES: LotModule[] = [
         id: 'inbound_date',
         name: 'Ngày nhập kho',
         description: 'Hiển thị trường ngày nhập kho.',
-        icon: Clock
+        icon: Clock,
+        is_basic: true
     },
     {
         id: 'lot_images',

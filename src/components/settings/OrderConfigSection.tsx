@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, Save, ShoppingCart, Truck, FileText, Settings, Info } from 'lucide-react'
+import { Loader2, Save, ShoppingCart, Truck, FileText, Settings, Info, ShieldCheck } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { INBOUND_MODULES, OUTBOUND_MODULES, OrderModule } from '@/lib/order-modules'
+import { useSystem } from '@/contexts/SystemContext'
 
 interface System {
     code: string
@@ -19,6 +20,7 @@ export default function OrderConfigSection() {
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState<string | null>(null)
     const { showToast } = useToast()
+    const { unlockedModules } = useSystem()
     const [activeTab, setActiveTab] = useState<'inbound' | 'outbound'>('inbound')
 
     // Local state to track changes before saving
@@ -173,8 +175,10 @@ export default function OrderConfigSection() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {(activeTab === 'inbound' ? INBOUND_MODULES : OUTBOUND_MODULES)
-                                // Filter out basic modules - they are always enabled by default
-                                .filter(mod => mod.id !== 'inbound_basic' && mod.id !== 'outbound_basic')
+                                // Filter: Show only Basic modules OR Unlocked modules
+                                .filter(mod => mod.is_basic || unlockedModules.includes(mod.id))
+                                // Don't show basic modules in the toggle list if they are mandatory and already handled
+                                .filter(mod => !mod.is_basic)
                                 .map(mod => {
                                     const currentConfig = activeTab === 'inbound' ? inboundConfig : outboundConfig
                                     const isSelected = currentConfig[sys.code]?.includes(mod.id)

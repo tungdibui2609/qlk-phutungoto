@@ -5,6 +5,7 @@ export interface DashboardModule {
     name: string
     description: string
     icon: any
+    is_basic?: boolean
 }
 
 export const DASHBOARD_MODULES: DashboardModule[] = [
@@ -12,7 +13,8 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
         id: 'stats_overview',
         name: 'Thẻ thống kê tổng quan',
         description: 'Hiển thị tổng sản phẩm, danh mục, tồn kho thấp và nhập hàng trong tuần.',
-        icon: LayoutDashboard
+        icon: LayoutDashboard,
+        is_basic: true
     },
     {
         id: 'inventory_distribution',

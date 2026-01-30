@@ -6,7 +6,8 @@ export interface OrderModule {
     name: string
     description: string
     icon: any
-    type: 'inbound' | 'outbound' // To distinguish between Inbound and Outbound modules
+    type: 'inbound' | 'outbound'
+    is_basic?: boolean
 }
 
 export const INBOUND_MODULES: OrderModule[] = [
@@ -15,7 +16,8 @@ export const INBOUND_MODULES: OrderModule[] = [
         name: 'Thông tin cơ bản (Mặc định)',
         description: 'Mã phiếu, Kho nhập, Ngày tạo, Diễn giải',
         icon: FileText,
-        type: 'inbound'
+        type: 'inbound',
+        is_basic: true
     },
     {
         id: 'inbound_supplier',
@@ -88,7 +90,8 @@ export const OUTBOUND_MODULES: OrderModule[] = [
         name: 'Thông tin cơ bản (Mặc định)',
         description: 'Mã phiếu, Kho xuất, Diễn giải',
         icon: ShoppingCart,
-        type: 'outbound'
+        type: 'outbound',
+        is_basic: true
     },
     {
         id: 'outbound_customer',

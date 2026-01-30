@@ -93,6 +93,57 @@ export type Database = {
           },
         ]
       }
+      companies: {
+        Row: {
+          id: string
+          code: string
+          name: string
+          address: string | null
+          phone: string | null
+          email: string | null
+          website: string | null
+          tax_code: string | null
+          logo_url: string | null
+          created_at: string | null
+          is_active: boolean | null
+          is_system: boolean | null
+          prefix: string | null
+          unlocked_modules: string[] | null
+        }
+        Insert: {
+          id?: string
+          code: string
+          name: string
+          address?: string | null
+          phone?: string | null
+          email?: string | null
+          website?: string | null
+          tax_code?: string | null
+          logo_url?: string | null
+          created_at?: string | null
+          is_active?: boolean | null
+          is_system?: boolean | null
+          prefix?: string | null
+          unlocked_modules?: string[] | null
+        }
+        Update: {
+          id?: string
+          code?: string
+          name?: string
+          address?: string | null
+          phone?: string | null
+          email?: string | null
+          website?: string | null
+          tax_code?: string | null
+          logo_url?: string | null
+          created_at?: string | null
+          is_active?: boolean | null
+          is_system?: boolean | null
+          prefix?: string | null
+          unlocked_modules?: string[] | null
+        }
+        Relationships: []
+      }
       company_settings: {
         Row: {
           address: string | null
