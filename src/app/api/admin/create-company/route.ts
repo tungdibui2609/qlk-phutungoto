@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
+import { BASIC_MODULE_IDS } from '@/lib/basic-modules'
+
 // Initialize Admin Client with Service Role Key
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -125,7 +127,8 @@ export async function POST(request: Request) {
                 address,
                 phone,
                 email,
-                tax_code
+                tax_code,
+                unlocked_modules: BASIC_MODULE_IDS // Auto-unlock default modules
             })
             .select()
             .single()

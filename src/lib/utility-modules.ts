@@ -27,7 +27,6 @@ export const UTILITY_MODULES: UtilityModule[] = [
         description: 'Tự động tạo hàng chờ nhập/xuất và đồng bộ dữ liệu chênh lệch khi thay đổi LOT.',
         icon: ArrowRightLeft,
         category: 'core',
-        is_basic: true,
         default_enabled: true
     },
     {

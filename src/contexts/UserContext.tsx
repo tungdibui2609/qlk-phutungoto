@@ -30,6 +30,7 @@ interface UserContextType {
     updateProfileSettings: (updates: Partial<UserProfile>) => Promise<void>
     toggleFavorite: (menuHref: string) => Promise<void>
     checkSubscription: (moduleCode: string) => boolean
+    activeModules: string[] // [NEW] Expose raw modules for usage in other contexts
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined)
@@ -56,18 +57,18 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
                 if (!error && data) {
                     setProfile(data as any)
 
-                    // 2. Fetch Company Subscriptions (Commercial Modules)
+                    // 2. Fetch Company Unlocked Modules
                     if (data.company_id) {
-                        const { data: subs } = await (supabase
-                            .from('company_subscriptions' as any))
-                            .select('module_code')
-                            .eq('company_id', data.company_id)
-                            .eq('status', 'active')
-                            .or(`end_date.is.null,end_date.gt.${new Date().toISOString()}`)
+                        const { data: companyData, error: companyError } = await supabase
+                            .from('companies')
+                            .select('unlocked_modules')
+                            .eq('id', data.company_id)
+                            .single()
 
-                        if (subs) {
-                            setActiveModules(subs.map((s: any) => s.module_code))
+                        if (!companyError && companyData) {
+                            setActiveModules(companyData.unlocked_modules || [])
                         } else {
+                            console.error('Error fetching company modules:', companyError)
                             setActiveModules([])
                         }
                     }
@@ -177,7 +178,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         <UserContext.Provider value={{
             user, profile, isLoading, hasPermission, isRouteBlocked,
             refreshProfile: fetchProfile, updateProfileSettings, toggleFavorite,
-            checkSubscription
+            checkSubscription,
+            activeModules // [NEW]
         }}>
             {children}
         </UserContext.Provider>

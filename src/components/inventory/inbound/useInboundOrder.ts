@@ -7,7 +7,7 @@ import { Product, Supplier, Unit, OrderItem } from '../types'
 
 export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, onSuccess, onClose }: any) {
     const { showToast } = useToast()
-    const { currentSystem } = useSystem()
+    const { currentSystem, hasModule } = useSystem()
     const { profile } = useUser()
 
     // Form State
@@ -38,14 +38,6 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
     const [submitting, setSubmitting] = useState(false)
 
     // Helper: Config Check
-    const inboundModules = currentSystem?.inbound_modules
-        ? (typeof currentSystem.inbound_modules === 'string' ? JSON.parse(currentSystem.inbound_modules) : currentSystem.inbound_modules)
-        : []
-
-    const hasModule = (moduleId: string) => {
-        if (!inboundModules || inboundModules.length === 0) return true
-        return inboundModules.includes(moduleId)
-    }
 
     const generateOrderCode = async (type: 'PNK' | 'PXK', sysCode?: string, sysName?: string) => {
         const getSystemAbbreviation = (code: string, name?: string): string => {

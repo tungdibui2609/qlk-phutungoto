@@ -27,7 +27,7 @@ export type Unit = Database['public']['Tables']['units']['Row']
 export type ProductUnit = Database['public']['Tables']['product_units']['Row']
 
 export function useLotManagement() {
-    const { currentSystem } = useSystem()
+    const { currentSystem, hasModule } = useSystem()
     const { showToast, showConfirm } = useToast()
     const [lots, setLots] = useState<Lot[]>([])
     const [loading, setLoading] = useState(true)
@@ -41,9 +41,6 @@ export function useLotManagement() {
     const [productUnits, setProductUnits] = useState<ProductUnit[]>([])
     const [branches, setBranches] = useState<any[]>([])
 
-    // Module Configuration
-    const [lotModules, setLotModules] = useState<string[] | null>(null)
-
     useEffect(() => {
         if (currentSystem?.code) {
             fetchLots()
@@ -54,14 +51,13 @@ export function useLotManagement() {
     async function fetchCommonData() {
         if (!currentSystem?.code) return
 
-        const [prodRes, suppRes, qcRes, branchRes, unitRes, pUnitRes, sysConfigRes] = await Promise.all([
+        const [prodRes, suppRes, qcRes, branchRes, unitRes, pUnitRes] = await Promise.all([
             supabase.from('products').select('*').eq('system_type', currentSystem.code).order('name'),
             supabase.from('suppliers').select('*').eq('system_code', currentSystem.code).order('name'),
             supabase.from('qc_info').select('*').eq('system_code', currentSystem.code).order('name'),
             supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'),
             supabase.from('units').select('*'),
-            supabase.from('product_units').select('*'),
-            supabase.from('systems').select('lot_modules').eq('code', currentSystem.code).single()
+            supabase.from('product_units').select('*')
         ])
 
         if (prodRes.data) setProducts(prodRes.data)
@@ -70,17 +66,6 @@ export function useLotManagement() {
         if (branchRes.data) setBranches(branchRes.data)
         if (unitRes.data) setUnits(unitRes.data)
         if (pUnitRes.data) setProductUnits(pUnitRes.data)
-
-        // Handle config
-        const config = (sysConfigRes.data as any)
-        let mods: string[] = []
-        if (config && config.lot_modules) {
-            if (Array.isArray(config.lot_modules)) mods = config.lot_modules
-            else if (typeof config.lot_modules === 'string') {
-                try { mods = JSON.parse(config.lot_modules) } catch (e) { mods = [] }
-            }
-        }
-        setLotModules(mods)
     }
 
     async function fetchLots() {
@@ -158,21 +143,6 @@ export function useLotManagement() {
         }
     };
 
-    const isModuleEnabled = (moduleId: string) => {
-        if (!lotModules) return true // Default enabled if no config
-        return lotModules.includes(moduleId)
-    }
-
-    /**
-     * Checks if a specific logic utility is enabled (stored in systems.modules.utility_modules)
-     */
-    const isUtilityEnabled = (utilityId: string) => {
-        if (!currentSystem?.modules) return false
-        const modules = typeof currentSystem.modules === 'string'
-            ? JSON.parse(currentSystem.modules)
-            : currentSystem.modules
-        return Array.isArray(modules?.utility_modules) && modules.utility_modules.includes(utilityId)
-    }
 
     const filteredLots = lots.filter(lot =>
         lot.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -186,7 +156,6 @@ export function useLotManagement() {
         loading,
         searchTerm,
         setSearchTerm,
-        lotModules,
 
         // Common Data
         products,
@@ -200,8 +169,8 @@ export function useLotManagement() {
         fetchLots,
         handleDeleteLot,
         handleToggleStar,
-        isModuleEnabled,
-        isUtilityEnabled,
+        isModuleEnabled: hasModule,
+        isUtilityEnabled: hasModule,
         fetchCommonData
     }
 }

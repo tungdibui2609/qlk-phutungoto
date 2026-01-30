@@ -61,21 +61,8 @@ interface InboundOrderDetailModalProps {
 
 export default function InboundOrderDetailModal({ order, onClose, onUpdate }: InboundOrderDetailModalProps) {
     const { showToast, showConfirm } = useToast()
-    const { currentSystem } = useSystem()
+    const { currentSystem, hasModule } = useSystem()
     const { hasPermission } = useUser()
-
-    const hasModule = (moduleId: string) => {
-        if (!currentSystem?.inbound_modules) return false
-
-        // Handle both array and JSON string formats
-        const modules = Array.isArray(currentSystem.inbound_modules)
-            ? currentSystem.inbound_modules
-            : typeof currentSystem.inbound_modules === 'string'
-                ? JSON.parse(currentSystem.inbound_modules)
-                : []
-
-        return Array.isArray(modules) && modules.includes(moduleId)
-    }
 
     const [items, setItems] = useState<OrderItem[]>([])
     const [units, setUnits] = useState<Unit[]>([])

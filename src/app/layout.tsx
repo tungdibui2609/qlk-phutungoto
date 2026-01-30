@@ -79,13 +79,13 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <body className={`${inter.variable} antialiased font-sans`}>
-        <SystemProvider>
-          <UserProvider>
+        <UserProvider>
+          <SystemProvider>
             <ToastProvider>
               {children}
             </ToastProvider>
-          </UserProvider>
-        </SystemProvider>
+          </SystemProvider>
+        </UserProvider>
       </body>
     </html>
   );

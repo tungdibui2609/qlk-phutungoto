@@ -6,7 +6,6 @@ import { Loader2, Save, Settings } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { LOT_MODULES } from '@/lib/lot-modules'
 import { useSystem } from '@/contexts/SystemContext'
-import { Database } from '@/lib/database.types'
 
 interface System {
     code: string
@@ -21,8 +20,6 @@ export default function LotConfigSection() {
     const { showToast } = useToast()
     const { unlockedModules } = useSystem()
 
-    // Local state to track changes before saving
-    // key: system_code, value: list of module_ids
     const [lotConfig, setLotConfig] = useState<Record<string, string[]>>({})
 
     useEffect(() => {
@@ -37,18 +34,15 @@ export default function LotConfigSection() {
             showToast('Lỗi tải danh sách kho: ' + sysError.message, 'error')
         } else {
             const systemsList = systemsData || []
-
-            // Map configs
             const configMap: Record<string, string[]> = {}
 
             systemsList.forEach((sys: any) => {
                 let mods: string[] = []
-
-                if (Array.isArray(sys.lot_modules)) mods = sys.lot_modules
-                else if (typeof sys.lot_modules === 'string') {
+                if (Array.isArray(sys.lot_modules)) {
+                    mods = sys.lot_modules
+                } else if (typeof sys.lot_modules === 'string') {
                     try { mods = JSON.parse(sys.lot_modules) } catch (e) { mods = [] }
                 }
-
                 configMap[sys.code] = mods
             })
 
@@ -79,9 +73,7 @@ export default function LotConfigSection() {
         setSaving(sysCode)
         const mods = lotConfig[sysCode] || []
 
-        // Update systems table
-        const { error } = await (supabase
-            .from('systems') as any)
+        const { error } = await (supabase.from('systems') as any)
             .update({ lot_modules: mods })
             .eq('code', sysCode)
 
@@ -127,8 +119,8 @@ export default function LotConfigSection() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {LOT_MODULES
-                                .filter(mod => mod.is_basic || unlockedModules.includes(mod.id))
-                                .filter(mod => !mod.is_basic)
+                                .filter(mod => unlockedModules.includes(mod.id))
+                                .filter(mod => !mod.is_basic) // Default/Basic modules are hidden from User Settings
                                 .map(mod => {
                                     const isSelected = lotConfig[sys.code]?.includes(mod.id)
                                     const ModIcon = mod.icon
@@ -156,7 +148,7 @@ export default function LotConfigSection() {
                                                         {isSelected && <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                                                     </div>
                                                 </div>
-                                                <p className="text-sm text-gray-500 leading-relaxed">{mod.description}</p>
+                                                <p className="text-sm text-gray-500 leading-relaxed text-medium">{mod.description}</p>
                                             </div>
                                         </div>
                                     )

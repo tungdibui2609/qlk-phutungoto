@@ -2,15 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, Save, ShoppingCart, Truck, FileText, Settings, Info, ShieldCheck } from 'lucide-react'
+import { Loader2, Save, ShoppingCart, ShoppingBag } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
-import { INBOUND_MODULES, OUTBOUND_MODULES, OrderModule } from '@/lib/order-modules'
+import { INBOUND_MODULES, OUTBOUND_MODULES } from '@/lib/order-modules'
 import { useSystem } from '@/contexts/SystemContext'
 
 interface System {
     code: string
     name: string
-    modules: string[] | null // Product modules
     inbound_modules: string[] | null
     outbound_modules: string[] | null
 }
@@ -21,10 +20,7 @@ export default function OrderConfigSection() {
     const [saving, setSaving] = useState<string | null>(null)
     const { showToast } = useToast()
     const { unlockedModules } = useSystem()
-    const [activeTab, setActiveTab] = useState<'inbound' | 'outbound'>('inbound')
 
-    // Local state to track changes before saving
-    // key: system_code, value: list of module_ids
     const [inboundConfig, setInboundConfig] = useState<Record<string, string[]>>({})
     const [outboundConfig, setOutboundConfig] = useState<Record<string, string[]>>({})
 
@@ -34,17 +30,11 @@ export default function OrderConfigSection() {
 
     async function fetchSystems() {
         setLoading(true)
-        // Fetch systems with inbound/outbound modules directly
-        const { data: systemsData, error: sysError } = await (supabase.from('systems') as any)
-            .select('code, name, inbound_modules, outbound_modules')
-            .order('created_at')
-
-        if (sysError) {
-            showToast('Lỗi tải danh sách kho: ' + sysError.message, 'error')
+        const { data, error } = await (supabase.from('systems') as any).select('code, name, inbound_modules, outbound_modules').order('created_at')
+        if (error) {
+            showToast('Lỗi tải danh sách kho: ' + error.message, 'error')
         } else {
-            const systemsList = systemsData || []
-
-            // Map configs
+            const systemsList = data || []
             const inboundMap: Record<string, string[]> = {}
             const outboundMap: Record<string, string[]> = {}
 
@@ -52,13 +42,15 @@ export default function OrderConfigSection() {
                 let inMods: string[] = []
                 let outMods: string[] = []
 
-                if (Array.isArray(sys.inbound_modules)) inMods = sys.inbound_modules
-                else if (typeof sys.inbound_modules === 'string') {
+                if (Array.isArray(sys.inbound_modules)) {
+                    inMods = sys.inbound_modules
+                } else if (typeof sys.inbound_modules === 'string') {
                     try { inMods = JSON.parse(sys.inbound_modules) } catch (e) { inMods = [] }
                 }
 
-                if (Array.isArray(sys.outbound_modules)) outMods = sys.outbound_modules
-                else if (typeof sys.outbound_modules === 'string') {
+                if (Array.isArray(sys.outbound_modules)) {
+                    outMods = sys.outbound_modules
+                } else if (typeof sys.outbound_modules === 'string') {
                     try { outMods = JSON.parse(sys.outbound_modules) } catch (e) { outMods = [] }
                 }
 
@@ -74,10 +66,10 @@ export default function OrderConfigSection() {
     }
 
     const toggleModule = (sysCode: string, modId: string, type: 'inbound' | 'outbound') => {
-        const configMap = type === 'inbound' ? inboundConfig : outboundConfig
+        const config = type === 'inbound' ? inboundConfig : outboundConfig
         const setConfig = type === 'inbound' ? setInboundConfig : setOutboundConfig
 
-        const currentMods = configMap[sysCode] || []
+        const currentMods = config[sysCode] || []
         const exists = currentMods.includes(modId)
 
         let newMods
@@ -95,24 +87,13 @@ export default function OrderConfigSection() {
 
     const handleSave = async (sysCode: string) => {
         setSaving(sysCode)
-        // Get current modules and always include basic modules (they are mandatory)
-        let inMods = inboundConfig[sysCode] || []
-        let outMods = outboundConfig[sysCode] || []
+        const inboundMods = inboundConfig[sysCode] || []
+        const outboundMods = outboundConfig[sysCode] || []
 
-        // Ensure basic modules are always included
-        if (!inMods.includes('inbound_basic')) {
-            inMods = ['inbound_basic', ...inMods]
-        }
-        if (!outMods.includes('outbound_basic')) {
-            outMods = ['outbound_basic', ...outMods]
-        }
-
-        // Update systems table
-        const { error } = await (supabase
-            .from('systems') as any)
+        const { error } = await (supabase.from('systems') as any)
             .update({
-                inbound_modules: inMods,
-                outbound_modules: outMods
+                inbound_modules: inboundMods,
+                outbound_modules: outboundMods
             })
             .eq('code', sysCode)
 
@@ -126,92 +107,86 @@ export default function OrderConfigSection() {
 
     if (loading) return <div className="text-center py-10 text-gray-500">Đang tải cấu hình...</div>
 
-    return (
-        <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                    <h2 className="text-lg font-medium text-gray-900">Cấu hình Phiếu Nhập/Xuất</h2>
-                    <p className="text-sm text-gray-500">Tùy chỉnh thông tin hiển thị trên phiếu cho từng kho</p>
-                </div>
+    const renderConfigs = (sys: System, type: 'inbound' | 'outbound') => {
+        const modules = type === 'inbound' ? INBOUND_MODULES : OUTBOUND_MODULES
+        const config = type === 'inbound' ? inboundConfig : outboundConfig
+        const Icon = type === 'inbound' ? ShoppingCart : ShoppingBag
+        const title = type === 'inbound' ? 'Module Nhập kho' : 'Module Xuất kho'
 
-                <div className="flex bg-gray-100 p-1 rounded-lg">
-                    <button
-                        onClick={() => setActiveTab('inbound')}
-                        className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'inbound' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                            }`}
-                    >
-                        Phiếu Nhập Kho
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('outbound')}
-                        className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'outbound' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                            }`}
-                    >
-                        Phiếu Xuất Kho
-                    </button>
+        return (
+            <div className="space-y-4">
+                <h4 className="flex items-center gap-2 font-bold text-gray-700">
+                    <Icon size={18} />
+                    {title}
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {modules
+                        .filter(mod => unlockedModules.includes(mod.id))
+                        .filter(mod => !mod.is_basic) // Default/Basic modules are hidden from User Settings
+                        .map(mod => {
+                            const isSelected = config[sys.code]?.includes(mod.id)
+                            const ModIcon = mod.icon
+
+                            return (
+                                <div
+                                    key={mod.id}
+                                    onClick={() => toggleModule(sys.code, mod.id, type)}
+                                    className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${isSelected
+                                        ? 'border-stone-900 bg-stone-50'
+                                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                        }`}
+                                >
+                                    <div className={`p-2 rounded-lg ${isSelected ? 'bg-stone-900 text-white shadow-sm' : 'bg-gray-100 text-gray-500'}`}>
+                                        <ModIcon size={20} />
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <h4 className={`font-semibold text-sm ${isSelected ? 'text-stone-900' : 'text-gray-700'}`}>
+                                                {mod.name}
+                                            </h4>
+                                            <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-colors ${isSelected ? 'bg-stone-900 border-stone-900' : 'border-gray-300 bg-white'
+                                                }`}>
+                                                {isSelected && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                            </div>
+                                        </div>
+                                        <p className="text-xs text-gray-500 leading-relaxed">{mod.description}</p>
+                                    </div>
+                                </div>
+                            )
+                        })}
                 </div>
+            </div>
+        )
+    }
+
+    return (
+        <div className="space-y-8">
+            <div className="flex justify-between items-center">
+                <h2 className="text-lg font-medium text-gray-900">Cấu hình Module Đơn hàng cho từng Kho</h2>
             </div>
 
             <div className="grid grid-cols-1 gap-8">
                 {systems.map(sys => (
-                    <div key={sys.code} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+                    <div key={sys.code} className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
                         <div className="flex justify-between items-start mb-6">
                             <div>
-                                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                                    <Settings size={20} className={activeTab === 'inbound' ? "text-blue-500" : "text-orange-500"} />
-                                    {sys.name}
-                                </h3>
+                                <h3 className="text-lg font-bold text-gray-800">{sys.name}</h3>
                                 <p className="text-sm text-gray-500">Mã kho: {sys.code}</p>
                             </div>
                             <button
                                 onClick={() => handleSave(sys.code)}
                                 disabled={saving === sys.code}
-                                className="flex items-center gap-2 px-4 py-2 bg-stone-900 text-white rounded-lg hover:bg-stone-800 transition-colors disabled:opacity-50"
+                                className="flex items-center gap-2 px-6 py-2 bg-stone-900 text-white rounded-xl hover:bg-black transition-all disabled:opacity-50 text-sm font-bold shadow-lg shadow-stone-200"
                             >
                                 {saving === sys.code ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
                                 Lưu cấu hình
                             </button>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {(activeTab === 'inbound' ? INBOUND_MODULES : OUTBOUND_MODULES)
-                                // Filter: Show only Basic modules OR Unlocked modules
-                                .filter(mod => mod.is_basic || unlockedModules.includes(mod.id))
-                                // Don't show basic modules in the toggle list if they are mandatory and already handled
-                                .filter(mod => !mod.is_basic)
-                                .map(mod => {
-                                    const currentConfig = activeTab === 'inbound' ? inboundConfig : outboundConfig
-                                    const isSelected = currentConfig[sys.code]?.includes(mod.id)
-                                    const ModIcon = mod.icon
-                                    const activeColor = activeTab === 'inbound' ? 'blue' : 'orange'
-
-                                    return (
-                                        <div
-                                            key={mod.id}
-                                            onClick={() => toggleModule(sys.code, mod.id, activeTab)}
-                                            className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${isSelected
-                                                ? `border-${activeColor}-500 bg-${activeColor}-50/50`
-                                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                                                }`}
-                                        >
-                                            <div className={`p-2 rounded-lg ${isSelected ? `bg-white text-${activeColor}-600 shadow-sm` : 'bg-gray-100 text-gray-500'}`}>
-                                                <ModIcon size={24} />
-                                            </div>
-                                            <div className="flex-1">
-                                                <div className="flex justify-between items-center mb-1">
-                                                    <h4 className={`font-semibold ${isSelected ? `text-${activeColor}-900` : 'text-gray-700'}`}>
-                                                        {mod.name}
-                                                    </h4>
-                                                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${isSelected ? `bg-${activeColor}-500 border-${activeColor}-500` : 'border-gray-300 bg-white'
-                                                        }`}>
-                                                        {isSelected && <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                                                    </div>
-                                                </div>
-                                                <p className="text-sm text-gray-500 leading-relaxed">{mod.description}</p>
-                                            </div>
-                                        </div>
-                                    )
-                                })}
+                        <div className="space-y-8">
+                            {renderConfigs(sys, 'inbound')}
+                            <div className="border-t border-gray-100 italic" />
+                            {renderConfigs(sys, 'outbound')}
                         </div>
                     </div>
                 ))}

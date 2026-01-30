@@ -2,21 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, Save, Sparkles, Check, Info } from 'lucide-react'
+import { Loader2, Save, Cog, Settings, ShieldCheck, Zap, Layers, Beaker } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
-import { UTILITY_MODULES, SOLUTION_PRESETS, SolutionPreset, ModuleCategory } from '@/lib/utility-modules'
+import { UTILITY_MODULES } from '@/lib/utility-modules'
 import { useSystem } from '@/contexts/SystemContext'
 
 interface System {
     code: string
     name: string
     modules: any | null
-}
-
-const CATEGORY_NAMES: Record<ModuleCategory, string> = {
-    'core': 'Nghiệp vụ Cốt lõi',
-    'automation': 'Tự động hóa & Xử lý',
-    'specialized': 'Nghiệp vụ Đặc thù'
 }
 
 export default function UtilityConfigSection() {
@@ -26,7 +20,7 @@ export default function UtilityConfigSection() {
     const { showToast } = useToast()
     const { unlockedModules } = useSystem()
 
-    const [utilityConfig, setUtilityConfig] = useState<Record<string, string[]>>({})
+    const [config, setConfig] = useState<Record<string, string[]>>({})
 
     useEffect(() => {
         fetchSystems()
@@ -34,11 +28,7 @@ export default function UtilityConfigSection() {
 
     async function fetchSystems() {
         setLoading(true)
-        const { data, error } = await supabase
-            .from('systems')
-            .select('code, name, modules')
-            .order('sort_order')
-
+        const { data, error } = await (supabase.from('systems') as any).select('code, name, modules').order('created_at')
         if (error) {
             showToast('Lỗi tải danh sách phân hệ: ' + error.message, 'error')
         } else {
@@ -54,13 +44,13 @@ export default function UtilityConfigSection() {
             })
 
             setSystems(systemsList as any)
-            setUtilityConfig(configMap)
+            setConfig(configMap)
         }
         setLoading(false)
     }
 
     const toggleModule = (sysCode: string, modId: string) => {
-        const currentMods = utilityConfig[sysCode] || []
+        const currentMods = config[sysCode] || []
         const exists = currentMods.includes(modId)
 
         let newMods
@@ -70,135 +60,142 @@ export default function UtilityConfigSection() {
             newMods = [...currentMods, modId]
         }
 
-        setUtilityConfig(prev => ({
+        setConfig(prev => ({
             ...prev,
             [sysCode]: newMods
         }))
-    }
-
-    const applyPreset = (sysCode: string, preset: SolutionPreset) => {
-        // Merge preset modules with existing ones, or replace?
-        // Usually presets are "starters". Let's enable all recommended ones.
-        const currentMods = utilityConfig[sysCode] || []
-        const newMods = Array.from(new Set([...currentMods, ...preset.recommended_modules]))
-
-        setUtilityConfig(prev => ({
-            ...prev,
-            [sysCode]: newMods
-        }))
-        showToast(`Đã áp dụng gói ${preset.name}`, 'success')
     }
 
     const handleSave = async (sysCode: string) => {
         setSaving(sysCode)
-        const mods = utilityConfig[sysCode] || []
+        const utilityMods = config[sysCode] || []
 
-        // Fetch current modules to preserve other keys
-        const { data: currentSystem } = await supabase
-            .from('systems')
-            .select('modules')
-            .eq('code', sysCode)
-            .single()
+        const currentSystem = systems.find(s => s.code === sysCode)
+        const currentModules = (currentSystem?.modules && typeof currentSystem.modules === 'object')
+            ? { ...currentSystem.modules }
+            : {}
 
-        const newModules = {
-            ...(currentSystem?.modules as any || {}),
-            utility_modules: mods
-        }
-
-        const { error } = await supabase
-            .from('systems')
-            .update({ modules: newModules })
+        const { error } = await (supabase.from('systems') as any)
+            .update({
+                modules: {
+                    ...currentModules,
+                    utility_modules: utilityMods
+                }
+            })
             .eq('code', sysCode)
 
         if (error) {
             showToast('Lỗi lưu cấu hình: ' + error.message, 'error')
         } else {
-            showToast('Đã lưu cấu hình tiện ích cho ' + sysCode, 'success')
+            showToast('Đã lưu cấu hình cho kho ' + sysCode, 'success')
+            fetchSystems()
         }
         setSaving(null)
     }
 
-    if (loading) return <div className="text-center py-10 text-gray-500">Đang tải cấu hình tiện ích...</div>
+    const applyPreset = (sysCode: string, type: 'basic' | 'standard' | 'full') => {
+        let presetIds: string[] = []
+        if (type === 'basic') {
+            presetIds = [] // Basic modules are forced ON anyway
+        } else if (type === 'standard') {
+            presetIds = ['lot_accounting_sync', 'auto_unbundle_lot']
+        } else if (type === 'full') {
+            presetIds = UTILITY_MODULES.map(m => m.id)
+        }
 
-    // Group modules by category
-    const groupedModules = UTILITY_MODULES.reduce((acc, mod) => {
-        if (!acc[mod.category]) acc[mod.category] = []
-        acc[mod.category].push(mod)
-        return acc
-    }, {} as Record<ModuleCategory, typeof UTILITY_MODULES>)
+        setConfig(prev => ({
+            ...prev,
+            [sysCode]: presetIds
+        }))
+    }
 
-    const categories: ModuleCategory[] = ['core', 'automation', 'specialized']
+    if (loading) return <div className="text-center py-20 text-gray-400 font-serif italic">Đang tải cấu hình tiện ích...</div>
 
     return (
-        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="space-y-12 pb-20">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100">Quản lý Tiện ích & Tính năng</h2>
-                    <p className="text-sm text-gray-500">Kích hoạt các tính năng phù hợp với mô hình vận hành của kho.</p>
+                    <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Tiện ích Bổ sung</h2>
+                    <p className="text-gray-500 font-medium text-sm">Cấu hình các module tự động hóa và đồng bộ cho từng kho hàng.</p>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-10">
+            <div className="grid grid-cols-1 gap-12">
                 {systems.map(sys => (
-                    <div key={sys.code} className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
-                        {/* Header */}
-                        <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50/50 dark:bg-slate-800/50">
+                    <div key={sys.code} className="bg-white border border-gray-100 rounded-[2rem] p-8 shadow-2xl shadow-gray-100 overflow-hidden relative group">
+                        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 mb-10 relative z-10">
                             <div>
-                                <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                                    <Sparkles size={20} className="text-orange-500" />
-                                    {sys.name}
-                                </h3>
-                                <p className="text-xs text-gray-500 font-mono mt-1">Mã hệ thống: {sys.code}</p>
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="p-2 bg-stone-900 text-white rounded-xl">
+                                        <Cog size={20} />
+                                    </div>
+                                    <h3 className="text-xl font-black text-gray-800 tracking-tight">{sys.name}</h3>
+                                </div>
+                                <p className="text-sm font-bold text-gray-400 uppercase tracking-widest pl-11">Mã kho: {sys.code}</p>
                             </div>
-                            <button
-                                onClick={() => handleSave(sys.code)}
-                                disabled={saving === sys.code}
-                                className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-all disabled:opacity-50 text-sm font-bold shadow-md shadow-orange-200 dark:shadow-none active:scale-95"
-                            >
-                                {saving === sys.code ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-                                Lưu thay đổi
-                            </button>
+
+                            <div className="flex flex-wrap items-center gap-3">
+                                <div className="bg-gray-50 p-1 rounded-xl border border-gray-100 flex items-center gap-1 mr-4">
+                                    <button onClick={() => applyPreset(sys.code, 'basic')} className="px-3 py-1.5 text-[10px] font-black uppercase rounded-lg hover:bg-white hover:shadow-sm transition-all text-gray-400 hover:text-gray-600">Gói Cơ bản</button>
+                                    <button onClick={() => applyPreset(sys.code, 'standard')} className="px-3 py-1.5 text-[10px] font-black uppercase rounded-lg hover:bg-white hover:shadow-sm transition-all text-gray-400 hover:text-gray-600">Gói Tiêu chuẩn</button>
+                                    <button onClick={() => applyPreset(sys.code, 'full')} className="px-3 py-1.5 text-[10px] font-black uppercase bg-stone-900 text-white rounded-lg shadow-lg">Gói Đầy đủ</button>
+                                </div>
+
+                                <button
+                                    onClick={() => handleSave(sys.code)}
+                                    disabled={saving === sys.code}
+                                    className="flex items-center gap-2 px-8 py-3 bg-stone-900 text-white rounded-2xl hover:bg-black transition-all disabled:opacity-50 font-black text-sm shadow-xl shadow-stone-200"
+                                >
+                                    {saving === sys.code ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                                    Lưu Cấu Hình
+                                </button>
+                            </div>
                         </div>
 
-                        <div className="p-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {UTILITY_MODULES
-                                    .filter(mod => mod.is_basic || unlockedModules.includes(mod.id))
-                                    .filter(mod => !mod.is_basic)
-                                    .map(mod => {
-                                        const isSelected = utilityConfig[sys.code]?.includes(mod.id)
-                                        const ModIcon = mod.icon
-                                        const activeColor = 'orange'
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 relative z-10">
+                            {UTILITY_MODULES
+                                .filter(mod => unlockedModules.includes(mod.id))
+                                .filter(mod => !mod.is_basic)
+                                .map(mod => {
+                                    const isSelected = config[sys.code]?.includes(mod.id)
+                                    const ModIcon = mod.icon
 
-                                        return (
-                                            <div
-                                                key={mod.id}
-                                                onClick={() => toggleModule(sys.code, mod.id)}
-                                                className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${isSelected
-                                                    ? `border-${activeColor}-500 bg-${activeColor}-50/50 dark:bg-${activeColor}-900/10`
-                                                    : 'border-gray-200 dark:border-slate-800 hover:border-gray-300 dark:hover:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/50'
-                                                    }`}
-                                            >
-                                                <div className={`p-2 rounded-lg shrink-0 ${isSelected ? `bg-white dark:bg-slate-800 text-${activeColor}-600 shadow-sm` : 'bg-gray-100 dark:bg-slate-800 text-gray-500'}`}>
-                                                    <ModIcon size={20} />
+                                    return (
+                                        <div
+                                            key={mod.id}
+                                            onClick={() => toggleModule(sys.code, mod.id)}
+                                            className={`
+                                            group flex flex-col p-6 rounded-3xl border-2 transition-all cursor-pointer h-full relative overflow-hidden
+                                            ${isSelected
+                                                    ? 'bg-stone-50 border-stone-900 shadow-xl shadow-stone-100'
+                                                    : 'bg-white border-transparent hover:border-gray-200 text-gray-400 shadow-sm'
+                                                }
+                                        `}
+                                        >
+                                            <div className="flex justify-between items-start mb-6">
+                                                <div className={`p-3 rounded-2xl ${isSelected ? 'bg-stone-900 text-white' : 'bg-gray-100 text-gray-400 group-hover:text-gray-600 group-hover:bg-gray-200 transition-colors'}`}>
+                                                    <ModIcon size={24} />
                                                 </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex justify-between items-center mb-1">
-                                                        <h4 className={`font-bold text-sm truncate ${isSelected ? `text-${activeColor}-900 dark:text-${activeColor}-400` : 'text-gray-700 dark:text-gray-300'}`}>
-                                                            {mod.name}
-                                                        </h4>
-                                                        <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors shrink-0 ${isSelected ? `bg-${activeColor}-500 border-${activeColor}-500` : 'border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900'
-                                                            }`}>
-                                                            {isSelected && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
-                                                        </div>
-                                                    </div>
-                                                    <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed font-medium">{mod.description}</p>
+                                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${isSelected ? 'bg-stone-900 border-stone-900 scale-110' : 'border-gray-200 bg-white'}`}>
+                                                    {isSelected && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={4}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                                                 </div>
                                             </div>
-                                        )
-                                    })}
-                            </div>
+
+                                            <div className="flex-1">
+                                                <h4 className={`font-black text-sm mb-2 uppercase tracking-tight transition-colors ${isSelected ? 'text-stone-900' : 'text-gray-700'}`}>
+                                                    {mod.name}
+                                                </h4>
+                                                <p className={`text-xs leading-relaxed font-medium transition-colors ${isSelected ? 'text-stone-600' : 'text-gray-400'}`}>
+                                                    {mod.description}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
                         </div>
+
+                        {/* Background Decoration */}
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-stone-50 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl opacity-50 group-hover:opacity-100 transition-opacity"></div>
                     </div>
                 ))}
             </div>

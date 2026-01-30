@@ -61,21 +61,8 @@ interface OutboundOrderDetailModalProps {
 
 export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: OutboundOrderDetailModalProps) {
     const { showToast, showConfirm } = useToast()
-    const { currentSystem } = useSystem()
+    const { currentSystem, hasModule } = useSystem()
     const { hasPermission } = useUser()
-
-    const hasModule = (moduleId: string) => {
-        if (!currentSystem?.outbound_modules) return false
-
-        // Handle both array and JSON string formats
-        const modules = Array.isArray(currentSystem.outbound_modules)
-            ? currentSystem.outbound_modules
-            : typeof currentSystem.outbound_modules === 'string'
-                ? JSON.parse(currentSystem.outbound_modules)
-                : []
-
-        return Array.isArray(modules) && modules.includes(moduleId)
-    }
 
     const [items, setItems] = useState<OrderItem[]>([])
     const [units, setUnits] = useState<Unit[]>([])

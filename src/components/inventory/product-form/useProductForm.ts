@@ -18,7 +18,7 @@ interface UseProductFormProps {
 
 export function useProductForm({ initialData, isEditMode, readOnly }: UseProductFormProps) {
     const router = useRouter()
-    const { systemType, currentSystem } = useSystem()
+    const { systemType, currentSystem, hasModule } = useSystem()
     const { profile } = useUser()
     const [loading, setLoading] = useState(false)
     const [categories, setCategories] = useState<Category[]>([])
@@ -53,21 +53,6 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
     const systemModules = currentSystem?.modules
         ? (typeof currentSystem.modules === 'string' ? JSON.parse(currentSystem.modules) : currentSystem.modules)
         : []
-
-    const hasModule = (moduleId: string) => {
-        if (Array.isArray(systemModules)) {
-            return systemModules.includes(moduleId)
-        }
-        if (systemModules && typeof systemModules === 'object') {
-            const enabled = systemModules.enabled_modules || []
-            const utility = systemModules.utility_modules || []
-            if (Array.isArray(enabled) && enabled.includes(moduleId)) return true
-            if (Array.isArray(utility) && utility.includes(moduleId)) return true
-            // Support direct property check
-            return !!(systemModules as any)[moduleId]
-        }
-        return false
-    }
 
     useEffect(() => {
         if (systemType) {

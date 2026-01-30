@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, Save, PieChart } from 'lucide-react'
+import { Loader2, Save, LayoutDashboard } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { DASHBOARD_MODULES } from '@/lib/dashboard-modules'
 import { useSystem } from '@/contexts/SystemContext'
@@ -39,8 +39,9 @@ export default function DashboardConfigSection() {
             systemsList.forEach((sys: any) => {
                 let mods: string[] = []
 
-                if (Array.isArray(sys.dashboard_modules)) mods = sys.dashboard_modules
-                else if (typeof sys.dashboard_modules === 'string') {
+                if (Array.isArray(sys.dashboard_modules)) {
+                    mods = sys.dashboard_modules
+                } else if (typeof sys.dashboard_modules === 'string') {
                     try { mods = JSON.parse(sys.dashboard_modules) } catch (e) { mods = [] }
                 }
 
@@ -74,27 +75,26 @@ export default function DashboardConfigSection() {
         setSaving(sysCode)
         const mods = dashboardConfig[sysCode] || []
 
-        const { error } = await (supabase
-            .from('systems') as any)
+        const { error } = await (supabase.from('systems') as any)
             .update({ dashboard_modules: mods })
             .eq('code', sysCode)
 
         if (error) {
             showToast('Lỗi lưu cấu hình: ' + error.message, 'error')
         } else {
-            showToast('Đã lưu cấu hình Dashboard cho kho ' + sysCode, 'success')
+            showToast('Đã lưu cấu hình cho kho ' + sysCode, 'success')
         }
         setSaving(null)
     }
 
-    if (loading) return <div className="text-center py-10 text-gray-500">Đang tải cấu hình Dashboard...</div>
+    if (loading) return <div className="text-center py-10 text-gray-500">Đang tải cấu hình dashboard...</div>
 
     return (
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h2 className="text-lg font-medium text-gray-900">Cấu hình Dashboard</h2>
-                    <p className="text-sm text-gray-500">Tùy chọn các thành phần hiển thị trên Dashboard cho từng phân hệ.</p>
+                    <h2 className="text-lg font-medium text-gray-900">Module Dashboard</h2>
+                    <p className="text-sm text-gray-500">Tùy chỉnh các khối thông tin hiển thị trên trang Dashboard cho từng kho.</p>
                 </div>
             </div>
 
@@ -104,7 +104,7 @@ export default function DashboardConfigSection() {
                         <div className="flex justify-between items-start mb-6">
                             <div>
                                 <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                                    <PieChart size={20} className="text-orange-500" />
+                                    <LayoutDashboard size={20} className="text-orange-500" />
                                     {sys.name}
                                 </h3>
                                 <p className="text-sm text-gray-500">Mã kho: {sys.code}</p>
@@ -112,7 +112,7 @@ export default function DashboardConfigSection() {
                             <button
                                 onClick={() => handleSave(sys.code)}
                                 disabled={saving === sys.code}
-                                className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50"
+                                className="flex items-center gap-2 px-4 py-2 bg-stone-900 text-white rounded-lg hover:bg-stone-800 transition-colors disabled:opacity-50 text-sm font-bold shadow-lg shadow-stone-100"
                             >
                                 {saving === sys.code ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
                                 Lưu cấu hình
@@ -121,7 +121,7 @@ export default function DashboardConfigSection() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {DASHBOARD_MODULES
-                                .filter(mod => mod.is_basic || unlockedModules.includes(mod.id))
+                                .filter(mod => unlockedModules.includes(mod.id))
                                 .filter(mod => !mod.is_basic)
                                 .map(mod => {
                                     const isSelected = dashboardConfig[sys.code]?.includes(mod.id)
@@ -131,20 +131,20 @@ export default function DashboardConfigSection() {
                                         <div
                                             key={mod.id}
                                             onClick={() => toggleModule(sys.code, mod.id)}
-                                            className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${isSelected
-                                                ? `border-orange-500 bg-orange-50/50`
-                                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                            className={`flex items-start gap-4 p-5 rounded-2xl border cursor-pointer transition-all ${isSelected
+                                                ? 'border-orange-500 bg-orange-50/50 shadow-md shadow-orange-100/50'
+                                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50'
                                                 }`}
                                         >
-                                            <div className={`p-2 rounded-lg ${isSelected ? `bg-white text-orange-600 shadow-sm` : 'bg-gray-100 text-gray-500'}`}>
+                                            <div className={`p-3 rounded-xl ${isSelected ? 'bg-orange-500 text-white shadow-lg shadow-orange-200' : 'bg-gray-100 text-gray-400'}`}>
                                                 <ModIcon size={24} />
                                             </div>
                                             <div className="flex-1">
                                                 <div className="flex justify-between items-center mb-1">
-                                                    <h4 className={`font-semibold ${isSelected ? `text-orange-900` : 'text-gray-700'}`}>
+                                                    <h4 className={`font-semibold ${isSelected ? 'text-orange-900' : 'text-gray-700'}`}>
                                                         {mod.name}
                                                     </h4>
-                                                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${isSelected ? `bg-orange-500 border-orange-500` : 'border-gray-300 bg-white'
+                                                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${isSelected ? 'bg-orange-500 border-orange-500' : 'border-gray-300 bg-white'
                                                         }`}>
                                                         {isSelected && <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                                                     </div>

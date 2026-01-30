@@ -13,13 +13,13 @@ export default function Home() {
     const [categories, setCategories] = useState<Category[]>([])
     const [products, setProducts] = useState<Product[]>([])
     const [loading, setLoading] = useState(true)
-    const { systemType, currentSystem } = useSystem()
-    const dashboardModules = currentSystem?.dashboard_modules || []
+    const { systemType, currentSystem, hasModule } = useSystem()
 
-    // Check if showing all by default if no configuration exists,
-    // or if we should be strict. For a better UX, if NO modules are configured,
-    // we show a message or a default set. Let's show a message to encourage configuration.
-    const hasModules = Array.isArray(dashboardModules) && dashboardModules.length > 0
+    // Check if any modules are enabled
+    const hasModules = hasModule('stats_overview') ||
+        hasModule('inventory_distribution') ||
+        hasModule('categories_summary') ||
+        hasModule('recent_products')
 
     useEffect(() => {
         fetchData()
@@ -102,7 +102,7 @@ export default function Home() {
             )}
 
             {/* STATS GRID */}
-            {dashboardModules.includes('stats_overview') && (
+            {hasModule('stats_overview') && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
                     {stats.map((stat, i) => {
                         const Icon = stat.icon
@@ -145,7 +145,7 @@ export default function Home() {
             )}
 
             {/* CHART */}
-            {dashboardModules.includes('inventory_distribution') && (
+            {hasModule('inventory_distribution') && (
                 <div>
                     <InventoryDistributionChart />
                 </div>
@@ -154,7 +154,7 @@ export default function Home() {
             {/* CONTENT GRID */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Categories Card */}
-                {dashboardModules.includes('categories_summary') && (
+                {hasModule('categories_summary') && (
                     <div className="bg-white rounded-2xl p-6 border border-stone-200">
                         <div className="flex items-center justify-between mb-6">
                             <h2 className="text-xl font-semibold text-stone-800">Danh mục ({categories.length})</h2>
@@ -198,7 +198,7 @@ export default function Home() {
                 )}
 
                 {/* Recent Products Card */}
-                {dashboardModules.includes('recent_products') && (
+                {hasModule('recent_products') && (
                     <div className="bg-white rounded-2xl p-6 border border-stone-200">
                         <div className="flex items-center justify-between mb-6">
                             <h2 className="text-xl font-semibold text-stone-800">Sản phẩm gần đây</h2>

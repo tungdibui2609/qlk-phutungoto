@@ -4,6 +4,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 
 import { supabase } from '@/lib/supabaseClient'
+import { BASIC_MODULE_IDS } from '@/lib/basic-modules'
+import { useUser } from './UserContext' // [NEW] Import
 
 export type SystemType = string // Was rigid Enum, now string
 
@@ -17,7 +19,8 @@ interface System {
   modules?: string | string[] // Supports JSON string or array
   inbound_modules?: string | string[]
   outbound_modules?: string | string[]
-  dashboard_modules?: string | string[]
+  dashboard_modules?: string[] | null
+  lot_modules?: string[] | null
   is_active?: boolean
   sort_order?: number
 }
@@ -28,6 +31,7 @@ interface SystemContextType {
   systems: System[]
   currentSystem: System | undefined
   unlockedModules: string[]
+  hasModule: (moduleId: string) => boolean
 }
 
 const SystemContext = createContext<SystemContextType | undefined>(undefined)
@@ -41,10 +45,14 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
   const [systems, setSystems] = useState<System[]>([])
   const [unlockedModules, setUnlockedModules] = useState<string[]>([])
   const [session, setSession] = useState<any>(null)
+
+  // [NEW] Use UserContext
+  const { activeModules, profile } = useUser()
+
   const router = useRouter()
   const pathname = usePathname()
 
-  // Track session
+  // Track session (Keep existing session logic for systems subscription, though useUser also has user)
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
@@ -59,46 +67,46 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Fetch systems and subscribe to changes
+  // [NEW] Sync unlocked modules from UserContext (Initial Load)
+  useEffect(() => {
+    if (activeModules) {
+      setUnlockedModules(activeModules)
+    }
+  }, [activeModules])
+
+  // Fetch systems (Keep existing logic, but remove fetchCompanyConfig call)
   const accessToken = session?.access_token
 
   useEffect(() => {
     if (!accessToken) return // Wait for valid session
 
-    async function fetchCompanyConfig() {
-      // Get current user's profile to get company_id
-      const { data: profileData } = await supabase
-        .from('user_profiles')
-        .select('company_id')
-        .single()
-
-      if (profileData?.company_id) {
-        const { data: companyData } = await supabase
-          .from('companies')
-          .select('unlocked_modules')
-          .eq('id', profileData.company_id)
-          .single()
-
-        if (companyData) {
-          setUnlockedModules(companyData.unlocked_modules || [])
-        }
-      }
-    }
-
     async function fetchSystems() {
       const { data: systemsData } = await (supabase.from('systems') as any).select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
 
       if (systemsData) {
-        // Parse modules from systems table
         let mergedSystems = systemsData.map((sys: any) => {
-          const sysModules = sys.modules ? (typeof sys.modules === 'string' ? JSON.parse(sys.modules) : sys.modules) : {};
+          let sysModules = sys.modules;
+          if (typeof sysModules === 'string') {
+            try { sysModules = JSON.parse(sysModules) } catch (e) { sysModules = {} }
+          }
+
+          let inbound = sys.inbound_modules
+          if (typeof inbound === 'string') {
+            try { inbound = JSON.parse(inbound) } catch (e) { inbound = [] }
+          }
+
+          let outbound = sys.outbound_modules
+          if (typeof outbound === 'string') {
+            try { outbound = JSON.parse(outbound) } catch (e) { outbound = [] }
+          }
 
           return {
             ...sys,
-            modules: sysModules,
-            inbound_modules: sys.inbound_modules || [],
-            outbound_modules: sys.outbound_modules || [],
-            dashboard_modules: sys.dashboard_modules || []
+            modules: sysModules || null,
+            inbound_modules: Array.isArray(inbound) ? inbound : [],
+            outbound_modules: Array.isArray(outbound) ? outbound : [],
+            dashboard_modules: sys.dashboard_modules,
+            lot_modules: sys.lot_modules
           }
         })
 
@@ -143,7 +151,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
         setSystems(mergedSystems)
       }
     }
-    fetchCompanyConfig()
+
     fetchSystems()
 
     // Realtime subscription
@@ -158,6 +166,22 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
         },
         () => {
           fetchSystems()
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'companies',
+          filter: `id=eq.${session?.user?.user_metadata?.company_id || ''}` // Filter isn't perfect here due to profile fetch delay, but safe enough or use broad filter
+        },
+        (payload) => {
+          // Handle company update
+          const newCompany = payload.new as any;
+          if (newCompany && newCompany.unlocked_modules) {
+            setUnlockedModules(newCompany.unlocked_modules)
+          }
         }
       )
       .subscribe()
@@ -182,12 +206,70 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
 
   const currentSystem = systems.find(s => s.code === systemType)
 
+  const hasModule = (moduleId: string) => {
+    // 1. Core System Modules: Always Enabled, Hidden from Admin
+    const CORE_MODULES = ['inbound_basic', 'outbound_basic', 'images']
+    if (CORE_MODULES.includes(moduleId)) {
+      return true
+    }
+
+    // 2. Basic Modules (Default):
+    // These are visible in Admin and can be toggled.
+    // They generally should be enabled, but we respect the DB / System Config.
+    const isBasic = BASIC_MODULE_IDS.includes(moduleId)
+    if (isBasic) {
+      if (unlockedModules.length > 0 && !unlockedModules.includes(moduleId)) return false;
+
+      // If allowed globally, check if this SPECIFIC system has it enabled.
+      // If the system has module configuration (not null/empty), we respect it.
+      // If the system is new (no config), we default to TRUE for basic modules.
+      if (currentSystem && currentSystem.modules) {
+        // Re-use logic below for checking system modules
+      } else {
+        return true // Default to true if no system config exists yet
+      }
+    }
+
+    // 2. Advanced modules check: Must be configured for current system
+    // We trust that if it's in the system config, it's allowed.
+    if (!currentSystem) return false
+
+    // Look in all possible module buckets
+    // Handle both Array and NULL cases
+    const getArr = (val: any) => Array.isArray(val) ? val : []
+
+    const productModules = getArr(currentSystem.modules)
+    const inboundModules = getArr(currentSystem.inbound_modules)
+    const outboundModules = getArr(currentSystem.outbound_modules)
+    const dashboardModules = getArr(currentSystem.dashboard_modules)
+    const lotModules = getArr(currentSystem.lot_modules)
+
+    // Utility modules check (legacy and new structure)
+    const legacyModules = currentSystem.modules && !Array.isArray(currentSystem.modules) ? currentSystem.modules as any : {}
+    const utilityModules = Array.isArray(legacyModules?.utility_modules) ? legacyModules.utility_modules : []
+
+    // 3. Strict check for new column types
+    if (moduleId.startsWith('inbound_')) {
+      return inboundModules.includes(moduleId)
+    }
+    if (moduleId.startsWith('outbound_')) {
+      return outboundModules.includes(moduleId)
+    }
+
+    return productModules.includes(moduleId) ||
+      dashboardModules.includes(moduleId) ||
+      lotModules.includes(moduleId) ||
+      utilityModules.includes(moduleId) ||
+      !!legacyModules?.[moduleId]
+  }
+
   const value = {
     systemType,
     setSystemType,
     systems,
     currentSystem,
-    unlockedModules
+    unlockedModules,
+    hasModule
   }
 
   return (

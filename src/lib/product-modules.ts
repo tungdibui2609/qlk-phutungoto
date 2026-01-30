@@ -6,6 +6,7 @@ export interface ProductModule {
     description: string
     icon: any
     fields: ModuleField[]
+    is_basic?: boolean
 }
 
 export interface ModuleField {
@@ -25,7 +26,8 @@ export const PRODUCT_MODULES: ProductModule[] = [
         name: 'Hình ảnh',
         description: 'Quản lý hình ảnh đại diện sản phẩm',
         icon: ImageIcon,
-        fields: [] // Hardcoded in form
+        fields: [], // Hardcoded in form
+        is_basic: true
     },
     {
         id: 'pricing',
@@ -39,7 +41,8 @@ export const PRODUCT_MODULES: ProductModule[] = [
         name: 'Quy cách đóng gói',
         description: 'Ghi chú quy cách đóng gói',
         icon: Box,
-        fields: []
+        fields: [],
+        is_basic: true
     }
 ]
 

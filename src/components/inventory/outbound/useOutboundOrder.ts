@@ -10,7 +10,7 @@ import { Product, Customer, Unit, OrderItem } from '../types'
 
 export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, onClose, editOrderId }: any) {
     const { showToast } = useToast()
-    const { currentSystem } = useSystem()
+    const { currentSystem, hasModule } = useSystem()
     const { profile } = useUser()
     const { toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
 
@@ -51,10 +51,6 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         ? (typeof currentSystem.outbound_modules === 'string' ? JSON.parse(currentSystem.outbound_modules) : currentSystem.outbound_modules)
         : []
 
-    const hasModule = (moduleId: string) => {
-        if (!outboundModules || outboundModules.length === 0) return true
-        return outboundModules.includes(moduleId)
-    }
 
     const isUtilityEnabled = (utilityId: string) => {
         if (!currentSystem?.modules) return false
