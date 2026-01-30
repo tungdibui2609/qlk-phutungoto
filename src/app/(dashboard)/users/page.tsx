@@ -62,7 +62,7 @@ export default function UsersPage() {
 
         const { data } = await query
 
-        if (data) setUsers(data)
+        if (data) setUsers(data as any)
         setLoading(false)
     }
 
