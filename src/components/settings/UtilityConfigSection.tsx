@@ -158,62 +158,41 @@ export default function UtilityConfigSection() {
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-8">
+                        <div className="p-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {UTILITY_MODULES.map(mod => {
+                                    const isSelected = utilityConfig[sys.code]?.includes(mod.id)
+                                    const ModIcon = mod.icon
+                                    const activeColor = 'orange'
 
-                            {/* Manual Customization */}
-                            <div>
-                                <h4 className="text-sm font-bold text-gray-900 dark:text-gray-200 mb-4 flex items-center gap-2 uppercase tracking-wide">
-                                    <span className="w-1.5 h-4 bg-orange-500 rounded-full"></span>
-                                    Tùy chỉnh chi tiết
-                                </h4>
-                                <div className="space-y-6">
-                                    {categories.map(cat => {
-                                        const modules = groupedModules[cat]
-                                        if (!modules || modules.length === 0) return null
-
-                                        return (
-                                            <div key={cat}>
-                                                <h5 className="text-xs font-semibold text-gray-400 uppercase mb-3 pl-1">{CATEGORY_NAMES[cat]}</h5>
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                    {modules.map(mod => {
-                                                        const isSelected = utilityConfig[sys.code]?.includes(mod.id)
-                                                        const ModIcon = mod.icon
-                                                        const activeColor = 'orange'
-
-                                                        return (
-                                                            <div
-                                                                key={mod.id}
-                                                                onClick={() => toggleModule(sys.code, mod.id)}
-                                                                className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${isSelected
-                                                                    ? `border-${activeColor}-500 bg-${activeColor}-50/50 dark:bg-${activeColor}-900/10`
-                                                                    : 'border-gray-200 dark:border-slate-800 hover:border-gray-300 dark:hover:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/50'
-                                                                    }`}
-                                                            >
-                                                                <div className={`p-2 rounded-lg shrink-0 ${isSelected ? `bg-white dark:bg-slate-800 text-${activeColor}-600 shadow-sm` : 'bg-gray-100 dark:bg-slate-800 text-gray-500'}`}>
-                                                                    <ModIcon size={20} />
-                                                                </div>
-                                                                <div className="flex-1 min-w-0">
-                                                                    <div className="flex justify-between items-center mb-1">
-                                                                        <h4 className={`font-bold text-sm truncate ${isSelected ? `text-${activeColor}-900 dark:text-${activeColor}-400` : 'text-gray-700 dark:text-gray-300'}`}>
-                                                                            {mod.name}
-                                                                        </h4>
-                                                                        <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors shrink-0 ${isSelected ? `bg-${activeColor}-500 border-${activeColor}-500` : 'border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900'
-                                                                            }`}>
-                                                                            {isSelected && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
-                                                                        </div>
-                                                                    </div>
-                                                                    <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed font-medium">{mod.description}</p>
-                                                                </div>
-                                                            </div>
-                                                        )
-                                                    })}
-                                                </div>
+                                    return (
+                                        <div
+                                            key={mod.id}
+                                            onClick={() => toggleModule(sys.code, mod.id)}
+                                            className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${isSelected
+                                                ? `border-${activeColor}-500 bg-${activeColor}-50/50 dark:bg-${activeColor}-900/10`
+                                                : 'border-gray-200 dark:border-slate-800 hover:border-gray-300 dark:hover:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/50'
+                                                }`}
+                                        >
+                                            <div className={`p-2 rounded-lg shrink-0 ${isSelected ? `bg-white dark:bg-slate-800 text-${activeColor}-600 shadow-sm` : 'bg-gray-100 dark:bg-slate-800 text-gray-500'}`}>
+                                                <ModIcon size={20} />
                                             </div>
-                                        )
-                                    })}
-                                </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <h4 className={`font-bold text-sm truncate ${isSelected ? `text-${activeColor}-900 dark:text-${activeColor}-400` : 'text-gray-700 dark:text-gray-300'}`}>
+                                                        {mod.name}
+                                                    </h4>
+                                                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors shrink-0 ${isSelected ? `bg-${activeColor}-500 border-${activeColor}-500` : 'border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900'
+                                                        }`}>
+                                                        {isSelected && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+                                                    </div>
+                                                </div>
+                                                <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed font-medium">{mod.description}</p>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
                             </div>
-
                         </div>
                     </div>
                 ))}
