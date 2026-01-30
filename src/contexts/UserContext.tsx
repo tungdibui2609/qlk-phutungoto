@@ -29,6 +29,7 @@ interface UserContextType {
     refreshProfile: () => Promise<void>
     updateProfileSettings: (updates: Partial<UserProfile>) => Promise<void>
     toggleFavorite: (menuHref: string) => Promise<void>
+    checkSubscription: (moduleCode: string) => boolean
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined)
@@ -36,6 +37,7 @@ const UserContext = createContext<UserContextType | undefined>(undefined)
 export function UserProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null)
     const [profile, setProfile] = useState<UserProfile | null>(null)
+    const [activeModules, setActiveModules] = useState<string[]>([])
     const [isLoading, setIsLoading] = useState(true)
 
     const fetchProfile = async () => {
@@ -44,19 +46,38 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             setUser(authUser)
 
             if (authUser) {
+                // 1. Fetch Profile
                 const { data, error } = await supabase
                     .from('user_profiles')
-                    .select('id, full_name, email, avatar_url, permissions, blocked_routes, hidden_menus, favorite_menus, allowed_systems, company_id, department, account_level, roles(name, code)')
+                    .select('*, roles(name, code)') // Select all to be safe + roles
                     .eq('id', authUser.id)
-                    .limit(1)
+                    .single()
 
-                if (!error && data && data.length > 0) {
-                    setProfile(data[0] as any)
+                if (!error && data) {
+                    setProfile(data as any)
+
+                    // 2. Fetch Company Subscriptions (Commercial Modules)
+                    if (data.company_id) {
+                        const { data: subs } = await (supabase
+                            .from('company_subscriptions' as any))
+                            .select('module_code')
+                            .eq('company_id', data.company_id)
+                            .eq('status', 'active')
+                            .or(`end_date.is.null,end_date.gt.${new Date().toISOString()}`)
+
+                        if (subs) {
+                            setActiveModules(subs.map((s: any) => s.module_code))
+                        } else {
+                            setActiveModules([])
+                        }
+                    }
                 } else {
                     setProfile(null)
+                    setActiveModules([])
                 }
             } else {
                 setProfile(null)
+                setActiveModules([])
             }
         } catch (error) {
             console.error('Error fetching user profile:', error)
@@ -80,27 +101,20 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
     const hasPermission = (permissionCode: string): boolean => {
         // SUPERUSER BYPASS
-        // Check both profile email and auth user email to be sure
         if (profile?.email === 'tungdibui2609@gmail.com' || user?.email === 'tungdibui2609@gmail.com') {
             return true
         }
 
         // LEVEL 1 & 2 BYPASS (Super Admin & Company Admin)
-        // Level 2 is the highest level for a Company context, so they need full access to all features.
-        // Access strictly to Super Admin pages (Level 1) should be handled by route protection/layout checks checking account_level = 1.
         if (profile?.account_level === 1 || profile?.account_level === 2) {
             return true
         }
 
-        // PERMISSION LOGIC:
-        // 1. If no profile, false
-        // 2. If permissions array contains specific code, true.
         if (!profile || !profile.permissions) return false
 
         // Check for FULL ACCESS wildcard
         if (profile.permissions.includes('system.full_access')) return true
 
-        // Check exact match
         return profile.permissions.includes(permissionCode)
     }
 
@@ -112,9 +126,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
         if (!profile || !profile.blocked_routes) return false
 
-        // Exact match or sub-path match?
-        // User asked to block "Page". Usually blocking '/products' should block '/products/new' too.
-        // Let's implement prefix checking for better security.
         return profile.blocked_routes.some(blockedPath =>
             path === blockedPath || path.startsWith(blockedPath + '/')
         )
@@ -129,9 +140,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
                 .eq('id', user.id)
 
             if (!error) {
-                // Optimistic update
                 setProfile(prev => prev ? { ...prev, ...updates } : null)
-                // Or re-fetch
                 await fetchProfile()
             } else {
                 console.error('Error updating profile:', error)
@@ -156,10 +165,19 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         await updateProfileSettings({ favorite_menus: newFavorites })
     }
 
+    const checkSubscription = (moduleCode: string): boolean => {
+        // SUPERUSER BYPASS
+        if (profile?.email === 'tungdibui2609@gmail.com' || user?.email === 'tungdibui2609@gmail.com') {
+            return true
+        }
+        return activeModules.includes(moduleCode)
+    }
+
     return (
         <UserContext.Provider value={{
             user, profile, isLoading, hasPermission, isRouteBlocked,
-            refreshProfile: fetchProfile, updateProfileSettings, toggleFavorite
+            refreshProfile: fetchProfile, updateProfileSettings, toggleFavorite,
+            checkSubscription
         }}>
             {children}
         </UserContext.Provider>

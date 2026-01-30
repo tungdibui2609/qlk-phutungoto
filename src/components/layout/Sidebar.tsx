@@ -15,7 +15,8 @@ type MenuItem = {
     href?: string
     icon: any
     requiredPermission?: string // [NEW] Permissions key
-    children?: { name: string; href: string; icon: any; requiredPermission?: string }[]
+    requiredModule?: string // [NEW] Commercial Module Code
+    children?: { name: string; href: string; icon: any; requiredPermission?: string; requiredModule?: string }[]
 }
 
 const menuItems: MenuItem[] = [
@@ -57,6 +58,7 @@ const menuItems: MenuItem[] = [
     {
         name: 'Quản lý Công Trình',
         icon: HardHat,
+        requiredModule: 'CONSTRUCTION', // Commercial Module Check
         children: [
             { name: 'Tổng quan', href: '/construction', icon: LayoutDashboard, requiredPermission: 'site_inventory.view' },
             { name: 'Cấp phát', href: '/site-inventory', icon: ClipboardCheck, requiredPermission: 'site_inventory.view' },
@@ -106,7 +108,7 @@ export default function Sidebar() {
     const router = useRouter()
     const { isCollapsed, setCollapsed, isReady, isMobileMenuOpen, setMobileMenuOpen } = useSidebar()
     const { currentSystem, systemType } = useSystem()
-    const { profile, toggleFavorite } = useUser() // Get profile to check hidden menus and favorites
+    const { profile, toggleFavorite, checkSubscription } = useUser() // Get checkSubscription
     const [expandedMenus, setExpandedMenus] = useState<string[]>([])
     const isInitialized = useRef(false)
     const lastExpandedPathRef = useRef<string>('')
@@ -145,6 +147,11 @@ export default function Sidebar() {
         }
 
         return menuItems.map(item => {
+            // 1. Check Commercial Subscription
+            if (item.requiredModule && !checkSubscription(item.requiredModule)) {
+                return null
+            }
+
             // Check Admin Menu Restriction
             if ((item.name === 'Người dùng' || item.name === 'Cài đặt') && !canAccessAdminMenus) {
                 return null
@@ -166,6 +173,9 @@ export default function Sidebar() {
             // Filter children
             if (item.children) {
                 const visibleChildren = item.children.filter(child => {
+                    // Check subscription for child
+                    if (child.requiredModule && !checkSubscription(child.requiredModule)) return false
+
                     // Check profile hidden menus
                     if (hiddenMenus.includes(child.name)) return false
 
@@ -183,7 +193,7 @@ export default function Sidebar() {
 
             return item
         }).filter(Boolean) as MenuItem[] // Remove nulls
-    }, [profile, systemType, currentSystem, isLotSyncEnabled])
+    }, [profile, systemType, currentSystem, isLotSyncEnabled, checkSubscription])
 
     // Favorites Logic
     const favoriteItems = useMemo(() => {
