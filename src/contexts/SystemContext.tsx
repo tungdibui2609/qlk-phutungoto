@@ -238,7 +238,13 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     // Handle both Array and NULL cases
     const getArr = (val: any) => Array.isArray(val) ? val : []
 
-    const productModules = getArr(currentSystem.modules)
+    const rawModules = currentSystem.modules
+    let productModules: string[] = []
+    if (Array.isArray(rawModules)) {
+      productModules = rawModules
+    } else if (typeof rawModules === 'object' && rawModules !== null) {
+      productModules = Array.isArray((rawModules as any).product_modules) ? (rawModules as any).product_modules : []
+    }
     const inboundModules = getArr(currentSystem.inbound_modules)
     const outboundModules = getArr(currentSystem.outbound_modules)
     const dashboardModules = getArr(currentSystem.dashboard_modules)
@@ -250,9 +256,12 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
 
     // 3. Strict check for new column types
     if (moduleId.startsWith('inbound_')) {
+      // Enforce Company License Check (unless it's a Core Module, which is handled above)
+      if (!unlockedModules.includes(moduleId)) return false
       return inboundModules.includes(moduleId)
     }
     if (moduleId.startsWith('outbound_')) {
+      if (!unlockedModules.includes(moduleId)) return false
       return outboundModules.includes(moduleId)
     }
 

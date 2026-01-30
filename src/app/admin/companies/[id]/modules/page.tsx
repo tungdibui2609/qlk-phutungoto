@@ -113,7 +113,7 @@ export default function CompanyModulesPage() {
             }
 
             showToast('Đã cập nhật danh sách module thành công', 'success')
-            router.push('/admin/dashboard')
+            // router.push('/admin/dashboard')
         } catch (error: any) {
             console.error('Error saving modules:', error)
             showToast('Lỗi khi lưu: ' + (error.message || error), 'error')
@@ -124,18 +124,18 @@ export default function CompanyModulesPage() {
 
     if (loading) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen gap-4 bg-stone-50">
-                <div className="w-12 h-12 border-4 border-stone-200 border-t-stone-800 rounded-full animate-spin"></div>
-                <p className="text-stone-500 font-medium font-serif italic text-lg">Đang tải cấu hình...</p>
+            <div className="flex flex-col items-center justify-center min-h-screen gap-4 bg-white">
+                <div className="w-12 h-12 border-4 border-emerald-100 border-t-emerald-600 rounded-full animate-spin"></div>
+                <p className="text-emerald-600 font-medium font-serif italic text-lg">Đang tải cấu hình...</p>
             </div>
         )
     }
 
     if (!company) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen gap-4 bg-stone-50">
-                <p className="text-stone-800 font-bold text-xl">Không tìm thấy thông tin công ty</p>
-                <Link href="/admin/dashboard" className="text-blue-600 hover:underline">Quay lại Dashboard</Link>
+            <div className="flex flex-col items-center justify-center min-h-screen gap-4 bg-white">
+                <p className="text-emerald-700 font-bold text-xl">Không tìm thấy thông tin công ty</p>
+                <Link href="/admin/dashboard" className="text-emerald-600 hover:underline">Quay lại Dashboard</Link>
             </div>
         )
     }
@@ -143,29 +143,29 @@ export default function CompanyModulesPage() {
     const categories = Array.from(new Set(ALL_MODULES.map(m => m.category)))
 
     return (
-        <div className="min-h-screen bg-stone-50 pb-20">
-            {/* Header omitted for brevity in thought, but full content will be written */}
-            <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-stone-200 shadow-sm">
-                <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="min-h-screen bg-white pb-20">
+            {/* Header */}
+            <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-emerald-100 shadow-sm">
+                <div className="max-w-7xl mx-auto px-4 md:px-6 py-3 md:py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="flex items-center gap-4">
                         <Link
                             href="/admin/dashboard"
-                            className="p-2 hover:bg-stone-100 rounded-full transition-colors text-stone-50"
+                            className="p-2 hover:bg-emerald-50 rounded-full transition-colors group"
                         >
-                            <ArrowLeft size={24} className="text-stone-500" />
+                            <ArrowLeft size={24} className="text-emerald-500 group-hover:text-emerald-600" />
                         </Link>
                         <div>
-                            <h1 className="text-2xl font-black text-stone-900 leading-none">Cấu hình Module Dịch vụ</h1>
+                            <h1 className="text-xl md:text-2xl font-black text-emerald-800 leading-none">Cấu hình Module Dịch vụ</h1>
                             <div className="flex items-center gap-2 mt-2">
-                                <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-bold rounded uppercase tracking-wider">Doanh nghiệp</span>
-                                <p className="text-sm font-bold text-stone-600">{company.name} <span className="text-stone-400">({company.code})</span></p>
+                                <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-[10px] md:text-xs font-bold rounded uppercase tracking-wider">Doanh nghiệp</span>
+                                <p className="text-xs md:text-sm font-bold text-emerald-700 truncate max-w-[200px] md:max-w-none">{company.name}</p>
                             </div>
                         </div>
                     </div>
 
                     <div className="flex gap-3 w-full md:w-auto">
-                        <div className="relative flex-1 md:w-64">
-                            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-stone-400">
+                        <div className="relative flex-1 md:w-96">
+                            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-orange-500">
                                 <Search size={18} />
                             </div>
                             <input
@@ -173,13 +173,13 @@ export default function CompanyModulesPage() {
                                 placeholder="Tìm kiếm module..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2.5 bg-stone-100 border-none rounded-xl text-sm focus:ring-2 focus:ring-orange-500 transition-all font-medium text-stone-900"
+                                className="w-full pl-10 pr-4 py-2.5 bg-orange-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-orange-500 transition-all font-medium text-orange-700"
                             />
                         </div>
                         <button
                             onClick={handleSave}
                             disabled={saving}
-                            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-10 py-2.5 bg-stone-900 text-white font-bold rounded-xl hover:bg-black transition-all text-sm shadow-xl shadow-stone-200 disabled:opacity-50"
+                            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-10 py-2.5 bg-orange-600 text-white font-bold rounded-xl hover:bg-orange-700 active:scale-95 transition-all text-sm shadow-xl shadow-orange-100 disabled:opacity-50"
                         >
                             {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                             {saving ? 'Đang lưu...' : 'Lưu Thay Đổi'}
@@ -188,41 +188,30 @@ export default function CompanyModulesPage() {
                 </div>
             </div>
 
-            <div className="max-w-7xl mx-auto px-6 mt-10">
-                <div className="grid grid-cols-1 gap-12">
+            <div className="max-w-7xl mx-auto px-4 md:px-6 mt-6 md:mt-10">
+                <div className="space-y-12">
                     {categories
                         .filter(cat => selectedCategory === 'all' || selectedCategory === cat)
                         .map(cat => (
-                            <section key={cat} className="space-y-6">
-                                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                                    <div className="flex items-center gap-4">
-                                        <div className="p-3 bg-stone-900 text-white rounded-2xl shadow-lg">
-                                            {(cat === 'Nhập kho' || cat === 'Xuất kho' || cat === 'Sản phẩm') && <Package size={24} />}
-                                            {cat === 'Quản lý LOT' && <Archive size={24} />}
-                                            {cat === 'Dashboard' && <LayoutDashboard size={24} />}
-                                            {cat === 'Tiện ích hệ thống' && <Cog size={24} />}
-                                        </div>
-                                        <div>
-                                            <h2 className="text-xl font-black text-stone-800 uppercase tracking-widest">{cat}</h2>
-                                            <p className="text-sm text-stone-500">Các tính năng thuộc phân hệ {cat.toLowerCase()}</p>
-                                        </div>
+                            <section key={cat} className="space-y-4">
+                                <div className="flex items-center gap-3 pb-2 border-b border-emerald-100">
+                                    <div className="p-2 bg-orange-50 text-orange-600 rounded-lg">
+                                        {(cat === 'Nhập kho' || cat === 'Xuất kho' || cat === 'Sản phẩm') && <Package size={18} />}
+                                        {cat === 'Quản lý LOT' && <Archive size={18} />}
+                                        {cat === 'Dashboard' && <LayoutDashboard size={18} />}
+                                        {cat === 'Tiện ích hệ thống' && <Cog size={18} />}
                                     </div>
+                                    <h2 className="text-base md:text-lg font-bold text-emerald-700 uppercase tracking-wide">{cat}</h2>
+                                    <span className="text-[10px] md:text-xs font-medium px-2 py-0.5 bg-orange-50 text-orange-600 rounded-full">
+                                        {ALL_MODULES.filter(m => m.category === cat).length} module
+                                    </span>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                                     {ALL_MODULES.filter(m => m.category === cat).filter(m => {
-                                        // Hide Core System Features from Admin UI
                                         const CORE_HIDDEN = ['inbound_basic', 'outbound_basic', 'images']
                                         if (CORE_HIDDEN.includes(m.id)) return false
-
-                                        const matchesSearch = !searchTerm ||
-                                            m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                            m.description.toLowerCase().includes(searchTerm.toLowerCase())
-                                        return matchesSearch
-                                    }).sort((a, b) => {
-                                        const aBasic = 'is_basic' in a && a.is_basic ? 1 : 0
-                                        const bBasic = 'is_basic' in b && b.is_basic ? 1 : 0
-                                        return bBasic - aBasic
+                                        return !searchTerm || m.name.toLowerCase().includes(searchTerm.toLowerCase())
                                     }).map(mod => {
                                         const isBasic = 'is_basic' in mod && mod.is_basic
                                         const isUnlocked = unlockedModules.includes(mod.id)
@@ -232,71 +221,45 @@ export default function CompanyModulesPage() {
                                                 key={mod.id}
                                                 onClick={() => handleToggle(mod.id)}
                                                 className={`
-                                                relative group flex flex-col p-6 rounded-2xl border-2 transition-all cursor-pointer h-full
+                                                relative flex flex-col p-3 rounded-xl border transition-all cursor-pointer select-none
                                                 ${isUnlocked
-                                                        ? 'bg-white border-stone-900 shadow-xl shadow-stone-100 scale-[1.02] z-10'
-                                                        : 'bg-white border-white hover:border-stone-300 text-stone-600 shadow-sm'
+                                                        ? 'bg-orange-50/30 border-orange-500 shadow-sm shadow-orange-100'
+                                                        : 'bg-emerald-50/50 border-emerald-300 hover:border-emerald-400 hover:bg-emerald-100/30 transition-all'
                                                     }
                                             `}
                                             >
-                                                <div className="flex justify-between items-start mb-4">
-                                                    <div className={`p-2 rounded-lg ${isUnlocked ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-500'}`}>
-                                                        <mod.icon size={20} />
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <div className={`p-1.5 rounded-md ${isUnlocked ? 'bg-orange-600 text-white' : 'bg-emerald-100 text-emerald-600'}`}>
+                                                        <mod.icon size={14} />
                                                     </div>
-
-                                                    <div className="flex shrink-0 items-center">
-                                                        {isBasic && (
-                                                            <div className="px-2 py-0.5 rounded bg-orange-100 text-orange-600 text-[10px] font-black uppercase tracking-tighter mr-2">Mặc định</div>
-                                                        )}
+                                                    <div className={`
+                                                        w-8 h-4 rounded-full relative transition-colors
+                                                        ${isUnlocked ? 'bg-orange-600' : 'bg-emerald-200'}
+                                                    `}>
                                                         <div className={`
-                                                            w-10 h-5 rounded-full relative transition-colors
-                                                            ${isUnlocked ? 'bg-stone-900' : 'bg-stone-200'}
-                                                        `}>
-                                                            <div className={`
-                                                                absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform
-                                                                ${isUnlocked ? 'translate-x-[22px]' : 'translate-x-[2px]'}
-                                                            `}></div>
-                                                        </div>
+                                                            absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-transform
+                                                            ${isUnlocked ? 'translate-x-[18px]' : 'translate-x-[2px]'}
+                                                        `}></div>
                                                     </div>
                                                 </div>
 
-                                                <div className="flex-1">
-                                                    <h3 className={`font-bold text-base leading-tight mb-2 ${isUnlocked ? 'text-stone-900' : 'text-stone-700'}`}>
-                                                        {mod.name}
-                                                    </h3>
-                                                    <p className={`text-xs leading-relaxed ${isUnlocked ? 'text-stone-600' : 'text-stone-500'}`}>
+                                                <div>
+                                                    <div className="flex items-center gap-1 mb-1">
+                                                        <h3 className={`font-bold text-sm leading-tight ${isUnlocked ? 'text-emerald-800' : 'text-emerald-700'}`}>
+                                                            {mod.name}
+                                                        </h3>
+                                                        {isBasic && <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1 rounded">DEFAULT</span>}
+                                                    </div>
+                                                    <p className="text-[10px] text-emerald-600 line-clamp-2 leading-tight">
                                                         {mod.description}
                                                     </p>
                                                 </div>
-
-                                                {isUnlocked && (
-                                                    <div className="mt-4 pt-4 border-t border-stone-100 flex items-center gap-2 text-[10px] font-bold text-orange-600 uppercase tracking-widest">
-                                                        <Shield size={12} />
-                                                        Đã cấp phép
-                                                    </div>
-                                                )}
                                             </div>
                                         )
                                     })}
                                 </div>
                             </section>
                         ))}
-                </div>
-
-                <div className="mt-16 p-8 bg-stone-900 rounded-3xl text-white flex flex-col md:flex-row items-center justify-between gap-6 overflow-hidden relative">
-                    <div className="relative z-10 max-w-2xl">
-                        <h3 className="text-2xl font-bold mb-2">Hoàn tất cấu hình?</h3>
-                        <p className="text-stone-400 text-sm">Các module đã chọn sẽ khả dụng cho tất cả các kho của doanh nghiệp này.</p>
-                    </div>
-                    <button
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="relative z-10 flex items-center gap-3 px-12 py-4 bg-orange-600 text-white font-black rounded-2xl hover:bg-orange-500 transition-all text-base shadow-2xl shadow-orange-900/50 active:scale-95 disabled:opacity-50"
-                    >
-                        {saving ? <Loader2 className="animate-spin" size={24} /> : <Save size={24} />}
-                        {saving ? 'ĐANG LƯU...' : 'LƯU CẤU HÌNH NGAY'}
-                    </button>
-                    <div className="absolute right-0 top-0 w-64 h-64 bg-stone-800 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl opacity-50"></div>
                 </div>
             </div>
 

@@ -66,7 +66,24 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
                             .single()
 
                         if (!companyError && companyData) {
-                            setActiveModules(companyData.unlocked_modules || [])
+                            // SUPERUSER BYPASS: Inject all modules for specific email
+                            if (authUser.email === 'tungdibui2609@gmail.com') {
+                                // Import dynamically or hardcode list? 
+                                // Since we are in context, let's just allow all by using a special flag or fetching all.
+                                // Better: Just rely on checkSubscription for logic, but for UI we need the list.
+                                // Let's fetch all modules from the module definitions.
+                                // For now, let's keep the array empty but make sure consumers use checkSubscription?
+                                // No, OrderConfigSection uses unlockedModules directly.
+                                // SIMPLE FIX: Just combine company modules with a hardcoded list of ALL known modules or just trust the bypass.
+                                // Update: actually, let's just make sure we fetch the modules or use a wildcard.
+                                const allModules = [
+                                    'inbound_basic', 'inbound_supplier', 'inbound_type', 'inbound_financials', 'inbound_documents', 'inbound_logistics', 'inbound_images', 'inbound_accounting', 'inbound_ui_compact', 'inbound_conversion',
+                                    'outbound_basic', 'outbound_customer', 'outbound_type', 'outbound_financials', 'outbound_images', 'outbound_logistics', 'outbound_documents', 'outbound_accounting', 'outbound_ui_compact', 'outbound_conversion'
+                                ]
+                                setActiveModules(Array.from(new Set([...(companyData.unlocked_modules || []), ...allModules])))
+                            } else {
+                                setActiveModules(companyData.unlocked_modules || [])
+                            }
                         } else {
                             console.error('Error fetching company modules:', companyError)
                             setActiveModules([])

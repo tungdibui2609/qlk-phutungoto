@@ -5,29 +5,22 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import CompanyInfoSection from '@/components/settings/CompanyInfoSection'
 import BranchManagerSection from '@/components/settings/BranchManagerSection'
 import SystemManagerSection from '@/components/settings/SystemManagerSection'
-import ProductConfigSection from '@/components/settings/ProductConfigSection'
-import OrderConfigSection from '@/components/settings/OrderConfigSection'
-import LotConfigSection from '@/components/settings/LotConfigSection'
 import MenuManagerSection from '@/components/settings/MenuManagerSection'
-import DashboardConfigSection from '@/components/settings/DashboardConfigSection'
-import UtilityConfigSection from '@/components/settings/UtilityConfigSection'
 import OperationModelSection from '@/components/settings/OperationModelSection'
+import UnifiedSystemConfig from '@/components/settings/UnifiedSystemConfig'
 import {
     Building2,
     Settings as SettingsIcon,
     Store,
     LayoutGrid,
     List,
-    FileText,
     ArrowLeft,
-    LogOut,
-    Box,
-    PieChart,
-    Sparkles
+    Sparkles,
+    Cpu
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type Tab = 'company' | 'operation_model' | 'branches' | 'systems' | 'product_config' | 'order_config' | 'lot_config' | 'menus' | 'dashboard' | 'utilities'
+type Tab = 'company' | 'operation_model' | 'branches' | 'systems' | 'system_config' | 'menus'
 
 export default function SettingsPage() {
     const router = useRouter()
@@ -37,12 +30,8 @@ export default function SettingsPage() {
         { id: 'company' as Tab, label: 'Thông tin công ty', icon: Building2 },
         { id: 'operation_model' as Tab, label: 'Mô hình Vận hành', icon: Sparkles },
         { id: 'branches' as Tab, label: 'Quản lý Chi nhánh', icon: Store },
-        { id: 'systems' as Tab, label: 'Phân hệ Kho', icon: LayoutGrid },
-        { id: 'product_config' as Tab, label: 'Cấu hình sản phẩm', icon: SettingsIcon },
-        { id: 'order_config' as Tab, label: 'Cấu hình phiếu', icon: FileText },
-        { id: 'lot_config' as Tab, label: 'Cấu hình LOT', icon: Box },
-        { id: 'utilities' as Tab, label: 'Tiện ích (Modules)', icon: Sparkles },
-        { id: 'dashboard' as Tab, label: 'Cấu hình Dashboard', icon: PieChart },
+        { id: 'systems' as Tab, label: 'Danh sách Kho', icon: LayoutGrid },
+        { id: 'system_config' as Tab, label: 'Cấu hình Phân hệ', icon: Cpu },
         { id: 'menus' as Tab, label: 'Menu Sidebar', icon: List },
     ]
 
@@ -101,27 +90,25 @@ export default function SettingsPage() {
             </div>
 
             {/* Main Content Area */}
-            <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 p-8">
-                <div className="max-w-5xl mx-auto">
-                    <header className="mb-8">
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                            {tabs.find(t => t.id === activeTab)?.label}
-                        </h2>
-                        <p className="text-gray-500 dark:text-gray-400 mt-1">
-                            Quản lý các thiết lập cho {tabs.find(t => t.id === activeTab)?.label.toLowerCase()}
-                        </p>
-                    </header>
+            <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 p-4 md:p-8">
+                <div className="max-w-7xl mx-auto">
+                    {activeTab !== 'system_config' && (
+                        <header className="mb-8 pl-1">
+                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                                {tabs.find(t => t.id === activeTab)?.label}
+                            </h2>
+                            <p className="text-gray-500 dark:text-gray-400 mt-1">
+                                Quản lý các thiết lập cho {tabs.find(t => t.id === activeTab)?.label.toLowerCase()}
+                            </p>
+                        </header>
+                    )}
 
                     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
                         {activeTab === 'company' && <CompanyInfoSection />}
                         {activeTab === 'operation_model' && <OperationModelSection />}
                         {activeTab === 'branches' && <BranchManagerSection />}
                         {activeTab === 'systems' && <SystemManagerSection />}
-                        {activeTab === 'product_config' && <ProductConfigSection />}
-                        {activeTab === 'order_config' && <OrderConfigSection />}
-                        {activeTab === 'lot_config' && <LotConfigSection />}
-                        {activeTab === 'utilities' && <UtilityConfigSection />}
-                        {activeTab === 'dashboard' && <DashboardConfigSection />}
+                        {activeTab === 'system_config' && <UnifiedSystemConfig />}
                         {activeTab === 'menus' && <MenuManagerSection />}
                     </div>
                 </div>

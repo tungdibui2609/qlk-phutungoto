@@ -92,39 +92,39 @@ export default function AdminDashboard() {
     if (isLoading) return null // Layout handles loader
 
     return (
-        <div className="max-w-7xl mx-auto p-8">
+        <div className="max-w-7xl mx-auto p-4 md:p-8">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
                 <div>
-                    <h1 className="text-3xl font-bold text-stone-800 tracking-tight">Quản lý Công ty</h1>
-                    <p className="text-stone-500 mt-1">Danh sách tất cả khách hàng và cấu hình hệ thống.</p>
+                    <h1 className="text-2xl md:text-3xl font-bold text-emerald-800 tracking-tight">Quản lý Công ty</h1>
+                    <p className="text-emerald-600 mt-1 text-sm md:text-base">Danh sách tất cả khách hàng và cấu hình hệ thống.</p>
                 </div>
 
-                <div className="flex items-center gap-3 w-full md:w-auto bg-white p-2 rounded-xl shadow-sm border border-stone-200">
-                    <div className="relative flex-1 md:w-80">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
+                <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full md:w-auto">
+                    <div className="relative flex-1 md:w-80 bg-orange-50 rounded-xl border border-orange-100 focus-within:ring-2 focus-within:ring-orange-500 transition-all">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-400" size={18} />
                         <input
                             type="text"
                             placeholder="Tìm kiếm công ty..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 border-none rounded-lg focus:ring-0 outline-none text-stone-700 placeholder:text-stone-400 bg-transparent"
+                            className="w-full pl-10 pr-4 py-2.5 border-none rounded-lg focus:ring-0 outline-none text-orange-800 placeholder:text-orange-300 bg-transparent font-medium"
                         />
                     </div>
-                    <div className="w-px h-6 bg-stone-200 mx-1"></div>
                     <button
                         onClick={() => { setEditingCompany(null); setIsCompanyModalOpen(true) }}
-                        className="flex items-center gap-2 px-4 py-2 bg-stone-900 text-white rounded-lg hover:bg-black transition-all font-medium shadow-md shadow-stone-200"
+                        className="flex items-center justify-center gap-2 px-6 py-2.5 bg-orange-600 text-white rounded-xl hover:bg-orange-700 active:scale-95 transition-all font-bold shadow-xl shadow-orange-100"
                     >
                         <Plus size={18} />
-                        <span className="hidden sm:inline">Thêm Mới</span>
+                        <span>Thêm Mới</span>
                     </button>
                 </div>
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm border border-stone-200 overflow-hidden">
+            {/* Desktop Table - Hidden on small screens */}
+            <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-emerald-100 overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
-                        <thead className="bg-stone-50 text-stone-700 uppercase font-medium border-b border-stone-200">
+                        <thead className="bg-emerald-50/50 text-emerald-700 uppercase font-bold border-b border-emerald-100">
                             <tr>
                                 <th className="px-6 py-4">Doanh Nghiệp</th>
                                 <th className="px-6 py-4">Tài khoản</th>
@@ -133,17 +133,16 @@ export default function AdminDashboard() {
                                 <th className="px-6 py-4 text-right">Thao tác</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-stone-100">
+                        <tbody className="divide-y divide-emerald-50">
                             {companies.filter(c =>
                                 c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                                 c.email?.toLowerCase().includes(searchTerm.toLowerCase())
                             ).map((company) => {
-                                // Find Admin User: account_level 2 (Company Admin) or just take first one
                                 const adminUser = company.user_profiles?.find((u: any) => u.account_level === 2) || company.user_profiles?.[0]
                                 const displayEmail = adminUser?.email || company.email || 'Chưa có Admin'
 
                                 return (
-                                    <tr key={company.id} className="hover:bg-stone-50 transition-colors group">
+                                    <tr key={company.id} className="hover:bg-emerald-50/30 transition-colors group">
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 flex items-center justify-center text-orange-600 font-bold shrink-0 border border-orange-200 shadow-sm">
@@ -157,21 +156,21 @@ export default function AdminDashboard() {
                                                     className="cursor-pointer"
                                                     onClick={() => handleManageModules(company)}
                                                 >
-                                                    <div className="font-bold text-base text-stone-800 hover:text-orange-600 transition-colors">{company.name}</div>
-                                                    <div className="text-xs text-stone-500 font-medium">TG: {new Date(company.created_at).toLocaleDateString('vi-VN')}</div>
+                                                    <div className="font-bold text-base text-emerald-800 hover:text-orange-600 transition-colors">{company.name}</div>
+                                                    <div className="text-xs text-emerald-500 font-medium whitespace-nowrap">TG: {new Date(company.created_at).toLocaleDateString('vi-VN')}</div>
                                                 </div>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="flex flex-col gap-1">
-                                                <span className="font-bold text-stone-800 font-mono tracking-wide">{company.code}</span>
-                                                <span className="text-xs text-stone-500 flex items-center gap-1 group/email">
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-stone-300"></span>
+                                                <span className="font-bold text-orange-700 font-mono tracking-wide">{company.code}</span>
+                                                <span className="text-xs text-emerald-600 flex items-center gap-1 group/email">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-orange-400"></span>
                                                     {displayEmail}
                                                     {displayEmail !== 'Chưa có Admin' && (
                                                         <button
                                                             onClick={() => handleCopy(displayEmail)}
-                                                            className="p-1 hover:bg-stone-200 rounded text-stone-400 hover:text-stone-600 transition-all ml-1"
+                                                            className="p-1 hover:bg-orange-100 rounded text-orange-400 hover:text-orange-600 transition-all ml-1"
                                                             title="Sao chép email"
                                                         >
                                                             <Copy size={12} />
@@ -180,22 +179,22 @@ export default function AdminDashboard() {
                                                 </span>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 text-stone-600">
-                                            <span className="text-sm">{company.phone || 'Chưa cập nhật'}</span>
+                                        <td className="px-6 py-4 text-emerald-700">
+                                            <span className="text-sm font-medium">{company.phone || 'Chưa cập nhật'}</span>
                                         </td>
                                         <td className="px-6 py-4 text-center">
-                                            <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold ${company.is_active
-                                                ? 'bg-green-100 text-green-700 border border-green-200'
+                                            <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${company.is_active
+                                                ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
                                                 : 'bg-red-100 text-red-700 border border-red-200'
                                                 }`}>
                                                 {company.is_active ? 'Đang hoạt động' : 'Đã khóa'}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <div className="flex justify-end items-center gap-2 opacity-100 transition-opacity">
+                                            <div className="flex justify-end items-center gap-2">
                                                 <button
                                                     onClick={() => handleEdit(company)}
-                                                    className="p-2 rounded-lg text-stone-400 hover:text-stone-800 hover:bg-stone-200 transition-colors"
+                                                    className="p-2 rounded-lg text-emerald-400 hover:text-emerald-700 hover:bg-emerald-50 transition-colors"
                                                     title="Sửa thông tin"
                                                 >
                                                     <Pencil size={18} />
@@ -203,8 +202,8 @@ export default function AdminDashboard() {
                                                 <button
                                                     onClick={() => toggleStatus(company.id, company.is_active)}
                                                     className={`p-2 rounded-lg transition-colors ${company.is_active
-                                                        ? 'text-stone-400 hover:text-orange-600 hover:bg-orange-50'
-                                                        : 'text-stone-400 hover:text-green-600 hover:bg-green-50'
+                                                        ? 'text-emerald-400 hover:text-orange-600 hover:bg-orange-50'
+                                                        : 'text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50'
                                                         }`}
                                                     title={company.is_active ? 'Khóa quyền truy cập' : 'Mở quyền truy cập'}
                                                 >
@@ -212,7 +211,7 @@ export default function AdminDashboard() {
                                                 </button>
                                                 <button
                                                     onClick={() => handleDelete(company)}
-                                                    className="p-2 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                                    className="p-2 rounded-lg text-emerald-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                                                     title="Xóa Công Ty"
                                                 >
                                                     <Trash2 size={18} />
@@ -222,34 +221,119 @@ export default function AdminDashboard() {
                                     </tr>
                                 )
                             })}
-                            {companies.length === 0 && (
-                                <tr>
-                                    <td colSpan={5} className="px-6 py-20 text-center text-stone-500">
-                                        <div className="flex flex-col items-center gap-4">
-                                            <div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center">
-                                                <Building2 size={32} className="text-stone-300" />
-                                            </div>
-                                            <p>Chưa có công ty nào trong hệ thống</p>
-                                        </div>
-                                    </td>
-                                </tr>
-                            )}
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            {/* Company Form Modal */}
-            {isCompanyModalOpen && (
-                <CompanyForm
-                    initialData={editingCompany}
-                    onClose={() => setIsCompanyModalOpen(false)}
-                    onSuccess={() => {
-                        setIsCompanyModalOpen(false)
-                        fetchCompanies()
-                    }}
-                />
+            {/* Mobile Cards Layout - Shown only on small screens */}
+            <div className="md:hidden space-y-4">
+                {companies.filter(c =>
+                    c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    c.email?.toLowerCase().includes(searchTerm.toLowerCase())
+                ).map((company) => {
+                    const adminUser = company.user_profiles?.find((u: any) => u.account_level === 2) || company.user_profiles?.[0]
+                    const displayEmail = adminUser?.email || company.email || 'Chưa có Admin'
+
+                    return (
+                        <div key={company.id} className="bg-white border border-emerald-100 rounded-2xl p-4 shadow-sm space-y-4">
+                            <div className="flex items-start justify-between">
+                                <div className="flex gap-4">
+                                    <div className="w-12 h-12 rounded-xl bg-orange-50 flex items-center justify-center text-orange-600 shrink-0 border border-orange-100">
+                                        {company.logo_url ? (
+                                            <img src={company.logo_url} alt="" className="w-full h-full object-contain p-2" />
+                                        ) : (
+                                            <Building2 size={24} />
+                                        )}
+                                    </div>
+                                    <div onClick={() => handleManageModules(company)}>
+                                        <h3 className="font-bold text-emerald-800 text-lg leading-tight hover:text-orange-600 transition-colors">{company.name}</h3>
+                                        <p className="text-xs text-emerald-500 font-medium mt-1 uppercase tracking-wider">{company.code}</p>
+                                    </div>
+                                </div>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-tight ${company.is_active
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-red-100 text-red-700'
+                                    }`}>
+                                    {company.is_active ? 'Active' : 'Locked'}
+                                </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 py-3 border-y border-emerald-50">
+                                <div>
+                                    <p className="text-[10px] text-emerald-400 uppercase font-black tracking-widest mb-1">Email</p>
+                                    <p className="text-xs text-orange-600 font-bold truncate">{displayEmail}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] text-emerald-400 uppercase font-black tracking-widest mb-1">Điện thoại</p>
+                                    <p className="text-xs text-emerald-700 font-bold">{company.phone || '-'}</p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-2">
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => handleEdit(company)}
+                                        className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 active:bg-emerald-100 transition-colors"
+                                    >
+                                        <Pencil size={18} />
+                                    </button>
+                                    <button
+                                        onClick={() => toggleStatus(company.id, company.is_active)}
+                                        className={`p-2.5 rounded-xl transition-colors ${company.is_active
+                                            ? 'bg-orange-50 text-orange-600 active:bg-orange-100'
+                                            : 'bg-emerald-50 text-emerald-600 active:bg-emerald-100'
+                                            }`}
+                                    >
+                                        <Power size={18} />
+                                    </button>
+                                    <button
+                                        onClick={() => handleDelete(company)}
+                                        className="p-2.5 rounded-xl bg-red-50 text-red-600 active:bg-red-100 transition-colors"
+                                    >
+                                        <Trash2 size={18} />
+                                    </button>
+                                </div>
+
+                                <button
+                                    onClick={() => handleManageModules(company)}
+                                    className="flex items-center gap-1 px-4 py-2 bg-emerald-800 text-white rounded-xl text-xs font-bold"
+                                >
+                                    Module
+                                    <ArrowRight size={14} />
+                                </button>
+                            </div>
+                        </div>
+                    )
+                })}
+            </div>
+
+            {companies.length === 0 && (
+                <div className="bg-white border border-emerald-100 rounded-2xl py-20 text-center">
+                    <div className="flex flex-col items-center gap-4">
+                        <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center">
+                            <Building2 size={32} className="text-emerald-200" />
+                        </div>
+                        <p className="text-emerald-500 font-medium">Chưa có công ty nào trong hệ thống</p>
+                    </div>
+                </div>
             )}
-        </div>
+
+
+
+            {/* Company Form Modal */}
+            {
+                isCompanyModalOpen && (
+                    <CompanyForm
+                        initialData={editingCompany}
+                        onClose={() => setIsCompanyModalOpen(false)}
+                        onSuccess={() => {
+                            setIsCompanyModalOpen(false)
+                            fetchCompanies()
+                        }}
+                    />
+                )
+            }
+        </div >
     )
 }
