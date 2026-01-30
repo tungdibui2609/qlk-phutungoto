@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Plus, Search, Users, Phone, Shield, Briefcase, Filter, MoreHorizontal } from 'lucide-react'
 import { useUser } from '@/contexts/UserContext'
+import { useSystem } from '@/contexts/SystemContext'
 import TeamModal from '@/components/construction/TeamModal'
 import MemberModal from '@/components/construction/MemberModal'
 import { useToast } from '@/components/ui/ToastProvider'
@@ -29,6 +30,7 @@ export interface ConstructionMember {
 
 export default function ConstructionMembersPage() {
     const { profile } = useUser()
+    const { currentSystem } = useSystem()
     const { showToast, showConfirm } = useToast()
     const [activeTab, setActiveTab] = useState<'members' | 'teams'>('members')
 
@@ -45,17 +47,19 @@ export default function ConstructionMembersPage() {
     const [editingMember, setEditingMember] = useState<ConstructionMember | null>(null)
 
     useEffect(() => {
-        // Fetch data immediately, independently of profile status
-        // This ensures the "Manual" module works even if "System User" context is incomplete
-        fetchData()
-    }, [activeTab])
+        if (currentSystem?.code) {
+            fetchData()
+        }
+    }, [activeTab, currentSystem?.code])
 
     async function fetchData() {
+        if (!currentSystem?.code) return
         setLoading(true)
         if (activeTab === 'members') {
             const { data, error } = await (supabase
                 .from('construction_members') as any)
                 .select('*, teams:team_id(id, name)')
+                .eq('system_code', currentSystem.code)
                 .order('full_name')
 
             if (error) {
@@ -70,11 +74,12 @@ export default function ConstructionMembersPage() {
             const { data, error } = await (supabase
                 .from('construction_teams') as any)
                 .select('*')
+                .eq('system_code', currentSystem.code)
                 .order('name')
 
             if (error) {
                 if (error.code !== 'PGRST301') {
-                   console.error('Fetch teams error:', error)
+                    console.error('Fetch teams error:', error)
                 }
             }
             if (data) setTeams(data)
@@ -129,27 +134,25 @@ export default function ConstructionMembersPage() {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white">Thành viên & Đội thi công</h2>
-                    <p className="text-sm text-gray-500">Quản lý nhân sự thủ công và phân đội cho công trình</p>
+                    <p className="text-sm text-gray-500">Quản lý nhân sự thủ công và phân đội cho công trình ({currentSystem?.name || '...'})</p>
                 </div>
 
                 <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
                     <button
                         onClick={() => setActiveTab('members')}
-                        className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
-                            activeTab === 'members'
+                        className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'members'
                                 ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
                                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
-                        }`}
+                            }`}
                     >
                         Thành viên
                     </button>
                     <button
                         onClick={() => setActiveTab('teams')}
-                        className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
-                            activeTab === 'teams'
+                        className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'teams'
                                 ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
                                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
-                        }`}
+                            }`}
                     >
                         Đội thi công
                     </button>

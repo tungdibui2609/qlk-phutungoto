@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
+import { useSystem } from '@/contexts/SystemContext'
 import { X, Save } from 'lucide-react'
 import { ConstructionTeam } from '@/app/(dashboard)/construction/members/page'
 
@@ -16,6 +17,7 @@ interface Props {
 
 export default function TeamModal({ isOpen, onClose, onSuccess, initialData }: Props) {
     const { profile } = useUser()
+    const { currentSystem } = useSystem()
     const { showToast } = useToast()
     const [loading, setLoading] = useState(false)
     const [formData, setFormData] = useState({
@@ -31,16 +33,8 @@ export default function TeamModal({ isOpen, onClose, onSuccess, initialData }: P
         setLoading(true)
 
         try {
-            // Determine company_id: Use profile if available, otherwise try to fetch it or rely on RLS default
-            // Note: RLS 'INSERT' usually requires the column to be present if it's NOT NULL.
-            // Our migration says: company_id uuid REFERENCES ...
-            // If we don't send it, and default is not set, it might fail.
-            // However, the policies use `WITH CHECK (company_id = ...)` which implies we MUST send the correct ID.
-
             let companyId = profile?.company_id
 
-            // Fallback: If profile context is missing but user is authenticated,
-            // try to get company_id from user_profiles directly
             if (!companyId) {
                 const { data: userData } = await supabase
                     .from('user_profiles')
@@ -49,13 +43,6 @@ export default function TeamModal({ isOpen, onClose, onSuccess, initialData }: P
                 if (userData) {
                     companyId = userData.company_id
                 }
-            }
-
-            if (!companyId && !initialData) {
-               // Only strictly required for CREATE. For UPDATE, we might not touch it.
-               // But RLS often checks existing row.
-               // If we still don't have it, we might be in trouble, but let's try proceeding.
-               // Worst case: RLS policy violation.
             }
 
             if (initialData) {
@@ -76,10 +63,11 @@ export default function TeamModal({ isOpen, onClose, onSuccess, initialData }: P
                 const { error } = await (supabase.from('construction_teams') as any)
                     .insert({
                         company_id: companyId,
+                        system_code: currentSystem?.code,
                         name: formData.name,
                         code: formData.code,
                         description: formData.description,
-                        created_by: profile?.id // Optional FK
+                        created_by: profile?.id
                     })
 
                 if (error) throw error

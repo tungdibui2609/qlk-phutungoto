@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
+import { useSystem } from '@/contexts/SystemContext'
 import { X, Save } from 'lucide-react'
 import { ConstructionMember, ConstructionTeam } from '@/app/(dashboard)/construction/members/page'
 
@@ -16,6 +17,7 @@ interface Props {
 
 export default function MemberModal({ isOpen, onClose, onSuccess, initialData }: Props) {
     const { profile } = useUser()
+    const { currentSystem } = useSystem()
     const { showToast } = useToast()
     const [loading, setLoading] = useState(false)
     const [teams, setTeams] = useState<ConstructionTeam[]>([])
@@ -29,14 +31,16 @@ export default function MemberModal({ isOpen, onClose, onSuccess, initialData }:
     })
 
     useEffect(() => {
-        if (isOpen) {
+        if (isOpen && currentSystem?.code) {
             fetchTeams()
         }
-    }, [isOpen])
+    }, [isOpen, currentSystem?.code])
 
     async function fetchTeams() {
+        if (!currentSystem?.code) return
         const { data } = await (supabase.from('construction_teams') as any)
             .select('id, name')
+            .eq('system_code', currentSystem.code)
             .order('name')
         if (data) setTeams(data)
     }
@@ -50,7 +54,6 @@ export default function MemberModal({ isOpen, onClose, onSuccess, initialData }:
         try {
             let companyId = profile?.company_id
 
-            // Fallback for company_id if profile is missing
             if (!companyId) {
                 const { data: userData } = await supabase
                     .from('user_profiles')
@@ -82,6 +85,7 @@ export default function MemberModal({ isOpen, onClose, onSuccess, initialData }:
                     .insert({
                         ...payload,
                         company_id: companyId,
+                        system_code: currentSystem?.code,
                         created_by: profile?.id
                     })
 
@@ -153,16 +157,16 @@ export default function MemberModal({ isOpen, onClose, onSuccess, initialData }:
                     </div>
 
                     {initialData && (
-                         <div className="flex items-center gap-2 pt-2">
-                             <input
+                        <div className="flex items-center gap-2 pt-2">
+                            <input
                                 type="checkbox"
                                 id="is_active"
                                 checked={formData.is_active}
-                                onChange={e => setFormData({...formData, is_active: e.target.checked})}
+                                onChange={e => setFormData({ ...formData, is_active: e.target.checked })}
                                 className="w-4 h-4 text-blue-600 rounded"
-                             />
-                             <label htmlFor="is_active" className="text-sm text-gray-700">Đang hoạt động</label>
-                         </div>
+                            />
+                            <label htmlFor="is_active" className="text-sm text-gray-700">Đang hoạt động</label>
+                        </div>
                     )}
 
                     <div className="pt-2 flex justify-end gap-3">
