@@ -176,7 +176,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                 supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'),
                 supabase.from('customers').select('*').eq('system_code', systemCode).order('name'),
                 fetch(`/api/inventory?systemType=${systemCode}`).then(res => res.json()),
-                supabase.from('units').select('*').eq('is_active', true),
+                supabase.from('units').select('*').eq('is_active', true).or(`system_code.eq.${systemCode},system_code.is.null`),
                 (supabase.from('order_types') as any).select('*').or(`scope.eq.outbound,scope.eq.both`).or(`system_code.eq.${systemCode},system_code.is.null`).eq('is_active', true).order('created_at', { ascending: true })
             ])
 

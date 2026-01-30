@@ -5,17 +5,11 @@ import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Loader2, Printer } from 'lucide-react'
 import { formatQuantityFull } from '@/lib/numberUtils'
+import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
+import { PrintHeader } from '@/components/print/PrintHeader'
+import { EditableText } from '@/components/print/PrintHelpers'
 
 // Types
-interface CompanyInfo {
-    name: string
-    address: string | null
-    phone: string | null
-    email: string | null
-    logo_url: string | null
-    short_name: string | null
-}
-
 interface InventoryItem {
     id: string
     productCode: string
@@ -81,13 +75,18 @@ export default function InventoryPrintPage() {
         short_name: cmpShort,
     } as CompanyInfo : null
 
-    const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(initialCompanyInfo)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [accountingItems, setAccountingItems] = useState<InventoryItem[]>([])
     const [lotItems, setLotItems] = useState<LotItem[]>([])
     const [reconcileItems, setReconcileItems] = useState<ReconciliationItem[]>([])
-    const [logoSrc, setLogoSrc] = useState<string | null>(null)
+
+    // Use shared hook for company info
+    const { companyInfo, logoSrc } = usePrintCompanyInfo({
+        token,
+        initialCompanyInfo,
+        fallbackToProfile: !initialCompanyInfo // Only fallback if we don't have enough info from params
+    })
 
     // Editable States
     const [editReportTitle, setEditReportTitle] = useState('')
@@ -97,12 +96,6 @@ export default function InventoryPrintPage() {
     const [signPerson1, setSignPerson1] = useState('')
     const [signPerson2, setSignPerson2] = useState('')
     const [signPerson3, setSignPerson3] = useState('')
-
-    // Date states
-    const d = new Date()
-    const [editDay, setEditDay] = useState(d.getDate().toString())
-    const [editMonth, setEditMonth] = useState((d.getMonth() + 1).toString())
-    const [editYear, setEditYear] = useState(d.getFullYear().toString())
 
     // Download loading state
     const [isDownloading, setIsDownloading] = useState(false)
@@ -121,8 +114,8 @@ export default function InventoryPrintPage() {
         if (searchParams.get('signPerson3')) setSignPerson3(searchParams.get('signPerson3')!)
 
     }, [searchParams])
+
     useEffect(() => {
-        fetchCompanyInfo()
         fetchData()
 
         // Set default title based on type
@@ -130,42 +123,7 @@ export default function InventoryPrintPage() {
         else if (type === 'lot') setEditReportTitle('BÁO CÁO TỒN KHO THEO LOT')
         else if (type === 'reconciliation') setEditReportTitle('BẢNG ĐỐI CHIẾU TỒN KHO VS KẾ TOÁN')
 
-    }, [type, systemType, dateFrom, dateTo, warehouse, convertToKg])
-
-    async function fetchCompanyInfo() {
-        const { data: companyData } = await supabase
-            .from('company_settings')
-            .select('*')
-            .limit(1)
-            .single()
-        if (companyData) {
-            setCompanyInfo(companyData as any)
-
-            // Handle secure logo loading
-            if ((companyData as any).logo_url) {
-                const url = (companyData as any).logo_url
-                if (token && url.includes('supabase')) {
-                    try {
-                        const res = await fetch(url, {
-                            headers: { Authorization: `Bearer ${token}` }
-                        })
-                        if (res.ok) {
-                            const blob = await res.blob()
-                            setLogoSrc(URL.createObjectURL(blob))
-                        } else {
-                            setLogoSrc(url)
-                        }
-                    } catch (e) {
-                        setLogoSrc(url)
-                    }
-                } else {
-                    setLogoSrc(url)
-                }
-            }
-        } else if (initialCompanyInfo?.logo_url) {
-            setLogoSrc(initialCompanyInfo.logo_url)
-        }
-    }
+    }, [type, systemType, dateFrom, dateTo, warehouse, convertToKg]) // Removed redundant dependency
 
     async function fetchData() {
         setLoading(true)
@@ -199,8 +157,6 @@ export default function InventoryPrintPage() {
                 if (dateTo) params.set('to', dateTo)
                 if (warehouse) params.set('warehouse', warehouse)
                 if (searchTerm) params.set('q', searchTerm)
-                if (convertToKg) params.set('convertToKg', 'true')
-
                 if (convertToKg) params.set('convertToKg', 'true')
 
                 const headers: HeadersInit = {}
@@ -390,7 +346,6 @@ export default function InventoryPrintPage() {
             params.set('signTitle3', signTitle3)
             params.set('signPerson1', signPerson1)
             params.set('signPerson2', signPerson2)
-            params.set('signPerson2', signPerson2)
             params.set('signPerson3', signPerson3)
 
             // Get current session token to pass to the snapshot service
@@ -460,43 +415,14 @@ export default function InventoryPrintPage() {
                 </button>
             </div>
 
-            {/* Header with Logo */}
-            <div className="flex items-start justify-between mb-6">
-                <div className="flex items-center gap-3">
-                    {/* Logo */}
-                    <div className="shrink-0">
-                        {logoSrc || companyInfo?.logo_url ? (
-                            <img
-                                src={logoSrc || companyInfo?.logo_url || ''}
-                                alt="Logo"
-                                className="h-16 w-auto object-contain"
-                            />
-                        ) : (
-                            <div className="h-14 w-14 text-xl bg-orange-500 rounded-lg flex items-center justify-center text-white font-bold">
-                                {companyInfo?.short_name?.[0] || 'C'}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Company Info */}
-                    <div className="flex flex-col justify-center gap-0.5">
-                        <div className="text-emerald-700 font-bold uppercase leading-tight text-xs">
-                            {companyInfo?.name || 'CÔNG TY'}
-                        </div>
-                        {companyInfo?.address && (
-                            <div className="font-bold text-gray-700 leading-tight text-[11px]">
-                                Địa chỉ: {companyInfo.address}
-                            </div>
-                        )}
-                        <div className="font-bold text-gray-700 leading-tight text-[11px]">
-                            {companyInfo?.email && `Email: ${companyInfo.email}`}
-                            {companyInfo?.email && companyInfo?.phone && <span className="mx-1">|</span>}
-                            {companyInfo?.phone && `ĐT: ${companyInfo.phone}`}
-                        </div>
-                    </div>
-                </div>
-
-
+            {/* Header with Shared Component - Force compact to match original layout, can be 'large' if desired */}
+            <div className="mb-6">
+                <PrintHeader
+                    companyInfo={companyInfo}
+                    logoSrc={logoSrc}
+                    size="compact"  // Using compact to fit the inventory report style
+                    rightContent={null}
+                />
             </div>
 
             {/* Report Title (Editable) */}
@@ -511,8 +437,6 @@ export default function InventoryPrintPage() {
                     />
                 </div>
 
-
-
                 {/* Date Range info */}
                 {type === 'accounting' && (
                     <p className="italic mt-1">
@@ -524,9 +448,6 @@ export default function InventoryPrintPage() {
                         Tính đến ngày {new Date(dateTo).toLocaleDateString('vi-VN')}
                     </p>
                 )}
-
-                {/* Editable Date Line */}
-
             </div>
 
             {/* Content Table */}
@@ -718,35 +639,5 @@ export default function InventoryPrintPage() {
                 className="block w-full h-[1px] opacity-0 pointer-events-none"
             />
         </div>
-    )
-}
-
-function EditableText({
-    value,
-    onChange,
-    placeholder = '',
-    className = '',
-    style = {},
-    isSnapshot = false
-}: {
-    value: string
-    onChange: (val: string) => void
-    placeholder?: string
-    className?: string
-    style?: React.CSSProperties
-    isSnapshot?: boolean
-}) {
-    return (
-        <>
-            <input
-                type="text"
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                placeholder={placeholder}
-                className={`print:hidden ${isSnapshot ? 'hidden' : ''} bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none transition-colors ${className}`}
-                style={style}
-            />
-            <span className={`hidden print:inline ${isSnapshot ? '!inline' : ''} ${className}`} style={style}>{value || ''}</span>
-        </>
     )
 }

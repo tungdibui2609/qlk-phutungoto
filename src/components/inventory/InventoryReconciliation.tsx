@@ -28,9 +28,18 @@ interface ItemReconciliation {
 
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 
+import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
+import { useUser } from '@/contexts/UserContext'
+
 export default function InventoryReconciliation({ units }: { units: any[] }) {
     const { convertUnit, unitNameMap, conversionMap } = useUnitConversion()
     const { systemType } = useSystem()
+    // Use company info for printing params, prioritized from user profile
+    const { profile } = useUser()
+    const { companyInfo, loading: loadingCompany } = usePrintCompanyInfo({
+        orderCompanyId: profile?.company_id
+    })
+
     const [loading, setLoading] = useState(true)
     const [items, setItems] = useState<ItemReconciliation[]>([])
     const [showOnlyDiff, setShowOnlyDiff] = useState(false)
@@ -287,17 +296,35 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
 
                 <div className="ml-auto pb-1">
                     <button
-                        onClick={() => {
+                        onClick={async () => {
                             const params = new URLSearchParams()
                             params.set('type', 'reconciliation')
                             if (systemType) params.set('systemType', systemType)
                             if (dateTo) params.set('to', dateTo)
                             if (targetUnitId) params.set('targetUnitId', targetUnitId)
                             if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
+
+                            // Pass auth token
+                            const { data: { session } } = await supabase.auth.getSession()
+                            if (session?.access_token) {
+                                params.set('token', session.access_token)
+                            }
+
+                            // Pass company info directly
+                            if (companyInfo) {
+                                if (companyInfo.name) params.set('cmp_name', companyInfo.name)
+                                if (companyInfo.address) params.set('cmp_address', companyInfo.address)
+                                if (companyInfo.phone) params.set('cmp_phone', companyInfo.phone)
+                                if (companyInfo.email) params.set('cmp_email', companyInfo.email)
+                                if (companyInfo.logo_url) params.set('cmp_logo', companyInfo.logo_url)
+                                if (companyInfo.short_name) params.set('cmp_short', companyInfo.short_name)
+                            }
+
                             window.open(`/print/inventory?${params.toString()}`, '_blank')
                         }}
-                        className="p-2 text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-md transition-all active:scale-95 bg-white dark:bg-stone-800 shadow-sm"
-                        title="In báo cáo"
+                        disabled={loadingCompany}
+                        className={`p-2 mt-6 border border-stone-300 dark:border-stone-700 rounded-md transition-all ${loadingCompany ? 'opacity-50 cursor-wait bg-stone-100' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 active:scale-95'}`}
+                        title={loadingCompany ? "Đang tải thông tin..." : "In báo cáo"}
                     >
                         <Printer className="w-5 h-5" />
                     </button>

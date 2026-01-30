@@ -9,6 +9,7 @@ import InventoryByLot from '@/components/inventory/InventoryByLot'
 import InventoryByTag from '@/components/inventory/InventoryByTag'
 import InventoryReconciliation from '@/components/inventory/InventoryReconciliation'
 import MobileInventoryList from '@/components/inventory/MobileInventoryList'
+import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
 
 // Types based on API response
 interface InventoryItem {
@@ -29,8 +30,16 @@ interface Branch {
     is_default?: boolean
 }
 
+import { useUser } from '@/contexts/UserContext'
+
 export default function InventoryPage() {
     const { systemType } = useSystem()
+    const { profile } = useUser()
+    // Use company info for printing params, prioritized from user profile
+    const { companyInfo, loading: loadingCompany } = usePrintCompanyInfo({
+        orderCompanyId: profile?.company_id
+    })
+
     const [activeTab, setActiveTab] = useState<'accounting' | 'lot' | 'tags' | 'reconciliation'>('accounting')
     const [items, setItems] = useState<InventoryItem[]>([])
     const [loading, setLoading] = useState(false)
@@ -261,7 +270,9 @@ export default function InventoryPage() {
                             </div>
 
                             <button
-                                onClick={() => {
+                                onClick={async () => {
+                                    if (loadingCompany) return
+
                                     const params = new URLSearchParams()
                                     params.set('type', 'accounting')
                                     if (systemType) params.set('systemType', systemType)
@@ -270,10 +281,28 @@ export default function InventoryPage() {
                                     if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
                                     if (q) params.set('search', q)
                                     if (targetUnitId) params.set('targetUnitId', targetUnitId)
+
+                                    // Pass auth token to ensure company info loads correctly in new tab
+                                    const { data: { session } } = await supabase.auth.getSession()
+                                    if (session?.access_token) {
+                                        params.set('token', session.access_token)
+                                    }
+
+                                    // Pass company info directly to avoid fetching issues
+                                    if (companyInfo) {
+                                        if (companyInfo.name) params.set('cmp_name', companyInfo.name)
+                                        if (companyInfo.address) params.set('cmp_address', companyInfo.address)
+                                        if (companyInfo.phone) params.set('cmp_phone', companyInfo.phone)
+                                        if (companyInfo.email) params.set('cmp_email', companyInfo.email)
+                                        if (companyInfo.logo_url) params.set('cmp_logo', companyInfo.logo_url)
+                                        if (companyInfo.short_name) params.set('cmp_short', companyInfo.short_name)
+                                    }
+
                                     window.open(`/print/inventory?${params.toString()}`, '_blank')
                                 }}
-                                className="p-2 mt-6 text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-md"
-                                title="In báo cáo"
+                                disabled={loadingCompany}
+                                className={`p-2 mt-6 border border-stone-300 dark:border-stone-700 rounded-md transition-all ${loadingCompany ? 'opacity-50 cursor-wait bg-stone-100' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 active:scale-95'}`}
+                                title={loadingCompany ? "Đang tải thông tin..." : "In báo cáo"}
                             >
                                 <Printer className="w-5 h-5" />
                             </button>

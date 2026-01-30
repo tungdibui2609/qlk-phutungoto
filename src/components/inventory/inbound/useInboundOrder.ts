@@ -103,7 +103,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                 supabase.from('products').select('*, product_units(unit_id, conversion_rate)').eq('system_type', systemCode).order('name'),
                 supabase.from('suppliers').select('*').eq('system_code', systemCode).order('name'),
                 supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'),
-                supabase.from('units').select('*').eq('is_active', true),
+                supabase.from('units').select('*').eq('is_active', true).or(`system_code.eq.${systemCode},system_code.is.null`),
                 (supabase.from('order_types') as any).select('*').or(`scope.eq.inbound,scope.eq.both`).or(`system_code.eq.${systemCode},system_code.is.null`).eq('is_active', true).order('created_at', { ascending: true })
             ])
 
