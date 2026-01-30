@@ -7,6 +7,8 @@ import { useToast } from '@/components/ui/ToastProvider'
 
 type Position = Database['public']['Tables']['positions']['Row']
 
+import { useUser } from '@/contexts/UserContext'
+
 interface PositionBatchCreatorProps {
     onPositionsCreated?: () => void
 }
@@ -18,6 +20,7 @@ interface BatchGroup {
 
 export default function PositionBatchCreator({ onPositionsCreated }: PositionBatchCreatorProps) {
     const { showToast, showConfirm } = useToast()
+    const { profile } = useUser()
     const [batchName, setBatchName] = useState('')
     const [prefix, setPrefix] = useState('')
     const [startNum, setStartNum] = useState(1)
@@ -130,7 +133,8 @@ export default function PositionBatchCreator({ onPositionsCreated }: PositionBat
             const batch = preview.slice(i, i + batchSize).map((code, idx) => ({
                 code: code.toUpperCase(),
                 display_order: i + idx,
-                batch_name: batchName.trim()
+                batch_name: batchName.trim(),
+                company_id: profile?.company_id || null
             }))
 
             const { error } = await (supabase.from('positions') as any).insert(batch)

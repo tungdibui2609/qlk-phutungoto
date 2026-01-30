@@ -61,7 +61,8 @@ export default function OriginsPage() {
             code: newCode.trim() || null,
             description: newDescription.trim() || null,
             system_code: currentSystem.code,
-            is_active: true
+            is_active: true,
+            company_id: profile?.company_id || null
         }])
 
         if (error) {
@@ -84,7 +85,8 @@ export default function OriginsPage() {
             name: editName.trim(),
             code: editCode.trim() || null,
             description: editDescription.trim() || null,
-            system_code: currentSystem.code
+            system_code: currentSystem.code,
+            company_id: profile?.company_id || null
         }).eq('id', id)
 
         if (error) {

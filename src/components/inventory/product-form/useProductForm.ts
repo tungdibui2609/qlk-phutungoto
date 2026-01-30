@@ -240,7 +240,13 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
                             if (parentRate) absoluteRate = u.factor * parentRate
                         }
                         ratesMap.set(u.unit_id, absoluteRate)
-                        validUnits.push({ product_id: productId, unit_id: u.unit_id, conversion_rate: absoluteRate, ref_unit_id: u.ref_unit_id || null })
+                        validUnits.push({
+                            product_id: productId,
+                            unit_id: u.unit_id,
+                            conversion_rate: absoluteRate,
+                            ref_unit_id: u.ref_unit_id || null,
+                            company_id: profile?.company_id || null
+                        })
                     }
                     if (validUnits.length > 0) await (supabase.from('product_units') as any).insert(validUnits)
                 }
@@ -251,7 +257,11 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
                 await (supabase.from('product_media') as any).delete().eq('product_id', productId)
                 if (mediaItems.length > 0) {
                     const validMedia = mediaItems.filter(m => m.url && m.url.trim() !== '').map((m, i) => ({
-                        product_id: productId, url: m.url.trim(), type: m.type, sort_order: i
+                        product_id: productId,
+                        url: m.url.trim(),
+                        type: m.type,
+                        sort_order: i,
+                        company_id: profile?.company_id || null
                     }))
                     if (validMedia.length > 0) await (supabase.from('product_media') as any).insert(validMedia)
                 }

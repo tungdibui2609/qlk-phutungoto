@@ -130,7 +130,8 @@ export default function RolesPage() {
                         code: formData.code,
                         name: formData.name,
                         description: formData.description,
-                        permissions: formData.permissions
+                        permissions: formData.permissions,
+                        company_id: profile?.company_id
                     })
                     .eq('id', editingRole.id)
                 if (error) throw error

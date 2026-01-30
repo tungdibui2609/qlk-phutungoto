@@ -5,6 +5,7 @@ import { FileText, Plus, Search, Edit, Trash2, X, Filter } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUser } from '@/contexts/UserContext'
 
 type OrderType = {
     id: string
@@ -13,6 +14,7 @@ type OrderType = {
     scope: 'inbound' | 'outbound' | 'both'
     description: string
     system_code?: string
+    company_id?: string
     is_active: boolean
     created_at: string
 }
@@ -20,6 +22,7 @@ type OrderType = {
 export default function OrderTypesPage() {
     const { showToast, showConfirm } = useToast()
     const { currentSystem } = useSystem()
+    const { profile } = useUser()
     const [types, setTypes] = useState<OrderType[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
@@ -46,6 +49,7 @@ export default function OrderTypesPage() {
             setLoading(true)
 
             // Fetch types for current system OR global types (system_code is null)
+            // Also filter by company if possible, though RLS should handle it
             const { data, error } = await (supabase
                 .from('order_types') as any)
                 .select('*')
@@ -127,7 +131,8 @@ export default function OrderTypesPage() {
                 name: formData.name,
                 code: formData.code,
                 scope: formData.scope,
-                description: formData.description
+                description: formData.description,
+                company_id: profile?.company_id || null
             }
 
             if (editingType) {
