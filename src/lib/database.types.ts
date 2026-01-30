@@ -1221,6 +1221,10 @@ export type Database = {
           name: string
           sort_order: number | null
           text_color_class: string | null
+          inbound_modules: string[] | null
+          outbound_modules: string[] | null
+          dashboard_modules: string[] | null
+          lot_modules: string[] | null
         }
         Insert: {
           bg_color_class?: string | null
@@ -1233,6 +1237,10 @@ export type Database = {
           name: string
           sort_order?: number | null
           text_color_class?: string | null
+          inbound_modules?: string[] | null
+          outbound_modules?: string[] | null
+          dashboard_modules?: string[] | null
+          lot_modules?: string[] | null
         }
         Update: {
           bg_color_class?: string | null
@@ -1245,6 +1253,10 @@ export type Database = {
           name?: string
           sort_order?: number | null
           text_color_class?: string | null
+          inbound_modules?: string[] | null
+          outbound_modules?: string[] | null
+          dashboard_modules?: string[] | null
+          lot_modules?: string[] | null
         }
         Relationships: []
       }
@@ -1337,41 +1349,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "roles"
             referencedColumns: ["id"]
-          },
-        ]
-      }
-      system_configs: {
-        Row: {
-          created_at: string | null
-          id: string
-          inbound_modules: string[] | null // or Json
-          lot_modules: string[] | null // or Json
-          outbound_modules: string[] | null // or Json
-          system_code: string
-        }
-        Insert: {
-          created_at?: string | null
-          id?: string
-          inbound_modules?: string[] | null
-          lot_modules?: string[] | null
-          outbound_modules?: string[] | null
-          system_code: string
-        }
-        Update: {
-          created_at?: string | null
-          id?: string
-          inbound_modules?: string[] | null
-          lot_modules?: string[] | null
-          outbound_modules?: string[] | null
-          system_code?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "system_configs_system_code_fkey"
-            columns: ["system_code"]
-            isOneToOne: true // Likely 1-1
-            referencedRelation: "systems"
-            referencedColumns: ["code"]
           },
         ]
       }

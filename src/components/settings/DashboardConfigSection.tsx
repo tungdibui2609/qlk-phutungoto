@@ -26,8 +26,7 @@ export default function DashboardConfigSection() {
 
     async function fetchSystems() {
         setLoading(true)
-        const { data: systemsData, error: sysError } = await (supabase.from('systems') as any).select('code, name').order('created_at')
-        const { data: configsData, error: configError } = await (supabase.from('system_configs') as any).select('*')
+        const { data: systemsData, error: sysError } = await (supabase.from('systems') as any).select('code, name, dashboard_modules').order('created_at')
 
         if (sysError) {
             showToast('Lỗi tải danh sách kho: ' + sysError.message, 'error')
@@ -36,18 +35,13 @@ export default function DashboardConfigSection() {
             const configMap: Record<string, string[]> = {}
 
             systemsList.forEach((sys: any) => {
-                const config = configsData?.find((c: any) => c.system_code === sys.code)
                 let mods: string[] = []
 
-                if (config) {
-                    if (Array.isArray(config.dashboard_modules)) mods = config.dashboard_modules
-                    else if (typeof config.dashboard_modules === 'string') {
-                        try { mods = JSON.parse(config.dashboard_modules) } catch (e) { mods = [] }
-                    }
+                if (Array.isArray(sys.dashboard_modules)) mods = sys.dashboard_modules
+                else if (typeof sys.dashboard_modules === 'string') {
+                    try { mods = JSON.parse(sys.dashboard_modules) } catch (e) { mods = [] }
                 }
 
-                // Default if empty? Maybe show all by default if config doesn't exist?
-                // For now, empty means nothing shown, or we can pre-populate
                 configMap[sys.code] = mods
             })
 
@@ -79,11 +73,9 @@ export default function DashboardConfigSection() {
         const mods = dashboardConfig[sysCode] || []
 
         const { error } = await (supabase
-            .from('system_configs') as any)
-            .upsert({
-                system_code: sysCode,
-                dashboard_modules: mods
-            }, { onConflict: 'system_code' })
+            .from('systems') as any)
+            .update({ dashboard_modules: mods })
+            .eq('code', sysCode)
 
         if (error) {
             showToast('Lỗi lưu cấu hình: ' + error.message, 'error')

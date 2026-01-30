@@ -61,7 +61,7 @@ export function useLotManagement() {
             supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'),
             supabase.from('units').select('*'),
             supabase.from('product_units').select('*'),
-            supabase.from('system_configs').select('lot_modules').eq('system_code', currentSystem.code).single()
+            supabase.from('systems').select('lot_modules').eq('code', currentSystem.code).single()
         ])
 
         if (prodRes.data) setProducts(prodRes.data)

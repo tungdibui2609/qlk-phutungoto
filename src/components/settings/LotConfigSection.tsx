@@ -29,8 +29,7 @@ export default function LotConfigSection() {
 
     async function fetchSystems() {
         setLoading(true)
-        const { data: systemsData, error: sysError } = await (supabase.from('systems') as any).select('code, name').order('created_at')
-        const { data: configsData, error: configError } = await (supabase.from('system_configs') as any).select('*')
+        const { data: systemsData, error: sysError } = await (supabase.from('systems') as any).select('code, name, lot_modules').order('created_at')
 
         if (sysError) {
             showToast('Lỗi tải danh sách kho: ' + sysError.message, 'error')
@@ -41,14 +40,11 @@ export default function LotConfigSection() {
             const configMap: Record<string, string[]> = {}
 
             systemsList.forEach((sys: any) => {
-                const config = configsData?.find((c: any) => c.system_code === sys.code)
                 let mods: string[] = []
 
-                if (config) {
-                    if (Array.isArray(config.lot_modules)) mods = config.lot_modules
-                    else if (typeof config.lot_modules === 'string') {
-                        try { mods = JSON.parse(config.lot_modules) } catch (e) { mods = [] }
-                    }
+                if (Array.isArray(sys.lot_modules)) mods = sys.lot_modules
+                else if (typeof sys.lot_modules === 'string') {
+                    try { mods = JSON.parse(sys.lot_modules) } catch (e) { mods = [] }
                 }
 
                 configMap[sys.code] = mods
@@ -81,13 +77,11 @@ export default function LotConfigSection() {
         setSaving(sysCode)
         const mods = lotConfig[sysCode] || []
 
-        // Upsert system_configs
+        // Update systems table
         const { error } = await (supabase
-            .from('system_configs') as any)
-            .upsert({
-                system_code: sysCode,
-                lot_modules: mods
-            }, { onConflict: 'system_code' })
+            .from('systems') as any)
+            .update({ lot_modules: mods })
+            .eq('code', sysCode)
 
         if (error) {
             showToast('Lỗi lưu cấu hình: ' + error.message, 'error')

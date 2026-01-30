@@ -90,14 +90,12 @@ export async function GET(req: NextRequest) {
         let inboundModules = '';
         if (orderData?.system_code) {
             const { data: sysData } = await supabase
-                .from('system_configs')
+                .from('systems')
                 .select('inbound_modules')
-                .eq('system_code', orderData.system_code)
+                .eq('code', orderData.system_code)
                 .single();
             if (sysData?.inbound_modules) {
-                const modules = typeof sysData.inbound_modules === 'string'
-                    ? JSON.parse(sysData.inbound_modules)
-                    : sysData.inbound_modules;
+                const modules = sysData.inbound_modules;
                 if (Array.isArray(modules)) inboundModules = modules.join(',');
             }
         }

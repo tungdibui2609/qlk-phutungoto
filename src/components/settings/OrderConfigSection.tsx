@@ -32,24 +32,10 @@ export default function OrderConfigSection() {
 
     async function fetchSystems() {
         setLoading(true)
-        // Note: Currently we are using 'systems' table, but the proposal mentioned 'system_configs'
-        // Let's first check if we need to query 'systems' or 'system_configs'
-        // Assuming 'systems' is the main table used in ProductConfigSection, let's stick to it for consistency
-        // or check if we need to JOIN 'system_configs'.
-        // Based on previous context, user approved adding columns to `system_configs`.
-        // BUT, `ProductConfigSection` uses `systems` table directly.
-        // Let's check where `systems` data comes from. ProductConfigSection uses `supabase.from('systems')...`
-        // If the migration used `system_configs`, we might have a mismatch.
-        // Let's assume the user wants it on the `systems` table for simplicity OR `system_configs` is linked.
-        // Wait, the migration added columns to `system_configs`.
-        // Let's try to fetch from `system_configs` grouped by system_code if possible, OR fetch `systems` and join/lookup `system_configs`.
-
-        // Actually, let's fetch both to be safe, or check if they are the same concept in this specific codebase.
-        // Ideally, we should use the same table structure. If `systems` has product modules, maybe `system_configs` is better for extension?
-        // Let's try to fetch `system_configs` first.
-
-        const { data: systemsData, error: sysError } = await (supabase.from('systems') as any).select('code, name').order('created_at')
-        const { data: configsData, error: configError } = await (supabase.from('system_configs') as any).select('*')
+        // Fetch systems with inbound/outbound modules directly
+        const { data: systemsData, error: sysError } = await (supabase.from('systems') as any)
+            .select('code, name, inbound_modules, outbound_modules')
+            .order('created_at')
 
         if (sysError) {
             showToast('Lỗi tải danh sách kho: ' + sysError.message, 'error')
@@ -61,21 +47,17 @@ export default function OrderConfigSection() {
             const outboundMap: Record<string, string[]> = {}
 
             systemsList.forEach((sys: any) => {
-                const config = configsData?.find((c: any) => c.system_code === sys.code)
-
                 let inMods: string[] = []
                 let outMods: string[] = []
 
-                if (config) {
-                    if (Array.isArray(config.inbound_modules)) inMods = config.inbound_modules
-                    else if (typeof config.inbound_modules === 'string') {
-                        try { inMods = JSON.parse(config.inbound_modules) } catch (e) { inMods = [] }
-                    }
+                if (Array.isArray(sys.inbound_modules)) inMods = sys.inbound_modules
+                else if (typeof sys.inbound_modules === 'string') {
+                    try { inMods = JSON.parse(sys.inbound_modules) } catch (e) { inMods = [] }
+                }
 
-                    if (Array.isArray(config.outbound_modules)) outMods = config.outbound_modules
-                    else if (typeof config.outbound_modules === 'string') {
-                        try { outMods = JSON.parse(config.outbound_modules) } catch (e) { outMods = [] }
-                    }
+                if (Array.isArray(sys.outbound_modules)) outMods = sys.outbound_modules
+                else if (typeof sys.outbound_modules === 'string') {
+                    try { outMods = JSON.parse(sys.outbound_modules) } catch (e) { outMods = [] }
                 }
 
                 inboundMap[sys.code] = inMods
@@ -123,14 +105,14 @@ export default function OrderConfigSection() {
             outMods = ['outbound_basic', ...outMods]
         }
 
-        // Upsert system_configs
+        // Update systems table
         const { error } = await (supabase
-            .from('system_configs') as any)
-            .upsert({
-                system_code: sysCode,
+            .from('systems') as any)
+            .update({
                 inbound_modules: inMods,
                 outbound_modules: outMods
-            }, { onConflict: 'system_code' })
+            })
+            .eq('code', sysCode)
 
         if (error) {
             showToast('Lỗi lưu cấu hình: ' + error.message, 'error')

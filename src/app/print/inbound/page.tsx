@@ -197,9 +197,9 @@ function InboundPrintContent() {
                     // Fetch system config based on order's system_code
                     if (o.system_code) {
                         const { data: sysData } = await supabase
-                            .from('system_configs')
+                            .from('systems')
                             .select('*')
-                            .eq('system_code', o.system_code)
+                            .eq('code', o.system_code)
                             .single()
                         if (sysData) setSystemConfig(sysData)
                     }

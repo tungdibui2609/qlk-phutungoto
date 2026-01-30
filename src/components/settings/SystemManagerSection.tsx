@@ -154,7 +154,7 @@ export default function SystemManagerSection() {
                     const tables = [
                         'units', 'products', 'customers', 'suppliers',
                         'inbound_orders', 'outbound_orders', 'order_types',
-                        'qc_info', 'categories', 'locations', 'system_configs'
+                        'qc_info', 'categories', 'locations'
                     ]
 
                     for (const table of tables) {

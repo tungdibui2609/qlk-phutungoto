@@ -114,14 +114,11 @@ export async function POST(request: Request) {
             }
         }
 
-        // STEP C: Delete Config/Master Data
         console.log('Step C: Deleting Config and Master Data...')
         await Promise.all([
             deleteByCompany('categories'),
             deleteByCompany('units'),
             deleteByCompany('systems'),
-            // deleteByCompany('systems'), // Duplicate line removed
-            deleteByCompany('system_configs'),
             // company_settings uses 'id' as company_id
             supabaseAdmin.from('company_settings').delete().eq('id', companyId),
             deleteByCompany('master_tags'),

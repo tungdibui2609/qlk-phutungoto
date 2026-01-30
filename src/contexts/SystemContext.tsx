@@ -65,28 +65,18 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
 
     async function fetchSystems() {
       const { data: systemsData } = await (supabase.from('systems') as any).select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
-      const { data: configsData } = await (supabase.from('system_configs') as any).select('*')
 
       if (systemsData) {
-        // Merge configs into systems
+        // Parse modules from systems table
         let mergedSystems = systemsData.map((sys: any) => {
-          const config = configsData?.find((c: any) => c.system_code === sys.code)
-
-          // Smart merge modules to avoid overwriting with empty
-          const sysModules = sys.modules ? (typeof sys.modules === 'string' ? JSON.parse(sys.modules) : sys.modules) : null;
-          const configModules = config?.modules ? (typeof config.modules === 'string' ? JSON.parse(config.modules) : config.modules) : null;
-
-          const finalModules = (configModules && Object.keys(configModules).length > 0)
-            ? configModules
-            : (sysModules || {});
+          const sysModules = sys.modules ? (typeof sys.modules === 'string' ? JSON.parse(sys.modules) : sys.modules) : {};
 
           return {
             ...sys,
-            ...config,
-            modules: finalModules,
-            inbound_modules: config?.inbound_modules || sys.inbound_modules || [],
-            outbound_modules: config?.outbound_modules || sys.outbound_modules || [],
-            dashboard_modules: config?.dashboard_modules || sys.dashboard_modules || []
+            modules: sysModules,
+            inbound_modules: sys.inbound_modules || [],
+            outbound_modules: sys.outbound_modules || [],
+            dashboard_modules: sys.dashboard_modules || []
           }
         })
 
@@ -142,17 +132,6 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
           event: '*',
           schema: 'public',
           table: 'systems'
-        },
-        () => {
-          fetchSystems()
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'system_configs'
         },
         () => {
           fetchSystems()
