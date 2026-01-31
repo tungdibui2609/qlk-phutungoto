@@ -29,11 +29,13 @@ export default function UnifiedSystemConfig() {
     const { checkSubscription } = useUser()
     const { showToast } = useToast()
 
-    // Selecting System
     const [selectedSystemCode, setSelectedSystemCode] = useState<string>('')
     const [isDropdownOpen, setIsDropdownOpen] = useState(false)
 
-    // Configuration State
+    // Derived current system from Context (Realtime)
+    const currentSystem = systems.find(s => s.code === selectedSystemCode)
+
+    // Configuration State (Editable)
     const [config, setConfig] = useState<{
         inbound: string[],
         outbound: string[],
@@ -45,7 +47,6 @@ export default function UnifiedSystemConfig() {
         inbound: [], outbound: [], product: [], lot: [], dashboard: [], utility: []
     })
 
-    const [loading, setLoading] = useState(false)
     const [saving, setSaving] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
     const [activeCategory, setActiveCategory] = useState<string>('all')
@@ -57,64 +58,32 @@ export default function UnifiedSystemConfig() {
         }
     }, [systems])
 
-    // Fetch configuration when system selection changes
+    // Sync State with Realtime Context
     useEffect(() => {
-        if (selectedSystemCode) {
-            fetchSystemConfig(selectedSystemCode)
+        if (!currentSystem) return
+
+        const parseProducts = () => {
+            const m = currentSystem.modules
+            if (Array.isArray(m)) return m as string[]
+            if (typeof m === 'object' && m !== null) return (m as any).product_modules || []
+            return []
         }
-    }, [selectedSystemCode])
-
-    const fetchSystemConfig = async (sysCode: string) => {
-        setLoading(true)
-        try {
-            const { data, error } = await supabase.from('systems').select('*').eq('code', sysCode).single()
-            if (error) throw error
-
-            const sys = data as any
-
-            // Parse modules
-            const inbound = Array.isArray(sys.inbound_modules) ? sys.inbound_modules :
-                (typeof sys.inbound_modules === 'string' ? JSON.parse(sys.inbound_modules) : [])
-
-            const outbound = Array.isArray(sys.outbound_modules) ? sys.outbound_modules :
-                (typeof sys.outbound_modules === 'string' ? JSON.parse(sys.outbound_modules) : [])
-
-            const lot = Array.isArray(sys.lot_modules) ? sys.lot_modules :
-                (typeof sys.lot_modules === 'string' ? JSON.parse(sys.lot_modules) : [])
-
-            const dashboard = Array.isArray(sys.dashboard_modules) ? sys.dashboard_modules :
-                (typeof sys.dashboard_modules === 'string' ? JSON.parse(sys.dashboard_modules) : [])
-
-            // Parse 'modules' JSON column which contains multiple types
-            let product: string[] = []
-            let utility: string[] = []
-
-            if (sys.modules) {
-                if (Array.isArray(sys.modules)) {
-                    // Legacy: array means product modules
-                    product = sys.modules
-                } else if (typeof sys.modules === 'object') {
-                    // New structure: object
-                    if (Array.isArray(sys.modules.product_modules)) product = sys.modules.product_modules
-                    if (Array.isArray(sys.modules.utility_modules)) utility = sys.modules.utility_modules
-                }
-            }
-
-            setConfig({
-                inbound: inbound || [],
-                outbound: outbound || [],
-                product: product || [],
-                lot: lot || [],
-                dashboard: dashboard || [],
-                utility: utility || []
-            })
-        } catch (error: any) {
-            console.error('Error fetching system config:', error)
-            showToast('Lỗi tải cấu hình: ' + error.message, 'error')
-        } finally {
-            setLoading(false)
+        const parseUtility = () => {
+            const m = currentSystem.modules
+            if (typeof m === 'object' && m !== null && !Array.isArray(m)) return (m as any).utility_modules || []
+            return []
         }
-    }
+
+        setConfig({
+            inbound: Array.isArray(currentSystem.inbound_modules) ? currentSystem.inbound_modules as string[] : [],
+            outbound: Array.isArray(currentSystem.outbound_modules) ? currentSystem.outbound_modules as string[] : [],
+            lot: Array.isArray(currentSystem.lot_modules) ? currentSystem.lot_modules as string[] : [],
+            dashboard: Array.isArray(currentSystem.dashboard_modules) ? currentSystem.dashboard_modules as string[] : [],
+            product: parseProducts(),
+            utility: parseUtility()
+        })
+    }, [currentSystem])
+
 
     const handleToggle = (moduleId: string, category: string) => {
         let type: keyof typeof config | null = null
@@ -292,7 +261,7 @@ export default function UnifiedSystemConfig() {
             </div>
 
             {
-                loading ? (
+                systems.length === 0 ? (
                     <div className="flex justify-center py-20"><Loader2 className="animate-spin text-stone-400" size={32} /></div>
                 ) : (
                     <div className="space-y-8">

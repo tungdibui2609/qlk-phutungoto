@@ -5,6 +5,11 @@ import { useRouter, usePathname } from 'next/navigation'
 
 import { supabase } from '@/lib/supabaseClient'
 import { BASIC_MODULE_IDS } from '@/lib/basic-modules'
+import { INBOUND_MODULES, OUTBOUND_MODULES } from '@/lib/order-modules'
+import { PRODUCT_MODULES } from '@/lib/product-modules'
+import { LOT_MODULES } from '@/lib/lot-modules'
+import { DASHBOARD_MODULES } from '@/lib/dashboard-modules'
+import { UTILITY_MODULES } from '@/lib/utility-modules'
 import { useUser } from './UserContext' // [NEW] Import
 
 export type SystemType = string // Was rigid Enum, now string
@@ -148,6 +153,24 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
             sort_order: 4
           }
         ]
+      } else {
+        // [NEW] Sync Logic: Respect DB Config. Default ONLY if null.
+
+        const getDefaults = (data: any, allModules: any[]) => {
+          if (data === null || data === undefined) {
+            return allModules.filter((m: any) => m.is_basic).map((m: any) => m.id)
+          }
+          return Array.isArray(data) ? data : []
+        }
+
+        mergedSystems = mergedSystems.map((sys: any) => ({
+          ...sys,
+          inbound_modules: getDefaults(sys.inbound_modules, INBOUND_MODULES),
+          outbound_modules: getDefaults(sys.outbound_modules, OUTBOUND_MODULES),
+          lot_modules: getDefaults(sys.lot_modules, LOT_MODULES),
+          dashboard_modules: getDefaults(sys.dashboard_modules, DASHBOARD_MODULES),
+          utility_modules: getDefaults(sys.utility_modules, UTILITY_MODULES)
+        }))
       }
 
       setSystems(mergedSystems)
@@ -157,9 +180,9 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     fetchSystems()
 
-    // Realtime subscription
-    const channel = supabase
-      .channel('systems_changes')
+    // Realtime subscription for SYSTEMS
+    const systemChannel = supabase
+      .channel('public:systems')
       .on(
         'postgres_changes',
         {
@@ -167,20 +190,25 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
           schema: 'public',
           table: 'systems'
         },
-        () => {
+        (payload) => {
+          console.log('System updated, refreshing...', payload)
           fetchSystems()
         }
       )
+      .subscribe()
+
+    // Realtime subscription for COMPANIES (Licenses)
+    const companyChannel = supabase
+      .channel('public:companies')
       .on(
         'postgres_changes',
         {
           event: 'UPDATE',
           schema: 'public',
           table: 'companies',
-          filter: `id=eq.${session?.user?.user_metadata?.company_id || ''}` // Filter isn't perfect here due to profile fetch delay, but safe enough or use broad filter
+          filter: `id=eq.${session?.user?.user_metadata?.company_id || ''}`
         },
         (payload) => {
-          // Handle company update
           const newCompany = payload.new as any;
           if (newCompany && newCompany.unlocked_modules) {
             setUnlockedModules(newCompany.unlocked_modules)
@@ -190,7 +218,8 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       .subscribe()
 
     return () => {
-      supabase.removeChannel(channel)
+      supabase.removeChannel(systemChannel)
+      supabase.removeChannel(companyChannel)
     }
   }, [accessToken])
 
@@ -278,6 +307,10 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       if (!unlockedModules.includes(moduleId)) return false
       return outboundModules.includes(moduleId)
     }
+
+    // Enforce License Check for other modules (Product, Dashboard, Lot, Utility etc.)
+    // If not unlocked by Admin, it should not be active even if enabled in System Config.
+    if (!unlockedModules.includes(moduleId)) return false
 
     return productModules.includes(moduleId) ||
       dashboardModules.includes(moduleId) ||
