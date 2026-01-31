@@ -83,11 +83,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="min-h-screen bg-slate-50">
             {/* Admin Header */}
             <header className="bg-white border-b border-slate-200 h-16 px-6 flex items-center justify-between sticky top-0 z-50 shadow-sm">
-                <div className="flex items-center gap-3">
-                    <div className="bg-gradient-to-br from-amber-400 to-yellow-500 text-white p-2 rounded-lg shadow-lg shadow-amber-200/50">
-                        <ShieldAlert size={20} />
+                <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-gradient-to-br from-amber-400 to-yellow-500 text-white p-2 rounded-lg shadow-lg shadow-amber-200/50">
+                            <ShieldAlert size={20} />
+                        </div>
+                        <span className="font-bold text-lg text-slate-800">Super Admin Portal</span>
                     </div>
-                    <span className="font-bold text-lg text-slate-800">Super Admin Portal</span>
+
+                    {/* Navigation */}
+                    <nav className="hidden md:flex items-center gap-1">
+                        <a href="/admin/dashboard" className="px-3 py-2 text-sm font-medium text-slate-600 hover:text-amber-600 hover:bg-slate-50 rounded-lg transition-colors">
+                            Dashboard
+                        </a>
+                        <a href="/admin/companies" className="px-3 py-2 text-sm font-medium text-slate-600 hover:text-amber-600 hover:bg-slate-50 rounded-lg transition-colors">
+                            Công ty
+                        </a>
+                        <a href="/admin/modules" className="px-3 py-2 text-sm font-medium text-slate-600 hover:text-amber-600 hover:bg-slate-50 rounded-lg transition-colors">
+                            Modules
+                        </a>
+                    </nav>
                 </div>
 
                 <div className="relative" ref={dropdownRef}>

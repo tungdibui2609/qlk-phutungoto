@@ -285,6 +285,7 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
         generateSku,
         hasModule,
         currentSystem,
+        profile, // [NEW]
         handleSubmit
     }
 }

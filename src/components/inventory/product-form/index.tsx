@@ -38,7 +38,8 @@ export default function ProductForm({ initialData, isEditMode = false, readOnly 
         generateSku,
         hasModule,
         handleSubmit,
-        currentSystem
+        currentSystem,
+        profile // [NEW]
     } = useProductForm({ initialData, isEditMode, readOnly })
 
     const inputClass = readOnly
@@ -118,6 +119,8 @@ export default function ProductForm({ initialData, isEditMode = false, readOnly 
                             setMediaItems={setMediaItems}
                             readOnly={readOnly}
                             inputClass={inputClass}
+                            companyName={profile?.company_name}
+                            warehouseName={currentSystem?.name}
                         />
                     )}
 

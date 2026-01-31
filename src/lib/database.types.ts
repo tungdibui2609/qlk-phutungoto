@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_modules: {
+        Row: {
+          category: string
+          created_at: string
+          description: string | null
+          id: string
+          is_basic: boolean | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          description?: string | null
+          id: string
+          is_basic?: boolean | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_basic?: boolean | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       branches: {
         Row: {
           address: string | null

@@ -272,7 +272,7 @@ export default function UnifiedSystemConfig() {
                             // Check visibility
                             const visibleModules = modules.filter(m => {
                                 const matchesSearch = !searchTerm || m.name.toLowerCase().includes(searchTerm.toLowerCase())
-                                const CORE_HIDDEN = ['outbound_basic', 'images']
+                                const CORE_HIDDEN = ['inbound_basic', 'inbound_supplier', 'outbound_basic', 'outbound_customer', 'warehouse_name', 'images']
                                 const hasLicense = checkSubscription(m.id)
                                 return matchesSearch && !CORE_HIDDEN.includes(m.id) && hasLicense && !m.is_basic
                             })

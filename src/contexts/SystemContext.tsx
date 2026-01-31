@@ -55,6 +55,20 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
   // [NEW] Use UserContext
   const { activeModules, profile } = useUser()
 
+  // [NEW] Dynamic Basic Modules (Initialized with static fallback, updated from DB)
+  const [basicModuleIds, setBasicModuleIds] = useState<string[]>(BASIC_MODULE_IDS)
+
+  useEffect(() => {
+    const fetchBasicModules = async () => {
+      // Fetch dynamic definition of "Basic" modules from DB
+      const { data } = await supabase.from('app_modules').select('id').eq('is_basic', true)
+      if (data) {
+        setBasicModuleIds(data.map(m => m.id))
+      }
+    }
+    fetchBasicModules()
+  }, [])
+
   const router = useRouter()
   const pathname = usePathname()
 
@@ -251,7 +265,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
 
   const hasModule = (moduleId: string) => {
     // 1. Core System Modules: Always Enabled, Hidden from Admin
-    const CORE_MODULES = ['inbound_basic', 'outbound_basic', 'images']
+    const CORE_MODULES = ['inbound_basic', 'inbound_supplier', 'outbound_basic', 'outbound_customer', 'images', 'warehouse_name']
     if (CORE_MODULES.includes(moduleId)) {
       return true
     }
@@ -259,7 +273,8 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     // 2. Basic Modules (Default):
     // These are visible in Admin and can be toggled.
     // They generally should be enabled, but we respect the DB / System Config.
-    const isBasic = BASIC_MODULE_IDS.includes(moduleId)
+    // [UPDATED] Use dynamic basicModuleIds instead of static constant
+    const isBasic = basicModuleIds.includes(moduleId)
     if (isBasic) {
       if (unlockedModules.length > 0 && !unlockedModules.includes(moduleId)) return false;
 

@@ -45,6 +45,15 @@ export default function CompanyModulesPage() {
     const [filter, setFilter] = useState<'all' | 'basic' | 'advanced'>('all')
     const [selectedCategory, setSelectedCategory] = useState<string>('all')
     const [searchTerm, setSearchTerm] = useState('')
+    const [basicModuleIds, setBasicModuleIds] = useState<string[]>([])
+
+    useEffect(() => {
+        const fetchBasic = async () => {
+            const { data } = await supabase.from('app_modules').select('id').eq('is_basic', true)
+            if (data) setBasicModuleIds(data.map(x => x.id))
+        }
+        fetchBasic()
+    }, [])
 
     // Confirmation State
     const [confirmOpen, setConfirmOpen] = useState(false)
@@ -84,8 +93,8 @@ export default function CompanyModulesPage() {
 
     const handleToggle = (moduleId: string) => {
         const isCurrentlyUnlocked = unlockedModules.includes(moduleId)
-        const moduleInfo = ALL_MODULES.find(m => m.id === moduleId)
-        const isBasic = moduleInfo && 'is_basic' in moduleInfo && moduleInfo.is_basic
+        // Check dynamic Basic status
+        const isBasic = basicModuleIds.includes(moduleId)
 
         // If trying to DISABLE a BASIC module, ask for confirmation
         if (isCurrentlyUnlocked && isBasic) {
@@ -260,19 +269,20 @@ export default function CompanyModulesPage() {
 
                                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                                         {ALL_MODULES.filter(m => m.category === cat).filter(m => {
-                                            const CORE_HIDDEN: string[] = []
+                                            const CORE_HIDDEN: string[] = ['inbound_basic', 'inbound_supplier', 'outbound_basic', 'outbound_customer', 'warehouse_name', 'images']
                                             if (CORE_HIDDEN.includes(m.id)) return false
                                             return !searchTerm || m.name.toLowerCase().includes(searchTerm.toLowerCase())
                                         })
                                             .sort((a, b) => {
                                                 // Sort by Basic first
-                                                const aBasic = 'is_basic' in a && a.is_basic ? 1 : 0
-                                                const bBasic = 'is_basic' in b && b.is_basic ? 1 : 0
+                                                const aBasic = basicModuleIds.includes(a.id) ? 1 : 0
+                                                const bBasic = basicModuleIds.includes(b.id) ? 1 : 0
                                                 return bBasic - aBasic
                                             })
                                             .map(mod => {
-                                                const isBasic = 'is_basic' in mod && mod.is_basic
+                                                const isBasic = basicModuleIds.includes(mod.id)
                                                 const isUnlocked = unlockedModules.includes(mod.id)
+
 
                                                 return (
                                                     <div

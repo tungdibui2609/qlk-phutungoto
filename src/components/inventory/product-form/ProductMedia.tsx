@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Image as ImageIcon, Plus, X, Video, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Image as ImageIcon, Plus, X, Video, Maximize2, ChevronLeft, ChevronRight, UploadCloud, Loader2 } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/Dialog'
 
 interface ProductMediaProps {
@@ -7,11 +7,44 @@ interface ProductMediaProps {
     setMediaItems: React.Dispatch<React.SetStateAction<{ id?: string, url: string, type: 'image' | 'video' }[]>>
     readOnly: boolean
     inputClass: string
+    companyName?: string | null // [NEW]
+    warehouseName?: string | null // [NEW]
 }
 
-export function ProductMedia({ mediaItems, setMediaItems, readOnly, inputClass }: ProductMediaProps) {
+export function ProductMedia({ mediaItems, setMediaItems, readOnly, inputClass, companyName, warehouseName }: ProductMediaProps) {
     const [lightboxOpen, setLightboxOpen] = useState(false)
     const [currentImageIndex, setCurrentImageIndex] = useState(0)
+    const [uploading, setUploading] = useState(false)
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files?.[0]) return
+        const file = e.target.files[0]
+        setUploading(true)
+
+        const formData = new FormData()
+        formData.append('file', file)
+        if (companyName) formData.append('companyName', companyName)
+        if (warehouseName) formData.append('warehouseName', warehouseName)
+        formData.append('category', 'Sản phẩm') // [NEW] Phân loại folder theo module
+
+        try {
+            const res = await fetch('/api/google-drive-upload', { method: 'POST', body: formData })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'Upload failed')
+
+            setMediaItems(prev => [...prev, {
+                url: data.link,
+                type: 'image',
+                id: data.fileId
+            }])
+        } catch (error: any) {
+            console.error('Upload error:', error)
+            alert('Lỗi upload: ' + (error.message || 'Không xác định'))
+        } finally {
+            setUploading(false)
+            e.target.value = ''
+        }
+    }
 
     const openLightbox = (index: number) => {
         setCurrentImageIndex(index)
@@ -37,7 +70,7 @@ export function ProductMedia({ mediaItems, setMediaItems, readOnly, inputClass }
                 <div className="space-y-3">
                     <label className="block text-sm font-medium text-stone-700">Links (Ảnh / Video)</label>
                     {mediaItems.map((item, index) => (
-                        <div key={index} className="flex items-center gap-2">
+                        <div key={index} className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2 duration-300">
                             <select
                                 value={item.type}
                                 onChange={(e) => {
@@ -45,7 +78,7 @@ export function ProductMedia({ mediaItems, setMediaItems, readOnly, inputClass }
                                     newItems[index].type = e.target.value as any
                                     setMediaItems(newItems)
                                 }}
-                                className="w-24 p-2 bg-stone-50 border border-stone-200 rounded-lg text-sm"
+                                className="w-24 p-2 bg-stone-50 border border-stone-200 rounded-lg text-sm focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
                             >
                                 <option value="image">Ảnh</option>
                                 <option value="video">Video</option>
@@ -63,20 +96,42 @@ export function ProductMedia({ mediaItems, setMediaItems, readOnly, inputClass }
                             <button
                                 type="button"
                                 onClick={() => setMediaItems(prev => prev.filter((_, i) => i !== index))}
-                                className="p-2 text-stone-400 hover:text-red-500 hover:bg-stone-50 rounded-lg"
+                                className="p-2 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                             >
                                 <X size={18} />
                             </button>
                         </div>
                     ))}
-                    <button
-                        type="button"
-                        onClick={() => setMediaItems(prev => [...prev, { url: '', type: 'image' }])}
-                        className="flex items-center gap-2 text-sm text-orange-600 font-medium hover:text-orange-700 px-2"
-                    >
-                        <Plus size={16} />
-                        Thêm Link Media
-                    </button>
+
+                    <div className="flex flex-wrap items-center gap-3 pt-2">
+                        <button
+                            type="button"
+                            onClick={() => setMediaItems(prev => [...prev, { url: '', type: 'image' }])}
+                            className="flex items-center gap-2 text-sm text-stone-600 font-medium hover:text-stone-800 px-3 py-2 rounded-lg hover:bg-stone-100 transition-colors border border-dashed border-stone-300"
+                        >
+                            <Plus size={16} />
+                            Thêm Link thủ công
+                        </button>
+
+                        <div className="h-6 w-px bg-stone-200 hidden sm:block"></div>
+
+                        <label className={`flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-lg transition-all cursor-pointer shadow-sm border
+                            ${uploading
+                                ? 'bg-stone-50 text-stone-400 border-stone-200 cursor-not-allowed'
+                                : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50 hover:border-blue-300 hover:shadow-md hover:shadow-blue-100'
+                            }
+                        `}>
+                            {uploading ? <Loader2 size={18} className="animate-spin" /> : <UploadCloud size={18} />}
+                            {uploading ? 'Đang tải lên Drive...' : 'Upload ảnh lên Google Drive'}
+                            <input
+                                type="file"
+                                className="hidden"
+                                accept="image/*"
+                                onChange={handleFileUpload}
+                                disabled={uploading}
+                            />
+                        </label>
+                    </div>
                 </div>
             )}
 

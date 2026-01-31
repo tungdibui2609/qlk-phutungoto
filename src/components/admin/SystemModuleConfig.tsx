@@ -46,11 +46,21 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
     const [saving, setSaving] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
     const [activeCategory, setActiveCategory] = useState<string>('all')
+    const [basicModuleIds, setBasicModuleIds] = useState<string[]>([])
+
+    const fetchBasic = async () => {
+        const { data } = await supabase.from('app_modules').select('id').eq('is_basic', true)
+        if (data) setBasicModuleIds(data.map(x => x.id))
+    }
+
+    useEffect(() => {
+        fetchBasic()
+    }, [])
 
     useEffect(() => {
         if (systemId) {
             fetchSystemConfig()
-
+            fetchBasic() // Ensure we have latest data
             // Subscribe to realtime changes
             const channel = supabase
                 .channel(`admin_system_config_${systemId}`)
@@ -223,7 +233,7 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
                         <button onClick={onBack} className="text-sm text-stone-500 hover:text-orange-600 hover:underline">
                             ← Quay lại danh sách
                         </button>
-                        <button onClick={() => { fetchSystemConfig(); fetchCompanyLicenses(); }} className="p-1 hover:bg-stone-100 rounded-full text-stone-400 hover:text-orange-600 transition-colors" title="Tải lại dữ liệu">
+                        <button onClick={() => { fetchSystemConfig(); fetchCompanyLicenses(); fetchBasic(); }} className="p-1 hover:bg-stone-100 rounded-full text-stone-400 hover:text-orange-600 transition-colors" title="Tải lại dữ liệu">
                             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
                         </button>
                     </div>
@@ -272,8 +282,12 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
                     {categories.filter(cat => activeCategory === 'all' || activeCategory === cat).map(cat => {
                         const modules = ALL_MODULES.filter(m => m.category === cat)
                         const visibleModules = modules.filter(m => {
+                            // [NEW] Hide core modules
+                            if (['inbound_basic', 'inbound_supplier', 'outbound_basic', 'outbound_customer', 'warehouse_name', 'images'].includes(m.id)) return false
                             const matchesSearch = !searchTerm || m.name.toLowerCase().includes(searchTerm.toLowerCase())
-                            const hasLicense = companyLicenses.includes(m.id) || (('is_basic' in m) && m.is_basic) // ALWAYS SHOW BASIC
+                            // [UPDATED] Check dynamic basic status
+                            const isBasic = basicModuleIds.includes(m.id)
+                            const hasLicense = companyLicenses.includes(m.id) || isBasic
                             return matchesSearch && hasLicense
                         })
                         if (visibleModules.length === 0) return null
@@ -314,7 +328,12 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
                                                     {isChecked && <Check size={12} className="text-white" />}
                                                 </div>
                                                 <div>
-                                                    <div className={`font-bold text-sm ${isUnlocked ? 'text-blue-900' : 'text-stone-800'}`}>{mod.name}</div>
+                                                    <div className={`font-bold text-sm ${isUnlocked ? 'text-blue-900' : 'text-stone-800'} flex flex-wrap items-center gap-1.5`}>
+                                                        {mod.name}
+                                                        {basicModuleIds.includes(mod.id) && (
+                                                            <span className="bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-wider font-bold">Default</span>
+                                                        )}
+                                                    </div>
                                                     <div className="text-xs text-stone-500 line-clamp-2 mt-0.5">{mod.description}</div>
                                                 </div>
                                             </div>

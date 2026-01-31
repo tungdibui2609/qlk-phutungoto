@@ -15,6 +15,7 @@ type UserProfile = {
     favorite_menus: string[] | null
     allowed_systems: string[] | null
     company_id: string | null
+    company_name: string | null // [NEW]
     department: string | null
     roles: { name: string; code: string } | null
     account_level: number | null // 1=Super Admin, 2=Company Admin, 3=Employee
@@ -61,11 +62,13 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
                     if (data.company_id) {
                         const { data: companyData, error: companyError } = await supabase
                             .from('companies')
-                            .select('unlocked_modules')
+                            .select('name, unlocked_modules') // Fetch name
                             .eq('id', data.company_id)
                             .single()
 
                         if (!companyError && companyData) {
+                            // Update profile with company name
+                            setProfile(prev => prev ? { ...prev, company_name: companyData.name } : null)
                             // SUPERUSER BYPASS: Inject all modules for specific email
                             if (authUser.email === 'tungdibui2609@gmail.com') {
                                 // Import dynamically or hardcode list? 

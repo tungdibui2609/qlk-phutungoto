@@ -118,6 +118,16 @@ export async function POST(request: Request) {
             }
         }
 
+        // 0.1 Fetch Dynamic Basic Modules (to set initial unlocked)
+        const { data: basicModulesData } = await supabaseAdmin
+            .from('app_modules')
+            .select('id')
+            .eq('is_basic', true)
+
+        const dynamicBasicIds = basicModulesData && basicModulesData.length > 0
+            ? basicModulesData.map(m => m.id)
+            : BASIC_MODULE_IDS
+
         // 1. Create Company
         const { data: company, error: companyError } = await supabaseAdmin
             .from('companies')
@@ -128,7 +138,7 @@ export async function POST(request: Request) {
                 phone,
                 email,
                 tax_code,
-                unlocked_modules: BASIC_MODULE_IDS // Auto-unlock default modules
+                unlocked_modules: dynamicBasicIds // Auto-unlock default modules
             })
             .select()
             .single()
