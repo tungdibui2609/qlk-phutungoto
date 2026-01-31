@@ -6,7 +6,7 @@ import CompanyInfoSection from '@/components/settings/CompanyInfoSection'
 import BranchManagerSection from '@/components/settings/BranchManagerSection'
 import SystemManagerSection from '@/components/settings/SystemManagerSection'
 import MenuManagerSection from '@/components/settings/MenuManagerSection'
-import OperationModelSection from '@/components/settings/OperationModelSection'
+
 import UnifiedSystemConfig from '@/components/settings/UnifiedSystemConfig'
 import {
     Building2,
@@ -15,12 +15,12 @@ import {
     LayoutGrid,
     List,
     ArrowLeft,
-    Sparkles,
+
     Cpu
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type Tab = 'company' | 'operation_model' | 'branches' | 'systems' | 'system_config' | 'menus'
+type Tab = 'company' | 'branches' | 'systems' | 'system_config' | 'menus'
 
 import { useState } from 'react'
 
@@ -31,7 +31,7 @@ export default function SettingsPage() {
 
     const tabs = [
         { id: 'company' as Tab, label: 'Thông tin công ty', icon: Building2 },
-        { id: 'operation_model' as Tab, label: 'Mô hình Vận hành', icon: Sparkles },
+
         { id: 'branches' as Tab, label: 'Quản lý Chi nhánh', icon: Store },
         { id: 'systems' as Tab, label: 'Danh sách Kho', icon: LayoutGrid },
         { id: 'system_config' as Tab, label: 'Cấu hình Phân hệ', icon: Cpu },
@@ -151,7 +151,6 @@ export default function SettingsPage() {
 
                     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
                         {activeTab === 'company' && <CompanyInfoSection />}
-                        {activeTab === 'operation_model' && <OperationModelSection />}
                         {activeTab === 'branches' && <BranchManagerSection />}
                         {activeTab === 'systems' && <SystemManagerSection />}
                         {activeTab === 'system_config' && <UnifiedSystemConfig />}
