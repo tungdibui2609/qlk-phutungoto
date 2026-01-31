@@ -122,20 +122,21 @@ export default function CompanyModulesPage() {
         }
     }
 
+    // Color scheme: Gold/Amber (Thổ sinh Kim) + Slate (Kim bản mệnh) - Phong thủy mệnh Kim
     if (loading) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen gap-4 bg-white">
-                <div className="w-12 h-12 border-4 border-emerald-100 border-t-emerald-600 rounded-full animate-spin"></div>
-                <p className="text-emerald-600 font-medium font-serif italic text-lg">Đang tải cấu hình...</p>
+            <div className="flex flex-col items-center justify-center min-h-screen gap-4 bg-slate-50">
+                <div className="w-12 h-12 border-4 border-amber-100 border-t-amber-500 rounded-full animate-spin"></div>
+                <p className="text-slate-600 font-medium text-lg">Đang tải cấu hình...</p>
             </div>
         )
     }
 
     if (!company) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen gap-4 bg-white">
-                <p className="text-emerald-700 font-bold text-xl">Không tìm thấy thông tin công ty</p>
-                <Link href="/admin/dashboard" className="text-emerald-600 hover:underline">Quay lại Dashboard</Link>
+            <div className="flex flex-col items-center justify-center min-h-screen gap-4 bg-slate-50">
+                <p className="text-slate-700 font-bold text-xl">Không tìm thấy thông tin công ty</p>
+                <Link href="/admin/dashboard" className="text-amber-600 hover:underline font-medium">Quay lại Dashboard</Link>
             </div>
         )
     }
@@ -143,29 +144,29 @@ export default function CompanyModulesPage() {
     const categories = Array.from(new Set(ALL_MODULES.map(m => m.category)))
 
     return (
-        <div className="min-h-screen bg-white pb-20">
+        <div className="min-h-screen bg-slate-50 pb-20">
             {/* Header */}
-            <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-emerald-100 shadow-sm">
+            <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-sm">
                 <div className="max-w-7xl mx-auto px-4 md:px-6 py-3 md:py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="flex items-center gap-4">
                         <Link
                             href="/admin/dashboard"
-                            className="p-2 hover:bg-emerald-50 rounded-full transition-colors group"
+                            className="p-2 hover:bg-slate-100 rounded-full transition-colors group"
                         >
-                            <ArrowLeft size={24} className="text-emerald-500 group-hover:text-emerald-600" />
+                            <ArrowLeft size={24} className="text-slate-500 group-hover:text-slate-700" />
                         </Link>
                         <div>
-                            <h1 className="text-xl md:text-2xl font-black text-emerald-800 leading-none">Cấu hình Module Dịch vụ</h1>
+                            <h1 className="text-xl md:text-2xl font-black text-slate-800 leading-none">Cấu hình Module Dịch vụ</h1>
                             <div className="flex items-center gap-2 mt-2">
-                                <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-[10px] md:text-xs font-bold rounded uppercase tracking-wider">Doanh nghiệp</span>
-                                <p className="text-xs md:text-sm font-bold text-emerald-700 truncate max-w-[200px] md:max-w-none">{company.name}</p>
+                                <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] md:text-xs font-bold rounded uppercase tracking-wider">Doanh nghiệp</span>
+                                <p className="text-xs md:text-sm font-bold text-slate-600 truncate max-w-[200px] md:max-w-none">{company.name}</p>
                             </div>
                         </div>
                     </div>
 
                     <div className="flex gap-3 w-full md:w-auto">
                         <div className="relative flex-1 md:w-96">
-                            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-orange-500">
+                            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-400">
                                 <Search size={18} />
                             </div>
                             <input
@@ -173,13 +174,13 @@ export default function CompanyModulesPage() {
                                 placeholder="Tìm kiếm module..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2.5 bg-orange-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-orange-500 transition-all font-medium text-orange-700"
+                                className="w-full pl-10 pr-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400 transition-all font-medium text-slate-700 placeholder:text-slate-400"
                             />
                         </div>
                         <button
                             onClick={handleSave}
                             disabled={saving}
-                            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-10 py-2.5 bg-orange-600 text-white font-bold rounded-xl hover:bg-orange-700 active:scale-95 transition-all text-sm shadow-xl shadow-orange-100 disabled:opacity-50"
+                            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-10 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 text-white font-bold rounded-xl hover:from-amber-600 hover:to-yellow-600 active:scale-95 transition-all text-sm shadow-xl shadow-amber-200/50 disabled:opacity-50"
                         >
                             {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                             {saving ? 'Đang lưu...' : 'Lưu Thay Đổi'}
@@ -194,15 +195,15 @@ export default function CompanyModulesPage() {
                         .filter(cat => selectedCategory === 'all' || selectedCategory === cat)
                         .map(cat => (
                             <section key={cat} className="space-y-4">
-                                <div className="flex items-center gap-3 pb-2 border-b border-emerald-100">
-                                    <div className="p-2 bg-orange-50 text-orange-600 rounded-lg">
+                                <div className="flex items-center gap-3 pb-2 border-b border-slate-200">
+                                    <div className="p-2 bg-amber-100 text-amber-600 rounded-lg">
                                         {(cat === 'Nhập kho' || cat === 'Xuất kho' || cat === 'Sản phẩm') && <Package size={18} />}
                                         {cat === 'Quản lý LOT' && <Archive size={18} />}
                                         {cat === 'Dashboard' && <LayoutDashboard size={18} />}
                                         {cat === 'Tiện ích hệ thống' && <Cog size={18} />}
                                     </div>
-                                    <h2 className="text-base md:text-lg font-bold text-emerald-700 uppercase tracking-wide">{cat}</h2>
-                                    <span className="text-[10px] md:text-xs font-medium px-2 py-0.5 bg-orange-50 text-orange-600 rounded-full">
+                                    <h2 className="text-base md:text-lg font-bold text-slate-700 uppercase tracking-wide">{cat}</h2>
+                                    <span className="text-[10px] md:text-xs font-medium px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full">
                                         {ALL_MODULES.filter(m => m.category === cat).length} module
                                     </span>
                                 </div>
@@ -212,51 +213,58 @@ export default function CompanyModulesPage() {
                                         const CORE_HIDDEN = ['inbound_basic', 'outbound_basic', 'images']
                                         if (CORE_HIDDEN.includes(m.id)) return false
                                         return !searchTerm || m.name.toLowerCase().includes(searchTerm.toLowerCase())
-                                    }).map(mod => {
-                                        const isBasic = 'is_basic' in mod && mod.is_basic
-                                        const isUnlocked = unlockedModules.includes(mod.id)
+                                    })
+                                        .sort((a, b) => {
+                                            // Sort by Basic first
+                                            const aBasic = 'is_basic' in a && a.is_basic ? 1 : 0
+                                            const bBasic = 'is_basic' in b && b.is_basic ? 1 : 0
+                                            return bBasic - aBasic
+                                        })
+                                        .map(mod => {
+                                            const isBasic = 'is_basic' in mod && mod.is_basic
+                                            const isUnlocked = unlockedModules.includes(mod.id)
 
-                                        return (
-                                            <div
-                                                key={mod.id}
-                                                onClick={() => handleToggle(mod.id)}
-                                                className={`
+                                            return (
+                                                <div
+                                                    key={mod.id}
+                                                    onClick={() => handleToggle(mod.id)}
+                                                    className={`
                                                 relative flex flex-col p-3 rounded-xl border transition-all cursor-pointer select-none
                                                 ${isUnlocked
-                                                        ? 'bg-orange-50/30 border-orange-500 shadow-sm shadow-orange-100'
-                                                        : 'bg-emerald-50/50 border-emerald-300 hover:border-emerald-400 hover:bg-emerald-100/30 transition-all'
-                                                    }
+                                                            ? 'bg-amber-50/50 border-amber-400 shadow-sm shadow-amber-100'
+                                                            : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all'
+                                                        }
                                             `}
-                                            >
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <div className={`p-1.5 rounded-md ${isUnlocked ? 'bg-orange-600 text-white' : 'bg-emerald-100 text-emerald-600'}`}>
-                                                        <mod.icon size={14} />
-                                                    </div>
-                                                    <div className={`
-                                                        w-8 h-4 rounded-full relative transition-colors
-                                                        ${isUnlocked ? 'bg-orange-600' : 'bg-emerald-200'}
-                                                    `}>
+                                                >
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div className={`p-1.5 rounded-md ${isUnlocked ? 'bg-gradient-to-br from-amber-500 to-yellow-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                                            <mod.icon size={14} />
+                                                        </div>
                                                         <div className={`
+                                                        w-8 h-4 rounded-full relative transition-colors
+                                                        ${isUnlocked ? 'bg-gradient-to-r from-amber-500 to-yellow-500' : 'bg-slate-200'}
+                                                    `}>
+                                                            <div className={`
                                                             absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-transform
                                                             ${isUnlocked ? 'translate-x-[18px]' : 'translate-x-[2px]'}
                                                         `}></div>
+                                                        </div>
                                                     </div>
-                                                </div>
 
-                                                <div>
-                                                    <div className="flex items-center gap-1 mb-1">
-                                                        <h3 className={`font-bold text-sm leading-tight ${isUnlocked ? 'text-emerald-800' : 'text-emerald-700'}`}>
-                                                            {mod.name}
-                                                        </h3>
-                                                        {isBasic && <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1 rounded">DEFAULT</span>}
+                                                    <div>
+                                                        <div className="flex items-center gap-1 mb-1">
+                                                            <h3 className={`font-bold text-sm leading-tight ${isUnlocked ? 'text-slate-800' : 'text-slate-600'}`}>
+                                                                {mod.name}
+                                                            </h3>
+                                                            {isBasic && <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-1 rounded">DEFAULT</span>}
+                                                        </div>
+                                                        <p className="text-[10px] text-slate-500 line-clamp-2 leading-tight">
+                                                            {mod.description}
+                                                        </p>
                                                     </div>
-                                                    <p className="text-[10px] text-emerald-600 line-clamp-2 leading-tight">
-                                                        {mod.description}
-                                                    </p>
                                                 </div>
-                                            </div>
-                                        )
-                                    })}
+                                            )
+                                        })}
                                 </div>
                             </section>
                         ))}
@@ -279,3 +287,4 @@ export default function CompanyModulesPage() {
         </div>
     )
 }
+

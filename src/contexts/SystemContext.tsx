@@ -32,6 +32,7 @@ interface SystemContextType {
   currentSystem: System | undefined
   unlockedModules: string[]
   hasModule: (moduleId: string) => boolean
+  refreshSystems: () => Promise<void>
 }
 
 const SystemContext = createContext<SystemContextType | undefined>(undefined)
@@ -77,81 +78,83 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
   // Fetch systems (Keep existing logic, but remove fetchCompanyConfig call)
   const accessToken = session?.access_token
 
-  useEffect(() => {
-    if (!accessToken) return // Wait for valid session
+  const fetchSystems = async () => {
+    // If no session yet, we might want to skip or try public if RLS allows. 
+    // Assuming protected:
+    if (!accessToken) return
 
-    async function fetchSystems() {
-      const { data: systemsData } = await (supabase.from('systems') as any).select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
+    const { data: systemsData } = await (supabase.from('systems') as any).select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
 
-      if (systemsData) {
-        let mergedSystems = systemsData.map((sys: any) => {
-          let sysModules = sys.modules;
-          if (typeof sysModules === 'string') {
-            try { sysModules = JSON.parse(sysModules) } catch (e) { sysModules = {} }
-          }
-
-          let inbound = sys.inbound_modules
-          if (typeof inbound === 'string') {
-            try { inbound = JSON.parse(inbound) } catch (e) { inbound = [] }
-          }
-
-          let outbound = sys.outbound_modules
-          if (typeof outbound === 'string') {
-            try { outbound = JSON.parse(outbound) } catch (e) { outbound = [] }
-          }
-
-          return {
-            ...sys,
-            modules: sysModules || null,
-            inbound_modules: Array.isArray(inbound) ? inbound : [],
-            outbound_modules: Array.isArray(outbound) ? outbound : [],
-            dashboard_modules: sys.dashboard_modules,
-            lot_modules: sys.lot_modules
-          }
-        })
-
-        // Fallback if no systems found (New Company)
-        if (mergedSystems.length === 0) {
-          mergedSystems = [
-            {
-              code: 'FROZEN',
-              name: 'Kho Lạnh',
-              description: 'Quản lý kho lạnh, theo dõi nhiệt độ',
-              bg_color_class: 'bg-blue-600',
-              modules: {},
-              sort_order: 1
-            },
-            {
-              code: 'OFFICE',
-              name: 'Văn Phòng',
-              description: 'Quản lý văn phòng phẩm, thiết bị',
-              bg_color_class: 'bg-amber-600',
-              modules: {},
-              sort_order: 2
-            },
-            {
-              code: 'DRY',
-              name: 'Kho Khô',
-              description: 'Quản lý kho thường, vật tư',
-              bg_color_class: 'bg-stone-600',
-              modules: {},
-              sort_order: 3
-            },
-            {
-              code: 'PACKAGING',
-              name: 'Bao Bì',
-              description: 'Quản lý vật tư bao bì đóng gói',
-              bg_color_class: 'bg-green-600',
-              modules: {},
-              sort_order: 4
-            }
-          ]
+    if (systemsData) {
+      let mergedSystems = systemsData.map((sys: any) => {
+        let sysModules = sys.modules;
+        if (typeof sysModules === 'string') {
+          try { sysModules = JSON.parse(sysModules) } catch (e) { sysModules = {} }
         }
 
-        setSystems(mergedSystems)
-      }
-    }
+        let inbound = sys.inbound_modules
+        if (typeof inbound === 'string') {
+          try { inbound = JSON.parse(inbound) } catch (e) { inbound = [] }
+        }
 
+        let outbound = sys.outbound_modules
+        if (typeof outbound === 'string') {
+          try { outbound = JSON.parse(outbound) } catch (e) { outbound = [] }
+        }
+
+        return {
+          ...sys,
+          modules: sysModules || null,
+          inbound_modules: Array.isArray(inbound) ? inbound : [],
+          outbound_modules: Array.isArray(outbound) ? outbound : [],
+          dashboard_modules: sys.dashboard_modules,
+          lot_modules: sys.lot_modules
+        }
+      })
+
+      // Fallback if no systems found (New Company)
+      if (mergedSystems.length === 0) {
+        mergedSystems = [
+          {
+            code: 'FROZEN',
+            name: 'Kho Lạnh',
+            description: 'Quản lý kho lạnh, theo dõi nhiệt độ',
+            bg_color_class: 'bg-blue-600',
+            modules: {},
+            sort_order: 1
+          },
+          {
+            code: 'OFFICE',
+            name: 'Văn Phòng',
+            description: 'Quản lý văn phòng phẩm, thiết bị',
+            bg_color_class: 'bg-amber-600',
+            modules: {},
+            sort_order: 2
+          },
+          {
+            code: 'DRY',
+            name: 'Kho Khô',
+            description: 'Quản lý kho thường, vật tư',
+            bg_color_class: 'bg-stone-600',
+            modules: {},
+            sort_order: 3
+          },
+          {
+            code: 'PACKAGING',
+            name: 'Bao Bì',
+            description: 'Quản lý vật tư bao bì đóng gói',
+            bg_color_class: 'bg-green-600',
+            modules: {},
+            sort_order: 4
+          }
+        ]
+      }
+
+      setSystems(mergedSystems)
+    }
+  }
+
+  useEffect(() => {
     fetchSystems()
 
     // Realtime subscription
@@ -198,6 +201,17 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       setSystemTypeState(saved)
     }
   }, [])
+
+  // [NEW] Auto-switch system if current selection is invalid (e.g. deleted)
+  useEffect(() => {
+    if (systems.length > 0) {
+      const exists = systems.find(s => s.code === systemType)
+      if (!exists) {
+        console.warn(`System ${systemType} not found, switching to ${systems[0].code}`)
+        setSystemType(systems[0].code)
+      }
+    }
+  }, [systems, systemType])
 
   const setSystemType = (type: SystemType) => {
     localStorage.setItem('systemType', type)
@@ -278,7 +292,8 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     systems,
     currentSystem,
     unlockedModules,
-    hasModule
+    hasModule,
+    refreshSystems: fetchSystems
   }
 
   return (

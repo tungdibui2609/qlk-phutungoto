@@ -18,10 +18,15 @@ interface UseProductFormProps {
 
 export function useProductForm({ initialData, isEditMode, readOnly }: UseProductFormProps) {
     const router = useRouter()
-    const { systemType, currentSystem, hasModule } = useSystem()
+    const { systemType, currentSystem, hasModule, refreshSystems } = useSystem()
     const { profile } = useUser()
     const [loading, setLoading] = useState(false)
     const [categories, setCategories] = useState<Category[]>([])
+
+    // Force system refresh on mount to ensure latest config
+    useEffect(() => {
+        refreshSystems()
+    }, [])
 
     // Module specific states
     const [units, setUnits] = useState<Unit[]>([])
@@ -279,6 +284,7 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
         isGeneratingSku,
         generateSku,
         hasModule,
+        currentSystem,
         handleSubmit
     }
 }

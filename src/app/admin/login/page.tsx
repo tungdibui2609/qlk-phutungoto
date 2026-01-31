@@ -38,27 +38,32 @@ export default function AdminLoginPage() {
         }
     }
 
+    // Color scheme: Gold/Amber (Thổ sinh Kim) + Slate (Kim bản mệnh) - Phong thủy mệnh Kim
     return (
-        <div className="flex min-h-screen items-center justify-center p-4 relative overflow-hidden bg-stone-900 text-stone-100">
-            {/* Background Pattern */}
+        <div className="flex min-h-screen items-center justify-center p-4 relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-slate-100">
+            {/* Background Pattern - Gold/Amber grid for wealth and prosperity */}
             <div className="absolute inset-0 opacity-10"
                 style={{
-                    backgroundImage: `linear-gradient(#ea580c 1px, transparent 1px), linear-gradient(90deg, #ea580c 1px, transparent 1px)`,
+                    backgroundImage: `linear-gradient(#fbbf24 1px, transparent 1px), linear-gradient(90deg, #fbbf24 1px, transparent 1px)`,
                     backgroundSize: '40px 40px',
                 }}
             />
 
+            {/* Decorative gold glow */}
+            <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl"></div>
+            <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-yellow-500/10 rounded-full blur-3xl"></div>
+
             {/* Login Card */}
-            <div className="w-full max-w-md relative bg-stone-800 rounded-3xl border border-stone-700 p-10 shadow-2xl">
+            <div className="w-full max-w-md relative bg-slate-800/80 backdrop-blur-xl rounded-3xl border border-slate-700/50 p-10 shadow-2xl">
                 {/* Header */}
                 <div className="text-center mb-8">
-                    <div className="w-20 h-20 mx-auto mb-5 rounded-2xl flex items-center justify-center bg-stone-900 border border-stone-700 shadow-inner">
-                        <ShieldAlert size={40} className="text-orange-500" />
+                    <div className="w-20 h-20 mx-auto mb-5 rounded-2xl flex items-center justify-center bg-gradient-to-br from-amber-400 to-yellow-500 shadow-lg shadow-amber-500/30">
+                        <ShieldAlert size={40} className="text-white" />
                     </div>
                     <h1 className="text-2xl font-bold text-white tracking-tight">
                         Super Admin Portal
                     </h1>
-                    <p className="text-stone-400 text-sm mt-2">Dành riêng cho Quản trị viên hệ thống</p>
+                    <p className="text-slate-400 text-sm mt-2">Dành riêng cho Quản trị viên hệ thống</p>
                 </div>
 
                 {/* Error/Success Message */}
@@ -75,30 +80,30 @@ export default function AdminLoginPage() {
                 {/* Form */}
                 <form onSubmit={handleAuth} className="space-y-5">
                     <div>
-                        <label className="block text-sm font-medium text-stone-400 mb-2">Email Quản trị</label>
+                        <label className="block text-sm font-medium text-slate-400 mb-2">Email Quản trị</label>
                         <div className="relative">
-                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-500" size={18} />
+                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                             <input
                                 type="text"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 required
-                                className="w-full pl-12 pr-4 py-3.5 rounded-xl text-stone-200 transition-all duration-200 outline-none bg-stone-900 border border-stone-700 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 placeholder:text-stone-600"
+                                className="w-full pl-12 pr-4 py-3.5 rounded-xl text-slate-200 transition-all duration-200 outline-none bg-slate-900/50 border border-slate-600 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 placeholder:text-slate-600"
                                 placeholder="tungdibui2609@gmail.com"
                             />
                         </div>
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-stone-400 mb-2">Mật khẩu</label>
+                        <label className="block text-sm font-medium text-slate-400 mb-2">Mật khẩu</label>
                         <div className="relative">
-                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-500" size={18} />
+                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                             <input
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 required
-                                className="w-full pl-12 pr-4 py-3.5 rounded-xl text-stone-200 transition-all duration-200 outline-none bg-stone-900 border border-stone-700 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 placeholder:text-stone-600"
+                                className="w-full pl-12 pr-4 py-3.5 rounded-xl text-slate-200 transition-all duration-200 outline-none bg-slate-900/50 border border-slate-600 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 placeholder:text-slate-600"
                                 placeholder="••••••••"
                             />
                         </div>
@@ -107,7 +112,7 @@ export default function AdminLoginPage() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full py-4 px-4 font-semibold rounded-xl flex items-center justify-center gap-2 transition-all duration-200 text-white bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-orange-900/20"
+                        className="w-full py-4 px-4 font-semibold rounded-xl flex items-center justify-center gap-2 transition-all duration-200 text-white bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-amber-900/30"
                     >
                         {loading ? (
                             <>
@@ -123,7 +128,7 @@ export default function AdminLoginPage() {
                     </button>
 
                     <div className="text-center pt-4">
-                        <a href="/" className="text-sm text-stone-500 hover:text-stone-300 transition-colors">
+                        <a href="/" className="text-sm text-slate-500 hover:text-slate-300 transition-colors">
                             ← Quay lại trang chủ
                         </a>
                     </div>

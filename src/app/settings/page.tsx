@@ -22,7 +22,10 @@ import { cn } from '@/lib/utils'
 
 type Tab = 'company' | 'operation_model' | 'branches' | 'systems' | 'system_config' | 'menus'
 
+import { useState } from 'react'
+
 export default function SettingsPage() {
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
     const router = useRouter()
     const searchParams = useSearchParams()
 
@@ -45,10 +48,24 @@ export default function SettingsPage() {
 
     return (
         <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
-            {/* Sidebar Menu */}
-            <div className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col shadow-sm z-10">
-                {/* Logo / Header Area */}
-                <div className="p-4 border-b border-gray-100 dark:border-gray-700">
+            {/* Sidebar Menu - Responsive: Fixed on mobile (hidden by default), Static on desktop */}
+            <div className={cn(
+                "fixed inset-y-0 left-0 z-40 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col shadow-lg md:shadow-sm transition-transform duration-300 ease-in-out md:translate-x-0 md:static",
+                isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+            )}>
+                {/* Mobile Menu Header (Close Button) */}
+                <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center md:hidden">
+                    <span className="font-bold text-lg text-gray-900 dark:text-white">Menu</span>
+                    <button
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className="p-1 text-gray-500 hover:bg-gray-100 rounded-full"
+                    >
+                        <SettingsIcon size={20} />
+                    </button>
+                </div>
+
+                {/* Desktop Logo / Header Area */}
+                <div className="p-4 border-b border-gray-100 dark:border-gray-700 hidden md:block">
                     <button
                         onClick={() => router.push('/')}
                         className="flex items-center gap-2 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors mb-4 text-sm font-medium"
@@ -70,7 +87,10 @@ export default function SettingsPage() {
                         return (
                             <button
                                 key={tab.id}
-                                onClick={() => handleTabChange(tab.id)}
+                                onClick={() => {
+                                    handleTabChange(tab.id)
+                                    setIsMobileMenuOpen(false)
+                                }}
                                 className={cn(
                                     "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
                                     isActive
@@ -84,13 +104,39 @@ export default function SettingsPage() {
                         )
                     })}
                 </nav>
-
-                {/* Footer Area - Removed */}
-
             </div>
 
+            {/* Mobile Header & Overlay */}
+            <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 z-20 shadow-sm">
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => setIsMobileMenuOpen(true)}
+                        className="p-2 -ml-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                    >
+                        <List size={24} />
+                    </button>
+                    <span className="font-bold text-lg text-gray-900 dark:text-white">Cài Đặt</span>
+                </div>
+                <button
+                    onClick={() => router.push('/')}
+                    className="flex items-center gap-1 text-sm font-medium text-gray-500"
+                >
+                    <ArrowLeft size={16} /> Dashboard
+                </button>
+            </div>
+
+            {/* Mobile Sidebar Overlay */}
+            {
+                isMobileMenuOpen && (
+                    <div
+                        className="fixed inset-0 bg-black/50 z-30 md:hidden animate-in fade-in duration-200"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                    />
+                )
+            }
+
             {/* Main Content Area */}
-            <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 p-4 md:p-8">
+            <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 p-4 md:p-8 pt-20 md:pt-8 h-full">
                 <div className="max-w-7xl mx-auto">
                     {activeTab !== 'system_config' && (
                         <header className="mb-8 pl-1">

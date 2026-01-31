@@ -37,7 +37,8 @@ export default function ProductForm({ initialData, isEditMode = false, readOnly 
         isGeneratingSku,
         generateSku,
         hasModule,
-        handleSubmit
+        handleSubmit,
+        currentSystem
     } = useProductForm({ initialData, isEditMode, readOnly })
 
     const inputClass = readOnly
@@ -63,6 +64,8 @@ export default function ProductForm({ initialData, isEditMode = false, readOnly 
                         </h1>
                         <p className="text-stone-500 text-sm">
                             {readOnly ? 'Xem thông tin chi tiết' : 'Điền thông tin chi tiết'}
+                            <span className="mx-2 text-stone-300">|</span>
+                            Kho: <span className="font-bold text-orange-600">{currentSystem?.name || 'Đang tải...'}</span>
                         </p>
                     </div>
                 </div>

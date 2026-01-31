@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, Save, Package, Archive, Layers, LayoutDashboard, Cog, Check, Search, ShieldAlert, ShoppingBag, ShoppingCart } from 'lucide-react'
+import { Loader2, Save, Package, Archive, Layers, LayoutDashboard, Cog, Check, Search, ShieldAlert, ShoppingBag, ShoppingCart, ChevronDown } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
@@ -25,12 +25,13 @@ const ALL_MODULES = [
 ]
 
 export default function UnifiedSystemConfig() {
-    const { systems, unlockedModules } = useSystem() // Wait, useSystem uses 'unlockedModules'
+    const { systems, unlockedModules, refreshSystems } = useSystem()
     const { checkSubscription } = useUser()
     const { showToast } = useToast()
 
     // Selecting System
     const [selectedSystemCode, setSelectedSystemCode] = useState<string>('')
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false)
 
     // Configuration State
     const [config, setConfig] = useState<{
@@ -116,13 +117,8 @@ export default function UnifiedSystemConfig() {
     }
 
     const handleToggle = (moduleId: string, category: string) => {
-        // Determine which bucket this module belongs to based on ID prefix or category
-        // Assuming strict prefixes or reliable category mapping
-        // Better: use the 'type' from ALL_MODULES if available, but let's infer for now
-
         let type: keyof typeof config | null = null
 
-        // Map category to state key
         if (category === 'Nhập kho') type = 'inbound'
         else if (category === 'Xuất kho') type = 'outbound'
         else if (category === 'Sản phẩm') type = 'product'
@@ -144,10 +140,6 @@ export default function UnifiedSystemConfig() {
         if (!selectedSystemCode) return
         setSaving(true)
         try {
-            // Retrieve current 'modules' object to preserve other keys if any (though we re-fetched it)
-            // Ideally we just update what we know.
-            // But we need to merge 'product' and 'utility' into 'modules' JSON
-
             const modulesJson = {
                 product_modules: config.product,
                 utility_modules: config.utility
@@ -158,15 +150,15 @@ export default function UnifiedSystemConfig() {
                 outbound_modules: config.outbound,
                 lot_modules: config.lot,
                 dashboard_modules: config.dashboard,
-                modules: modulesJson // This overwrites 'modules' column with new structure
+                modules: modulesJson
             }).eq('code', selectedSystemCode)
 
             if (error) throw error
 
-            showToast(`Đã lưu cấu hình cho kho ${selectedSystemCode}`, 'success')
+            // Trigger realtime update immediately
+            await refreshSystems()
 
-            // Force refresh system context might be needed if it doesn't auto-update
-            // SystemContext listens to realtime, so it should be fine.
+            showToast(`Đã lưu cấu hình cho kho ${selectedSystemCode}`, 'success')
 
         } catch (error: any) {
             console.error('Error saving config:', error)
@@ -183,157 +175,211 @@ export default function UnifiedSystemConfig() {
         <div className="space-y-6 pb-20">
             {/* Header Control */}
             <div className="bg-white dark:bg-stone-900 p-3 md:p-4 rounded-2xl shadow-sm border border-stone-200 dark:border-stone-800 sticky top-0 z-20">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="w-full md:w-auto">
-                        <h2 className="text-base md:text-lg font-bold text-stone-900 dark:text-white">Cấu hình Phân hệ</h2>
+                        <h2 className="text-xl md:text-2xl font-bold text-stone-900 dark:text-white">Cấu hình Phân hệ</h2>
                     </div>
-                    <div className="flex items-center gap-2 w-full md:w-auto">
-                        <div className="relative flex-1 md:w-64">
-                            <select
-                                value={selectedSystemCode}
-                                onChange={(e) => setSelectedSystemCode(e.target.value)}
-                                className="w-full appearance-none pl-3 md:pl-4 pr-8 py-1.5 md:py-1.5 bg-white border border-orange-300 rounded-full font-medium text-xs md:text-sm text-stone-700 outline-none transition-all hover:border-orange-500 focus:ring-2 focus:ring-orange-100 cursor-pointer shadow-sm"
+                    <div className="flex items-center gap-3 w-full md:w-auto relative z-30">
+                        {/* Custom System Selector */}
+                        <div className="relative flex-1 md:w-72">
+                            <button
+                                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                                onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)}
+                                className={`
+                                    w-full flex items-center justify-between pl-4 pr-3 py-3 
+                                    bg-white border rounded-xl font-bold text-sm md:text-base text-stone-800 
+                                    transition-all cursor-pointer shadow-sm outline-none
+                                    ${isDropdownOpen
+                                        ? 'border-orange-500 ring-4 ring-orange-100'
+                                        : 'border-stone-200 hover:border-orange-500'
+                                    }
+                                `}
                             >
-                                {systems.map(s => (
-                                    <option key={s.code} value={s.code}>{s.name} ({s.code})</option>
-                                ))}
-                            </select>
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-orange-500">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path></svg>
-                            </div>
+                                <span className="truncate mr-2">
+                                    {system ? system.name : 'Chọn kho...'}
+                                </span>
+                                <ChevronDown
+                                    size={18}
+                                    className={`text-stone-400 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`}
+                                />
+                            </button>
+
+                            {/* Dropdown Menu */}
+                            {isDropdownOpen && (
+                                <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700 rounded-xl shadow-xl shadow-stone-200/50 dark:shadow-black/50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 max-h-60 overflow-y-auto">
+                                    {systems.map(s => (
+                                        <button
+                                            key={s.code}
+                                            onClick={() => {
+                                                setSelectedSystemCode(s.code)
+                                                setIsDropdownOpen(false)
+                                            }}
+                                            className={`
+                                                w-full text-left px-4 py-3 text-sm font-medium transition-colors flex items-center justify-between
+                                                ${selectedSystemCode === s.code
+                                                    ? 'bg-orange-50 text-orange-700'
+                                                    : 'text-stone-600 hover:bg-stone-50 dark:hover:bg-stone-700/50'
+                                                }
+                                            `}
+                                        >
+                                            <span className="truncate">{s.name}</span>
+                                            {selectedSystemCode === s.code && <Check size={16} className="text-orange-600" />}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
+                        {/* Save Button */}
                         <button
                             onClick={handleSave}
                             disabled={saving || !selectedSystemCode}
-                            className="bg-orange-600 text-white px-4 md:px-5 py-1.5 rounded-full text-xs md:text-sm font-bold hover:bg-orange-700 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 shadow-md shadow-orange-100 whitespace-nowrap"
+                            className="bg-gradient-to-r from-orange-600 to-amber-600 text-white px-6 py-2.5 md:py-3 rounded-xl text-sm md:text-base font-bold hover:shadow-lg hover:shadow-orange-200 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
                         >
-                            {saving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
-                            <span className="hidden xs:inline">Lưu Cấu Hình</span>
+                            {saving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
+                            <span>Lưu Cấu Hình</span>
                         </button>
                     </div>
                 </div>
 
                 {/* Filters */}
                 <div className="mt-4 md:mt-6">
-                    <div className="flex gap-2 w-full mb-3 md:mb-4 overflow-x-auto scrollbar-hide pb-1">
-                        <button
-                            onClick={() => setActiveCategory('all')}
-                            className={`px-3 py-1.5 rounded-full text-[10px] md:text-xs font-bold transition-all border whitespace-nowrap ${activeCategory === 'all' ? 'bg-orange-600 border-orange-600 text-white shadow-sm' : 'bg-white border-gray-200 text-gray-500 hover:border-orange-200 hover:text-orange-600'}`}
-                        >
-                            Tất cả
-                        </button>
-                        {categories.map(cat => (
-                            <button
-                                key={cat}
-                                onClick={() => setActiveCategory(cat)}
-                                className={`px-3 py-1.5 rounded-full text-[10px] md:text-xs font-bold transition-all border whitespace-nowrap ${activeCategory === cat ? 'bg-orange-600 border-orange-600 text-white shadow-sm' : 'bg-white border-gray-200 text-gray-500 hover:border-orange-200 hover:text-orange-600'}`}
-                            >
-                                {cat}
-                            </button>
-                        ))}
-                    </div>
-
-                    <div className="relative w-full">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={14} />
+                    {/* Search Input */}
+                    <div className="relative w-full mb-4">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-orange-500/50" size={16} />
                         <input
                             type="text"
                             placeholder="Tìm kiếm module..."
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
-                            className="w-full pl-9 pr-4 py-1.5 bg-stone-50 border-none rounded-lg text-xs md:text-sm font-medium focus:outline-none focus:ring-0 placeholder:text-stone-400"
+                            className="w-full pl-10 pr-4 py-2 bg-stone-50 border border-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-200 transition-all placeholder:text-stone-400"
                         />
+                    </div>
+
+                    {/* Filter Pills - Wrapped Layout */}
+                    <div className="relative group">
+                        <div className="flex flex-wrap gap-2 w-full pb-2">
+                            <button
+                                onClick={() => setActiveCategory('all')}
+                                className={`
+                                    px-3 py-2 rounded-xl text-xs font-bold transition-all border
+                                    ${activeCategory === 'all'
+                                        ? 'bg-gradient-to-r from-orange-500 to-amber-500 border-transparent text-white shadow-md shadow-orange-200'
+                                        : 'bg-white border-stone-200 text-stone-600 hover:border-orange-300 hover:bg-orange-50'
+                                    }
+                                `}
+                            >
+                                Tất cả
+                            </button>
+                            {categories.map(cat => (
+                                <button
+                                    key={cat}
+                                    onClick={() => setActiveCategory(cat)}
+                                    className={`
+                                        px-3 py-2 rounded-xl text-xs font-bold transition-all border whitespace-nowrap
+                                        ${activeCategory === cat
+                                            ? 'bg-gradient-to-r from-orange-500 to-amber-500 border-transparent text-white shadow-md shadow-orange-200'
+                                            : 'bg-white border-stone-200 text-stone-600 hover:border-orange-300 hover:bg-orange-50'
+                                        }
+                                    `}
+                                >
+                                    {cat}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {loading ? (
-                <div className="flex justify-center py-20"><Loader2 className="animate-spin text-stone-400" size={32} /></div>
-            ) : (
-                <div className="space-y-8">
-                    {categories.filter(cat => activeCategory === 'all' || activeCategory === cat).map(cat => {
-                        const modules = ALL_MODULES.filter(m => m.category === cat)
-                        if (modules.length === 0) return null
+            {
+                loading ? (
+                    <div className="flex justify-center py-20"><Loader2 className="animate-spin text-stone-400" size={32} /></div>
+                ) : (
+                    <div className="space-y-8">
+                        {categories.filter(cat => activeCategory === 'all' || activeCategory === cat).map(cat => {
+                            const modules = ALL_MODULES.filter(m => m.category === cat)
+                            if (modules.length === 0) return null
 
-                        // Check visibility
-                        const visibleModules = modules.filter(m => {
-                            const matchesSearch = !searchTerm || m.name.toLowerCase().includes(searchTerm.toLowerCase())
-                            const CORE_HIDDEN = ['outbound_basic', 'images']
-                            const hasLicense = checkSubscription(m.id)
-                            return matchesSearch && !CORE_HIDDEN.includes(m.id) && hasLicense && !m.is_basic
-                        })
+                            // Check visibility
+                            const visibleModules = modules.filter(m => {
+                                const matchesSearch = !searchTerm || m.name.toLowerCase().includes(searchTerm.toLowerCase())
+                                const CORE_HIDDEN = ['outbound_basic', 'images']
+                                const hasLicense = checkSubscription(m.id)
+                                return matchesSearch && !CORE_HIDDEN.includes(m.id) && hasLicense && !m.is_basic
+                            })
 
-                        if (visibleModules.length === 0) return null
+                            if (visibleModules.length === 0) return null
 
-                        return (
-                            <div key={cat} className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-                                <h3 className="text-base font-bold text-stone-800 mb-3 flex items-center gap-2">
-                                    {(cat === 'Nhập kho' || cat === 'Xuất kho') && <ShoppingCart size={18} className="text-stone-400" />}
-                                    {cat === 'Sản phẩm' && <Package size={18} className="text-stone-400" />}
-                                    {cat === 'Quản lý LOT' && <Archive size={18} className="text-stone-400" />}
-                                    {cat === 'Dashboard' && <LayoutDashboard size={18} className="text-stone-400" />}
-                                    {cat === 'Tiện ích hệ thống' && <Cog size={18} className="text-stone-400" />}
-                                    {cat}
-                                </h3>
+                            return (
+                                <div key={cat} className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+                                    <h3 className="text-base font-bold text-stone-800 mb-3 flex items-center gap-2">
+                                        {(cat === 'Nhập kho' || cat === 'Xuất kho') && <ShoppingCart size={18} className="text-stone-400" />}
+                                        {cat === 'Sản phẩm' && <Package size={18} className="text-stone-400" />}
+                                        {cat === 'Quản lý LOT' && <Archive size={18} className="text-stone-400" />}
+                                        {cat === 'Dashboard' && <LayoutDashboard size={18} className="text-stone-400" />}
+                                        {cat === 'Tiện ích hệ thống' && <Cog size={18} className="text-stone-400" />}
+                                        {cat}
+                                    </h3>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                                    {visibleModules.map(mod => {
-                                        // Determine if checked
-                                        let isChecked = false
-                                        if (cat === 'Nhập kho') isChecked = config.inbound.includes(mod.id)
-                                        else if (cat === 'Xuất kho') isChecked = config.outbound.includes(mod.id)
-                                        else if (cat === 'Sản phẩm') isChecked = config.product.includes(mod.id)
-                                        else if (cat === 'Quản lý LOT') isChecked = config.lot.includes(mod.id)
-                                        else if (cat === 'Dashboard') isChecked = config.dashboard.includes(mod.id)
-                                        else if (cat === 'Tiện ích hệ thống') isChecked = config.utility.includes(mod.id)
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                                        {visibleModules.map(mod => {
+                                            // Determine if checked
+                                            let isChecked = false
+                                            if (cat === 'Nhập kho') isChecked = config.inbound.includes(mod.id)
+                                            else if (cat === 'Xuất kho') isChecked = config.outbound.includes(mod.id)
+                                            else if (cat === 'Sản phẩm') isChecked = config.product.includes(mod.id)
+                                            else if (cat === 'Quản lý LOT') isChecked = config.lot.includes(mod.id)
+                                            else if (cat === 'Dashboard') isChecked = config.dashboard.includes(mod.id)
+                                            else if (cat === 'Tiện ích hệ thống') isChecked = config.utility.includes(mod.id)
 
-                                        return (
-                                            <div
-                                                key={mod.id}
-                                                onClick={() => handleToggle(mod.id, cat)}
-                                                className={`
+                                            return (
+                                                <div
+                                                    key={mod.id}
+                                                    onClick={() => handleToggle(mod.id, cat)}
+                                                    className={`
                                                     relative p-3 rounded-xl border-2 cursor-pointer transition-all select-none
                                                     ${isChecked
-                                                        ? 'bg-orange-50/30 border-orange-500 shadow-sm'
-                                                        : 'bg-stone-50 border-transparent hover:bg-white hover:border-stone-200'
-                                                    }
+                                                            ? 'bg-orange-50/30 border-orange-500 shadow-sm'
+                                                            : 'bg-stone-50 border-transparent hover:bg-white hover:border-stone-200'
+                                                        }
                                                 `}
-                                            >
-                                                <div className="flex justify-between items-start mb-1.5">
-                                                    <div className={`p-1.5 rounded-lg ${isChecked ? 'bg-orange-600 text-white' : 'bg-stone-200 text-stone-500'}`}>
-                                                        <mod.icon size={16} />
-                                                    </div>
+                                                >
+                                                    <div className="flex justify-between items-start mb-1.5">
+                                                        <div className={`p-1.5 rounded-lg ${isChecked ? 'bg-orange-600 text-white' : 'bg-stone-200 text-stone-500'}`}>
+                                                            <mod.icon size={16} />
+                                                        </div>
 
-                                                    <div className={`
+                                                        <div className={`
                                                         w-8 h-4.5 rounded-full relative transition-colors
                                                         ${isChecked ? 'bg-orange-600' : 'bg-stone-300'}
                                                     `}>
-                                                        <div className={`
+                                                            <div className={`
                                                             absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-transform
                                                             ${isChecked ? 'translate-x-[14px]' : 'translate-x-[2px]'}
                                                         `}></div>
+                                                        </div>
                                                     </div>
-                                                </div>
 
-                                                <div>
-                                                    <h4 className={`font-bold text-[13px] mb-0.5 ${isChecked ? 'text-orange-900' : 'text-stone-600'}`}>{mod.name}</h4>
-                                                    <p className="text-[11px] text-stone-500 line-clamp-2 leading-tight">{mod.description}</p>
-                                                </div>
-
-                                                {mod.is_basic && (
-                                                    <div className="absolute top-2 right-10 px-1 py-0.5 bg-orange-100 text-orange-700 text-[9px] font-bold rounded uppercase">
-                                                        Mặc định
+                                                    <div>
+                                                        <h4 className={`font-bold text-[13px] mb-0.5 ${isChecked ? 'text-orange-900' : 'text-stone-600'}`}>{mod.name}</h4>
+                                                        <p className="text-[11px] text-stone-500 line-clamp-2 leading-tight">{mod.description}</p>
                                                     </div>
-                                                )}
-                                            </div>
-                                        )
-                                    })}
+
+                                                    {mod.is_basic && (
+                                                        <div className="absolute top-2 right-10 px-1 py-0.5 bg-orange-100 text-orange-700 text-[9px] font-bold rounded uppercase">
+                                                            Mặc định
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
                                 </div>
-                            </div>
-                        )
-                    })}
-                </div>
-            )}
-        </div>
+                            )
+                        })}
+                    </div>
+                )
+            }
+        </div >
     )
 }
