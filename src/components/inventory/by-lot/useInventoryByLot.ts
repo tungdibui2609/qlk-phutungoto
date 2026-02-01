@@ -19,6 +19,29 @@ export function useInventoryByLot(units: any[]) {
     useEffect(() => {
         fetchBranches()
         fetchLots()
+
+        // 🟢 Real-time Subscription: Listen for changes in positions
+        // This ensures that when a position is assigned to a LOT on mobile, 
+        // the desktop Lot Management page updates automatically.
+        const channel = supabase
+            .channel('inventory-by-lot-positions')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*', // Listen for ALL changes (UPDATE, INSERT, DELETE)
+                    schema: 'public',
+                    table: 'positions'
+                },
+                () => {
+                    console.log('Real-time: Positions updated, refetching LOTs...')
+                    fetchLots()
+                }
+            )
+            .subscribe()
+
+        return () => {
+            supabase.removeChannel(channel)
+        }
     }, [systemType, selectedBranch])
 
     async function fetchBranches() {

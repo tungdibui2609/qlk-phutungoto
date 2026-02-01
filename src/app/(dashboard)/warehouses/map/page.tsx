@@ -257,6 +257,52 @@ function WarehouseMapContent() {
         if (systemType && accessToken && positions.length === 0 && !loading) {
             fetchData()
         }
+
+        // 🟢 Real-time Subscription: Listen for changes in positions
+        // This ensures that when a position is assigned to a LOT on mobile,
+        // the warehouse map reflects the change immediately.
+        if (systemType && accessToken) {
+            const channel = supabase
+                .channel('warehouse-map-realtime')
+                .on(
+                    'postgres_changes',
+                    {
+                        event: '*',
+                        schema: 'public',
+                        table: 'positions',
+                        filter: `system_type=eq.${systemType}`
+                    },
+                    (payload) => {
+                        console.log('Real-time: Position updated', payload)
+                        const updatedPos = payload.new as Position
+
+                        // Update local positions state
+                        setPositions(prev => prev.map(p =>
+                            p.id === updatedPos.id ? { ...p, lot_id: updatedPos.lot_id } : p
+                        ))
+
+                        // Update occupiedIds
+                        if (updatedPos.lot_id) {
+                            setOccupiedIds(prev => {
+                                const next = new Set(prev)
+                                next.add(updatedPos.id)
+                                return next
+                            })
+                        } else {
+                            setOccupiedIds(prev => {
+                                const next = new Set(prev)
+                                next.delete(updatedPos.id)
+                                return next
+                            })
+                        }
+                    }
+                )
+                .subscribe()
+
+            return () => {
+                supabase.removeChannel(channel)
+            }
+        }
     }, [systemType, session?.user?.id, accessToken])
 
     async function fetchData() {
