@@ -8,6 +8,7 @@ import { logActivity } from '@/lib/audit'
 import { parseQuantity } from '@/lib/numberUtils'
 import { QuantityInput } from '@/components/ui/QuantityInput'
 import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '../_hooks/useLotManagement'
+import { useUser } from '@/contexts/UserContext'
 
 interface LotItemInput {
     productId: string
@@ -45,6 +46,7 @@ export function LotForm({
     isModuleEnabled
 }: LotFormProps) {
     const { currentSystem } = useSystem()
+    const { profile } = useUser()
 
     const isUtilityEnabled = (utilityId: string) => {
         if (!currentSystem?.modules) return false
@@ -452,6 +454,7 @@ export function LotForm({
             quantity: totalQuantity,
             status: 'active',
             system_code: currentSystem?.code,
+            company_id: profile?.company_id,
             images: images,
             metadata: {
                 extra_info: extraInfo,

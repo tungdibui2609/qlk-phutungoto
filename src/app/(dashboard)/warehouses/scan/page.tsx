@@ -89,19 +89,20 @@ export default function FastScanPage() {
                     positions (code)
                 `)
                 .eq('code', code)
-                // .eq('system_code', currentSystem.code) // REMOVED
-                // .eq('company_id', profile.company_id) // TEMP REMOVED to debug mismatch
+                // .eq('system_code', currentSystem.code) // Always allow finding LOT from other systems
+                // [SECURITY] We fetch by Code first to allow handling legacy LOTs (NULL company_id)
                 .single()
 
             if (error || !data) {
-                showToast(`Không tìm thấy LOT "${code}" (CID: ${profile?.company_id})`, 'error')
+                showToast(`Không tìm thấy LOT "${code}"`, 'error')
                 setPaused(false) // Resume scanning
             } else {
-                // Manual Check
+
+                // [SECURITY CHECK]
+                // 1. If LOT has company_id AND it is different -> Block
+                // 2. If LOT has NULL company_id -> Allow (Legacy Data Support)
                 if (data.company_id && data.company_id !== profile.company_id) {
-                    alert(`CẢNH BÁO: LOT này thuộc công ty khác!
-                     LOT CID: ${data.company_id}
-                     Của bạn: ${profile.company_id}`)
+                    showToast(`Cảnh báo: LOT này thuộc công ty khác!`, 'error')
                     setPaused(false)
                     return
                 }
@@ -110,22 +111,13 @@ export default function FastScanPage() {
                 setStep(1) // Move to Position Scan
                 setManualCode('')
                 showToast('Đã nhận diện LOT. Vui lòng quét vị trí.', 'success')
-                // Keep paused? No, we need to scan position now.
-                // But we should delay slightly to avoid accidentally scanning the same code if user hasn't moved camera?
+
+                // Delay slightly to prevent accidental double-scan
                 setTimeout(() => setPaused(false), 1000)
             }
         } catch (e: any) {
             console.error(e)
-            // SHOW DEBUG INFO
-            showToast(`Lỗi: ${e.message || 'Unknown error'}`, 'error')
-
-            // Temporary Alert for debugging
-            alert(`Debug:
-            Code scanned: "${code}"
-            CompanyID: ${profile?.company_id}
-            Error: ${JSON.stringify(e)}
-            `)
-
+            showToast('Lỗi xử lý: ' + e.message, 'error')
             setPaused(false)
         } finally {
             setLoading(false)
