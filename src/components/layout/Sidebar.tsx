@@ -57,17 +57,16 @@ const menuItems: MenuItem[] = [
             { id: 'lots', name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes, requiredPermission: 'inventory.view' },
             { id: 'audit', name: 'Kiểm kê', href: '/operations/audit', icon: ClipboardCheck, requiredPermission: 'inventory.manage' },
             { id: 'notes', name: 'Ghi chú vận hành', href: '/operations/notes', icon: StickyNote, requiredPermission: 'warehouse.view' },
-            { id: 'notes', name: 'Ghi chú vận hành', href: '/operations/notes', icon: StickyNote, requiredPermission: 'warehouse.view' },
-            {
-                id: 'qr_scan_parent',
-                name: 'Quét mã QR',
-                icon: QrCode,
-                requiredModule: 'utility_qr_assign',
-                children: [
-                    { id: 'qr_assign', name: 'Gán vị trí', href: '/warehouses/scan/assign', icon: MapPin, requiredPermission: 'utility.view' },
-                    { id: 'qr_export', name: 'Xuất kho', href: '/warehouses/scan/export', icon: ArrowUpFromLine, requiredPermission: 'utility.view' },
-                ]
-            },
+        ]
+    },
+    {
+        id: 'qr_scan_parent',
+        name: 'Quét mã QR',
+        icon: QrCode,
+        requiredModule: 'utility_qr_assign',
+        children: [
+            { id: 'qr_assign', name: 'Gán vị trí', href: '/warehouses/scan/assign', icon: MapPin, requiredPermission: 'utility.view' },
+            { id: 'qr_export', name: 'Xuất kho', href: '/warehouses/scan/export', icon: ArrowUpFromLine, requiredPermission: 'utility.view' },
         ]
     },
     {
