@@ -11,12 +11,14 @@ const supabaseAdmin = createClient(
 
 interface PageProps {
     params: Promise<{ code: string }>
+    searchParams: Promise<{ c?: string }>
 }
 
-export default async function PublicTracePage({ params }: PageProps) {
+export default async function PublicTracePage({ params, searchParams }: PageProps) {
     const { code } = await params
+    const { c: companyId } = await searchParams
 
-    const { data: lot, error } = await supabaseAdmin
+    let query = supabaseAdmin
         .from('lots')
         .select(`
             code,
@@ -29,7 +31,13 @@ export default async function PublicTracePage({ params }: PageProps) {
             company_id
         `)
         .eq('code', code)
-        .single()
+
+    // Strict filter by company if provided in URL
+    if (companyId) {
+        query = query.eq('company_id', companyId)
+    }
+
+    const { data: lot, error } = await query.maybeSingle()
 
     // Fetch company info safely
     let companyInfo = { name: 'AnyWarehouse', logo: null }
