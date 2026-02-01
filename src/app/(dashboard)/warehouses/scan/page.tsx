@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useUser } from '@/contexts/UserContext'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
-import { QrCode, ArrowRight, Loader2, Boxes, MapPin, CheckCircle2, RotateCcw, AlertCircle, Package } from 'lucide-react'
+import { QrCode, RotateCcw, Boxes, MapPin, CheckCircle2, Loader2, Keyboard, Camera, X } from 'lucide-react'
+import { Scanner } from '@yudiel/react-qr-scanner'
 
 // Steps: 0 = Scan LOT, 1 = Scan Position, 2 = Success/Result
 type ScanStep = 0 | 1 | 2
@@ -17,32 +18,42 @@ export default function FastScanPage() {
 
     // State
     const [step, setStep] = useState<ScanStep>(0)
-    const [inputValue, setInputValue] = useState('')
+    const [useCamera, setUseCamera] = useState(true)
+    const [manualCode, setManualCode] = useState('')
+
     const [loading, setLoading] = useState(false)
+    const [paused, setPaused] = useState(false) // Pause scanner processing
 
     // Data
     const [lotData, setLotData] = useState<any>(null)
     const [assignedPos, setAssignedPos] = useState<string>('')
 
-    // Refs for auto-focus
-    const inputRef = useRef<HTMLInputElement>(null)
-
     // Check module permission
     const isAllowed = checkSubscription('utility_qr_assign')
-
-    // Auto-focus input on step change
-    useEffect(() => {
-        if (inputRef.current && !loading) {
-            inputRef.current.focus()
-        }
-    }, [step, loading])
 
     const handleReset = () => {
         setStep(0)
         setLotData(null)
         setAssignedPos('')
-        setInputValue('')
-        if (inputRef.current) inputRef.current.focus()
+        setManualCode('')
+        setPaused(false)
+    }
+
+    // Process a scanned or typed code
+    const handleScanResult = async (rawCode: string) => {
+        if (loading || paused || !rawCode) return
+
+        const code = rawCode.trim().toUpperCase()
+        // Simple logic to avoid re-processing same code if camera sends multiple frames
+        // But for different steps we might scan same code? Unlikely.
+
+        setPaused(true) // Stop processing new frames
+
+        if (step === 0) {
+            await processLotScan(code)
+        } else if (step === 1) {
+            await processPositionScan(code)
+        }
     }
 
     const processLotScan = async (code: string) => {
@@ -65,17 +76,21 @@ export default function FastScanPage() {
                 .single()
 
             if (error || !data) {
-                showToast('Không tìm thấy LOT hoặc lỗi kết nối', 'error')
-                setInputValue('') // Clear to retry
+                showToast(`Không tìm thấy LOT "${code}"`, 'error')
+                setPaused(false) // Resume scanning
             } else {
                 setLotData(data)
                 setStep(1) // Move to Position Scan
-                setInputValue('')
-                showToast('Đã tìm thấy LOT. Vui lòng quét vị trí.', 'success')
+                setManualCode('')
+                showToast('Đã nhận diện LOT. Vui lòng quét vị trí.', 'success')
+                // Keep paused? No, we need to scan position now.
+                // But we should delay slightly to avoid accidentally scanning the same code if user hasn't moved camera?
+                setTimeout(() => setPaused(false), 1000)
             }
         } catch (e) {
             console.error(e)
             showToast('Lỗi xử lý', 'error')
+            setPaused(false)
         } finally {
             setLoading(false)
         }
@@ -97,7 +112,7 @@ export default function FastScanPage() {
 
             if (posError || !posData) {
                 showToast(`Không tìm thấy vị trí "${posCode}"`, 'error')
-                setInputValue('') // Clear to retry
+                setPaused(false)
                 setLoading(false)
                 return
             }
@@ -116,7 +131,7 @@ export default function FastScanPage() {
             setStep(2)
             showToast(`Đã gán LOT vào ${posData.code}`, 'success')
 
-            // Auto reset after 2 seconds
+            // Auto reset after 2.5 seconds
             setTimeout(() => {
                 handleReset()
             }, 2500)
@@ -124,21 +139,9 @@ export default function FastScanPage() {
         } catch (e: any) {
             console.error(e)
             showToast('Lỗi gán vị trí: ' + e.message, 'error')
-            setInputValue('')
+            setPaused(false)
         } finally {
             setLoading(false)
-        }
-    }
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault()
-        const val = inputValue.trim().toUpperCase()
-        if (!val) return
-
-        if (step === 0) {
-            processLotScan(val)
-        } else if (step === 1) {
-            processPositionScan(val)
         }
     }
 
@@ -157,128 +160,153 @@ export default function FastScanPage() {
     }
 
     return (
-        <div className="max-w-xl mx-auto py-6 px-4">
+        <div className="h-[calc(100vh-64px)] flex flex-col bg-slate-50 dark:bg-slate-900 overflow-hidden relative">
 
-            {/* Header / Status Bar */}
-            <div className="flex items-center justify-between mb-6">
+            {/* Header Overlay - Adjusted for light mode */}
+            <div className="absolute top-0 left-0 right-0 z-20 p-4 flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Gán vị trí nhanh</h1>
-                    <p className="text-sm text-slate-500">{currentSystem?.name || '...'}</p>
+                    <h1 className="font-bold text-lg text-slate-900 dark:text-white">Gán Vị Trí (Camera)</h1>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{currentSystem?.name}</p>
                 </div>
-                <button onClick={handleReset} className="p-2 bg-slate-100 dark:bg-slate-800 rounded-full hover:rotate-180 transition-transform duration-500">
-                    <RotateCcw size={20} className="text-slate-500" />
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => setUseCamera(!useCamera)}
+                        className="p-2 bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700 rounded-full hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-300"
+                    >
+                        {useCamera ? <Keyboard size={20} /> : <Camera size={20} />}
+                    </button>
+                    <button
+                        onClick={handleReset}
+                        className="p-2 bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700 rounded-full hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-300"
+                    >
+                        <RotateCcw size={20} />
+                    </button>
+                </div>
             </div>
 
-            {/* Main Workstation Card */}
-            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-xl shadow-slate-200/50 dark:shadow-none border border-slate-200 dark:border-slate-800 overflow-hidden relative">
+            {/* Main Content Area */}
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center pt-16">
 
-                {/* Visual Step Indicator */}
-                <div className="flex w-full h-1.5 bg-slate-100 dark:bg-slate-800">
-                    <div className={`h-full transition-all duration-300 ${step >= 0 ? 'bg-orange-500 w-1/2' : 'w-0'}`} />
-                    <div className={`h-full transition-all duration-300 ${step >= 1 ? 'bg-indigo-500 w-1/2' : 'w-0'}`} />
-                </div>
+                {/* CAMERA VIEW */}
+                {useCamera && step !== 2 && (
+                    <div className="w-full max-w-xs aspect-square relative bg-black rounded-3xl overflow-hidden shadow-xl border-4 border-white dark:border-slate-800 mb-6 mx-auto">
+                        <Scanner
+                            onScan={(result) => {
+                                if (result && result.length > 0) {
+                                    handleScanResult(result[0].rawValue)
+                                }
+                            }}
+                            styles={{
+                                container: { width: '100%', height: '100%' },
+                                video: { objectFit: 'cover' }
+                            }}
+                            components={{
+                                finder: false
+                            }}
+                            constraints={{
+                                facingMode: 'environment'
+                            }}
+                        />
+                        {/* Custom Finder / Overlay UI */}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                            <div className="w-48 h-48 border-2 border-white/60 rounded-2xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+                                <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-orange-500 -mt-0.5 -ml-0.5 rounded-tl-lg" />
+                                <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-orange-500 -mt-0.5 -mr-0.5 rounded-tr-lg" />
+                                <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-orange-500 -mb-0.5 -ml-0.5 rounded-bl-lg" />
+                                <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-orange-500 -mb-0.5 -mr-0.5 rounded-br-lg" />
 
-                <div className="p-8 text-center space-y-6 min-h-[400px] flex flex-col justify-center">
-
-                    {/* STEP 0: SCAN LOT */}
-                    {step === 0 && (
-                        <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
-                            <div className="w-24 h-24 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce-slow">
-                                <Boxes size={48} />
+                                {loading && (
+                                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-xl backdrop-blur-sm">
+                                        <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+                                    </div>
+                                )}
                             </div>
-                            <h2 className="text-3xl font-bold text-slate-900 dark:text-white">Bước 1: Quét mã LOT</h2>
-                            <p className="text-slate-500 text-lg">Dùng máy quét hoặc nhập mã LOT</p>
                         </div>
-                    )}
+                    </div>
+                )}
 
-                    {/* STEP 1: SCAN POSITION */}
-                    {step === 1 && lotData && (
-                        <div className="space-y-6 animate-in slide-in-from-right-8 duration-300">
-                            {/* Lot Info Card */}
-                            <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 text-left">
-                                <div className="flex items-start justify-between mb-2">
-                                    <span className="text-xs font-bold text-slate-400 uppercase">Đang gán cho LOT</span>
-                                    <span className="px-2 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded text-xs font-bold font-mono">
-                                        {lotData.code}
-                                    </span>
-                                </div>
-                                <h3 className="text-lg font-bold text-slate-900 dark:text-white leading-tight mb-1">
-                                    {lotData.products?.name}
-                                </h3>
-                                <p className="text-sm text-slate-500">
-                                    {lotData.products?.sku} • {new Date(lotData.packaging_date).toLocaleDateString('vi-VN')}
-                                </p>
-                            </div>
+                {/* INSTRUCTION TEXT */}
+                {useCamera && step !== 2 && (
+                    <div className="text-center space-y-2 animate-in fade-in slide-in-from-bottom-4">
+                        <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
+                            {step === 0 ? 'Quét mã LOT' : 'Quét Vị trí'}
+                        </h2>
+                        <p className="text-slate-500 dark:text-slate-400">
+                            {step === 0 ? 'Di chuyển camera đến mã QR trên sản phẩm' : 'Di chuyển camera đến mã QR trên kệ hàng'}
+                        </p>
+                    </div>
+                )}
 
-                            <div className="w-20 h-20 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full flex items-center justify-center mx-auto">
-                                <MapPin size={40} />
-                            </div>
-                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white text-indigo-600 dark:text-indigo-400">
-                                Bước 2: Quét Vị trí
+                {/* MANUAL INPUT VIEW */}
+                {(!useCamera && step !== 2) && (
+                    <div className="w-full max-w-md p-6 z-10">
+                        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-xl border border-slate-200 dark:border-slate-800">
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4 text-center">
+                                {step === 0 ? 'Nhập mã LOT' : 'Nhập mã Vị trí'}
                             </h2>
+                            <form onSubmit={(e) => { e.preventDefault(); handleScanResult(manualCode); }}>
+                                <input
+                                    type="text"
+                                    value={manualCode}
+                                    onChange={(e) => setManualCode(e.target.value)}
+                                    className="w-full p-4 bg-slate-100 dark:bg-slate-800 rounded-xl text-center text-xl font-bold uppercase mb-4 focus:ring-2 focus:ring-orange-500 outline-none"
+                                    placeholder={step === 0 ? "LOT-..." : "A1-..."}
+                                    autoFocus
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={loading || !manualCode}
+                                    className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold transition-colors disabled:opacity-50"
+                                >
+                                    {loading ? 'Đang xử lý...' : 'Xác nhận'}
+                                </button>
+                            </form>
                         </div>
-                    )}
+                    </div>
+                )}
 
-                    {/* STEP 2: SUCCCESS */}
-                    {step === 2 && (
-                        <div className="space-y-6 animate-in zoom-in-95 duration-300">
-                            <div className="w-28 h-28 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <CheckCircle2 size={56} />
-                            </div>
-                            <div>
-                                <h2 className="text-3xl font-bold text-emerald-600 dark:text-emerald-400 mb-2">Thành công!</h2>
-                                <p className="text-slate-600 dark:text-slate-300 text-lg">
-                                    Đã gán vào vị trí <strong className="text-slate-900 dark:text-white px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg">{assignedPos}</strong>
-                                </p>
-                            </div>
-                            <div className="pt-8">
-                                <div className="h-1 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                    <div className="h-full bg-slate-300 dark:bg-slate-600 animate-progress-shrink w-full origin-left" style={{ animationDuration: '2.5s' }} />
-                                </div>
-                                <p className="text-xs text-slate-400 mt-2">Tự động chuyển tiếp...</p>
-                            </div>
+                {/* SUCCESS VIEW (Step 2) */}
+                {step === 2 && (
+                    <div className="bg-white dark:bg-slate-900 m-6 p-8 rounded-3xl shadow-2xl z-30 flex flex-col items-center animate-in zoom-in-95 duration-300 max-w-sm w-full">
+                        <div className="w-24 h-24 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mb-4">
+                            <CheckCircle2 size={48} />
                         </div>
-                    )}
+                        <h2 className="text-2xl font-bold text-center text-slate-900 dark:text-white mb-2">Đã gán thành công!</h2>
+                        <p className="text-slate-600 dark:text-slate-300 text-lg mb-6 text-center">
+                            Vị trí: <strong className="text-slate-900 dark:text-white">{assignedPos}</strong>
+                        </p>
+                        <div className="h-1 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 animate-progress-shrink w-full origin-left" style={{ animationDuration: '2.5s' }} />
+                        </div>
+                    </div>
+                )}
 
-                    {/* INPUT AREA (Hidden on Step 2) */}
-                    {step !== 2 && (
-                        <form onSubmit={handleSubmit} className="mt-8 relative">
-                            <input
-                                ref={inputRef}
-                                type="text"
-                                value={inputValue}
-                                onChange={(e) => setInputValue(e.target.value)}
-                                disabled={loading}
-                                className={`w-full text-center py-4 bg-transparent border-b-2 focus:outline-none text-2xl font-bold uppercase tracking-widest transition-all
-                                    ${step === 0
-                                        ? 'border-orange-200 focus:border-orange-500 placeholder:text-orange-200'
-                                        : 'border-indigo-200 focus:border-indigo-500 placeholder:text-indigo-200'
-                                    }
-                                    disabled:opacity-50
-                                `}
-                                placeholder={step === 0 ? "SCAN LOT..." : "SCAN POSITION..."}
-                                autoFocus
-                                onBlur={() => {
-                                    // Keep focus unless user explicitly clicks away?
-                                    // Optional: setTimeout(() => inputRef.current?.focus(), 100)
-                                }}
-                            />
-                            {loading && (
-                                <div className="absolute right-0 top-1/2 -translate-y-1/2">
-                                    <Loader2 className="animate-spin text-slate-400" />
-                                </div>
-                            )}
-                        </form>
-                    )}
+            </div>
+
+            {/* Bottom Info Sheet (Always visible if we have data) */}
+            {lotData && step !== 2 && (
+                <div className="absolute bottom-0 left-0 right-0 p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 z-20 rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] animate-in slide-in-from-bottom-full duration-500">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-xl flex items-center justify-center shrink-0">
+                            <Boxes size={24} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-0.5">
+                                <h3 className="font-bold text-slate-900 dark:text-white truncate">{lotData.products?.name}</h3>
+                                <span className="text-xs font-mono font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500">{lotData.code}</span>
+                            </div>
+                            <p className="text-xs text-slate-500 truncate">
+                                {lotData.products?.sku} • {new Date(lotData.packaging_date).toLocaleDateString('vi-VN')}
+                            </p>
+                        </div>
+                        {step === 1 && (
+                            <div className="w-10 h-10 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-full flex items-center justify-center animate-pulse">
+                                <MapPin size={20} />
+                            </div>
+                        )}
+                    </div>
                 </div>
-            </div>
-
-            <div className="mt-6 text-center">
-                <p className="text-xs text-slate-400 font-mono">
-                    Hỗ trợ: Enter để xác nhận • Nhấn nút Reset (Góc trên phải) để quét lại từ đầu
-                </p>
-            </div>
+            )}
         </div>
     )
 }
