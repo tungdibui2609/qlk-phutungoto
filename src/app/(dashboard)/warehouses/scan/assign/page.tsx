@@ -28,8 +28,8 @@ export default function FastScanPage() {
     // Data
     const [lotData, setLotData] = useState<any>(null)
     const [assignedPos, setAssignedPos] = useState<string>('')
-    const [allPositions, setAllPositions] = useState<{ id: string, code: string }[]>([])
-    const [suggestions, setSuggestions] = useState<{ id: string, code: string }[]>([])
+    const [allPositions, setAllPositions] = useState<{ id: string, code: string, lot_id: string | null }[]>([])
+    const [suggestions, setSuggestions] = useState<{ id: string, code: string, lot_id: string | null }[]>([])
 
     const inputRef = useRef<HTMLInputElement>(null)
 
@@ -43,7 +43,7 @@ export default function FastScanPage() {
             console.log('Fetching positions for system:', currentSystem.code)
             const { data, error } = await supabase
                 .from('positions')
-                .select('id, code')
+                .select('id, code, lot_id')
                 .eq('system_type', currentSystem.code)
 
             if (error) {
@@ -64,10 +64,14 @@ export default function FastScanPage() {
     useEffect(() => {
         if (step === 1 && assignMode === 'manual' && manualCode.length >= 1) {
             const normalizedInput = normalize(manualCode)
-            const matches = allPositions.filter(p => {
-                const normalizedTarget = normalize(p.code)
-                return normalizedTarget.includes(normalizedInput)
-            }).slice(0, 5) // Limit to 5 suggestions
+            const matches = allPositions
+                .filter(p => {
+                    const normalizedTarget = normalize(p.code)
+                    // Only suggest if not occupied (lot_id is null) and matches input
+                    return !p.lot_id && normalizedTarget.includes(normalizedInput)
+                })
+                .sort((a, b) => a.code.length - b.code.length) // Shorter (more exact) matches first
+                .slice(0, 8) // Limit to 8 suggestions for better variety
             setSuggestions(matches)
         } else {
             setSuggestions([])

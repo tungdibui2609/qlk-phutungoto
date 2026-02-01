@@ -219,7 +219,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
             }).eq('id', lot.id)
 
             // Map Cleanup: If lot is empty, clear from positions
-            if (totalRemainingLotQty === 0) {
+            if (totalRemainingLotQty <= 0.000001) {
                 await supabase.from('positions').update({ lot_id: null }).eq('lot_id', lot.id)
             }
 

@@ -252,9 +252,15 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
 
             const { error: origLotUpdateErr } = await supabase.from('lots').update({
                 quantity: finalTotalRemainingOriginalQty,
-                metadata: originalMetadata
+                metadata: originalMetadata,
+                status: finalTotalRemainingOriginalQty <= 0.000001 ? 'exported' : lot.status
             }).eq('id', lot.id)
             if (origLotUpdateErr) throw origLotUpdateErr
+
+            // Clear position references if empty
+            if (finalTotalRemainingOriginalQty <= 0.000001) {
+                await supabase.from('positions').update({ lot_id: null }).eq('lot_id', lot.id)
+            }
 
             onSuccess()
         } catch (e: any) {
