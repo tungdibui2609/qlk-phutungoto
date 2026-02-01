@@ -284,8 +284,10 @@ function WarehouseMapContent() {
                             p.id === updatedPos.id ? { ...p, lot_id: updatedPos.lot_id } : p
                         ))
 
-                        // Update occupiedIds
+                        // If a lot is assigned, fetch its full info to display on map
                         if (updatedPos.lot_id) {
+                            refreshLotInfo(updatedPos.lot_id)
+
                             setOccupiedIds(prev => {
                                 const next = new Set(prev)
                                 next.add(updatedPos.id)
@@ -310,6 +312,70 @@ function WarehouseMapContent() {
             }
         }
     }, [systemType, session?.user?.id, accessToken])
+
+    async function refreshLotInfo(lotId: string) {
+        if (!accessToken) return
+
+        const { data: l, error } = await supabase
+            .from('lots')
+            .select('id, code, quantity, inbound_date, created_at, packaging_date, peeling_date, products(name, unit, sku), lot_items(id, product_id, quantity, unit, products(name, unit, sku)), lot_tags(tag, lot_item_id)')
+            .eq('id', lotId)
+            .single()
+
+        if (error || !l) {
+            console.error('Error refreshing lot info:', error)
+            return
+        }
+
+        const lotItems = l.lot_items || []
+        const allTags = l.lot_tags || []
+        let items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags: string[] }> = []
+        let accumulatedTags: string[] = []
+
+        if (lotItems.length > 0) {
+            items = lotItems.map((item: any) => {
+                const itemTags = allTags
+                    .filter((t: any) => t.lot_item_id === item.id)
+                    .map((t: any) => t.tag.replace(/@/g, item.products?.sku || ''))
+                    .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
+                accumulatedTags.push(...itemTags)
+                return {
+                    product_name: item.products?.name || '',
+                    sku: item.products?.sku || '',
+                    unit: item.unit || item.products?.unit || '',
+                    quantity: item.quantity || 0,
+                    tags: itemTags
+                }
+            })
+        } else if (l.products) {
+            const itemTags = allTags
+                .map((t: any) => t.tag.replace(/@/g, l.products?.sku || ''))
+                .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
+            accumulatedTags.push(...itemTags)
+            items = [{
+                product_name: l.products.name || '',
+                sku: l.products.sku || '',
+                unit: l.products.unit || '',
+                quantity: l.quantity || 0,
+                tags: itemTags
+            }]
+        }
+
+        const info = {
+            code: l.code,
+            items,
+            inbound_date: l.inbound_date || undefined,
+            created_at: l.created_at || undefined,
+            packaging_date: l.packaging_date || undefined,
+            peeling_date: l.peeling_date || undefined,
+            tags: accumulatedTags
+        }
+
+        setLotInfo(prev => ({
+            ...prev,
+            [l.id]: info
+        }))
+    }
 
     async function fetchData() {
         if (!accessToken || !systemType) return
