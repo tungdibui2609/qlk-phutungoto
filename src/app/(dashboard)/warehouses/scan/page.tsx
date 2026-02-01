@@ -94,7 +94,7 @@ export default function FastScanPage() {
                 .single()
 
             if (error || !data) {
-                showToast(`Không tìm thấy LOT "${code}"`, 'error')
+                showToast(`Không tìm thấy LOT "${code}" (CID: ${profile?.company_id})`, 'error')
                 setPaused(false) // Resume scanning
             } else {
                 setLotData(data)
