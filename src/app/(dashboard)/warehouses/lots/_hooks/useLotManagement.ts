@@ -58,7 +58,7 @@ export function useLotManagement() {
                     table: 'positions'
                 },
                 (payload) => {
-                    fetchLots()
+                    fetchLots(false)
                 }
             )
             .subscribe()
@@ -88,10 +88,10 @@ export function useLotManagement() {
         if (pUnitRes.data) setProductUnits(pUnitRes.data)
     }
 
-    async function fetchLots() {
+    async function fetchLots(showLoading = true) {
         if (!currentSystem?.code) return;
 
-        setLoading(true)
+        if (showLoading) setLoading(true)
         const { data, error } = await supabase
             .from('lots')
             .select(`

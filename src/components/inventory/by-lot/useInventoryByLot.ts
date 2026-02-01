@@ -33,7 +33,7 @@ export function useInventoryByLot(units: any[]) {
                     table: 'positions'
                 },
                 (payload) => {
-                    fetchLots()
+                    fetchLots(false)
                 }
             )
             .subscribe()
@@ -62,8 +62,8 @@ export function useInventoryByLot(units: any[]) {
         }
     }
 
-    async function fetchLots() {
-        setLoading(true)
+    async function fetchLots(showLoading = true) {
+        if (showLoading) setLoading(true)
         const { data, error } = await supabase
             .from('lots')
             .select(`
