@@ -28,11 +28,47 @@ export default function FastScanPage() {
     // Data
     const [lotData, setLotData] = useState<any>(null)
     const [assignedPos, setAssignedPos] = useState<string>('')
+    const [allPositions, setAllPositions] = useState<{ id: string, code: string }[]>([])
+    const [suggestions, setSuggestions] = useState<{ id: string, code: string }[]>([])
 
     const inputRef = useRef<HTMLInputElement>(null)
 
     // Check module permission
     const isAllowed = checkSubscription('utility_qr_assign')
+
+    // 0. Pre-fetch positions for fuzzy search
+    useEffect(() => {
+        const fetchPositions = async () => {
+            if (!currentSystem?.code || !profile?.company_id) return
+            const { data, error } = await supabase
+                .from('positions')
+                .select('id, code')
+                .eq('system_type', currentSystem.code)
+                .eq('company_id', profile.company_id)
+
+            if (!error && data) {
+                setAllPositions(data)
+            }
+        }
+        fetchPositions()
+    }, [currentSystem, profile?.company_id])
+
+    // Normalize utility
+    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+    // 1. Compute suggestions based on manualCode
+    useEffect(() => {
+        if (step === 1 && assignMode === 'manual' && manualCode.length >= 1) {
+            const normalizedInput = normalize(manualCode)
+            const matches = allPositions.filter(p => {
+                const normalizedTarget = normalize(p.code)
+                return normalizedTarget.includes(normalizedInput)
+            }).slice(0, 5) // Limit to 5 suggestions
+            setSuggestions(matches)
+        } else {
+            setSuggestions([])
+        }
+    }, [manualCode, step, assignMode, allPositions])
 
     // Auto-focus manual input when step 1 and mode manual
     useEffect(() => {
@@ -143,16 +179,30 @@ export default function FastScanPage() {
 
         setLoading(true)
         try {
-            // 1. Find Position
-            const { data: posData, error: posError } = await supabase
+            // Fuzzy Match Logic
+            const normalizedInput = normalize(posCode)
+            let targetPos = null
+
+            // 1. Try exact match first
+            const { data: exactData } = await supabase
                 .from('positions')
-                .select('id, code, lot_id')
+                .select('id, code')
                 .eq('code', posCode)
                 .eq('system_type', currentSystem.code)
                 .eq('company_id', profile.company_id)
                 .single()
 
-            if (posError || !posData) {
+            if (exactData) {
+                targetPos = exactData
+            } else if (assignMode === 'manual') {
+                // 2. Try fuzzy match from pre-fetched list
+                const fuzzyMatch = allPositions.find(p => normalize(p.code) === normalizedInput)
+                if (fuzzyMatch) {
+                    targetPos = fuzzyMatch
+                }
+            }
+
+            if (!targetPos) {
                 showToast(`Không tìm thấy vị trí "${posCode}"`, 'error')
                 setPaused(false)
                 setLoading(false)
@@ -163,15 +213,15 @@ export default function FastScanPage() {
             const { error: updateError } = await supabase
                 .from('positions')
                 .update({ lot_id: lotData.id } as any)
-                .eq('id', posData.id)
+                .eq('id', targetPos.id)
                 .eq('company_id', profile.company_id)
 
             if (updateError) throw updateError
 
             // Success
-            setAssignedPos(posData.code)
+            setAssignedPos(targetPos.code)
             setStep(2)
-            showToast(`Đã gán LOT vào ${posData.code}`, 'success')
+            showToast(`Đã gán LOT vào ${targetPos.code}`, 'success')
 
             // Auto reset after 2.5 seconds
             setTimeout(() => {
@@ -316,6 +366,29 @@ export default function FastScanPage() {
                                     placeholder={step === 0 ? "LOT-..." : "Vị trí..."}
                                     autoFocus={step === 0 && !useCamera}
                                 />
+
+                                {/* Suggestions Dropdown/List */}
+                                {suggestions.length > 0 && (
+                                    <div className="mb-4 space-y-2 animate-in fade-in slide-in-from-top-2">
+                                        <p className="text-[10px] uppercase font-bold text-slate-400 ml-2 mb-1">Gợi ý vị trí:</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {suggestions.map(s => (
+                                                <button
+                                                    key={s.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setManualCode(s.code)
+                                                        handleScanResult(s.code)
+                                                    }}
+                                                    className="px-3 py-1.5 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 text-orange-600 dark:text-orange-400 rounded-lg text-sm font-bold hover:bg-orange-100 transition-colors"
+                                                >
+                                                    {s.code}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
                                 <button
                                     type="submit"
                                     disabled={loading || !manualCode}
