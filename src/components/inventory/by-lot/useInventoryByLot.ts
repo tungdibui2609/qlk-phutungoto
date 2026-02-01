@@ -32,12 +32,14 @@ export function useInventoryByLot(units: any[]) {
                     schema: 'public',
                     table: 'positions'
                 },
-                () => {
-                    console.log('Real-time: Positions updated, refetching LOTs...')
+                (payload) => {
+                    console.log('Real-time Event [Lot Management]:', payload)
                     fetchLots()
                 }
             )
-            .subscribe()
+            .subscribe((status) => {
+                console.log('Real-time Status [Lot Management]:', status)
+            })
 
         return () => {
             supabase.removeChannel(channel)
