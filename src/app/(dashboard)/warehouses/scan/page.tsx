@@ -89,7 +89,7 @@ export default function FastScanPage() {
                     positions (code)
                 `)
                 .eq('code', code)
-                .eq('system_code', currentSystem.code)
+                // .eq('system_code', currentSystem.code) // REMOVED: Allow finding LOT from other systems
                 .eq('company_id', profile.company_id)
                 .single()
 
