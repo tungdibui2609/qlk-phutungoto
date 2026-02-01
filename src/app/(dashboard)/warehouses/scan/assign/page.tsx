@@ -39,18 +39,23 @@ export default function FastScanPage() {
     // 0. Pre-fetch positions for fuzzy search
     useEffect(() => {
         const fetchPositions = async () => {
-            if (!currentSystem?.code || !profile?.company_id) return
+            if (!currentSystem?.code) return
+            console.log('Fetching positions for system:', currentSystem.code)
             const { data, error } = await supabase
                 .from('positions')
                 .select('id, code')
                 .eq('system_type', currentSystem.code)
 
-            if (!error && data) {
+            if (error) {
+                console.error('Error fetching positions:', error)
+            }
+            if (data) {
+                console.log(`Loaded ${data.length} positions`)
                 setAllPositions(data)
             }
         }
         fetchPositions()
-    }, [currentSystem, profile?.company_id])
+    }, [currentSystem])
 
     // Normalize utility
     const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -85,8 +90,8 @@ export default function FastScanPage() {
     }
 
     // Process a scanned or typed code
-    const handleScanResult = async (rawCode: string) => {
-        if (loading || paused || !rawCode) return
+    const handleScanResult = async (rawCode: string, isManual = false) => {
+        if (loading || (!isManual && paused) || !rawCode) return
 
         let code = rawCode.trim()
 
@@ -353,7 +358,7 @@ export default function FastScanPage() {
                             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4 text-center">
                                 {step === 0 ? 'Nhập mã LOT' : 'Nhập mã Vị trí'}
                             </h2>
-                            <form onSubmit={(e) => { e.preventDefault(); handleScanResult(manualCode); }}>
+                            <form onSubmit={(e) => { e.preventDefault(); handleScanResult(manualCode, true); }}>
                                 <input
                                     ref={inputRef}
                                     type="text"
