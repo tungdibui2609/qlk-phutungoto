@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode } from 'lucide-react'
+import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -17,7 +17,7 @@ type MenuItem = {
     icon: any
     requiredPermission?: string // [NEW] Permissions key
     requiredModule?: string // [NEW] Commercial Module Code
-    children?: { id: string; name: string; href: string; icon: any; requiredPermission?: string; requiredModule?: string }[]
+    children?: MenuItem[] // Recursive support
 }
 
 const menuItems: MenuItem[] = [
@@ -57,7 +57,17 @@ const menuItems: MenuItem[] = [
             { id: 'lots', name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes, requiredPermission: 'inventory.view' },
             { id: 'audit', name: 'Kiểm kê', href: '/operations/audit', icon: ClipboardCheck, requiredPermission: 'inventory.manage' },
             { id: 'notes', name: 'Ghi chú vận hành', href: '/operations/notes', icon: StickyNote, requiredPermission: 'warehouse.view' },
-            { id: 'qr_scan', name: 'Quét mã QR', href: '/warehouses/scan', icon: QrCode, requiredModule: 'utility_qr_assign', requiredPermission: 'utility.view' },
+            { id: 'notes', name: 'Ghi chú vận hành', href: '/operations/notes', icon: StickyNote, requiredPermission: 'warehouse.view' },
+            {
+                id: 'qr_scan_parent',
+                name: 'Quét mã QR',
+                icon: QrCode,
+                requiredModule: 'utility_qr_assign',
+                children: [
+                    { id: 'qr_assign', name: 'Gán vị trí', href: '/warehouses/scan/assign', icon: MapPin, requiredPermission: 'utility.view' },
+                    { id: 'qr_export', name: 'Xuất kho', href: '/warehouses/scan/export', icon: ArrowUpFromLine, requiredPermission: 'utility.view' },
+                ]
+            },
         ]
     },
     {
@@ -218,7 +228,9 @@ export default function Sidebar() {
             }
             if (item.children) {
                 item.children.forEach(child => {
-                    allFlatItems.push({ name: child.name, href: child.href, icon: child.icon })
+                    if (child.href) {
+                        allFlatItems.push({ name: child.name, href: child.href, icon: child.icon })
+                    }
                 })
             }
         })
@@ -226,13 +238,14 @@ export default function Sidebar() {
         return allFlatItems.filter(item => favHrefs.includes(item.href))
     }, [profile?.favorite_menus, visibleMenuItems])
 
+
     const isMenuActive = (item: MenuItem) => {
         if (item.href) {
             return pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
         }
         if (item.children) {
             return item.children.some(child =>
-                pathname === child.href || pathname.startsWith(child.href)
+                child.href ? (pathname === child.href || pathname.startsWith(child.href)) : false
             )
         }
         return false
@@ -449,7 +462,10 @@ export default function Sidebar() {
                             <div className="space-y-0.5">
                                 {favoriteItems.map((item) => {
                                     const Icon = item.icon
-                                    const isActive = pathname === item.href
+                                    const isActive = item.href ? pathname === item.href : false
+
+                                    if (!item.href) return null
+
                                     return (
                                         <Link
                                             key={`fav-${item.href}`}
@@ -525,6 +541,9 @@ export default function Sidebar() {
                                         <div className="ml-3 mt-0.5 space-y-0.5 border-l border-stone-100 pl-2">
                                             {item.children!.map((child) => {
                                                 const ChildIcon = child.icon
+                                                // Ensure href exists before using it
+                                                if (!child.href) return null
+
                                                 const isChildActive = pathname === child.href || (child.href !== '/warehouses' && pathname.startsWith(child.href + '/'))
 
                                                 return (
@@ -552,7 +571,7 @@ export default function Sidebar() {
                                                             onClick={(e) => {
                                                                 e.preventDefault()
                                                                 e.stopPropagation()
-                                                                toggleFavorite(child.href)
+                                                                toggleFavorite(child.href!)
                                                             }}
                                                             className={`p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity ${profile?.favorite_menus?.includes(child.href)
                                                                 ? 'text-yellow-500 opacity-100'
@@ -571,11 +590,14 @@ export default function Sidebar() {
                         }
 
                         // Regular menu item
-                        const isItemActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href!))
+                        if (!item.href) return null // Skip if no href for leaf item
+
+                        const isItemActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
+
                         return (
                             <Link
                                 key={item.href}
-                                href={item.href!}
+                                href={item.href}
                                 onClick={handleLinkClick}
                                 className={`group relative flex items-center gap-2 px-2.5 py-2 rounded-lg transition-all duration-200 ${isItemActive
                                     ? 'text-white'
@@ -614,12 +636,12 @@ export default function Sidebar() {
                                                     e.stopPropagation()
                                                     toggleFavorite(item.href!)
                                                 }}
-                                                className={`p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity ${profile?.favorite_menus?.includes(item.href!)
+                                                className={`p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity ${profile?.favorite_menus?.includes(item.href)
                                                     ? 'text-yellow-500 opacity-100'
                                                     : 'text-stone-300 hover:text-orange-400'
                                                     }`}
                                             >
-                                                <Star size={12} fill={profile?.favorite_menus?.includes(item.href!) ? "currentColor" : "none"} />
+                                                <Star size={12} fill={profile?.favorite_menus?.includes(item.href) ? "currentColor" : "none"} />
                                             </button>
                                             <ChevronRight
                                                 size={14}
