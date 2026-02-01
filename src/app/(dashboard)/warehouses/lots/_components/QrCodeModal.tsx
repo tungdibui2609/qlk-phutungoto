@@ -39,11 +39,12 @@ export function QrCodeModal({ lot, onClose }: QrCodeModalProps) {
     }
 
     const qrValue = qrLines.join('\n')
+    const scanUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/warehouses/lots/scan/${lot.code}`
 
     const handleCopy = () => {
-        navigator.clipboard.writeText(qrValue)
+        navigator.clipboard.writeText(scanUrl)
         setCopied(true)
-        showToast("Đã sao chép nội dung QR", 'success')
+        showToast("Đã sao chép liên kết QR", 'success')
         setTimeout(() => setCopied(false), 2000)
     }
 
@@ -69,7 +70,7 @@ export function QrCodeModal({ lot, onClose }: QrCodeModalProps) {
 
                     <div className="p-4 bg-white rounded-2xl shadow-inner border border-zinc-100">
                         <QRCode
-                            value={qrValue}
+                            value={scanUrl}
                             size={200}
                             className="h-auto w-full max-w-[200px]"
                         />
@@ -78,16 +79,22 @@ export function QrCodeModal({ lot, onClose }: QrCodeModalProps) {
                     {/* Content Preview */}
                     <div className="w-full bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl p-4 border border-zinc-100 dark:border-zinc-800 group relative">
                         <div className="flex justify-between items-start mb-2">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Nội dung mã quét</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Liên kết quét mã (Động)</span>
                             <button
                                 onClick={handleCopy}
                                 className="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors"
-                                title="Sao chép nội dung"
+                                title="Sao chép liên kết"
                             >
                                 {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
                             </button>
                         </div>
-                        <pre className="text-xs font-mono text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap leading-relaxed">
+                        <div className="text-[10px] font-mono text-blue-600 dark:text-blue-400 break-all mb-3 pb-3 border-b border-zinc-200 dark:border-zinc-700">
+                            {scanUrl}
+                        </div>
+                        <div className="flex justify-between items-start mb-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Dữ liệu hiển thị khi quét</span>
+                        </div>
+                        <pre className="text-[10px] font-mono text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap leading-relaxed">
                             {qrValue}
                         </pre>
                     </div>
