@@ -43,7 +43,25 @@ export default function FastScanPage() {
     const handleScanResult = async (rawCode: string) => {
         if (loading || paused || !rawCode) return
 
-        const code = rawCode.trim().toUpperCase()
+        let code = rawCode.trim()
+
+        // Handle URL scanning (e.g. from public trace QR)
+        try {
+            if (code.startsWith('http')) {
+                const url = new URL(code)
+                // Assuming URL is like .../trace/LOT123
+                const pathParts = url.pathname.split('/')
+                const lastPart = pathParts[pathParts.length - 1]
+                if (lastPart) {
+                    code = lastPart
+                }
+            }
+        } catch (e) {
+            // Not a valid URL, ignore and use raw code
+        }
+
+        code = code.toUpperCase()
+
         // Simple logic to avoid re-processing same code if camera sends multiple frames
         // But for different steps we might scan same code? Unlikely.
 
@@ -209,11 +227,11 @@ export default function FastScanPage() {
                         />
                         {/* Custom Finder / Overlay UI */}
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                            <div className="w-48 h-48 border-2 border-white/60 rounded-2xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
-                                <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-orange-500 -mt-0.5 -ml-0.5 rounded-tl-lg" />
-                                <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-orange-500 -mt-0.5 -mr-0.5 rounded-tr-lg" />
-                                <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-orange-500 -mb-0.5 -ml-0.5 rounded-bl-lg" />
-                                <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-orange-500 -mb-0.5 -mr-0.5 rounded-br-lg" />
+                            <div className="w-56 h-56 border-2 border-white/50 rounded-3xl relative">
+                                <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-orange-500 -mt-0.5 -ml-0.5 rounded-tl-xl" />
+                                <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-orange-500 -mt-0.5 -mr-0.5 rounded-tr-xl" />
+                                <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-orange-500 -mb-0.5 -ml-0.5 rounded-bl-xl" />
+                                <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-orange-500 -mb-0.5 -mr-0.5 rounded-br-xl" />
 
                                 {loading && (
                                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-xl backdrop-blur-sm">
