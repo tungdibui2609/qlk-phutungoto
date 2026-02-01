@@ -83,20 +83,29 @@ export default function FastScanPage() {
             const { data, error } = await supabase
                 .from('lots')
                 .select(`
-                    id, code, packaging_date,
+                    id, code, packaging_date, company_id,
                     products (name, sku, unit),
                     lot_items (quantity, unit),
                     positions (code)
                 `)
                 .eq('code', code)
-                // .eq('system_code', currentSystem.code) // REMOVED: Allow finding LOT from other systems
-                .eq('company_id', profile.company_id)
+                // .eq('system_code', currentSystem.code) // REMOVED
+                // .eq('company_id', profile.company_id) // TEMP REMOVED to debug mismatch
                 .single()
 
             if (error || !data) {
                 showToast(`Không tìm thấy LOT "${code}" (CID: ${profile?.company_id})`, 'error')
                 setPaused(false) // Resume scanning
             } else {
+                // Manual Check
+                if (data.company_id && data.company_id !== profile.company_id) {
+                    alert(`CẢNH BÁO: LOT này thuộc công ty khác!
+                     LOT CID: ${data.company_id}
+                     Của bạn: ${profile.company_id}`)
+                    setPaused(false)
+                    return
+                }
+
                 setLotData(data)
                 setStep(1) // Move to Position Scan
                 setManualCode('')
