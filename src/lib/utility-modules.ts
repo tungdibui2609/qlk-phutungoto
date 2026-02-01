@@ -1,4 +1,4 @@
-import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck } from 'lucide-react'
+import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode } from 'lucide-react'
 
 export type ModuleCategory = 'core' | 'automation' | 'specialized'
 
@@ -51,6 +51,14 @@ export const UTILITY_MODULES: UtilityModule[] = [
         description: 'Theo dõi xuất vật tư tiêu hao theo tổ đội và sổ theo dõi mượn/trả công cụ dụng cụ.',
         icon: HardHat,
         category: 'specialized',
+        default_enabled: false
+    },
+    {
+        id: 'utility_qr_assign',
+        name: 'Quét mã QR & Gán vị trí',
+        description: 'Cho phép quét mã QR để gán nhanh vị trí kho. Hiển thị menu Quét mã QR trên thanh điều hướng.',
+        icon: QrCode,
+        category: 'automation',
         default_enabled: false
     }
 ]

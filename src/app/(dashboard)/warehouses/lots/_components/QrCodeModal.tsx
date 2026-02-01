@@ -39,7 +39,7 @@ export function QrCodeModal({ lot, onClose }: QrCodeModalProps) {
     }
 
     const qrValue = qrLines.join('\n')
-    const scanUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/warehouses/lots/scan/${lot.code}`
+    const scanUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/public/trace/${lot.code}`
 
     const handleCopy = () => {
         navigator.clipboard.writeText(scanUrl)

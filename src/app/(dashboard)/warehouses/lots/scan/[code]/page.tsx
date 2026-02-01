@@ -3,6 +3,7 @@
 import { useState, useEffect, use, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUser } from '@/contexts/UserContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import {
     Boxes,
@@ -29,6 +30,7 @@ interface PageProps {
 export default function LotScanPage({ params }: PageProps) {
     const { code } = use(params)
     const { currentSystem } = useSystem()
+    const { profile } = useUser()
     const { showToast } = useToast()
 
     const [lot, setLot] = useState<any>(null)
@@ -39,7 +41,8 @@ export default function LotScanPage({ params }: PageProps) {
     const [isAssigning, setIsAssigning] = useState(false)
 
     const fetchLotData = useCallback(async () => {
-        if (!code || !currentSystem?.code) return
+        // [SECURITY] Strict check: Must have company_id
+        if (!code || !currentSystem?.code || !profile?.company_id) return
 
         setLoading(true)
         try {
@@ -58,6 +61,7 @@ export default function LotScanPage({ params }: PageProps) {
                 `)
                 .eq('code', code)
                 .eq('system_code', currentSystem.code)
+                .eq('company_id', profile.company_id) // [SECURITY] Isolation
                 .single()
 
             if (error) throw error
@@ -68,14 +72,14 @@ export default function LotScanPage({ params }: PageProps) {
         } finally {
             setLoading(false)
         }
-    }, [code, currentSystem?.code, showToast])
+    }, [code, currentSystem?.code, profile?.company_id, showToast])
 
     useEffect(() => {
         fetchLotData()
     }, [fetchLotData])
 
     const searchPositions = async (term: string) => {
-        if (!currentSystem?.code) return
+        if (!currentSystem?.code || !profile?.company_id) return
         if (term.length < 1) {
             setAvailablePositions([])
             return
@@ -86,6 +90,7 @@ export default function LotScanPage({ params }: PageProps) {
             const { data, error } = await supabase
                 .from('positions')
                 .select('id, code, lot_id')
+                .eq('company_id', profile.company_id) // [SECURITY] Isolation
                 .eq('system_type', currentSystem.code)
                 .ilike('code', `%${term}%`)
                 .limit(10)
@@ -99,14 +104,54 @@ export default function LotScanPage({ params }: PageProps) {
         }
     }
 
+    const checkAndAssignPosition = async (codeToCheck: string) => {
+        if (!codeToCheck || !currentSystem?.code || !profile?.company_id) return
+
+        // Clean up input
+        const cleanCode = codeToCheck.trim().toUpperCase()
+        if (!cleanCode) return
+
+        setSearchingPositions(true)
+        try {
+            // Find exact match
+            const { data, error } = await supabase
+                .from('positions')
+                .select('id, code, lot_id')
+                .eq('company_id', profile.company_id) // [SECURITY] Isolation
+                .eq('system_type', currentSystem.code)
+                .ilike('code', cleanCode) // Use ilike for case-insensitive exact match
+                .single()
+
+            if (error) {
+                // If not found single specific one (e.g. 0 rows or multiple), tries fallback to manual
+                if (error.code === 'PGRST116') { // The result contains 0 rows
+                    showToast(`Không tìm thấy vị trí mã "${cleanCode}"`, 'error')
+                } else {
+                    console.error("Error finding position:", error)
+                }
+                return
+            }
+
+            if (data) {
+                // If found exact one, assign it
+                await handleAssignPosition(data.id, data.code)
+            }
+        } catch (error) {
+            console.error('Error during auto-assign:', error)
+        } finally {
+            setSearchingPositions(false)
+        }
+    }
+
     const handleAssignPosition = async (positionId: string, positionCode: string) => {
-        if (!lot) return
+        if (!lot || !profile?.company_id) return
 
         try {
             const { error } = await supabase
                 .from('positions')
                 .update({ lot_id: lot.id } as any)
                 .eq('id', positionId)
+                .eq('company_id', profile.company_id) // [SECURITY] Isolation
 
             if (error) throw error
 
@@ -121,11 +166,13 @@ export default function LotScanPage({ params }: PageProps) {
     }
 
     const handleUnassignPosition = async (positionId: string, positionCode: string) => {
+        if (!profile?.company_id) return
         try {
             const { error } = await supabase
                 .from('positions')
                 .update({ lot_id: null } as any)
                 .eq('id', positionId)
+                .eq('company_id', profile.company_id) // [SECURITY] Isolation
 
             if (error) throw error
 
@@ -135,6 +182,9 @@ export default function LotScanPage({ params }: PageProps) {
             showToast('Lỗi khi gỡ vị trí: ' + error.message, 'error')
         }
     }
+
+    const { checkSubscription } = useUser()
+    const canAssign = checkSubscription('utility_qr_assign')
 
     if (loading) {
         return (
@@ -217,12 +267,14 @@ export default function LotScanPage({ params }: PageProps) {
                         <MapPin size={20} className="text-orange-500" />
                         Vị trí lưu kho
                     </h3>
-                    <button
-                        onClick={() => setIsAssigning(!isAssigning)}
-                        className={`p-2 rounded-xl transition-colors ${isAssigning ? 'bg-orange-600 text-white' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600'}`}
-                    >
-                        {isAssigning ? <X size={20} /> : <Plus size={20} />}
-                    </button>
+                    {canAssign && (
+                        <button
+                            onClick={() => setIsAssigning(!isAssigning)}
+                            className={`p-2 rounded-xl transition-colors ${isAssigning ? 'bg-orange-600 text-white' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600'}`}
+                        >
+                            {isAssigning ? <X size={20} /> : <Plus size={20} />}
+                        </button>
+                    )}
                 </div>
 
                 <div className="flex flex-wrap gap-2 mb-4">
@@ -230,12 +282,14 @@ export default function LotScanPage({ params }: PageProps) {
                         lot.positions.map((p: any) => (
                             <div key={p.id} className="flex items-center gap-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800 rounded-xl px-3 py-2">
                                 <span className="font-bold text-orange-600 dark:text-orange-400">{p.code}</span>
-                                <button
-                                    onClick={() => handleUnassignPosition(p.id, p.code)}
-                                    className="p-1 hover:bg-orange-100 dark:hover:bg-orange-800 rounded-full text-orange-400"
-                                >
-                                    <X size={14} />
-                                </button>
+                                {canAssign && (
+                                    <button
+                                        onClick={() => handleUnassignPosition(p.id, p.code)}
+                                        className="p-1 hover:bg-orange-100 dark:hover:bg-orange-800 rounded-full text-orange-400"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                )}
                             </div>
                         ))
                     ) : (
@@ -245,7 +299,7 @@ export default function LotScanPage({ params }: PageProps) {
                     )}
                 </div>
 
-                {isAssigning && (
+                {isAssigning && canAssign && (
                     <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800 animate-in fade-in slide-in-from-top-2">
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -260,8 +314,20 @@ export default function LotScanPage({ params }: PageProps) {
                                 }}
                                 className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-orange-500"
                                 autoFocus
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        checkAndAssignPosition(e.currentTarget.value)
+                                    }
+                                }}
                             />
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none">
+                                <kbd className="hidden sm:inline-flex h-5 items-center gap-1 rounded border bg-slate-100 dark:bg-slate-700 px-1.5 font-mono text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                                    <span className="text-xs">↵</span>
+                                    <span>Enter</span>
+                                </kbd>
+                            </div>
                         </div>
+                        <p className="text-[10px] text-slate-400 text-center mt-2 font-medium">Quét mã hoặc nhập và nhấn Enter để gán nhanh</p>
 
                         {searchingPositions ? (
                             <div className="flex items-center justify-center py-4">
