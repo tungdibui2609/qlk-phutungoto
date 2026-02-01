@@ -59,7 +59,15 @@ export default async function PublicTracePage({ params, searchParams }: PageProp
                     <Boxes size={40} />
                 </div>
                 <h1 className="text-xl font-bold text-slate-900 mb-2">Không tìm thấy thông tin</h1>
-                <p className="text-slate-500">Mã LOT <strong>{code}</strong> không tồn tại hoặc đã bị xóa.</p>
+                <p className="text-slate-500 mb-4">Mã LOT <strong>{code}</strong> không tồn tại hoặc đã bị xóa.</p>
+
+                {/* DEBUG INFO */}
+                <div className="bg-red-50 text-red-600 p-4 rounded-xl text-xs font-mono text-left max-w-sm w-full overflow-auto">
+                    <p className="font-bold border-b border-red-200 pb-2 mb-2">Debug Info:</p>
+                    <p>Error Code: {error?.code || 'N/A'}</p>
+                    <p>Message: {error?.message || 'No data returned'}</p>
+                    <p>Param CompanyID: {companyId || 'None'}</p>
+                </div>
             </div>
         )
     }
