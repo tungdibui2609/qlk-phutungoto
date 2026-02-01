@@ -53,6 +53,7 @@ function WarehouseMapContent() {
 
     // Collapsed zones
     const [collapsedZones, setCollapsedZones] = useState<Set<string>>(new Set())
+    const [recentlyUpdatedPositionIds, setRecentlyUpdatedPositionIds] = useState<Set<string>>(new Set())
 
     const [lotInfo, setLotInfo] = useState<Record<string, {
         code: string,
@@ -298,6 +299,20 @@ function WarehouseMapContent() {
                                 return next
                             })
                         }
+
+                        // Trigger visual "blink" highlight
+                        setRecentlyUpdatedPositionIds(prev => {
+                            const next = new Set(prev)
+                            next.add(updatedPos.id)
+                            return next
+                        })
+                        setTimeout(() => {
+                            setRecentlyUpdatedPositionIds(prev => {
+                                const next = new Set(prev)
+                                next.delete(updatedPos.id)
+                                return next
+                            })
+                        }, 1500)
                     }
                 )
                 .subscribe()
@@ -776,6 +791,7 @@ function WarehouseMapContent() {
                     onPositionMenu={handlePositionMenu}
                     onConfigureZone={setConfiguringZone}
                     highlightLotId={assignLotId}
+                    highlightingPositionIds={recentlyUpdatedPositionIds}
                 />
             )}
 

@@ -25,6 +25,7 @@ interface FlexibleZoneGridProps {
     onPositionMenu?: (pos: Position, e: React.MouseEvent) => void
     onConfigureZone?: (zone: Zone) => void
     highlightLotId?: string | null
+    highlightingPositionIds?: Set<string>
     lotInfo?: Record<string, { code: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>, inbound_date?: string, created_at?: string, packaging_date?: string, peeling_date?: string, tags?: string[] }>
 }
 
@@ -42,6 +43,7 @@ export default function FlexibleZoneGrid({
     onPositionMenu,
     onConfigureZone,
     highlightLotId,
+    highlightingPositionIds = new Set(),
     lotInfo = {}
 }: FlexibleZoneGridProps) {
 
@@ -467,6 +469,7 @@ export default function FlexibleZoneGrid({
                     flex flex-col justify-between overflow-hidden
                     ${bgClass} ${borderClass} ${ringClass}
                     ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.02] hover:z-10' : ''}
+                    ${highlightingPositionIds.has(pos.id) ? 'animate-highlight-blink' : ''}
                 `}
             >
                 {/* Selection checkbox - Bottom left corner (only in non-assignment mode) */}
