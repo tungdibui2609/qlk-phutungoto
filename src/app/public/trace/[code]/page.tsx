@@ -23,7 +23,6 @@ export default async function PublicTracePage({ params, searchParams }: PageProp
         .select(`
             code,
             packaging_date,
-            expiry_date,
             products (name, sku, unit, image_url, description),
             suppliers (name, address),
             qc_info (name, description),
@@ -139,17 +138,7 @@ export default async function PublicTracePage({ params, searchParams }: PageProp
                                 </div>
                             </div>
 
-                            <div className="flex items-start gap-3">
-                                <div className="w-10 h-10 rounded-full bg-red-50 text-red-600 flex items-center justify-center shrink-0">
-                                    <ShieldCheck size={20} />
-                                </div>
-                                <div>
-                                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Hạn sử dụng</h3>
-                                    <p className="font-bold text-slate-900">
-                                        {lot.expiry_date ? new Date(lot.expiry_date).toLocaleDateString('vi-VN') : '--'}
-                                    </p>
-                                </div>
-                            </div>
+                            {/* REMOVED: Expiry date column does not exist in DB */}
                         </div>
 
                     </div>
