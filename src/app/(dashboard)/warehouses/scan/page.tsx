@@ -105,9 +105,18 @@ export default function FastScanPage() {
                 // But we should delay slightly to avoid accidentally scanning the same code if user hasn't moved camera?
                 setTimeout(() => setPaused(false), 1000)
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error(e)
-            showToast('Lỗi xử lý', 'error')
+            // SHOW DEBUG INFO
+            showToast(`Lỗi: ${e.message || 'Unknown error'}`, 'error')
+
+            // Temporary Alert for debugging
+            alert(`Debug:
+            Code scanned: "${code}"
+            CompanyID: ${profile?.company_id}
+            Error: ${JSON.stringify(e)}
+            `)
+
             setPaused(false)
         } finally {
             setLoading(false)
