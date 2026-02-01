@@ -44,7 +44,6 @@ export default function FastScanPage() {
                 .from('positions')
                 .select('id, code')
                 .eq('system_type', currentSystem.code)
-                .eq('company_id', profile.company_id)
 
             if (!error && data) {
                 setAllPositions(data)
@@ -189,7 +188,6 @@ export default function FastScanPage() {
                 .select('id, code')
                 .eq('code', posCode)
                 .eq('system_type', currentSystem.code)
-                .eq('company_id', profile.company_id)
                 .single()
 
             if (exactData) {
@@ -214,7 +212,6 @@ export default function FastScanPage() {
                 .from('positions')
                 .update({ lot_id: lotData.id } as any)
                 .eq('id', targetPos.id)
-                .eq('company_id', profile.company_id)
 
             if (updateError) throw updateError
 
