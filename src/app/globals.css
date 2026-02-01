@@ -203,6 +203,21 @@ body::before {
 }
 
 /* === Animations === */
+@keyframes highlight-blink {
+  0% {
+    background-color: rgba(249, 115, 22, 0.4);
+    box-shadow: 0 0 15px rgba(249, 115, 22, 0.5);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.animate-highlight-blink {
+  animation: highlight-blink 1.5s ease-out;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;

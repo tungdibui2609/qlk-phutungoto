@@ -25,6 +25,17 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
     const router = useRouter()
     const [isExpanded, setIsExpanded] = useState(false)
     const [historyData, setHistoryData] = useState<any>(null)
+    const [isHighlighting, setIsHighlighting] = useState(false)
+
+    // Trigger highlight when positions change
+    const positionsHash = JSON.stringify(lot.positions || [])
+    const [lastPositionsHash, setLastPositionsHash] = useState(positionsHash)
+
+    if (positionsHash !== lastPositionsHash) {
+        setLastPositionsHash(positionsHash)
+        setIsHighlighting(true)
+        setTimeout(() => setIsHighlighting(false), 1500)
+    }
 
     // Helper to render info items dynamically
     const renderInfoItems = () => {
@@ -103,7 +114,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
             <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-500 to-orange-400 z-10 transition-opacity"></div>
 
             {/* Header - Colored */}
-            <div className="px-4 pt-5 pb-4 bg-orange-50/50 dark:bg-orange-900/10 border-b border-orange-100/50 dark:border-orange-900/20">
+            <div className={`px-4 pt-5 pb-4 bg-orange-50/50 dark:bg-orange-900/10 border-b border-orange-100/50 dark:border-orange-900/20 transition-all duration-300 ${isHighlighting ? 'animate-highlight-blink' : ''}`}>
                 <div className="flex items-center justify-between">
                     <div className="flex flex-wrap gap-2">
                         <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap shadow-sm border border-black/5 dark:border-white/5">

@@ -17,6 +17,21 @@ interface LotDetailsModalProps {
 
 export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, onOpenQr, isModuleEnabled }) => {
     const [historyData, setHistoryData] = React.useState<any>(null)
+    const [isHighlighting, setIsHighlighting] = React.useState(false)
+
+    // Trigger highlight when positions change
+    const positionsHash = JSON.stringify(lot?.positions || [])
+    const [lastPositionsHash, setLastPositionsHash] = React.useState(positionsHash)
+
+    React.useEffect(() => {
+        if (lot && positionsHash !== lastPositionsHash) {
+            setLastPositionsHash(positionsHash)
+            setIsHighlighting(true)
+            const timer = setTimeout(() => setIsHighlighting(false), 1500)
+            return () => clearTimeout(timer)
+        }
+    }, [positionsHash, lot, lastPositionsHash])
+
     if (!lot) return null
 
     return (
@@ -93,7 +108,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                 </div>
                             )}
 
-                            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 col-span-2 sm:col-span-1">
+                            <div className={`p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 col-span-2 sm:col-span-1 transition-all duration-300 ${isHighlighting ? 'animate-highlight-blink' : ''}`}>
                                 <div className="flex items-center gap-2 text-slate-400 mb-1.5">
                                     <MapPin size={14} />
                                     <span className="text-[10px] font-bold uppercase tracking-wider">Vị trí</span>
