@@ -18,6 +18,7 @@ export default function FastScanPage() {
 
     // State
     const [step, setStep] = useState<ScanStep>(0)
+    const [assignMode, setAssignMode] = useState<'manual' | 'scan'>('manual') // Mode 1: Manual, Mode 2: Scan
     const [useCamera, setUseCamera] = useState(true)
     const [manualCode, setManualCode] = useState('')
 
@@ -28,8 +29,17 @@ export default function FastScanPage() {
     const [lotData, setLotData] = useState<any>(null)
     const [assignedPos, setAssignedPos] = useState<string>('')
 
+    const inputRef = useRef<HTMLInputElement>(null)
+
     // Check module permission
     const isAllowed = checkSubscription('utility_qr_assign')
+
+    // Auto-focus manual input when step 1 and mode manual
+    useEffect(() => {
+        if (step === 1 && assignMode === 'manual' && inputRef.current) {
+            inputRef.current.focus()
+        }
+    }, [step, assignMode])
 
     const handleReset = () => {
         setStep(0)
@@ -110,10 +120,14 @@ export default function FastScanPage() {
                 setLotData(data)
                 setStep(1) // Move to Position Scan
                 setManualCode('')
-                showToast('Đã nhận diện LOT. Vui lòng quét vị trí.', 'success')
+                showToast('Đã nhận diện LOT. Vui lòng xác định vị trí.', 'success')
 
-                // Delay slightly to prevent accidental double-scan
-                setTimeout(() => setPaused(false), 1000)
+                // If in scan mode, we let camera continue. If manual, we pause camera logic.
+                if (assignMode === 'manual') {
+                    setPaused(true)
+                } else {
+                    setTimeout(() => setPaused(false), 1000)
+                }
             }
         } catch (e: any) {
             console.error(e)
@@ -190,24 +204,42 @@ export default function FastScanPage() {
     return (
         <div className="h-[calc(100vh-64px)] flex flex-col bg-slate-50 dark:bg-slate-900 overflow-hidden relative">
 
-            {/* Header Overlay - Adjusted for light mode */}
-            <div className="absolute top-0 left-0 right-0 z-20 p-4 flex items-center justify-between">
-                <div>
-                    <h1 className="font-bold text-lg text-slate-900 dark:text-white">Gán Vị Trí (Camera)</h1>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">{currentSystem?.name}</p>
+            {/* Header Overlay */}
+            <div className="absolute top-0 left-0 right-0 z-20 p-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between mb-3">
+                    <div>
+                        <h1 className="font-bold text-lg text-slate-900 dark:text-white">Gán Vị Trí</h1>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-widest">{currentSystem?.name}</p>
+                    </div>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => setUseCamera(!useCamera)}
+                            className="p-2 bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700 rounded-full hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-300"
+                        >
+                            {useCamera ? <Keyboard size={18} /> : <Camera size={18} />}
+                        </button>
+                        <button
+                            onClick={handleReset}
+                            className="p-2 bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700 rounded-full hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-300"
+                        >
+                            <RotateCcw size={18} />
+                        </button>
+                    </div>
                 </div>
-                <div className="flex gap-2">
+
+                {/* MODE SELECTOR */}
+                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
                     <button
-                        onClick={() => setUseCamera(!useCamera)}
-                        className="p-2 bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700 rounded-full hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-300"
+                        onClick={() => setAssignMode('manual')}
+                        className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${assignMode === 'manual' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500'}`}
                     >
-                        {useCamera ? <Keyboard size={20} /> : <Camera size={20} />}
+                        CĐ 1: Nhập tay vị trí
                     </button>
                     <button
-                        onClick={handleReset}
-                        className="p-2 bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700 rounded-full hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-300"
+                        onClick={() => setAssignMode('scan')}
+                        className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${assignMode === 'scan' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500'}`}
                     >
-                        <RotateCcw size={20} />
+                        CĐ 2: Quét mã vị trí
                     </button>
                 </div>
             </div>
@@ -215,8 +247,8 @@ export default function FastScanPage() {
             {/* Main Content Area */}
             <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center pt-16">
 
-                {/* CAMERA VIEW */}
-                {useCamera && step !== 2 && (
+                {/* CAMERA VIEW (Step 0 or Step 1 with scan mode) */}
+                {useCamera && step !== 2 && (step === 0 || assignMode === 'scan') && (
                     <div className="w-full max-w-xs aspect-square relative bg-black rounded-3xl overflow-hidden shadow-xl border-4 border-white dark:border-slate-800 mb-6 mx-auto">
                         <Scanner
                             onScan={(result) => {
@@ -254,32 +286,35 @@ export default function FastScanPage() {
                 )}
 
                 {/* INSTRUCTION TEXT */}
-                {useCamera && step !== 2 && (
-                    <div className="text-center space-y-2 animate-in fade-in slide-in-from-bottom-4">
+                {step !== 2 && (
+                    <div className="text-center space-y-2 mb-6">
                         <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
-                            {step === 0 ? 'Quét mã LOT' : 'Quét Vị trí'}
+                            {step === 0 ? 'Quét mã LOT' : (assignMode === 'manual' ? 'Nhập Vị trí' : 'Quét Vị trí')}
                         </h2>
-                        <p className="text-slate-500 dark:text-slate-400">
-                            {step === 0 ? 'Di chuyển camera đến mã QR trên sản phẩm' : 'Di chuyển camera đến mã QR trên kệ hàng'}
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                            {step === 0
+                                ? 'Đưa camera đến mã QR trên sản phẩm'
+                                : (assignMode === 'manual' ? 'Nhập mã định danh kệ hàng' : 'Đưa camera đến mã QR trên kệ hàng')}
                         </p>
                     </div>
                 )}
 
-                {/* MANUAL INPUT VIEW */}
-                {(!useCamera && step !== 2) && (
-                    <div className="w-full max-w-md p-6 z-10">
+                {/* MANUAL INPUT VIEW (ALWAYS for Step 1 Manual Mode, or Step 0 if useCamera is false) */}
+                {step !== 2 && (
+                    <div className={`w-full max-w-md p-6 z-10 transition-all duration-300 ${((step === 0 && !useCamera) || (step === 1 && assignMode === 'manual')) ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none absolute'}`}>
                         <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-xl border border-slate-200 dark:border-slate-800">
                             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4 text-center">
                                 {step === 0 ? 'Nhập mã LOT' : 'Nhập mã Vị trí'}
                             </h2>
                             <form onSubmit={(e) => { e.preventDefault(); handleScanResult(manualCode); }}>
                                 <input
+                                    ref={inputRef}
                                     type="text"
                                     value={manualCode}
                                     onChange={(e) => setManualCode(e.target.value)}
-                                    className="w-full p-4 bg-slate-100 dark:bg-slate-800 rounded-xl text-center text-xl font-bold uppercase mb-4 focus:ring-2 focus:ring-orange-500 outline-none"
-                                    placeholder={step === 0 ? "LOT-..." : "A1-..."}
-                                    autoFocus
+                                    className="w-full p-4 bg-slate-100 dark:bg-slate-800 rounded-xl text-center text-xl font-bold uppercase mb-4 focus:ring-2 focus:ring-orange-500 outline-none text-slate-900 dark:text-white"
+                                    placeholder={step === 0 ? "LOT-..." : "Vị trí..."}
+                                    autoFocus={step === 0 && !useCamera}
                                 />
                                 <button
                                     type="submit"
@@ -329,7 +364,7 @@ export default function FastScanPage() {
                         </div>
                         {step === 1 && (
                             <div className="w-10 h-10 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-full flex items-center justify-center animate-pulse">
-                                <MapPin size={20} />
+                                {assignMode === 'manual' ? <Keyboard size={20} /> : <MapPin size={20} />}
                             </div>
                         )}
                     </div>
