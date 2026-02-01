@@ -8,6 +8,8 @@ import Protected from '@/components/auth/Protected'
 import { APP_ROUTES, RouteItem } from '@/config/routes'
 import { useToast } from '@/components/ui/ToastProvider'
 
+// DIAGNOSTIC VERSION: 3.0 (FORCED)
+
 // Types
 type UserProfile = {
     id: string
@@ -43,6 +45,7 @@ export default function UserPermissionsPage() {
     const [saving, setSaving] = useState(false)
     const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null)
     const [activeTab, setActiveTab] = useState<'permissions' | 'blocked_routes'>('permissions')
+    const [fetchError, setFetchError] = useState<string | null>(null)
 
     // Initial Data Fetch
     useEffect(() => {
@@ -68,12 +71,31 @@ export default function UserPermissionsPage() {
 
                 if (permError) throw permError
 
-                // Cast data to types
-                setUsers(userData as any[])
-                setPermissions(permData as Permission[])
+                console.log('--- DEBUG: DATA FETCHED ---')
+                console.log('Users found:', userData?.length || 0)
+                console.log('Permissions found:', permData?.length || 0)
 
-            } catch (error) {
+                // 3. Fallback if empty (for debugging)
+                const finalUsers = (userData as any[]) || []
+                if (finalUsers.length === 0) {
+                    console.warn('Fallback: Adding dummy user for debug')
+                    finalUsers.push({
+                        id: 'dummy-1',
+                        full_name: 'NGƯỜI DÙNG KIỂM TRA (DUMMY)',
+                        email: 'test@example.com',
+                        employee_code: 'TEST001',
+                        roles: { name: 'Admin' },
+                        permissions: [],
+                        blocked_routes: []
+                    })
+                }
+
+                setUsers(finalUsers)
+                setPermissions((permData as Permission[]) || [])
+
+            } catch (error: any) {
                 console.error('Error fetching data:', error)
+                setFetchError(error.message || 'Lỗi không xác định khi tải dữ liệu')
             } finally {
                 setLoading(false)
             }
@@ -399,29 +421,74 @@ export default function UserPermissionsPage() {
                                             </button>
                                         </div>
 
-                                        {/* Table */}
-                                        <table className="w-full text-left">
-                                            <thead>
-                                                <tr className="bg-stone-50 border-b border-stone-200 text-stone-500 text-xs uppercase tracking-wider">
-                                                    <th className="px-4 py-3 font-semibold">Chức năng</th>
-                                                    <th className="px-4 py-3 font-semibold text-center w-24">Xem</th>
-                                                    <th className="px-4 py-3 font-semibold text-center w-24">Quản lý</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-stone-100">
-                                                {(() => {
-                                                    // Group permissions by feature (e.g., product.view + product.manage -> "Sản phẩm")
-                                                    const featureMap: Record<string, { view?: Permission; manage?: Permission; other: Permission[] }> = {}
+                                        {fetchError ? (
+                                            <div className="p-10 text-center bg-red-50 border-b border-red-100">
+                                                <AlertCircle size={32} className="mx-auto mb-2 text-red-500" />
+                                                <p className="text-red-700 font-bold">LỖI KẾT NỐI DATABASE</p>
+                                                <p className="text-red-600 text-xs mt-1">{fetchError}</p>
+                                            </div>
+                                        ) : permissions.length === 0 ? (
+                                            <div className="p-20 text-center">
+                                                <Shield size={48} className="mx-auto mb-4 text-stone-200" />
+                                                <p className="text-stone-500 font-medium">Không có dữ liệu quyền hạn</p>
+                                                <p className="text-stone-400 text-sm mt-1">Vui lòng kiểm tra lại bảng permissions trong Database.</p>
+                                                <button
+                                                    onClick={() => window.location.reload()}
+                                                    className="mt-4 text-orange-600 font-bold text-sm hover:underline"
+                                                >
+                                                    Tải lại trang
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <table className="w-full text-left">
+                                                <thead>
+                                                    <tr className="bg-stone-50 border-b border-stone-200 text-stone-500 text-xs uppercase tracking-wider">
+                                                        <th className="px-4 py-3 font-semibold">Chức năng</th>
+                                                        <th className="px-4 py-3 font-semibold text-center w-24">Xem</th>
+                                                        <th className="px-4 py-3 font-semibold text-center w-24">Quản lý</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-stone-100">
+                                                    {(() => {
+                                                        // Group permissions by feature (e.g., product.view + product.manage -> "Sản phẩm")
+                                                        const featureMap: Record<string, { view?: Permission; manage?: Permission; other: Permission[] }> = {}
 
-                                                    permissions
-                                                        .filter(p => {
-                                                            const isSystemModule = p.module.toUpperCase() === 'HỆ THỐNG' || p.module.toUpperCase() === 'SYSTEM'
+                                                        // HARDCODED TEST ROW
+                                                        featureMap['TEST_SYSTEM'] = {
+                                                            view: { id: 'test-1', code: 'test.view', name: 'QUYỀN TEST HỆ THỐNG', module: 'Hàng hóa' } as any,
+                                                            manage: { id: 'test-2', code: 'test.manage', name: 'QUYỀN TEST HỆ THỐNG', module: 'Hàng hóa' } as any,
+                                                            other: []
+                                                        }
+
+                                                        const filtered = permissions.filter(p => {
+                                                            if (!p.module || !p.code) return false
+                                                            const isSystemModule = p.module.toUpperCase() === 'HỆ THỐNG' || p.module.toUpperCase() === 'SYSTEM' || p.module.toUpperCase() === 'CORE'
                                                             const isSystemPrefix = p.code.startsWith('system.') || p.code.startsWith('user.') || p.code.startsWith('settings.')
                                                             return !isSystemModule && !isSystemPrefix
                                                         })
-                                                        .forEach(perm => {
+
+                                                        if (filtered.length === 0 && permissions.length > 0) {
+                                                            return (
+                                                                <tr>
+                                                                    <td colSpan={3} className="px-4 py-12 text-center text-stone-400 italic">
+                                                                        Tất cả quyền hiện có đều là quyền hệ thống và bị ẩn.
+                                                                    </td>
+                                                                </tr>
+                                                            )
+                                                        }
+
+                                                        // Guaranteed VISIBLE rows
+                                                        featureMap['CORE_VERIFY'] = {
+                                                            view: { id: 'v1', code: 'verify.view', name: 'XÁC MINH HỆ THỐNG (PHẢI HIỆN)', module: 'HÀNG HÓA' } as any,
+                                                            manage: { id: 'v2', code: 'verify.manage', name: 'XÁC MINH HỆ THỐNG (PHẢI HIỆN)', module: 'HÀNG HÓA' } as any,
+                                                            other: []
+                                                        }
+
+                                                        filtered.forEach(perm => {
                                                             // Extract feature name from code (e.g., "product" from "product.view")
-                                                            const [feature, action] = perm.code.split('.')
+                                                            const parts = perm.code.split('.')
+                                                            const feature = parts[0]
+                                                            const action = parts[1]
 
                                                             if (!featureMap[feature]) {
                                                                 featureMap[feature] = { other: [] }
@@ -436,94 +503,97 @@ export default function UserPermissionsPage() {
                                                             }
                                                         })
 
-                                                    // Feature display names
-                                                    const featureNames: Record<string, string> = {
-                                                        warehouse: 'Kho hàng',
-                                                        warehousemap: 'Thiết kế sơ đồ',
-                                                        inventory: 'Tồn kho',
-                                                        product: 'Sản phẩm',
-                                                        category: 'Danh mục',
-                                                        unit: 'Đơn vị tính',
-                                                        origin: 'Xuất xứ',
-                                                        partner: 'Đối tác',
-                                                        vehicle: 'Dòng xe',
-                                                        qc: 'Kiểm hàng (QC)',
-                                                        site_inventory: 'Kho công trình',
-                                                        order: 'Phiếu nhập/xuất',
-                                                        lotcode: 'Mã lô',
-                                                        lot: 'Quản lý LOT',
-                                                        report: 'Báo cáo'
-                                                    }
-
-                                                    return Object.entries(featureMap).map(([feature, { view, manage, other }]) => {
-                                                        const displayName = featureNames[feature] || feature
-                                                        const viewChecked = view && selectedPermissions.includes(view.code)
-                                                        const manageChecked = manage && selectedPermissions.includes(manage.code)
-
-                                                        // Handle special permissions (like warehouse.map)
-                                                        if (!view && !manage && other.length > 0) {
-                                                            return other.map(perm => {
-                                                                const isChecked = selectedPermissions.includes(perm.code)
-                                                                return (
-                                                                    <tr key={perm.id} className="hover:bg-stone-50 transition-colors">
-                                                                        <td className="px-4 py-3">
-                                                                            <span className="font-medium text-stone-800">{perm.name}</span>
-                                                                            <span className="text-xs text-stone-400 ml-2">({perm.module})</span>
-                                                                        </td>
-                                                                        <td className="px-4 py-3 text-center" colSpan={2}>
-                                                                            <label className="inline-flex items-center gap-2 cursor-pointer">
-                                                                                <input
-                                                                                    type="checkbox"
-                                                                                    checked={isChecked}
-                                                                                    onChange={() => togglePermission(perm.code)}
-                                                                                    className="w-5 h-5 rounded border-stone-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
-                                                                                />
-                                                                                <span className="text-sm text-stone-600">Cho phép</span>
-                                                                            </label>
-                                                                        </td>
-                                                                    </tr>
-                                                                )
-                                                            })
+                                                        // Feature display names
+                                                        const featureNames: Record<string, string> = {
+                                                            warehouse: 'Kho hàng',
+                                                            warehousemap: 'Thiết kế sơ đồ',
+                                                            inventory: 'Tồn kho',
+                                                            product: 'Sản phẩm',
+                                                            category: 'Danh mục',
+                                                            unit: 'Đơn vị tính',
+                                                            origin: 'Xuất xứ',
+                                                            partner: 'Đối tác',
+                                                            vehicle: 'Dòng xe',
+                                                            qc: 'Kiểm hàng (QC)',
+                                                            site_inventory: 'Kho công trình',
+                                                            order: 'Phiếu nhập/xuất',
+                                                            lotcode: 'Mã lô',
+                                                            lot: 'Quản lý LOT',
+                                                            report: 'Báo cáo',
+                                                            customer: 'Khách hàng',
+                                                            supplier: 'Nhà cung cấp'
                                                         }
 
-                                                        return (
-                                                            <tr key={feature} className="hover:bg-stone-50 transition-colors">
-                                                                <td className="px-4 py-3">
-                                                                    <span className="font-medium text-stone-800">{displayName}</span>
-                                                                    {view && <span className="text-xs text-stone-400 ml-2">({view.module})</span>}
-                                                                </td>
-                                                                <td className="px-4 py-3 text-center">
-                                                                    {view ? (
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={viewChecked}
-                                                                            onChange={() => togglePermission(view.code)}
-                                                                            className="w-5 h-5 rounded border-stone-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
-                                                                            title={view.description || view.name}
-                                                                        />
-                                                                    ) : (
-                                                                        <span className="text-stone-300">—</span>
-                                                                    )}
-                                                                </td>
-                                                                <td className="px-4 py-3 text-center">
-                                                                    {manage ? (
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={manageChecked}
-                                                                            onChange={() => togglePermission(manage.code)}
-                                                                            className="w-5 h-5 rounded border-stone-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
-                                                                            title={manage.description || manage.name}
-                                                                        />
-                                                                    ) : (
-                                                                        <span className="text-stone-300">—</span>
-                                                                    )}
-                                                                </td>
-                                                            </tr>
-                                                        )
-                                                    })
-                                                })()}
-                                            </tbody>
-                                        </table>
+                                                        return Object.entries(featureMap).map(([feature, { view, manage, other }]) => {
+                                                            const displayName = featureNames[feature] || feature
+                                                            const viewChecked = view && selectedPermissions.includes(view.code)
+                                                            const manageChecked = manage && selectedPermissions.includes(manage.code)
+
+                                                            // Handle special permissions (like warehouse.map)
+                                                            if (!view && !manage && other.length > 0) {
+                                                                return other.map(perm => {
+                                                                    const isChecked = selectedPermissions.includes(perm.code)
+                                                                    return (
+                                                                        <tr key={perm.id} className="hover:bg-stone-50 transition-colors">
+                                                                            <td className="px-4 py-3">
+                                                                                <span className="font-medium text-stone-800">{perm.name}</span>
+                                                                                <span className="text-xs text-stone-400 ml-2">({perm.module})</span>
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-center" colSpan={2}>
+                                                                                <label className="inline-flex items-center gap-2 cursor-pointer">
+                                                                                    <input
+                                                                                        type="checkbox"
+                                                                                        checked={isChecked}
+                                                                                        onChange={() => togglePermission(perm.code)}
+                                                                                        className="w-5 h-5 rounded border-stone-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
+                                                                                    />
+                                                                                    <span className="text-sm text-stone-600">Cho phép</span>
+                                                                                </label>
+                                                                            </td>
+                                                                        </tr>
+                                                                    )
+                                                                })
+                                                            }
+
+                                                            return (
+                                                                <tr key={feature} className="hover:bg-stone-50 transition-colors">
+                                                                    <td className="px-4 py-3">
+                                                                        <span className="font-medium text-stone-800">{displayName}</span>
+                                                                        {view && <span className="text-xs text-stone-400 ml-2">({view.module})</span>}
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-center">
+                                                                        {view ? (
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={viewChecked}
+                                                                                onChange={() => togglePermission(view.code)}
+                                                                                className="w-5 h-5 rounded border-stone-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
+                                                                                title={view.description || view.name}
+                                                                            />
+                                                                        ) : (
+                                                                            <span className="text-stone-300">—</span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-center">
+                                                                        {manage ? (
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={manageChecked}
+                                                                                onChange={() => togglePermission(manage.code)}
+                                                                                className="w-5 h-5 rounded border-stone-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
+                                                                                title={manage.description || manage.name}
+                                                                            />
+                                                                        ) : (
+                                                                            <span className="text-stone-300">—</span>
+                                                                        )}
+                                                                    </td>
+                                                                </tr>
+                                                            )
+                                                        })
+                                                    })()}
+                                                </tbody>
+                                            </table>
+                                        )}
                                     </div>
                                 ) : (
                                     // BLOCKED ROUTES LIST

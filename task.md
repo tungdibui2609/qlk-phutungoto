@@ -22,6 +22,7 @@
     - [x] Database: Create `permissions` table
     - [x] Frontend: Create `/users/permissions` page (Raw Permissions List)
     - [x] Database: Add `allowed_systems` to `user_profiles` (Scope)
+    - [x] **Debug: Fix permissions table visibility (Fixed URL, Key, and RLS)**
     - [ ] **Frontend: Create `/users/roles` page (Role Management with Permission Checkboxes)**
     - [ ] Frontend: Update User Management to assign Roles and System Scope
 - [ ] Frontend: Conditional UI

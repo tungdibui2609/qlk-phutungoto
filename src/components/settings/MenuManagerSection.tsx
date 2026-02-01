@@ -10,72 +10,7 @@ import { LayoutDashboard, Package, Settings, Warehouse, BookUser, BarChart3, Shi
 // but Sidebar.tsx uses lucide icons which might not be serializable or easy to export/import cleanly if mixed with client code.
 // Let's redefine a simple structure here for the settings purpose.
 
-type MenuNode = {
-    id: string
-    label: string
-    icon: any
-    children?: MenuNode[]
-}
-
-const MENU_STRUCTURE: MenuNode[] = [
-    { id: 'Tổng quan', label: 'Tổng quan', icon: LayoutDashboard },
-    {
-        id: 'Quản lý sản phẩm',
-        label: 'Quản lý sản phẩm',
-        icon: Package,
-        children: [
-            { id: 'Sản phẩm', label: 'Sản phẩm', icon: null },
-            { id: 'Danh mục', label: 'Danh mục', icon: null },
-            { id: 'Đơn vị', label: 'Đơn vị', icon: null },
-            { id: 'Xuất xứ', label: 'Xuất xứ', icon: null },
-        ]
-    },
-    {
-        id: 'Quản lý thông tin',
-        label: 'Quản lý thông tin',
-        icon: BookUser,
-        children: [
-            { id: 'Nhà cung cấp', label: 'Nhà cung cấp', icon: null },
-            { id: 'Dòng xe', label: 'Dòng xe', icon: null },
-            { id: 'Khách hàng', label: 'Khách hàng', icon: null },
-        ]
-    },
-    {
-        id: 'Quản lý Kho',
-        label: 'Quản lý Kho',
-        icon: Warehouse,
-        children: [
-            { id: 'Hạ tầng', label: 'Hạ tầng', icon: null },
-            { id: 'Sơ đồ kho', label: 'Sơ đồ kho', icon: null },
-            { id: 'Quản lý LOT', label: 'Quản lý LOT', icon: null },
-            { id: 'Nhập kho (KT)', label: 'Nhập kho (KT)', icon: null },
-            { id: 'Xuất kho (KT)', label: 'Xuất kho (KT)', icon: null },
-            { id: 'Tồn kho', label: 'Tồn kho', icon: null },
-            { id: 'Kiểm kê', label: 'Kiểm kê', icon: null },
-        ]
-    },
-    {
-        id: 'Báo cáo',
-        label: 'Báo cáo',
-        icon: BarChart3,
-        children: [
-            { id: 'Chứng từ khách hàng', label: 'Chứng từ khách hàng', icon: null },
-            { id: 'Công nợ NCC', label: 'Công nợ NCC', icon: null },
-        ]
-    },
-    {
-        id: 'Người dùng',
-        label: 'Người dùng',
-        icon: Shield,
-        children: [
-            { id: 'Người dùng', label: 'Người dùng', icon: null },
-            { id: 'Vai trò', label: 'Vai trò', icon: null },
-            { id: 'Phân quyền', label: 'Phân quyền', icon: null },
-        ]
-    },
-    // 'Cài đặt' is usually essential, maybe don't allow hiding it? Or allow it.
-    { id: 'Cài đặt', label: 'Cài đặt', icon: Settings },
-]
+import { MENU_STRUCTURE, MenuItemConfig as MenuNode } from '@/lib/menu-structure' // Use centralized structure
 
 export default function MenuManagerSection() {
     const { profile, updateProfileSettings } = useUser()
@@ -183,20 +118,30 @@ export default function MenuManagerSection() {
                 </div>
             </div>
 
+            <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex gap-3 mb-6">
+                <div className="p-2 bg-blue-100 text-blue-600 rounded-lg h-fit">
+                    <Shield size={18} />
+                </div>
+                <div>
+                    <p className="text-sm font-bold text-blue-800">Lưu ý về quyền hiển thị</p>
+                    <p className="text-xs text-blue-600 mt-0.5">Đây là cài đặt cá nhân của bạn. Nếu Admin đã ẩn một menu ở cấp độ hệ thống, bạn sẽ không thể nhìn thấy menu đó dù đã bật ở đây.</p>
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {MENU_STRUCTURE.map(menu => {
                     const Icon = menu.icon
                     const isHidden = hiddenMenus.includes(menu.id)
 
                     return (
-                        <div key={menu.id} className="border border-stone-100 rounded-lg p-4 bg-stone-50/50 hover:bg-white hover:shadow-sm transition-all">
+                        <div key={menu.id} className="border border-stone-200 rounded-xl p-4 bg-stone-50/50 hover:bg-white hover:shadow-md transition-all">
                             {/* Parent Item */}
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-2">
-                                    <div className="p-2 bg-orange-100 text-orange-600 rounded-md">
+                                    <div className="p-2 bg-orange-100 text-orange-600 rounded-lg">
                                         {Icon && <Icon size={18} />}
                                     </div>
-                                    <span className="font-medium text-stone-800">{menu.label}</span>
+                                    <span className="font-bold text-sm text-stone-800">{menu.name}</span>
                                 </div>
                                 <label className="relative inline-flex items-center cursor-pointer">
                                     <input
@@ -211,13 +156,13 @@ export default function MenuManagerSection() {
 
                             {/* Children Items */}
                             {menu.children && menu.children.length > 0 && (
-                                <div className="ml-4 pl-4 border-l-2 border-stone-200 space-y-2 mt-2">
+                                <div className="ml-4 pl-4 border-l border-stone-200 space-y-2 mt-3 pt-2">
                                     {menu.children.map(child => {
                                         const isChildHidden = hiddenMenus.includes(child.id)
                                         return (
-                                            <div key={child.id} className="flex items-center justify-between py-1">
-                                                <span className={`text-sm ${isChildHidden ? 'text-stone-400' : 'text-stone-600'}`}>
-                                                    {child.label}
+                                            <div key={child.id} className="flex items-center justify-between py-1 group">
+                                                <span className={`text-xs font-medium transition-colors ${isChildHidden ? 'text-stone-400 line-through' : 'text-stone-600 group-hover:text-stone-900'}`}>
+                                                    {child.name}
                                                 </span>
                                                 <label className="relative inline-flex items-center cursor-pointer scale-75 origin-right">
                                                     <input

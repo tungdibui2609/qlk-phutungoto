@@ -11,91 +11,99 @@ import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
 
 type MenuItem = {
+    id: string // [NEW] Mandatory unique ID
     name: string
     href?: string
     icon: any
     requiredPermission?: string // [NEW] Permissions key
     requiredModule?: string // [NEW] Commercial Module Code
-    children?: { name: string; href: string; icon: any; requiredPermission?: string; requiredModule?: string }[]
+    children?: { id: string; name: string; href: string; icon: any; requiredPermission?: string; requiredModule?: string }[]
 }
 
 const menuItems: MenuItem[] = [
-    { name: 'Tổng quan', href: '/', icon: LayoutDashboard },
+    { id: 'overview', name: 'Tổng quan', href: '/', icon: LayoutDashboard },
     {
+        id: 'products_cat',
         name: 'Quản lý sản phẩm',
         icon: Package,
         children: [
-            { name: 'Sản phẩm', href: '/products', icon: List, requiredPermission: 'product.view' },
-            { name: 'Danh mục', href: '/categories', icon: FolderTree, requiredPermission: 'product.view' },
-            { name: 'Đơn vị', href: '/units', icon: Boxes, requiredPermission: 'product.view' },
-            { name: 'Xuất xứ', href: '/origins', icon: Globe, requiredPermission: 'product.view' },
-            { name: 'Mã phụ', href: '/warehouses/lot-codes', icon: Tag, requiredPermission: 'product.view' },
+            { id: 'products', name: 'Sản phẩm', href: '/products', icon: List, requiredPermission: 'product.view' },
+            { id: 'categories', name: 'Danh mục', href: '/categories', icon: FolderTree, requiredPermission: 'product.view' },
+            { id: 'units', name: 'Đơn vị', href: '/units', icon: Boxes, requiredPermission: 'product.view' },
+            { id: 'origins', name: 'Xuất xứ', href: '/origins', icon: Globe, requiredPermission: 'product.view' },
+            { id: 'lot_codes', name: 'Mã phụ', href: '/warehouses/lot-codes', icon: Tag, requiredPermission: 'product.view' },
         ]
     },
     {
+        id: 'info_cat',
         name: 'Quản lý thông tin',
         icon: BookUser,
         children: [
-            { name: 'Nhà cung cấp', href: '/suppliers', icon: Building2, requiredPermission: 'partner.view' },
-            { name: 'Dòng xe', href: '/vehicles', icon: Car, requiredPermission: 'vehicle.view' },
-            { name: 'Khách hàng', href: '/customers', icon: Users, requiredPermission: 'partner.view' },
-            { name: 'Loại phiếu', href: '/order-types', icon: FileText, requiredPermission: 'warehouse.manage' },
-            { name: 'QC', href: '/qc', icon: ShieldCheck, requiredPermission: 'qc.view' },
+            { id: 'suppliers', name: 'Nhà cung cấp', href: '/suppliers', icon: Building2, requiredPermission: 'partner.view' },
+            { id: 'vehicles', name: 'Dòng xe', href: '/vehicles', icon: Car, requiredPermission: 'vehicle.view' },
+            { id: 'customers', name: 'Khách hàng', href: '/customers', icon: Users, requiredPermission: 'partner.view' },
+            { id: 'order_types', name: 'Loại phiếu', href: '/order-types', icon: FileText, requiredPermission: 'warehouse.manage' },
+            { id: 'qc', name: 'QC', href: '/qc', icon: ShieldCheck, requiredPermission: 'qc.view' },
         ]
     },
     {
+        id: 'warehouse_cat',
         name: 'Quản lý Kho',
         icon: Warehouse,
         children: [
-            { name: 'Hạ tầng', href: '/warehouses', icon: Warehouse, requiredPermission: 'warehouse.view' },
-            { name: 'Sơ đồ kho', href: '/warehouses/map', icon: Map, requiredPermission: 'warehousemap.manage' },
-            { name: 'Trạng thái kho', href: '/warehouses/status', icon: BarChart3, requiredPermission: 'warehouse.view' },
-            { name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes, requiredPermission: 'inventory.view' },
-            { name: 'Kiểm kê', href: '/operations/audit', icon: ClipboardCheck, requiredPermission: 'inventory.manage' },
-            { name: 'Ghi chú vận hành', href: '/operations/notes', icon: StickyNote, requiredPermission: 'warehouse.view' },
+            { id: 'infrastructure', name: 'Hạ tầng', href: '/warehouses', icon: Warehouse, requiredPermission: 'warehouse.view' },
+            { id: 'warehouse_map', name: 'Sơ đồ kho', href: '/warehouses/map', icon: Map, requiredPermission: 'warehousemap.manage' },
+            { id: 'warehouse_status', name: 'Trạng thái kho', href: '/warehouses/status', icon: BarChart3, requiredPermission: 'warehouse.view' },
+            { id: 'lots', name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes, requiredPermission: 'inventory.view' },
+            { id: 'audit', name: 'Kiểm kê', href: '/operations/audit', icon: ClipboardCheck, requiredPermission: 'inventory.manage' },
+            { id: 'notes', name: 'Ghi chú vận hành', href: '/operations/notes', icon: StickyNote, requiredPermission: 'warehouse.view' },
         ]
     },
     {
+        id: 'construction_cat',
         name: 'Quản lý Công Trình',
         icon: HardHat,
         requiredModule: 'CONSTRUCTION', // Commercial Module Check
         children: [
-            { name: 'Tổng quan', href: '/construction', icon: LayoutDashboard, requiredPermission: 'site_inventory.view' },
-            { name: 'Cấp phát', href: '/site-inventory', icon: ClipboardCheck, requiredPermission: 'site_inventory.view' },
-            { name: 'Thành viên & Đội', href: '/construction/members', icon: Users, requiredPermission: 'site_inventory.view' },
+            { id: 'construction_overview', name: 'Tổng quan', href: '/construction', icon: LayoutDashboard, requiredPermission: 'site_inventory.view' },
+            { id: 'site_inventory', name: 'Cấp phát', href: '/site-inventory', icon: ClipboardCheck, requiredPermission: 'site_inventory.view' },
+            { id: 'construction_members', name: 'Thành viên & Đội', href: '/construction/members', icon: Users, requiredPermission: 'site_inventory.view' },
         ]
     },
     {
+        id: 'accounting_cat',
         name: 'Kế toán',
         icon: FileText,
         children: [
-            { name: 'Nhập kho', href: '/inbound', icon: ArrowDownToLine, requiredPermission: 'inventory.manage' },
-            { name: 'Xuất kho', href: '/outbound', icon: ArrowUpFromLine, requiredPermission: 'inventory.manage' },
+            { id: 'inbound', name: 'Nhập kho', href: '/inbound', icon: ArrowDownToLine, requiredPermission: 'inventory.manage' },
+            { id: 'outbound', name: 'Xuất kho', href: '/outbound', icon: ArrowUpFromLine, requiredPermission: 'inventory.manage' },
         ]
     },
     {
+        id: 'reports_cat',
         name: 'Báo cáo',
         icon: BarChart3,
         children: [
-            { name: 'Tồn kho', href: '/inventory', icon: Package, requiredPermission: 'inventory.view' },
-            { name: 'Lịch sử thao tác', href: '/operation-history', icon: Activity, requiredPermission: 'report.view' },
-            { name: 'Chứng từ khách hàng', href: '/reports/customer-docs', icon: FileText, requiredPermission: 'report.view' },
-            { name: 'Công nợ NCC', href: '/reports/supplier-debts', icon: DollarSign, requiredPermission: 'report.view' },
-            { name: 'Nhật ký xuất nhập', href: '/reports/accounting-history', icon: ArrowRightLeft, requiredPermission: 'report.view' },
-            { name: 'Nhật ký xuất nhập LOT', href: '/reports/lot-history', icon: History, requiredPermission: 'report.view' },
-            { name: 'Nhật ký liên kết', href: '/reports/linked-journal', icon: ArrowRightLeft, requiredPermission: 'report.view' },
+            { id: 'inventory_report', name: 'Tồn kho', href: '/inventory', icon: Package, requiredPermission: 'inventory.view' },
+            { id: 'history', name: 'Lịch sử thao tác', href: '/operation-history', icon: Activity, requiredPermission: 'report.view' },
+            { id: 'customer_docs', name: 'Chứng từ khách hàng', href: '/reports/customer-docs', icon: FileText, requiredPermission: 'report.view' },
+            { id: 'supplier_debts', name: 'Công nợ NCC', href: '/reports/supplier-debts', icon: DollarSign, requiredPermission: 'report.view' },
+            { id: 'accounting_history', name: 'Nhật ký xuất nhập', href: '/reports/accounting-history', icon: ArrowRightLeft, requiredPermission: 'report.view' },
+            { id: 'lot_history', name: 'Nhật ký xuất nhập LOT', href: '/reports/lot-history', icon: History, requiredPermission: 'report.view' },
+            { id: 'linked_journal', name: 'Nhật ký liên kết', href: '/reports/linked-journal', icon: ArrowRightLeft, requiredPermission: 'report.view' },
         ]
     },
     {
+        id: 'users_cat',
         name: 'Người dùng',
         icon: Shield,
         children: [
-            { name: 'Người dùng', href: '/users', icon: Shield },
-            { name: 'Vai trò', href: '/users/roles', icon: BookUser },
-            { name: 'Phân quyền', href: '/users/permissions', icon: Key },
+            { id: 'users_list', name: 'Người dùng', href: '/users', icon: Shield },
+            { id: 'roles', name: 'Vai trò', href: '/users/roles', icon: BookUser },
+            { id: 'permissions', name: 'Phân quyền', href: '/users/permissions', icon: Key },
         ]
     },
-    { name: 'Cài đặt', href: '/settings', icon: Settings },
+    { id: 'settings', name: 'Cài đặt', href: '/settings', icon: Settings },
 ]
 
 type CompanyInfo = {
@@ -164,11 +172,13 @@ export default function Sidebar() {
                 return null
             }
 
-            // Get hidden menus for current system
-            const hiddenMenus = profile?.hidden_menus?.[systemType] || []
+            // Merge System-wide hidden menus AND User-specific hidden menus
+            const systemHidden = currentSystem?.hidden_menus || []
+            const userHidden = profile?.hidden_menus?.[systemType] || []
+            const allHidden = [...new Set([...systemHidden, ...userHidden])]
 
             // If parent is hidden, don't show
-            if (hiddenMenus.includes(item.name)) return null
+            if (allHidden.includes(item.id) || allHidden.includes(item.name)) return null
 
             // Filter children
             if (item.children) {
@@ -176,8 +186,8 @@ export default function Sidebar() {
                     // Check subscription for child
                     if (child.requiredModule && !checkSubscription(child.requiredModule)) return false
 
-                    // Check profile hidden menus
-                    if (hiddenMenus.includes(child.name)) return false
+                    // Check all hidden menus (both system and user)
+                    if (allHidden.includes(child.id) || allHidden.includes(child.name)) return false
 
                     // Check Permission
                     if (child.requiredPermission && !hasPermission(child.requiredPermission)) return false

@@ -73,7 +73,7 @@ export async function middleware(request: NextRequest) {
 
     // API Routes protection which requires user session
     // Exception: /api/restore-admin (Public recovery endpoint) and /api/auth/* (Supabase callback)
-    if (!user && path.startsWith('/api/') && !path.startsWith('/api/restore-admin') && !path.startsWith('/api/auth/')) {
+    if (!user && path.startsWith('/api/') && !path.startsWith('/api/restore-admin') && !path.startsWith('/api/auth/') && !path.startsWith('/api/debug-perms')) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

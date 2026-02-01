@@ -9,6 +9,7 @@ import { PRODUCT_MODULES } from '@/lib/product-modules'
 import { LOT_MODULES } from '@/lib/lot-modules'
 import { DASHBOARD_MODULES } from '@/lib/dashboard-modules'
 import { UTILITY_MODULES } from '@/lib/utility-modules'
+import { MENU_STRUCTURE } from '@/lib/menu-structure' // [NEW]
 
 // Combine all modules for display
 const ALL_MODULES = [
@@ -37,9 +38,10 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
         product: string[],
         lot: string[],
         dashboard: string[],
-        utility: string[]
+        utility: string[],
+        hidden_menus: string[] // [NEW]
     }>({
-        inbound: [], outbound: [], product: [], lot: [], dashboard: [], utility: []
+        inbound: [], outbound: [], product: [], lot: [], dashboard: [], utility: [], hidden_menus: []
     })
 
     const [loading, setLoading] = useState(false)
@@ -143,7 +145,8 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
                 product: getDefaults(productList || [], PRODUCT_MODULES),
                 lot: getDefaults(lotList, LOT_MODULES),
                 dashboard: getDefaults(dashboardList, DASHBOARD_MODULES),
-                utility: getDefaults(utilityList || [], UTILITY_MODULES)
+                utility: getDefaults(utilityList || [], UTILITY_MODULES),
+                hidden_menus: Array.isArray(sys.hidden_menus) ? sys.hidden_menus : [] // [NEW]
             })
         } catch (error: any) {
             console.error('Error fetching system config:', error)
@@ -189,6 +192,28 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
         })
     }
 
+    const toggleMenu = (menuId: string, children?: any[]) => {
+        setHasChanges && setHasChanges(true)
+        setConfig(prev => {
+            const current = prev.hidden_menus || []
+            const exists = current.includes(menuId)
+            let newList = exists ? current.filter(id => id !== menuId) : [...current, menuId]
+
+            // If hiding parent, hide children too
+            if (!exists && children) {
+                children.forEach(c => {
+                    if (!newList.includes(c.id)) newList.push(c.id)
+                })
+            }
+            // If showing parent, keep children as is or show them? 
+            // Usually showing parent doesn't force show children.
+
+            return { ...prev, hidden_menus: newList }
+        })
+    }
+
+    const [hasChanges, setHasChanges] = useState(false) // Added change tracking
+
     const handleSave = async () => {
         setSaving(true)
         try {
@@ -203,10 +228,13 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
                 outbound_modules: config.outbound,
                 lot_modules: config.lot,
                 dashboard_modules: config.dashboard,
+                hidden_menus: config.hidden_menus, // [NEW]
                 modules: modulesJson
             }).eq('id', systemId)
 
             if (sysError) throw sysError
+
+            setHasChanges(false) // Reset
 
             showToast(`Đã lưu cấu hình cho kho ${systemName}`, 'success')
 
@@ -218,7 +246,7 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
         }
     }
 
-    const categories = ['Nhập kho', 'Xuất kho', 'Sản phẩm', 'Quản lý LOT', 'Dashboard', 'Tiện ích hệ thống']
+    const categories = ['Nhập kho', 'Xuất kho', 'Sản phẩm', 'Quản lý LOT', 'Dashboard', 'Tiện ích hệ thống', 'Menu Sidebar']
 
     if (loading) {
         return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-orange-500" size={32} /></div>
@@ -244,7 +272,7 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
 
                 <button
                     onClick={handleSave}
-                    disabled={saving}
+                    disabled={saving || !hasChanges}
                     className="bg-orange-600 text-white px-6 py-2 rounded-xl text-sm font-bold hover:bg-orange-700 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50"
                 >
                     {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
@@ -280,6 +308,74 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
 
                 <div className="space-y-8">
                     {categories.filter(cat => activeCategory === 'all' || activeCategory === cat).map(cat => {
+                        if (cat === 'Menu Sidebar') {
+                            const visibleMenus = MENU_STRUCTURE.filter(m => !searchTerm || m.name.toLowerCase().includes(searchTerm.toLowerCase()));
+                            if (visibleMenus.length === 0) return null;
+
+                            return (
+                                <div key={cat} className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+                                    <h4 className="text-sm font-bold text-stone-500 uppercase tracking-wider mb-3 border-b border-stone-100 pb-1 flex items-center gap-2">
+                                        {cat}
+                                        <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">NEW</span>
+                                    </h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {visibleMenus.map(menu => {
+                                            const isHidden = config.hidden_menus?.includes(menu.id);
+                                            const MenuIcon = menu.icon;
+
+                                            return (
+                                                <div key={menu.id} className="p-4 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 transition-all">
+                                                    <div className="flex items-center justify-between mb-3">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="p-2 bg-stone-100 text-stone-600 rounded-lg">
+                                                                <MenuIcon size={20} />
+                                                            </div>
+                                                            <span className="font-bold text-sm text-stone-800">{menu.name}</span>
+                                                        </div>
+                                                        <label className="relative inline-flex items-center cursor-pointer">
+                                                            <input
+                                                                type="checkbox"
+                                                                className="sr-only peer"
+                                                                checked={!isHidden}
+                                                                onChange={() => toggleMenu(menu.id, menu.children)}
+                                                            />
+                                                            <div className="w-9 h-5 bg-stone-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-500"></div>
+                                                        </label>
+                                                    </div>
+
+                                                    {menu.children && menu.children.length > 0 && (
+                                                        <div className="grid grid-cols-1 gap-2 mt-4 pt-4 border-t border-stone-100">
+                                                            {menu.children.map(child => {
+                                                                const isChildHidden = config.hidden_menus?.includes(child.id);
+                                                                const ChildIcon = child.icon;
+                                                                return (
+                                                                    <div key={child.id} className="flex items-center justify-between py-1 px-2 rounded-lg hover:bg-stone-100 transition-colors">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <ChildIcon size={14} className="text-stone-400" />
+                                                                            <span className={`text-xs font-medium ${isChildHidden ? 'text-stone-400 line-through' : 'text-stone-600'}`}>{child.name}</span>
+                                                                        </div>
+                                                                        <label className="relative inline-flex items-center cursor-pointer scale-75 origin-right">
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                className="sr-only peer"
+                                                                                checked={!isChildHidden}
+                                                                                onChange={() => toggleMenu(child.id)}
+                                                                            />
+                                                                            <div className="w-9 h-5 bg-stone-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-500"></div>
+                                                                        </label>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            );
+                        }
+
                         const modules = ALL_MODULES.filter(m => m.category === cat)
                         const visibleModules = modules.filter(m => {
                             // [NEW] Hide core modules
@@ -308,7 +404,7 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
                                         const isUnlocked = companyLicenses.includes(mod.id)
 
                                         return (
-                                            <div key={mod.id} onClick={() => handleToggle(mod.id, cat)}
+                                            <div key={mod.id} onClick={() => { handleToggle(mod.id, cat); setHasChanges(true); }}
                                                 className={`
                                                             p-3 rounded-lg border cursor-pointer flex items-start gap-3 transition-all select-none relative
                                                             ${isChecked

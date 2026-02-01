@@ -28,6 +28,7 @@ interface System {
   lot_modules?: string[] | null
   is_active?: boolean
   sort_order?: number
+  hidden_menus?: string[] | null
 }
 
 interface SystemContextType {
@@ -127,7 +128,8 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
           inbound_modules: Array.isArray(inbound) ? inbound : [],
           outbound_modules: Array.isArray(outbound) ? outbound : [],
           dashboard_modules: sys.dashboard_modules,
-          lot_modules: sys.lot_modules
+          lot_modules: sys.lot_modules,
+          hidden_menus: Array.isArray(sys.hidden_menus) ? sys.hidden_menus : []
         }
       })
 
