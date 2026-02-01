@@ -178,7 +178,7 @@ export function LotPageManager() {
 
             {/* Lot Details Modal */}
             <LotDetailsModal
-                lot={viewingLot}
+                lot={lots.find(l => l.id === viewingLot?.id) || viewingLot}
                 onClose={() => setViewingLot(null)}
                 onOpenQr={(lot) => {
                     setQrLot(lot as any);

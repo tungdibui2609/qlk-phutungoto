@@ -262,7 +262,6 @@ function WarehouseMapContent() {
         // This ensures that when a position is assigned to a LOT on mobile,
         // the warehouse map reflects the change immediately.
         if (systemType && accessToken) {
-            console.log(`Setting up real-time for ${systemType}...`)
             const channel = supabase
                 .channel(`warehouse-map-${systemType}`)
                 .on(
@@ -274,7 +273,6 @@ function WarehouseMapContent() {
                         filter: `system_type=eq.${systemType}`
                     },
                     (payload) => {
-                        console.log('Real-time Event [Map]:', payload)
                         const updatedPos = payload.new as Position
 
                         if (!updatedPos || !updatedPos.id) return
@@ -302,12 +300,9 @@ function WarehouseMapContent() {
                         }
                     }
                 )
-                .subscribe((status) => {
-                    console.log('Real-time Status [Map]:', status)
-                })
+                .subscribe()
 
             return () => {
-                console.log('Cleaning up real-time...')
                 supabase.removeChannel(channel)
             }
         }

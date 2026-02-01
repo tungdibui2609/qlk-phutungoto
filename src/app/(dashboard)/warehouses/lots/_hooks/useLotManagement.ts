@@ -46,6 +46,26 @@ export function useLotManagement() {
             fetchLots()
         }
         fetchCommonData()
+
+        // 🟢 Real-time Subscription: Listen for changes in positions
+        const channel = supabase
+            .channel('lot-management-positions')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*', // Listen for ALL changes (UPDATE, INSERT, DELETE)
+                    schema: 'public',
+                    table: 'positions'
+                },
+                (payload) => {
+                    fetchLots()
+                }
+            )
+            .subscribe()
+
+        return () => {
+            supabase.removeChannel(channel)
+        }
     }, [currentSystem])
 
     async function fetchCommonData() {

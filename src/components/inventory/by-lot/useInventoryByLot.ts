@@ -33,13 +33,10 @@ export function useInventoryByLot(units: any[]) {
                     table: 'positions'
                 },
                 (payload) => {
-                    console.log('Real-time Event [Lot Management]:', payload)
                     fetchLots()
                 }
             )
-            .subscribe((status) => {
-                console.log('Real-time Status [Lot Management]:', status)
-            })
+            .subscribe()
 
         return () => {
             supabase.removeChannel(channel)
