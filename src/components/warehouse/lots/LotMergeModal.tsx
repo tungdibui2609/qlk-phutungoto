@@ -214,7 +214,11 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                         const sMeta = sLot.metadata ? { ...sLot.metadata as any } : {}
                         if (!sMeta.system_history) sMeta.system_history = {}
                         sMeta.system_history.merged_to = targetLot.code
-                        await supabase.from('lots').update({ metadata: sMeta }).eq('id', lid)
+                        await supabase.from('lots').update({
+                            metadata: sMeta,
+                            status: 'exported',
+                            quantity: 0
+                        }).eq('id', lid)
                     }
                 }
             }

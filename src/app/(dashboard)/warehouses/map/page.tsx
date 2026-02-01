@@ -11,6 +11,7 @@ import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { useSystem } from '@/contexts/SystemContext'
 import { LotTagModal } from '@/components/lots/LotTagModal'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
+import { QuickBulkExportModal } from '@/components/warehouse/map/QuickBulkExportModal'
 import { usePositionActionManager } from '@/components/warehouse/map/PositionActionManager'
 import Protected from '@/components/auth/Protected'
 
@@ -46,6 +47,7 @@ function WarehouseMapContent() {
     // Multi-select state
     const [selectedPositionIds, setSelectedPositionIds] = useState<Set<string>>(new Set())
     const [occupiedIds, setOccupiedIds] = useState<Set<string>>(new Set())
+    const [isBulkExportOpen, setIsBulkExportOpen] = useState(false)
 
     // Design mode state
     const [isDesignMode, setIsDesignMode] = useState(false)
@@ -818,8 +820,24 @@ function WarehouseMapContent() {
                 lotInfo={lotInfo}
                 onClear={clearSelection}
                 onTag={(lotId) => setTaggingLotId(lotId)}
+                onBulkExport={() => setIsBulkExportOpen(true)}
             />
 
+            {/* Quick Bulk Export Modal */}
+            {isBulkExportOpen && (
+                <QuickBulkExportModal
+                    lotIds={Array.from(selectedLotIds)}
+                    lotInfo={lotInfo}
+                    onClose={() => setIsBulkExportOpen(false)}
+                    onSuccess={() => {
+                        setIsBulkExportOpen(false)
+                        clearSelection()
+                        fetchData()
+                    }}
+                />
+            )}
+
+            {/* Tagging Modal */}
             {taggingLotId && (
                 <LotTagModal
                     lotId={taggingLotId}

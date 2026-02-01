@@ -167,10 +167,16 @@ export function useLotManagement() {
     };
 
 
-    const filteredLots = lots.filter(lot =>
-        lot.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (lot.notes && lot.notes.toLowerCase().includes(searchTerm.toLowerCase()))
-    )
+    const filteredLots = lots.filter(lot => {
+        // Hide exhausted lots unless searching specifically? 
+        // For now, absolute hide as requested.
+        if (lot.status === 'exported') return false
+
+        return (
+            lot.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (lot.notes && lot.notes.toLowerCase().includes(searchTerm.toLowerCase()))
+        )
+    })
 
     return {
         // State

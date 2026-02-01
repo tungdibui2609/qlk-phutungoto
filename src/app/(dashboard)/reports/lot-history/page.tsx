@@ -70,8 +70,9 @@ export default function LotHistoryPage() {
         // 1. Target of a Merge
         const mergeFrom = lot.lot_items?.find(item => lot.metadata?.system_history?.item_history?.[item.id]?.type === 'merge')
         if (mergeFrom) {
-            const sourceCode = lot.metadata.system_history.item_history[mergeFrom.id].source_code
-            return { type: 'merge_target', label: `Gộp từ ${sourceCode}`, variant: 'purple' }
+            const itemHistory = lot.metadata.system_history.item_history[mergeFrom.id]
+            const sourceCode = itemHistory.source_code
+            return { type: 'merge_target', label: `Gộp từ ${sourceCode}`, variant: 'purple', date: itemHistory.snapshot?.merge_date }
         }
 
         // 2. Result of a Split
@@ -79,10 +80,9 @@ export default function LotHistoryPage() {
         const splitFromMetadata = (lot.metadata as any)?.system_history?.item_history?.source_code // Fallback if item_id changed
 
         if (splitFromItem || splitFromMetadata) {
-            const sourceCode = splitFromItem
-                ? (lot.metadata as any).system_history.item_history[splitFromItem.id].source_code
-                : splitFromMetadata
-            return { type: 'split_result', label: `Tách từ ${sourceCode}`, variant: 'orange' }
+            const itemHistory = splitFromItem ? (lot.metadata as any).system_history.item_history[splitFromItem.id] : null
+            const sourceCode = itemHistory ? itemHistory.source_code : splitFromMetadata
+            return { type: 'split_result', label: `Tách từ ${sourceCode}`, variant: 'orange', date: itemHistory?.snapshot?.split_date }
         }
 
         // 3. Source of a Merge (Released)
@@ -98,8 +98,9 @@ export default function LotHistoryPage() {
 
         // 5. Exports
         if (history?.exports && history.exports.length > 0) {
-            const dest = history.exports[history.exports.length - 1].customer
-            return { type: 'export', label: `Đã xuất cho ${dest}`, variant: 'blue' }
+            const lastExport = history.exports[history.exports.length - 1]
+            const dest = lastExport.customer
+            return { type: 'export', label: `Đã xuất cho ${dest}`, variant: 'blue', date: lastExport.date }
         }
 
         // 6. Legacy Tags
@@ -134,6 +135,10 @@ export default function LotHistoryPage() {
             (actionTypeFilter === 'export' && actionData.type === 'export')
 
         return matchesSearch && matchesDate && matchesAction
+    }).sort((a, b) => {
+        const dateA = getLotActionData(a).date || a.created_at
+        const dateB = getLotActionData(b).date || b.created_at
+        return new Date(dateB).getTime() - new Date(dateA).getTime()
     })
 
     const getActionBadge = (lot: LotWithDetails) => {
@@ -266,14 +271,20 @@ export default function LotHistoryPage() {
                                 {filteredLots.map(lot => (
                                     <tr key={lot.id} className="hover:bg-orange-50/30 dark:hover:bg-orange-900/5 transition-colors group">
                                         <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="flex flex-col">
-                                                <span className="font-bold text-stone-800 dark:text-stone-200">
-                                                    {new Date(lot.created_at).toLocaleDateString('vi-VN')}
-                                                </span>
-                                                <span className="text-[10px] text-stone-400 font-medium tracking-tight">
-                                                    {new Date(lot.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                                                </span>
-                                            </div>
+                                            {(() => {
+                                                const actionData = getLotActionData(lot);
+                                                const displayDate = actionData.date || lot.created_at;
+                                                return (
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-stone-800 dark:text-stone-200">
+                                                            {new Date(displayDate).toLocaleDateString('vi-VN')}
+                                                        </span>
+                                                        <span className="text-[10px] text-stone-400 font-medium tracking-tight">
+                                                            {new Date(displayDate).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                                        </span>
+                                                    </div>
+                                                )
+                                            })()}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className="inline-flex items-center gap-2 px-3 py-1 bg-stone-100 dark:bg-slate-800 rounded-lg border border-stone-200 dark:border-slate-700 font-mono text-xs font-bold text-stone-700 dark:text-stone-300 shadow-sm group-hover:border-orange-300 dark:group-hover:border-orange-800 transition-colors">
@@ -356,31 +367,46 @@ export default function LotHistoryPage() {
                                                     const lastExport = lot.metadata?.system_history?.exports?.[lot.metadata?.system_history?.exports?.length - 1];
 
                                                     if (actionData.type === 'export' && lastExport?.items) {
-                                                        const totalExported = Object.values(lastExport.items).reduce((sum: number, item: any) => sum + (item.exported_quantity || 0), 0);
-                                                        const unit = Object.values(lastExport.items)[0] ? (Object.values(lastExport.items)[0] as any).unit : 'Đơn vị';
+                                                        const groups: Record<string, number> = {}
+                                                        Object.values(lastExport.items).forEach((item: any) => {
+                                                            const u = item.unit || 'Đơn vị'
+                                                            groups[u] = (groups[u] || 0) + (item.exported_quantity || 0)
+                                                        })
 
-                                                        return (
-                                                            <>
+                                                        return Object.entries(groups).map(([unit, qty], idx) => (
+                                                            <div key={idx} className="flex flex-col items-center">
                                                                 <span className="text-base font-black text-blue-600 dark:text-blue-500 tabular-nums">
-                                                                    {totalExported}
+                                                                    {qty}
                                                                 </span>
                                                                 <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mt-0.5">
                                                                     {unit}
                                                                 </span>
-                                                            </>
-                                                        );
+                                                            </div>
+                                                        ))
                                                     }
 
-                                                    return (
-                                                        <>
+                                                    // Default grouping by unit for lot items
+                                                    const groups: Record<string, number> = {}
+                                                    if (lot.lot_items && lot.lot_items.length > 0) {
+                                                        lot.lot_items.forEach((item: any) => {
+                                                            const u = item.unit || item.products?.unit || 'Đơn vị'
+                                                            groups[u] = (groups[u] || 0) + (item.quantity || 0)
+                                                        })
+                                                    } else {
+                                                        const u = lot.products?.unit || 'Đơn vị'
+                                                        groups[u] = (groups[u] || 0) + (lot.quantity || 0)
+                                                    }
+
+                                                    return Object.entries(groups).map(([unit, qty], idx) => (
+                                                        <div key={idx} className="flex flex-col items-center">
                                                             <span className="text-base font-black text-orange-600 dark:text-orange-500 tabular-nums">
-                                                                {lot.quantity ?? lot.lot_items?.reduce((sum, item) => sum + (item.quantity || 0), 0) ?? 0}
+                                                                {qty}
                                                             </span>
                                                             <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mt-0.5">
-                                                                {lot.products?.unit || lot.lot_items?.[0]?.products?.unit || 'Đơn vị'}
+                                                                {unit}
                                                             </span>
-                                                        </>
-                                                    );
+                                                        </div>
+                                                    ))
                                                 })()}
                                             </div>
                                         </td>
