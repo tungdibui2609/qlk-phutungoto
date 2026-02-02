@@ -29,6 +29,14 @@ export function LotPageManager() {
         setSearchTerm,
         positionFilter,
         setPositionFilter,
+        dateFilterField,
+        setDateFilterField,
+        startDate,
+        setStartDate,
+        endDate,
+        setEndDate,
+        selectedZoneId,
+        setSelectedZoneId,
         fetchLots,
         handleDeleteLot,
         handleToggleStar,
@@ -151,6 +159,14 @@ export function LotPageManager() {
                 onSearchChange={setSearchTerm}
                 positionFilter={positionFilter}
                 onPositionFilterChange={setPositionFilter}
+                selectedZoneId={selectedZoneId}
+                onZoneSelect={setSelectedZoneId}
+                dateFilterField={dateFilterField}
+                onDateFieldChange={setDateFilterField}
+                startDate={startDate}
+                onStartDateChange={setStartDate}
+                endDate={endDate}
+                onEndDateChange={setEndDate}
                 showMobileFilters={showMobileFilters}
                 toggleMobileFilters={() => setShowMobileFilters(!showMobileFilters)}
             />

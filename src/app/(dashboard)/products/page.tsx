@@ -1,10 +1,7 @@
 'use client'
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { Plus, Search, Filter, Edit, Trash2, Package, Sparkles, Eye } from 'lucide-react'
-import { useSystem } from '@/contexts/SystemContext'
+import { Package, Search, Edit, Trash2, Eye, Filter } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import Protected from '@/components/auth/Protected'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -13,413 +10,167 @@ import { Database } from '@/lib/database.types'
 import MobileProductList from '@/components/inventory/MobileProductList'
 import { ProductWithCategory } from '@/components/inventory/types'
 import { getProductDisplayImage } from '@/lib/utils'
+import PageHeader from '@/components/ui/PageHeader'
+import EmptyState from '@/components/ui/EmptyState'
+import { useListingData } from '@/hooks/useListingData'
+import Link from 'next/link'
 
 type Product = Database['public']['Tables']['products']['Row']
 
 export default function InventoryPage() {
-    const router = useRouter()
-    const [products, setProducts] = useState<ProductWithCategory[]>([])
-    const [loading, setLoading] = useState(true)
-    const [searchTerm, setSearchTerm] = useState('')
-    const { systemType } = useSystem()
     const { showToast, showConfirm } = useToast()
-    // Add delete confirmation state
-    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
     const [unitsMap, setUnitsMap] = useState<Record<string, string>>({})
-
-    // View Modal State
+    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
     const [isModalOpen, setIsModalOpen] = useState(false)
 
+    // Load Units dictionary
+    useEffect(() => {
+        async function fetchUnits() {
+            const { data } = await supabase.from('units').select('id, name')
+            if (data) {
+                const uMap: Record<string, string> = {}
+                data.forEach((u: any) => uMap[u.id] = u.name)
+                setUnitsMap(uMap)
+            }
+        }
+        fetchUnits()
+    }, [])
+
+    const {
+        filteredData: products,
+        loading,
+        searchTerm,
+        setSearchTerm,
+        refresh
+    } = useListingData<ProductWithCategory>('products', {
+        select: `*, categories ( name ), product_media ( url, type ), product_units ( conversion_rate, unit_id )`,
+        orderBy: { column: 'created_at', ascending: false }
+    })
+
     const handleViewProduct = (product: ProductWithCategory) => {
-        // Cast as any or specific type if needed since ProductWithCategory has more fields
         setSelectedProduct(product as any)
         setIsModalOpen(true)
     }
 
-    useEffect(() => {
-        fetchProducts()
-    }, [])
-
-    async function fetchProducts() {
-        setLoading(true)
-
-        // Fetch Dictionary first
-        const { data: unitsData } = await supabase.from('units').select('id, name')
-        const uMap: Record<string, string> = {}
-        if (unitsData) {
-            unitsData.forEach((u: any) => {
-                uMap[u.id] = u.name
-            })
-            setUnitsMap(uMap)
-        }
-
-        const { data, error } = await supabase
-            .from('products')
-            .select(`*, categories ( name ), product_media ( url, type ), product_units ( conversion_rate, unit_id )`)
-            .eq('system_type', systemType)
-            .order('created_at', { ascending: false })
-
-        if (error) {
-            console.error('Error fetching products:', error)
-        } else {
-            setProducts(data as any)
-        }
-        setLoading(false)
-    }
-
-    async function handleSeedData() {
-        if (!await showConfirm('Hành động này sẽ thêm dữ liệu mẫu vào danh mục và sản phẩm. Tiếp tục?')) return
-        setLoading(true)
-
-        try {
-            // 1. Seed Categories
-            const categoriesData = [
-                { name: 'Động cơ', slug: 'dong-co', description: 'Phụ tùng liên quan đến động cơ' },
-                { name: 'Hệ thống điện', slug: 'he-thong-dien', description: 'Các linh kiện điện tử và cảm biến' },
-                { name: 'Hệ thống phanh', slug: 'he-thong-phanh', description: 'Má phanh, đĩa phanh, heo dầu...' },
-                { name: 'Hệ thống treo', slug: 'he-thong-treo', description: 'Giảm xóc, lò xo, cao su...' },
-                { name: 'Dầu nhớt & Phụ gia', slug: 'dau-nhot', description: 'Các loại dầu nhớt động cơ và phụ gia' },
-                { name: 'Thân vỏ', slug: 'than-vo', description: 'Cản, gương, đèn, phụ tùng thân vỏ' },
-                { name: 'Phụ kiện', slug: 'phu-kien', description: 'Gạt mưa, lốp, phụ kiện các loại' }
-            ]
-
-            const { data: insertedCats, error: catError } = await (supabase
-                .from('categories') as any)
-                .upsert(categoriesData, { onConflict: 'slug' })
-                .select()
-
-            if (catError) throw catError
-
-            // Map slugs to IDs
-            const catMap: Record<string, string> = {}
-            insertedCats?.forEach((c: any) => {
-                if (c.slug) catMap[c.slug] = c.id
-            })
-
-            // 2. Seed Products
-            const productsData = [
-                {
-                    sku: 'SPK-001',
-                    name: 'Bugi Iridium NGK',
-                    category_id: catMap['dong-co'],
-                    part_number: 'ILZKR7B-11S',
-                    price: 250000,
-                    unit: 'Cái',
-                    manufacturer: 'NGK',
-                    min_stock_level: 20,
-                    is_active: true
-                },
-                {
-                    sku: 'OIL-FILTER-01',
-                    name: 'Lọc dầu Toyota Camry',
-                    category_id: catMap['dau-nhot'],
-                    part_number: '90915-YZZD4',
-                    price: 150000,
-                    unit: 'Cái',
-                    manufacturer: 'Toyota Genuine Parts',
-                    min_stock_level: 50,
-                    is_active: true
-                },
-                {
-                    sku: 'BRAKE-PAD-F',
-                    name: 'Má phanh trước Mazda CX-5',
-                    category_id: catMap['he-thong-phanh'],
-                    part_number: 'K0Y1-33-28Z',
-                    price: 1200000,
-                    unit: 'Bộ',
-                    manufacturer: 'Mazda Genuine Parts',
-                    min_stock_level: 10,
-                    is_active: true
-                },
-                {
-                    sku: 'SHOCK-ABS-R',
-                    name: 'Giảm xóc sau Ford Ranger',
-                    category_id: catMap['he-thong-treo'],
-                    part_number: 'EB3C-18080-AC',
-                    price: 2500000,
-                    unit: 'Cái',
-                    manufacturer: 'Ford Motorcraft',
-                    min_stock_level: 5,
-                    is_active: true
-                },
-                {
-                    sku: 'BATTERY-12V',
-                    name: 'Bình ắc quy GS 12V 60Ah',
-                    category_id: catMap['he-thong-dien'],
-                    part_number: 'GS-60AH',
-                    price: 1600000,
-                    unit: 'Bình',
-                    manufacturer: 'GS Battery',
-                    min_stock_level: 10,
-                    is_active: true
-                },
-                {
-                    sku: 'AIR-FILTER-E',
-                    name: 'Lọc gió động cơ Hyundai SantaFe',
-                    category_id: catMap['dong-co'],
-                    part_number: '28113-2W100',
-                    price: 350000,
-                    unit: 'Cái',
-                    manufacturer: 'Hyundai Mobis',
-                    min_stock_level: 30,
-                    is_active: true
-                },
-                // --- Mới thêm cho xe du lịch ---
-                {
-                    sku: 'MIRROR-VIOS-L',
-                    name: 'Gương chiếu hậu trái Toyota Vios 2020',
-                    category_id: catMap['than-vo'],
-                    part_number: '87940-0D680',
-                    price: 2800000,
-                    unit: 'Cái',
-                    manufacturer: 'Toyota Genuine Parts',
-                    min_stock_level: 5,
-                    is_active: true
-                },
-                {
-                    sku: 'HEADLIGHT-ACCENT-R',
-                    name: 'Đèn pha phải Hyundai Accent 2021',
-                    category_id: catMap['he-thong-dien'],
-                    part_number: '92102-H6510',
-                    price: 4500000,
-                    unit: 'Cái',
-                    manufacturer: 'Hyundai Mobis',
-                    min_stock_level: 3,
-                    is_active: true
-                },
-                {
-                    sku: 'WIPER-BOSCH-24',
-                    name: 'Gạt mưa Bosch Aerotwin 24 inch',
-                    category_id: catMap['phu-kien'],
-                    part_number: '3397007503',
-                    price: 350000,
-                    unit: 'Cái',
-                    manufacturer: 'Bosch',
-                    min_stock_level: 50,
-                    is_active: true
-                },
-                {
-                    sku: 'BUMPER-F-CITY',
-                    name: 'Cản trước Honda City 2022',
-                    category_id: catMap['than-vo'],
-                    part_number: '71101-T00-T10',
-                    price: 3800000,
-                    unit: 'Cái',
-                    manufacturer: 'Honda Genuine Parts',
-                    min_stock_level: 2,
-                    is_active: true
-                },
-                {
-                    sku: 'FUEL-PUMP-CRV',
-                    name: 'Bơm xăng Honda CR-V',
-                    category_id: catMap['dong-co'],
-                    part_number: '17045-TLA-A01',
-                    price: 5200000,
-                    unit: 'Cái',
-                    manufacturer: 'Honda Genuine Parts',
-                    min_stock_level: 5,
-                    is_active: true
-                },
-                {
-                    sku: 'CABIN-FILTER-MAZDA',
-                    name: 'Lọc gió điều hòa Mazda 3/6',
-                    category_id: catMap['dong-co'],
-                    part_number: 'KD45-61-J6X',
-                    price: 450000,
-                    unit: 'Cái',
-                    manufacturer: 'Mazda Genuine Parts',
-                    min_stock_level: 25,
-                    is_active: true
-                },
-                {
-                    sku: 'TIRE-MICH-18',
-                    name: 'Lốp Michelin Primacy 4 225/55R18',
-                    category_id: catMap['phu-kien'],
-                    part_number: 'MIC-2255518',
-                    price: 3200000,
-                    unit: 'Cái',
-                    manufacturer: 'Michelin',
-                    min_stock_level: 20,
-                    is_active: true
-                },
-                {
-                    sku: 'RAD-COOLANT',
-                    name: 'Nước làm mát màu xanh Prestone',
-                    category_id: catMap['dau-nhot'],
-                    part_number: 'AF-3200',
-                    price: 180000,
-                    unit: 'Can 4L',
-                    manufacturer: 'Prestone',
-                    min_stock_level: 30,
-                    is_active: true
-                }
-            ]
-
-            const { error: prodError } = await (supabase
-                .from('products') as any)
-                .upsert(productsData, { onConflict: 'sku' })
-
-            if (prodError) throw prodError
-
-            showToast('Đã tạo dữ liệu mẫu thành công!', 'success')
-            fetchProducts()
-        } catch (error: any) {
-            console.error(error)
-            showToast('Lỗi: ' + error.message, 'error')
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    // Opens confirmation dialog instead of window.confirm
-    function handleDelete(id: string) {
+    const handleDelete = (id: string) => {
         setDeleteConfirmId(id)
     }
 
-    // Actual delete function called by dialog
     const executeDelete = async () => {
         if (!deleteConfirmId) return
-
         const { error } = await supabase.from('products').delete().eq('id', deleteConfirmId)
         if (error) {
             showToast('Lỗi khi xóa: ' + error.message, 'error')
         } else {
             showToast('Đã xóa thành công', 'success')
-            setProducts(prev => prev.filter(p => p.id !== deleteConfirmId))
+            refresh()
         }
         setDeleteConfirmId(null)
     }
 
-    const filteredProducts = products.filter(product =>
-        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (product.part_number && product.part_number.toLowerCase().includes(searchTerm.toLowerCase()))
-    )
-
     return (
         <div className="space-y-6">
-            {/* PAGE HEADER */}
-            {/* SEED BUTTON - TEMP */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                    <div className="flex items-center gap-2 mb-1">
-                        <Package className="text-orange-500" size={18} />
-                        <span className="text-orange-600 text-sm font-medium">Products</span>
-                    </div>
-                    <h1 className="text-2xl font-bold text-stone-800 tracking-tight">Sản phẩm</h1>
-                    <p className="text-stone-500 mt-1">Quản lý danh mục và thông tin linh kiện, phụ tùng</p>
-                </div>
-                <Protected permission="product.manage">
-                    <Link
-                        href="/products/new"
-                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
-                        style={{
-                            background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                            boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)',
-                        }}
-                    >
-                        <Plus size={20} />
-                        Thêm Sản phẩm
-                    </Link>
-                </Protected>
-            </div>
+            <PageHeader
+                title="Sản phẩm"
+                subtitle="Products"
+                description="Quản lý danh mục và thông tin linh kiện, phụ tùng"
+                icon={Package}
+                actionLink="/products/new"
+                actionText="Thêm Sản phẩm"
+                permission="product.manage"
+            />
 
             {/* FILTERS & SEARCH */}
-            <div className="bg-white p-4 rounded-2xl flex flex-col sm:flex-row gap-4 border border-stone-200">
+            <div className="bg-white p-5 rounded-[24px] flex flex-col sm:flex-row gap-4 border border-stone-200 shadow-sm">
                 <div className="relative flex-1">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={20} />
                     <input
                         type="text"
-                        placeholder="Tìm kiếm theo Tên, SKU, Mã phụ tùng..."
+                        placeholder="Tìm kiếm theo Tên, SKU, Mã phụ tùng, danh mục..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-12 pr-4 py-3 rounded-xl text-stone-800 transition-all duration-200 outline-none bg-stone-50 border border-stone-200 placeholder:text-stone-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                        className="w-full pl-12 pr-4 py-3 rounded-2xl bg-stone-50 border border-stone-200 text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-100 transition-all font-medium"
                     />
                 </div>
-                <button className="flex items-center gap-2 px-5 py-3 rounded-xl text-stone-600 font-medium bg-stone-50 border border-stone-200 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 transition-all duration-200">
+                <button className="flex items-center justify-center gap-2 px-6 py-3 rounded-2xl text-stone-600 font-bold bg-stone-50 border border-stone-200 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 transition-all">
                     <Filter size={18} />
-                    Bộ lọc
+                    BỘ LỌC
                 </button>
             </div>
 
             {/* TABLE (Desktop) */}
-            <div className="hidden md:block bg-white rounded-2xl overflow-hidden border border-stone-200">
+            <div className="hidden md:block bg-white rounded-[32px] overflow-hidden border border-stone-200 shadow-sm">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
                         <thead>
-                            <tr className="bg-stone-50 border-b border-stone-200">
-                                <th className="p-4 text-xs uppercase tracking-wider text-stone-500 font-semibold w-16">#</th>
-                                <th className="p-4 text-xs uppercase tracking-wider text-stone-500 font-semibold">Thông tin Sản phẩm</th>
-                                <th className="p-4 text-xs uppercase tracking-wider text-stone-500 font-semibold">Danh mục</th>
-                                <th className="p-4 text-xs uppercase tracking-wider text-stone-500 font-semibold text-right">Hành động</th>
+                            <tr className="bg-stone-50/50 border-b border-stone-200">
+                                <th className="p-5 text-xs font-black uppercase tracking-widest text-stone-400 w-16">#</th>
+                                <th className="p-5 text-xs font-black uppercase tracking-widest text-stone-400">Thông tin Sản phẩm</th>
+                                <th className="p-5 text-xs font-black uppercase tracking-widest text-stone-400">Danh mục</th>
+                                <th className="p-5 text-xs font-black uppercase tracking-widest text-stone-400 text-right">Hành động</th>
                             </tr>
                         </thead>
                         <tbody>
                             {loading ? (
                                 <tr>
-                                    <td colSpan={4} className="p-12 text-center">
-                                        <div className="flex flex-col items-center gap-3">
-                                            <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-                                            <span className="text-stone-500">Đang tải dữ liệu...</span>
-                                        </div>
+                                    <td colSpan={4} className="p-20 text-center">
+                                        <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                                        <p className="text-stone-400 font-bold uppercase tracking-widest text-xs">Đang tải...</p>
                                     </td>
                                 </tr>
-                            ) : filteredProducts.length === 0 ? (
+                            ) : products.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="p-12 text-center">
-                                        <div className="flex flex-col items-center gap-3">
-                                            <Package className="text-stone-300" size={48} />
-                                            <span className="text-stone-500">Chưa có sản phẩm nào.</span>
-                                        </div>
+                                    <td colSpan={4} className="p-10">
+                                        <EmptyState
+                                            icon={Package}
+                                            title="Không tìm thấy sản phẩm"
+                                            description={searchTerm ? `Không có kết quả nào cho "${searchTerm}"` : "Hãy bắt đầu thêm sản phẩm của bạn."}
+                                        />
                                     </td>
                                 </tr>
                             ) : (
-                                filteredProducts.map((item, index) => (
+                                products.map((item, index) => (
                                     <tr
                                         key={item.id}
                                         onClick={() => handleViewProduct(item)}
-                                        className="border-b border-stone-100 hover:bg-orange-50/50 transition-colors cursor-pointer"
+                                        className="group border-b border-stone-100 hover:bg-orange-50/30 transition-colors cursor-pointer"
                                     >
-                                        <td className="p-4 text-stone-400 text-sm font-mono">
+                                        <td className="p-5 text-stone-400 text-xs font-black">
                                             {(index + 1).toString().padStart(2, '0')}
                                         </td>
-                                        <td className="p-4">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-14 h-14 rounded-xl flex-shrink-0 flex items-center justify-center bg-stone-100 overflow-hidden">
+                                        <td className="p-5">
+                                            <div className="flex items-center gap-5">
+                                                <div className="w-16 h-16 rounded-2xl flex-shrink-0 flex items-center justify-center bg-stone-100 overflow-hidden border border-stone-200/50 shadow-inner">
                                                     {getProductDisplayImage(item) ? (
                                                         <img
                                                             src={getProductDisplayImage(item)!}
                                                             alt={item.name}
-                                                            className="w-full h-full object-cover"
-                                                            onError={(e) => {
-                                                                (e.target as HTMLImageElement).style.display = 'none';
-                                                            }}
+                                                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                                                         />
                                                     ) : (
-                                                        <Package className="text-stone-400" size={24} />
+                                                        <Package className="text-stone-300" size={30} />
                                                     )}
                                                 </div>
                                                 <div>
-                                                    <p className="font-semibold text-stone-800 line-clamp-1">{item.name}</p>
-                                                    <div className="flex gap-2 mt-1.5 flex-wrap">
-                                                        <span className="text-xs px-2 py-0.5 rounded font-mono bg-orange-100 text-orange-700 border border-orange-200">
+                                                    <p className="font-bold text-stone-800 text-base line-clamp-1">{item.name}</p>
+                                                    <div className="flex gap-2 mt-2 flex-wrap">
+                                                        <span className="text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-orange-100 text-orange-700 border border-orange-200 shadow-sm shadow-orange-500/5">
                                                             {item.sku}
                                                         </span>
                                                         {item.part_number && (
-                                                            <span className="text-xs px-2 py-0.5 rounded font-mono bg-stone-100 text-stone-600">
+                                                            <span className="text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-stone-100 text-stone-500 border border-stone-200">
                                                                 {item.part_number}
                                                             </span>
                                                         )}
-                                                        {/* Base Unit */}
                                                         {item.unit && (
-                                                            <span className="text-xs px-2 py-0.5 rounded font-mono bg-blue-50 text-blue-700 border border-blue-100" title="Đơn vị cơ bản">
+                                                            <span className="text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-blue-50 text-blue-600 border border-blue-100">
                                                                 1 {item.unit}
                                                             </span>
                                                         )}
-                                                        {/* Alternative Units */}
-                                                        {item.product_units?.map((u, idx) => (
-                                                            <span key={idx} className="text-xs px-2 py-0.5 rounded font-mono bg-stone-100 text-stone-600 border border-stone-200" title={`Quy đổi: 1 ${unitsMap[u.unit_id] || '---'} = ${u.conversion_rate} ${item.unit}`}>
+                                                        {item.product_units?.slice(0, 2).map((u, idx) => (
+                                                            <span key={idx} className="text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-indigo-50 text-indigo-500 border border-indigo-100">
                                                                 1 {unitsMap[u.unit_id] || '---'} = {u.conversion_rate} {item.unit}
                                                             </span>
                                                         ))}
@@ -427,39 +178,33 @@ export default function InventoryPage() {
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="p-4 text-sm text-stone-600">
-                                            {item.categories?.name || '---'}
+                                        <td className="p-5">
+                                            <span className="px-3 py-1 rounded-full bg-stone-100 text-stone-600 text-[11px] font-bold uppercase tracking-wider">
+                                                {item.categories?.name || 'Chưa phân loại'}
+                                            </span>
                                         </td>
-                                        <td className="p-4">
-                                            <div className="flex justify-end gap-2">
+                                        <td className="p-5 text-right">
+                                            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation()
-                                                        handleViewProduct(item)
-                                                    }}
-                                                    className="p-2.5 rounded-lg bg-stone-100 text-stone-500 hover:bg-blue-100 hover:text-blue-600 transition-colors"
+                                                    onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleViewProduct(item); }}
+                                                    className="p-2.5 rounded-xl bg-white text-stone-400 hover:text-blue-600 hover:shadow-sm border border-stone-100 hover:border-blue-100 transition-all font-bold"
                                                     title="Xem chi tiết"
                                                 >
-                                                    <Eye size={16} />
+                                                    <Eye size={18} />
                                                 </button>
                                                 <Protected permission="product.manage">
                                                     <Link
                                                         href={`/products/${item.id}`}
-                                                        className="p-2.5 rounded-lg bg-stone-100 text-stone-500 hover:bg-orange-100 hover:text-orange-600 transition-colors"
-                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="p-2.5 rounded-xl bg-white text-stone-400 hover:text-orange-600 hover:shadow-sm border border-stone-100 hover:border-orange-100 transition-all font-bold"
+                                                        onClick={(e: React.MouseEvent) => e.stopPropagation()}
                                                     >
-                                                        <Edit size={16} />
+                                                        <Edit size={18} />
                                                     </Link>
-                                                </Protected>
-                                                <Protected permission="product.manage">
                                                     <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation()
-                                                            handleDelete(item.id)
-                                                        }}
-                                                        className="p-2.5 rounded-lg bg-stone-100 text-stone-500 hover:bg-red-100 hover:text-red-600 transition-colors"
+                                                        onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleDelete(item.id); }}
+                                                        className="p-2.5 rounded-xl bg-white text-stone-400 hover:text-red-600 hover:shadow-sm border border-stone-100 hover:border-red-100 transition-all font-bold"
                                                     >
-                                                        <Trash2 size={16} />
+                                                        <Trash2 size={18} />
                                                     </button>
                                                 </Protected>
                                             </div>
@@ -471,18 +216,13 @@ export default function InventoryPage() {
                     </table>
                 </div>
 
-                {/* PAGINATION */}
-                <div className="px-6 py-4 flex justify-between items-center text-sm bg-stone-50 border-t border-stone-200">
-                    <span className="text-stone-500">
-                        Hiển thị <span className="text-stone-800 font-medium">{filteredProducts.length}</span> kết quả
-                    </span>
+                <div className="px-8 py-5 flex justify-between items-center bg-stone-50/50 border-t border-stone-200">
+                    <div className="text-[11px] font-black uppercase tracking-widest text-stone-400 bg-stone-100 px-3 py-1 rounded-full">
+                        {products.length} Kết quả
+                    </div>
                     <div className="flex gap-2">
-                        <button className="px-4 py-2 rounded-lg bg-white text-stone-400 border border-stone-200 disabled:opacity-40" disabled>
-                            Trước
-                        </button>
-                        <button className="px-4 py-2 rounded-lg bg-white text-stone-400 border border-stone-200 disabled:opacity-40" disabled>
-                            Sau
-                        </button>
+                        <button className="px-5 py-2 rounded-xl bg-white text-stone-300 border border-stone-200 text-xs font-bold uppercase cursor-not-allowed" disabled>Trước</button>
+                        <button className="px-5 py-2 rounded-xl bg-white text-stone-300 border border-stone-200 text-xs font-bold uppercase cursor-not-allowed" disabled>Sau</button>
                     </div>
                 </div>
             </div>
@@ -490,15 +230,12 @@ export default function InventoryPage() {
             {/* LIST (Mobile) */}
             <div className="md:hidden">
                 {loading ? (
-                    <div className="p-12 text-center">
-                        <div className="flex flex-col items-center gap-3">
-                            <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-                            <span className="text-stone-500">Đang tải dữ liệu...</span>
-                        </div>
+                    <div className="p-20 text-center">
+                        <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
                     </div>
                 ) : (
                     <MobileProductList
-                        products={filteredProducts}
+                        products={products}
                         unitsMap={unitsMap}
                         onView={handleViewProduct}
                         onDelete={handleDelete}
@@ -510,8 +247,8 @@ export default function InventoryPage() {
                 isOpen={!!deleteConfirmId}
                 title="Xóa sản phẩm"
                 message="Bạn có chắc chắn muốn xóa sản phẩm này không? Hành động này không thể hoàn tác."
-                confirmText="Xóa ngay"
-                cancelText="Hủy"
+                confirmText="XÓA NGAY"
+                cancelText="HỦY BỎ"
                 variant="danger"
                 onConfirm={executeDelete}
                 onCancel={() => setDeleteConfirmId(null)}

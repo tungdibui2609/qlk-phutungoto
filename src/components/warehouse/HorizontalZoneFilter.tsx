@@ -10,16 +10,17 @@ type Zone = Database['public']['Tables']['zones']['Row']
 interface HorizontalZoneFilterProps {
     selectedZoneId: string | null
     onZoneSelect: (zoneId: string | null) => void
-    searchTerm: string
-    onSearchChange: (term: string) => void
-
+    searchTerm?: string
+    onSearchChange?: (term: string) => void
+    showSearch?: boolean
 }
 
 export default function HorizontalZoneFilter({
     selectedZoneId,
     onZoneSelect,
-    searchTerm,
-    onSearchChange
+    searchTerm = '',
+    onSearchChange,
+    showSearch = true
 }: HorizontalZoneFilterProps) {
     const { systemType } = useSystem()
     const [zones, setZones] = useState<Zone[]>([])
@@ -254,33 +255,33 @@ export default function HorizontalZoneFilter({
                 </div>
 
                 {/* Search & Columns Row */}
-                <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-                    {/* Search */}
-                    <div className="relative flex-1 min-w-[200px] max-w-md">
-                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                        <input
-                            type="text"
-                            value={searchTerm}
-                            onChange={(e) => onSearchChange(e.target.value)}
-                            placeholder="Tìm kiếm mã LOT, SP, ghi chú, vị trí, tag..."
-                            className="w-full pl-9 pr-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-gray-800"
-                        />
-                        {searchTerm && (
-                            <button
-                                onClick={() => onSearchChange('')}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400"
-                            >
-                                <X size={12} />
-                            </button>
-                        )}
+                {showSearch && onSearchChange && (
+                    <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                        {/* Search */}
+                        <div className="relative flex-1 min-w-[200px] max-w-md">
+                            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input
+                                type="text"
+                                value={searchTerm}
+                                onChange={(e) => onSearchChange(e.target.value)}
+                                placeholder="Tìm kiếm mã LOT, SP, ghi chú, vị trí, tag..."
+                                className="w-full pl-9 pr-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-gray-800"
+                            />
+                            {searchTerm && (
+                                <button
+                                    onClick={() => onSearchChange('')}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400"
+                                >
+                                    <X size={12} />
+                                </button>
+                            )}
+                        </div>
+
+                        <button className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md shadow-sm transition-colors">
+                            Tìm
+                        </button>
                     </div>
-
-                    <button className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md shadow-sm transition-colors">
-                        Tìm
-                    </button>
-
-
-                </div>
+                )}
             </div>
         </div>
     )

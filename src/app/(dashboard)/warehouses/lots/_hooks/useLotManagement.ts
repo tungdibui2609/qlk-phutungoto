@@ -13,7 +13,11 @@ export type Lot = Database['public']['Tables']['lots']['Row'] & {
     })[] | null
     suppliers: { name: string } | null
     qc_info: { name: string } | null
-    positions: { code: string }[] | null
+    positions: {
+        id: string
+        code: string
+        zone_positions?: { zone_id: string }[] | null
+    }[] | null
     lot_tags?: { tag: string; lot_item_id: string | null }[] | null
     // Legacy support for display if needed
     products?: { name: string; unit: string | null; product_code?: string; sku?: string; cost_price?: number | null } | null
@@ -34,6 +38,10 @@ export function useLotManagement() {
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const [positionFilter, setPositionFilter] = useState<'all' | 'assigned' | 'unassigned'>('all')
+    const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
+    const [dateFilterField, setDateFilterField] = useState<'created_at' | 'inbound_date' | 'peeling_date' | 'packaging_date'>('created_at')
+    const [startDate, setStartDate] = useState<string>('')
+    const [endDate, setEndDate] = useState<string>('')
 
     // Data for Selection
     const [products, setProducts] = useState<Product[]>([])
@@ -117,7 +125,11 @@ export function useLotManagement() {
                 ),
                 suppliers (name),
                 qc_info (name),
-                positions (code),
+                positions (
+                    id,
+                    code,
+                    zone_positions (zone_id)
+                ),
                 lot_tags (tag, lot_item_id),
                 products (name, unit, sku, cost_price)
             `)
@@ -179,7 +191,42 @@ export function useLotManagement() {
         if (positionFilter === 'assigned' && !hasPosition) return false
         if (positionFilter === 'unassigned' && hasPosition) return false
 
-        // 2. Search Term Filter
+        // 2. Date Range Filter
+        if (startDate || endDate) {
+            const lotDateStr = lot[dateFilterField]
+            if (!lotDateStr) return false
+
+            const lotDate = new Date(lotDateStr)
+            lotDate.setHours(0, 0, 0, 0)
+
+            if (startDate) {
+                const start = new Date(startDate)
+                start.setHours(0, 0, 0, 0)
+                if (lotDate < start) return false
+            }
+
+            if (endDate) {
+                const end = new Date(endDate)
+                end.setHours(23, 59, 59, 999)
+                if (lotDate > end) return false
+            }
+        }
+
+        // 3. Zone/Position Filter (Advanced)
+        if (selectedZoneId) {
+            const lotInSelectedZone = lot.positions?.some(pos => {
+                const zps = (pos as any).zone_positions;
+                if (Array.isArray(zps)) {
+                    return zps.some((zp: any) => zp.zone_id === selectedZoneId);
+                } else if (zps && typeof zps === 'object') {
+                    return (zps as any).zone_id === selectedZoneId;
+                }
+                return false;
+            });
+            if (!lotInSelectedZone) return false;
+        }
+
+        // 4. Search Term Filter
         if (!searchTerm) return true
 
         // Dynamic deep search using shared utility
@@ -194,7 +241,14 @@ export function useLotManagement() {
         searchTerm,
         setSearchTerm,
         positionFilter,
-        setPositionFilter,
+        setSelectedZoneId,
+        dateFilterField,
+        setDateFilterField,
+        startDate,
+        setStartDate,
+        endDate,
+        setEndDate,
+        selectedZoneId,
 
         // Common Data
         products,

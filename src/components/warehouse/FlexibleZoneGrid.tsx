@@ -2,6 +2,7 @@
 import React, { useMemo } from 'react'
 import { ChevronDown, ChevronRight, Package, Settings, Eye, MoreHorizontal } from 'lucide-react'
 import { Database } from '@/lib/database.types'
+import { TagDisplay } from '@/components/lots/TagDisplay'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -569,13 +570,12 @@ export default function FlexibleZoneGrid({
                                     </div>
                                     {/* 4. Tags (Inline for this item) */}
                                     {item.tags && item.tags.length > 0 && (
-                                        <div className="flex flex-wrap gap-0.5 justify-center mt-0.5">
-                                            {item.tags.map((tag, tIdx) => (
-                                                <span key={tIdx} className="px-1 py-[1px] rounded-[3px] text-[7px] font-bold bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800 leading-none">
-                                                    {tag}
-                                                </span>
-                                            ))}
-                                        </div>
+                                        <TagDisplay
+                                            tags={item.tags}
+                                            variant="compact"
+                                            placeholderMap={{ '@': item.sku || '' }}
+                                            className="mt-0.5"
+                                        />
                                     )}
                                 </div>
                             ))}

@@ -58,4 +58,6 @@ export type ProductWithCategory = {
         conversion_rate: number
         unit_id: string
     }[]
+    is_active: boolean | null
+    created_at: string
 }
