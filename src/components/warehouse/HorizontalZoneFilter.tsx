@@ -14,6 +14,7 @@ interface HorizontalZoneFilterProps {
     onSearchChange?: (term: string) => void
     showSearch?: boolean
     compact?: boolean
+    variant?: 'default' | 'subtle'
 }
 
 export default function HorizontalZoneFilter({
@@ -22,7 +23,8 @@ export default function HorizontalZoneFilter({
     searchTerm = '',
     onSearchChange,
     showSearch = true,
-    compact = false
+    compact = false,
+    variant = 'default'
 }: HorizontalZoneFilterProps) {
     const { systemType } = useSystem()
     const [zones, setZones] = useState<Zone[]>([])
@@ -168,8 +170,12 @@ export default function HorizontalZoneFilter({
         depth++
     }
 
+    const containerStyles = variant === 'subtle'
+        ? `${compact ? 'p-1 space-y-1' : 'p-2 space-y-2'}`
+        : `bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 ${compact ? 'p-2 space-y-2' : 'p-4 space-y-4'}`
+
     return (
-        <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 ${compact ? 'p-2 space-y-2' : 'p-4 space-y-4'}`}>
+        <div className={containerStyles}>
             {/* Level 0: Warehouses (Tabs) */}
             <div className="flex flex-wrap gap-2">
                 {level0Zones.map(zone => {

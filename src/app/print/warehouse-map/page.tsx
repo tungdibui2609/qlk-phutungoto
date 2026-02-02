@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useMemo } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Loader2, Printer } from 'lucide-react'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
@@ -64,8 +64,30 @@ export default function WarehouseMapPrintPage() {
     const [signPerson2, setSignPerson2] = useState('')
     const [signPerson3, setSignPerson3] = useState('')
 
+    const [pageBreakZoneIds, setPageBreakZoneIds] = useState<Set<string>>(new Set())
+
     const [isDownloading, setIsDownloading] = useState(false)
     const [downloadTimer, setDownloadTimer] = useState(0)
+    const [orientation, setOrientation] = useState<'portrait' | 'landscape'>((searchParams.get('orientation') as any) || 'portrait')
+
+    const router = useRouter()
+    const pathname = usePathname()
+
+    const handleOrientationChange = (o: 'portrait' | 'landscape') => {
+        setOrientation(o)
+        const params = new URLSearchParams(searchParams.toString())
+        params.set('orientation', o)
+        router.replace(`${pathname}?${params.toString()}`)
+    }
+
+    const handleTogglePageBreak = (zoneId: string) => {
+        setPageBreakZoneIds(prev => {
+            const next = new Set(prev)
+            if (next.has(zoneId)) next.delete(zoneId)
+            else next.add(zoneId)
+            return next
+        })
+    }
 
     // Use shared hook for company info
     const { companyInfo, logoSrc } = usePrintCompanyInfo({
@@ -266,6 +288,7 @@ export default function WarehouseMapPrintPage() {
             params.set('signPerson1', signPerson1)
             params.set('signPerson2', signPerson2)
             params.set('signPerson3', signPerson3)
+            params.set('orientation', orientation)
 
             const { data: { session } } = await supabase.auth.getSession()
             if (session?.access_token) params.set('token', session.access_token)
@@ -298,81 +321,102 @@ export default function WarehouseMapPrintPage() {
     if (error) return <div className="flex h-screen items-center justify-center text-red-600 font-bold">Lỗi: {error}</div>
 
     return (
-        <div id="print-ready" data-ready="true" className="bg-white min-h-screen w-[210mm] mx-auto text-black p-8 print:p-4 text-[13px]">
+        <>
             {/* Toolbar */}
-            <div className={`fixed top-4 right-4 print:hidden flex gap-2 ${isSnapshot ? 'hidden' : ''}`}>
+            <div className={`fixed top-4 right-4 z-50 print:hidden flex gap-2 items-center ${isSnapshot ? 'hidden' : ''}`}>
+                <div className="flex bg-white rounded-lg shadow-xl border border-gray-200 p-1">
+                    <button
+                        onClick={() => handleOrientationChange('portrait')}
+                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${orientation === 'portrait' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}
+                    >
+                        Dọc (A4)
+                    </button>
+                    <button
+                        onClick={() => handleOrientationChange('landscape')}
+                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${orientation === 'landscape' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}
+                    >
+                        Ngang (A4)
+                    </button>
+                </div>
                 <button
                     onClick={handleDownload}
                     disabled={isDownloading}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg shadow-lg"
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-lg cursor-pointer transition-colors"
                 >
                     {isDownloading ? <Loader2 size={20} className="animate-spin" /> : <Printer size={20} />}
                     Tải ảnh phiếu
                 </button>
                 <button
                     onClick={handlePrint}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg shadow-lg"
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-lg cursor-pointer transition-colors"
                 >
                     <Printer size={20} /> In sơ đồ
                 </button>
             </div>
 
-            <div className="mb-6">
-                <PrintHeader companyInfo={companyInfo} logoSrc={logoSrc} size="compact" />
-            </div>
+            <div id="print-ready" data-ready="true" className={`bg-white min-h-screen ${orientation === 'landscape' ? 'w-[297mm]' : 'w-[210mm]'} mx-auto text-black p-8 print:p-4 text-[13px]`}>
 
-            <div className="text-center mb-6">
-                <EditableText
-                    value={editReportTitle}
-                    onChange={setEditReportTitle}
-                    className="text-2xl font-bold uppercase text-center w-full"
-                    style={{ fontFamily: "'Times New Roman', Times, serif" }}
-                    isSnapshot={isSnapshot}
-                />
-                <p className="italic mt-1">Ngày in: {new Date().toLocaleDateString('vi-VN')}</p>
-                {selectedZoneId && (
-                    <p className="font-medium mt-1">Vùng kho: {zones.find(z => z.id === selectedZoneId)?.name}</p>
-                )}
-                {searchTerm && (
-                    <p className="text-sm mt-1">Lọc theo: "{searchTerm}"</p>
-                )}
-            </div>
+                <div className="mb-6">
+                    <PrintHeader companyInfo={companyInfo} logoSrc={logoSrc} size="compact" />
+                </div>
 
-            {/* The Map Grid */}
-            <div className="mb-8 print:mb-4">
-                <FlexibleZoneGrid
-                    zones={filteredZones}
-                    positions={filteredPositions}
-                    layouts={layouts}
-                    occupiedIds={occupiedIds}
-                    lotInfo={lotInfo}
-                    collapsedZones={new Set()} // Expand all for printing
-                    selectedPositionIds={new Set()}
-                    onToggleCollapse={() => { }}
-                    onPositionSelect={() => { }}
-                />
-            </div>
+                <div className="text-center mb-6">
+                    <EditableText
+                        value={editReportTitle}
+                        onChange={setEditReportTitle}
+                        className="text-2xl font-bold uppercase text-center w-full"
+                        style={{ fontFamily: "'Times New Roman', Times, serif" }}
+                        isSnapshot={isSnapshot}
+                    />
+                    <p className="italic mt-1">Ngày in: {new Date().toLocaleDateString('vi-VN')}</p>
+                    {selectedZoneId && (
+                        <p className="font-medium mt-1">Vùng kho: {zones.find(z => z.id === selectedZoneId)?.name}</p>
+                    )}
+                    {searchTerm && (
+                        <p className="text-sm mt-1">Lọc theo: "{searchTerm}"</p>
+                    )}
+                </div>
 
-            {/* Footer Signatures */}
-            <div className="flex justify-between mt-12 break-inside-avoid">
-                {[
-                    { title: signTitle1, setTitle: setSignTitle1, person: signPerson1, setPerson: setSignPerson1 },
-                    { title: signTitle2, setTitle: setSignTitle2, person: signPerson2, setPerson: setSignPerson2 },
-                    { title: signTitle3, setTitle: setSignTitle3, person: signPerson3, setPerson: setSignPerson3, extra: '(Ký, họ tên, đóng dấu)' }
-                ].map((s, i) => (
-                    <div key={i} className="text-center w-1/3">
-                        <EditableText value={s.title} onChange={s.setTitle} className="font-bold text-center w-full mb-1" isSnapshot={isSnapshot} />
-                        <p className="italic text-xs">{s.extra || '(Ký, họ tên)'}</p>
-                        <div className="h-24"></div>
-                        <EditableText value={s.person} onChange={s.setPerson} className="font-bold text-center w-full" placeholder="Nhập tên..." isSnapshot={isSnapshot} />
-                    </div>
-                ))}
-            </div>
+                {/* The Map Grid */}
+                <div className="mb-8 print:mb-4">
+                    <FlexibleZoneGrid
+                        zones={filteredZones}
+                        positions={filteredPositions}
+                        layouts={layouts}
+                        occupiedIds={occupiedIds}
+                        lotInfo={lotInfo}
+                        collapsedZones={new Set()} // Expand all for printing
+                        selectedPositionIds={new Set()}
+                        onToggleCollapse={() => { }}
+                        onPositionSelect={() => { }}
+                        pageBreakIds={pageBreakZoneIds}
+                        onTogglePageBreak={handleTogglePageBreak}
+                    />
+                </div>
 
-            <style dangerouslySetInnerHTML={{
-                __html: `
+                {/* Footer Signatures */}
+                <div className="flex justify-between mt-12 break-inside-avoid">
+                    {[
+                        { title: signTitle1, setTitle: setSignTitle1, person: signPerson1, setPerson: setSignPerson1 },
+                        { title: signTitle2, setTitle: setSignTitle2, person: signPerson2, setPerson: setSignPerson2 },
+                        { title: signTitle3, setTitle: setSignTitle3, person: signPerson3, setPerson: setSignPerson3, extra: '(Ký, họ tên, đóng dấu)' }
+                    ].map((s, i) => (
+                        <div key={i} className="text-center w-1/3">
+                            <EditableText value={s.title} onChange={s.setTitle} className="font-bold text-center w-full mb-1" isSnapshot={isSnapshot} />
+                            <p className="italic text-xs">{s.extra || '(Ký, họ tên)'}</p>
+                            <div className="h-24"></div>
+                            <EditableText value={s.person} onChange={s.setPerson} className="font-bold text-center w-full" placeholder="Nhập tên..." isSnapshot={isSnapshot} />
+                        </div>
+                    ))}
+                </div>
+
+                <style dangerouslySetInnerHTML={{
+                    __html: `
                 @media print {
-                    @page { size: A4 portrait; margin: 10mm; }
+                    @page { 
+                        size: A4 ${orientation}; 
+                        margin: 10mm; 
+                    }
                     body { background: white !important; }
                     .print-hidden { display: none !important; }
                 }
@@ -380,7 +424,12 @@ export default function WarehouseMapPrintPage() {
                 #print-ready .grid {
                     page-break-inside: avoid;
                 }
+                .print-break-before-page {
+                    break-before: page;
+                    page-break-before: always;
+                }
             `}} />
-        </div>
+            </div>
+        </>
     )
 }

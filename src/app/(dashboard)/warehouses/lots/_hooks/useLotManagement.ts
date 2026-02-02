@@ -4,6 +4,8 @@ import { Database } from '@/lib/database.types'
 import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import { matchSearch } from '@/lib/searchUtils'
+import { matchDateRange } from '@/lib/dateUtils'
+import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 
 export type Lot = Database['public']['Tables']['lots']['Row'] & {
     system_code?: string
@@ -39,7 +41,7 @@ export function useLotManagement() {
     const [searchTerm, setSearchTerm] = useState('')
     const [positionFilter, setPositionFilter] = useState<'all' | 'assigned' | 'unassigned'>('all')
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
-    const [dateFilterField, setDateFilterField] = useState<'created_at' | 'inbound_date' | 'peeling_date' | 'packaging_date'>('created_at')
+    const [dateFilterField, setDateFilterField] = useState<DateFilterField>('created_at')
     const [startDate, setStartDate] = useState<string>('')
     const [endDate, setEndDate] = useState<string>('')
 
@@ -192,25 +194,7 @@ export function useLotManagement() {
         if (positionFilter === 'unassigned' && hasPosition) return false
 
         // 2. Date Range Filter
-        if (startDate || endDate) {
-            const lotDateStr = lot[dateFilterField]
-            if (!lotDateStr) return false
-
-            const lotDate = new Date(lotDateStr)
-            lotDate.setHours(0, 0, 0, 0)
-
-            if (startDate) {
-                const start = new Date(startDate)
-                start.setHours(0, 0, 0, 0)
-                if (lotDate < start) return false
-            }
-
-            if (endDate) {
-                const end = new Date(endDate)
-                end.setHours(23, 59, 59, 999)
-                if (lotDate > end) return false
-            }
-        }
+        if (!matchDateRange(lot[dateFilterField], startDate, endDate)) return false
 
         // 3. Zone/Position Filter (Advanced)
         if (selectedZoneId) {

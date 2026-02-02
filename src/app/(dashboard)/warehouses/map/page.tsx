@@ -14,7 +14,10 @@ import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { QuickBulkExportModal } from '@/components/warehouse/map/QuickBulkExportModal'
 import { usePositionActionManager } from '@/components/warehouse/map/PositionActionManager'
 import Protected from '@/components/auth/Protected'
+import { MapFilterBar } from '@/components/warehouse/map/MapFilterBar'
 import { matchSearch } from '@/lib/searchUtils'
+import { matchDateRange } from '@/lib/dateUtils'
+import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -37,6 +40,11 @@ function WarehouseMapContent() {
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [searchTerm, setSearchTerm] = useState('')
 
+    // Date Filter State
+    const [dateFilterField, setDateFilterField] = useState<DateFilterField>('created_at')
+    const [startDate, setStartDate] = useState('')
+    const [endDate, setEndDate] = useState('')
+
     const searchParams = useSearchParams()
     const router = useRouter()
     const assignLotId = searchParams.get('assignLotId')
@@ -57,6 +65,8 @@ function WarehouseMapContent() {
     // Collapsed zones
     const [collapsedZones, setCollapsedZones] = useState<Set<string>>(new Set())
     const [recentlyUpdatedPositionIds, setRecentlyUpdatedPositionIds] = useState<Set<string>>(new Set())
+
+    const [showMobileFilters, setShowMobileFilters] = useState(false)
 
     const [lotInfo, setLotInfo] = useState<Record<string, any>>({})
 
@@ -547,6 +557,15 @@ function WarehouseMapContent() {
             })
         }
 
+        // Filter by date range
+        if (startDate || endDate) {
+            result = result.filter(p => {
+                const lot = p.lot_id ? lotInfo[p.lot_id] : null
+                if (!lot) return false
+                return matchDateRange(lot[dateFilterField], startDate, endDate)
+            })
+        }
+
         // Filter by zone
         if (selectedZoneId) {
             // Get all descendant zone IDs
@@ -725,13 +744,20 @@ function WarehouseMapContent() {
                 </div>
             )}
 
-            {/* Horizontal Zone Filter - Level-based cascading */}
-            <HorizontalZoneFilter
-                selectedZoneId={selectedZoneId}
-                onZoneSelect={setSelectedZoneId}
+            {/* Unified Filter Bar */}
+            <MapFilterBar
                 searchTerm={searchTerm}
                 onSearchChange={setSearchTerm}
-
+                selectedZoneId={selectedZoneId}
+                onZoneSelect={setSelectedZoneId}
+                dateFilterField={dateFilterField}
+                onDateFieldChange={setDateFilterField}
+                startDate={startDate}
+                onStartDateChange={setStartDate}
+                endDate={endDate}
+                onEndDateChange={setEndDate}
+                showMobileFilters={showMobileFilters}
+                toggleMobileFilters={() => setShowMobileFilters(!showMobileFilters)}
             />
 
             {/* Legend */}

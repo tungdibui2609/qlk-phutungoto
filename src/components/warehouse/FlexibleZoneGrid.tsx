@@ -28,6 +28,8 @@ interface FlexibleZoneGridProps {
     highlightLotId?: string | null
     highlightingPositionIds?: Set<string>
     lotInfo?: Record<string, { code: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>, inbound_date?: string, created_at?: string, packaging_date?: string, peeling_date?: string, tags?: string[] }>
+    pageBreakIds?: Set<string>
+    onTogglePageBreak?: (zoneId: string) => void
 }
 
 export default function FlexibleZoneGrid({
@@ -45,7 +47,9 @@ export default function FlexibleZoneGrid({
     onConfigureZone,
     highlightLotId,
     highlightingPositionIds = new Set(),
-    lotInfo = {}
+    lotInfo = {},
+    pageBreakIds = new Set(),
+    onTogglePageBreak
 }: FlexibleZoneGridProps) {
 
     // Build zone tree with positions count
@@ -200,7 +204,15 @@ export default function FlexibleZoneGrid({
             case 'grid':
                 // Grid mode: Show breadcrumb header + positions directly
                 return (
-                    <div key={zone.id} className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800">
+                    <div
+                        key={zone.id}
+                        className={`rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800 ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
+                    >
+                        {pageBreakIds.has(zone.id) && (
+                            <div className="hidden print:block text-center border-b border-dashed border-gray-300 mb-4 pb-2 text-[10px] text-gray-400 italic">
+                                -- Tiếp theo từ trang trước --
+                            </div>
+                        )}
                         {/* QLK-style header with breadcrumb */}
                         <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-emerald-50 to-white dark:from-emerald-900/20 dark:to-gray-800 border-b border-emerald-100 dark:border-emerald-900/50">
                             <div className="flex items-center gap-3">
@@ -216,18 +228,41 @@ export default function FlexibleZoneGrid({
                                     )}
                                 </div>
                             </div>
-                            {isDesignMode && (
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        onConfigureZone?.(zone)
-                                    }}
-                                    className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-xs font-medium transition-colors"
-                                >
-                                    <Settings size={12} />
-                                    Cấu hình
-                                </button>
-                            )}
+                            <div className="flex items-center gap-2 print:hidden">
+                                {onTogglePageBreak && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onTogglePageBreak(zone.id)
+                                        }}
+                                        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${pageBreakIds.has(zone.id)
+                                            ? 'bg-orange-500 text-white hover:bg-orange-600'
+                                            : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                                            }`}
+                                        title={pageBreakIds.has(zone.id) ? "Bỏ ngắt trang" : "Ngắt trang tại đây"}
+                                    >
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M3 14h18" />
+                                            <path d="M3 10h18" />
+                                            <path d="M12 3v4" />
+                                            <path d="M12 17v4" />
+                                        </svg>
+                                        {pageBreakIds.has(zone.id) ? 'Đã ngắt trang' : 'Ngắt trang'}
+                                    </button>
+                                )}
+                                {isDesignMode && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onConfigureZone?.(zone)
+                                        }}
+                                        className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-xs font-medium transition-colors"
+                                    >
+                                        <Settings size={12} />
+                                        Cấu hình
+                                    </button>
+                                )}
+                            </div>
                         </div>
 
                         {/* Positions grid */}
@@ -256,7 +291,15 @@ export default function FlexibleZoneGrid({
             case 'section':
                 // Section mode: Compact section with nice breadcrumb header like Grid
                 return (
-                    <div key={zone.id} className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800">
+                    <div
+                        key={zone.id}
+                        className={`rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800 ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
+                    >
+                        {pageBreakIds.has(zone.id) && (
+                            <div className="hidden print:block text-center border-b border-dashed border-gray-300 mb-4 pb-2 text-[10px] text-gray-400 italic">
+                                -- Tiếp theo từ trang trước --
+                            </div>
+                        )}
                         {/* QLK-style header with breadcrumb - same as Grid mode */}
                         <div
                             className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-emerald-50 to-white dark:from-emerald-900/20 dark:to-gray-800 border-b border-emerald-100 dark:border-emerald-900/50 cursor-pointer"
@@ -280,18 +323,41 @@ export default function FlexibleZoneGrid({
                                     )}
                                 </div>
                             </div>
-                            {isDesignMode && (
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        onConfigureZone?.(zone)
-                                    }}
-                                    className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-xs font-medium transition-colors"
-                                >
-                                    <Settings size={12} />
-                                    Cấu hình
-                                </button>
-                            )}
+                            <div className="flex items-center gap-2 print:hidden">
+                                {onTogglePageBreak && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onTogglePageBreak(zone.id)
+                                        }}
+                                        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${pageBreakIds.has(zone.id)
+                                            ? 'bg-orange-500 text-white hover:bg-orange-600'
+                                            : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                                            }`}
+                                        title={pageBreakIds.has(zone.id) ? "Bỏ ngắt trang" : "Ngắt trang tại đây"}
+                                    >
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M3 14h18" />
+                                            <path d="M3 10h18" />
+                                            <path d="M12 3v4" />
+                                            <path d="M12 17v4" />
+                                        </svg>
+                                        {pageBreakIds.has(zone.id) ? 'Đã ngắt trang' : 'Ngắt trang'}
+                                    </button>
+                                )}
+                                {isDesignMode && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onConfigureZone?.(zone)
+                                        }}
+                                        className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-xs font-medium transition-colors"
+                                    >
+                                        <Settings size={12} />
+                                        Cấu hình
+                                    </button>
+                                )}
+                            </div>
                         </div>
 
                         {/* Section content */}

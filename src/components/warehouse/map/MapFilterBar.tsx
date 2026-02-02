@@ -1,12 +1,10 @@
-import { Search, Filter, Warehouse } from 'lucide-react'
+import { Search, Filter } from 'lucide-react'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { DateRangeFilter, DateFilterField } from '@/components/warehouse/DateRangeFilter'
 
-interface LotFilterProps {
+interface MapFilterBarProps {
     searchTerm: string
     onSearchChange: (value: string) => void
-    positionFilter: 'all' | 'assigned' | 'unassigned'
-    onPositionFilterChange: (value: 'all' | 'assigned' | 'unassigned') => void
     selectedZoneId: string | null
     onZoneSelect: (zoneId: string | null) => void
     dateFilterField: DateFilterField
@@ -19,11 +17,9 @@ interface LotFilterProps {
     toggleMobileFilters: () => void
 }
 
-export function LotFilter({
+export function MapFilterBar({
     searchTerm,
     onSearchChange,
-    positionFilter,
-    onPositionFilterChange,
     selectedZoneId,
     onZoneSelect,
     dateFilterField,
@@ -34,49 +30,25 @@ export function LotFilter({
     onEndDateChange,
     showMobileFilters,
     toggleMobileFilters
-}: LotFilterProps) {
+}: MapFilterBarProps) {
     return (
         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-2.5 shadow-sm space-y-2">
-            {/* Row 1: Search, Status & Date Filters (Consolidated for space) */}
+            {/* Row 1: Search & Date Filters */}
             <div className="flex flex-wrap items-center gap-2 w-full">
-                {/* Search - Flexible & Primary */}
+                {/* Search */}
                 <div className="relative flex-[3.5] min-w-[280px]">
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                     <input
                         type="text"
-                        placeholder="Tìm kiếm mã LOT, lô hàng..."
+                        placeholder="Tìm kiếm mã LOT, lô hàng, sản phẩm..."
                         value={searchTerm}
                         onChange={(e) => onSearchChange(e.target.value)}
                         className="w-full pl-10 pr-4 py-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all font-medium text-xs lg:text-sm"
                     />
                 </div>
 
-                {/* Extra Filters Wrapper - Groups them to wrap together and fills space */}
+                {/* Extra Filters Wrapper */}
                 <div className={`${showMobileFilters ? 'flex' : 'hidden lg:flex'} flex-wrap items-center gap-2 flex-[4]`}>
-                    {/* Position Assignment Status - Smaller */}
-                    <div className="flex items-center gap-1.5 bg-blue-50/50 dark:bg-blue-900/20 px-2 py-1.5 rounded-xl border border-blue-100 dark:border-blue-800/50 min-w-[120px]">
-                        <Warehouse size={12} className="text-blue-500 shrink-0" />
-                        <select
-                            value={positionFilter}
-                            onChange={(e) => onPositionFilterChange(e.target.value as any)}
-                            className="bg-transparent border-none text-[11px] font-bold text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer p-0 appearance-none pr-3 w-full"
-                        >
-                            <option value="all">Vị trí: Tất cả</option>
-                            <option value="assigned">Đã gán</option>
-                            <option value="unassigned">Chưa gán</option>
-                        </select>
-                    </div>
-
-                    {/* Lot Status - Smaller */}
-                    <div className="flex items-center gap-1.5 bg-emerald-50/50 dark:bg-emerald-900/20 px-2 py-1.5 rounded-xl border border-emerald-100 dark:border-emerald-800/50 min-w-[105px]">
-                        <Filter size={12} className="text-emerald-500 shrink-0" />
-                        <select className="bg-transparent border-none text-[11px] font-bold text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer p-0 appearance-none pr-3 w-full">
-                            <option value="all">Tất cả TT</option>
-                            <option value="active">Hoạt động</option>
-                            <option value="closed">Đã đóng</option>
-                        </select>
-                    </div>
-
                     <DateRangeFilter
                         dateFilterField={dateFilterField}
                         onDateFieldChange={onDateFieldChange}
@@ -97,13 +69,14 @@ export function LotFilter({
                 </button>
             </div>
 
-            {/* Row 2: Advanced Position Filter (From Map) - Always full width but compact */}
+            {/* Row 2: Cascading Zone Filter */}
             <div className={`${showMobileFilters ? 'block' : 'hidden lg:block'}`}>
                 <HorizontalZoneFilter
                     selectedZoneId={selectedZoneId}
                     onZoneSelect={onZoneSelect}
                     showSearch={false}
                     compact={true}
+                    variant="subtle"
                 />
             </div>
         </div>
