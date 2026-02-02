@@ -13,6 +13,7 @@ interface HorizontalZoneFilterProps {
     searchTerm?: string
     onSearchChange?: (term: string) => void
     showSearch?: boolean
+    compact?: boolean
 }
 
 export default function HorizontalZoneFilter({
@@ -20,7 +21,8 @@ export default function HorizontalZoneFilter({
     onZoneSelect,
     searchTerm = '',
     onSearchChange,
-    showSearch = true
+    showSearch = true,
+    compact = false
 }: HorizontalZoneFilterProps) {
     const { systemType } = useSystem()
     const [zones, setZones] = useState<Zone[]>([])
@@ -167,7 +169,7 @@ export default function HorizontalZoneFilter({
     }
 
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+        <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 ${compact ? 'p-2 space-y-2' : 'p-4 space-y-4'}`}>
             {/* Level 0: Warehouses (Tabs) */}
             <div className="flex flex-wrap gap-2">
                 {level0Zones.map(zone => {
@@ -177,7 +179,7 @@ export default function HorizontalZoneFilter({
                             key={zone.id}
                             onClick={() => handleLevel0Select(zone)}
                             className={`
-                                px-4 py-2 rounded-lg text-sm font-bold uppercase transition-all
+                                ${compact ? 'px-3 py-1.5' : 'px-4 py-2'} rounded-lg text-sm font-bold uppercase transition-all
                                 ${isActive
                                     ? 'bg-blue-600 text-white shadow-md'
                                     : 'bg-white dark:bg-gray-800 text-gray-500 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
@@ -191,12 +193,12 @@ export default function HorizontalZoneFilter({
             </div>
 
             {/* Level 1 & Controls Bar */}
-            <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg border border-gray-200 dark:border-gray-700 space-y-3">
+            <div className={`bg-gray-50 dark:bg-gray-900/50 ${compact ? 'p-2 space-y-2' : 'p-3 space-y-3'} rounded-lg border border-gray-200 dark:border-gray-700`}>
                 {/* Zone Navigation: Level 1 Tabs & Deeper Dropdowns */}
-                <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+                <div className={`flex flex-col lg:flex-row lg:items-center ${compact ? 'gap-2' : 'gap-3'}`}>
                     {/* Level 1 Tabs (e.g. Chambers/Ngăn) */}
                     {activeLevel0 && (
-                        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar border-r border-gray-300 dark:border-gray-600 pr-4 mr-2">
+                        <div className={`flex items-center ${compact ? 'gap-0.5' : 'gap-1'} overflow-x-auto no-scrollbar border-r border-gray-300 dark:border-gray-600 ${compact ? 'pr-2 mr-1' : 'pr-4 mr-2'}`}>
                             {/* 'All' Option */}
                             <button
                                 onClick={() => handleLevel1Select(null)}
@@ -233,13 +235,13 @@ export default function HorizontalZoneFilter({
                     )}
 
                     {/* Deeper Levels Dropdowns */}
-                    <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
                         {deeperLevels.map((lvl, idx) => (
                             <div key={lvl.parentId} className="relative group">
                                 <select
                                     value={lvl.activeId}
                                     onChange={(e) => handleDropdownSelect(e.target.value, lvl.parentId)}
-                                    className="appearance-none pl-3 pr-8 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm min-w-[120px] focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:border-blue-400 transition-colors"
+                                    className={`appearance-none pl-3 pr-8 ${compact ? 'py-1' : 'py-1.5'} bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm min-w-[100px] focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:border-blue-400 transition-colors`}
                                 >
                                     <option value="">Tất cả {lvl.level === 2 ? 'Khu' : lvl.level === 3 ? 'Dãy' : lvl.level === 4 ? 'Tầng' : 'Zone'}</option>
                                     {lvl.children.map(c => (

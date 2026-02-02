@@ -447,14 +447,10 @@ export default function FlexibleZoneGrid({
             bgClass = 'bg-purple-100 dark:bg-purple-900/40'
             borderClass = 'border-purple-500'
             ringClass = 'ring-2 ring-purple-300' // Stronger ring
-        } else if (hasLot) {
-            // Has other LOT assigned
+        } else if (hasLot || isOccupied) {
+            // Has LOT assigned or marked as occupied - Match with "Có hàng" Legend (Amber theme)
             bgClass = 'bg-amber-50 dark:bg-amber-900/10'
             borderClass = 'border-amber-200 dark:border-amber-800'
-        } else if (isOccupied) {
-            // Just occupied (no LOT or legacy)
-            bgClass = 'bg-green-50 dark:bg-green-900/20'
-            borderClass = 'border-green-400 hover:border-green-500'
         }
 
         // Determine if we are in LOT assignment mode
@@ -537,11 +533,10 @@ export default function FlexibleZoneGrid({
                         {isTargetLot && (
                             <div title="Đang chọn" className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
                         )}
-                        {hasLot && !isTargetLot && (
-                            <div title="Có LOT khác" className="w-2 h-2 rounded-full bg-amber-400" />
-                        )}
-                        {isOccupied && !hasLot && (
-                            <div title="Có hàng" className="w-2 h-2 rounded-full bg-green-500" />
+                        {(hasLot || isOccupied) && !isTargetLot && (
+                            <div title="Có hàng">
+                                <Package size={10} className="text-amber-500 dark:text-amber-400" />
+                            </div>
                         )}
                     </div>
                 </div>

@@ -726,8 +726,8 @@ function WarehouseMapContent() {
                     <span>Trống</span>
                 </div>
                 <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 border border-green-400 rounded bg-green-50 dark:bg-green-900/20 flex items-center justify-center">
-                        <Package size={10} className="text-green-600" />
+                    <div className="w-5 h-5 border border-amber-300 rounded bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center">
+                        <Package size={10} className="text-amber-500" />
                     </div>
                     <span>Có hàng</span>
                 </div>
