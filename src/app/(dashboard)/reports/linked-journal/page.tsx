@@ -59,53 +59,41 @@ export default function LinkedJournalPage() {
         const allEntries: LinkedEntry[] = []
 
         lots?.forEach(lot => {
-            const history = (lot.metadata as any)?.system_history || { inbound: [], exports: [] }
+            const history = (lot.metadata as any)?.system_history || {}
 
-            // Inbound History
-            history.inbound?.forEach((inb: any) => {
-                const items = Object.values(inb.items || {})
-                const totalQty = items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
-                const unit = items[0] ? (items[0] as any).unit : 'N/A'
+            const processEntries = (list: any[], type: 'Inbound' | 'Export') => {
+                if (!Array.isArray(list)) return
+                list.forEach((entry: any) => {
+                    const items = Object.values(entry.items || {})
+                    const totalQty = items.reduce((sum: number, item: any) =>
+                        sum + (type === 'Inbound' ? (item.quantity || 0) : (item.exported_quantity || 0)), 0)
+                    const unit = items[0] ? (items[0] as any).unit : 'N/A'
 
-                allEntries.push({
-                    id: inb.id,
-                    lot_id: lot.id,
-                    lot_code: lot.code,
-                    date: inb.date,
-                    type: 'Inbound',
-                    items: items,
-                    quantity: totalQty,
-                    unit: unit,
-                    order_id: inb.order_id || null,
-                    order_code: inb.order_code || null,
-                    is_adjustment: !!inb.is_adjustment,
-                    description: inb.description || 'Nhập kho',
-                    customer_supplier: inb.supplier_name || 'N/A'
+                    allEntries.push({
+                        id: entry.id,
+                        lot_id: lot.id,
+                        lot_code: lot.code,
+                        date: entry.date,
+                        type: type,
+                        items: items,
+                        quantity: totalQty,
+                        unit: unit,
+                        order_id: entry.order_id || null,
+                        order_code: entry.order_code || null,
+                        is_adjustment: !!entry.is_adjustment,
+                        description: entry.description || (type === 'Inbound' ? 'Nhập kho' : 'Xuất kho'),
+                        customer_supplier: type === 'Inbound' ? (entry.supplier_name || 'N/A') : (entry.customer || 'N/A')
+                    })
                 })
-            })
+            }
 
-            // Export History
-            history.exports?.forEach((exp: any) => {
-                const items = Object.values(exp.items || {})
-                const totalQty = items.reduce((sum: number, item: any) => sum + (item.exported_quantity || 0), 0)
-                const unit = items[0] ? (items[0] as any).unit : 'N/A'
+            // 1. Regular History
+            processEntries(history.inbound, 'Inbound')
+            processEntries(history.exports, 'Export')
 
-                allEntries.push({
-                    id: exp.id,
-                    lot_id: lot.id,
-                    lot_code: lot.code,
-                    date: exp.date,
-                    type: 'Export',
-                    items: items,
-                    quantity: totalQty,
-                    unit: unit,
-                    order_id: exp.order_id || null,
-                    order_code: exp.order_code || null,
-                    is_adjustment: !!exp.is_adjustment,
-                    description: exp.description || 'Xuất kho',
-                    customer_supplier: exp.customer || 'N/A'
-                })
-            })
+            // 2. Accounting Sync Specific History
+            processEntries((history as any).accounting_sync?.inbound, 'Inbound')
+            processEntries((history as any).accounting_sync?.exports, 'Export')
         })
 
         // Sort by date descending

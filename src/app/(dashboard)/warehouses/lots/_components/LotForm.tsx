@@ -323,120 +323,153 @@ export function LotForm({
                     draft: true // Marked as draft for the inbound buffer
                 })
             }
-        } else if (syncEnabled) {
-            // Edit Mode: Update existing draft or create adjustment
-            const freshCreationDraftIdx = systemHistory.inbound.findIndex((inb: any) => inb.draft === true && !inb.is_adjustment)
-
-            if (freshCreationDraftIdx >= 0) {
-                // Scenario A: Lot is still in "Pending Sync (Full Receive)" state.
-                // Update existing draft to reflect new state (Full List)
-                const inboundItems: Record<string, any> = {}
-                validItems.forEach((item, idx) => {
-                    const product = products.find(p => p.id === item.productId)
-                    inboundItems[idx] = {
-                        product_id: item.productId,
-                        product_sku: product?.sku,
-                        product_name: product?.name,
-                        quantity: item.quantity,
-                        unit: item.unit,
-                        price: (product as any)?.cost_price || 0
-                    }
-                })
-
-                systemHistory.inbound[freshCreationDraftIdx] = {
-                    ...systemHistory.inbound[freshCreationDraftIdx],
-                    supplier_id: selectedSupplierId || null,
-                    supplier_name: suppliers.find(s => s.id === selectedSupplierId)?.name || 'N/A',
-                    items: inboundItems,
-                    is_edit: true,
-                    updated_at: new Date().toISOString()
+        } else {
+            // Calculate detailed changes for audit trail
+            const changes: string[] = []
+            if (editingLot) {
+                if (editingLot.notes !== newLotNotes) changes.push(`Ghi chú: ${editingLot.notes || 'Trống'} → ${newLotNotes || 'Trống'}`)
+                if (editingLot.supplier_id !== selectedSupplierId) {
+                    const oldS = suppliers.find(s => s.id === editingLot.supplier_id)?.name || 'N/A'
+                    const newS = suppliers.find(s => s.id === selectedSupplierId)?.name || 'N/A'
+                    changes.push(`Nhà cung cấp: ${oldS} → ${newS}`)
                 }
-            } else {
-                // Scenario B: Lot was finalized or already adjusted. Calculate DELTA.
-
-                // 1. Snapshot OLD items for diffing
-                const oldItemsMap: Record<string, number> = {}
-                if (editingLot.lot_items) {
-                    editingLot.lot_items.forEach(li => {
-                        const key = `${li.product_id}|${(li as any).unit || ''}`
-                        oldItemsMap[key] = (oldItemsMap[key] || 0) + li.quantity
-                    })
+                if (editingLot.qc_id !== selectedQCId) {
+                    const oldQ = qcList.find(q => q.id === editingLot.qc_id)?.name || 'N/A'
+                    const newQ = qcList.find(q => q.id === selectedQCId)?.name || 'N/A'
+                    changes.push(`QC: ${oldQ} → ${newQ}`)
                 }
+                if (editingLot.warehouse_name !== warehouseName) changes.push(`Kho: ${editingLot.warehouse_name || 'N/A'} → ${warehouseName || 'N/A'}`)
+                if (editingLot.batch_code !== batchCode) changes.push(`Batch NCC: ${editingLot.batch_code || 'N/A'} → ${batchCode || 'N/A'}`)
+                if (editingLot.quantity !== totalQuantity) changes.push(`Tổng SL: ${editingLot.quantity} → ${totalQuantity}`)
+            }
 
-                // 2. Snapshot NEW items
-                const newItemsMap: Record<string, number> = {}
-                validItems.forEach(item => {
-                    const key = `${item.productId}|${item.unit || ''}`
-                    newItemsMap[key] = (newItemsMap[key] || 0) + item.quantity
-                })
+            // ALWAYS log the manual edit metadata for audit trail
+            if (!systemHistory.edits) systemHistory.edits = []
+            systemHistory.edits.push({
+                id: crypto.randomUUID(),
+                date: new Date().toISOString(),
+                actor: profile?.full_name || profile?.email || 'Unknown',
+                description: 'Cập nhật thông tin lô hàng',
+                changes: changes.length > 0 ? changes : undefined
+            })
 
-                // 3. Calculate Deltas
-                const allKeys = new Set([...Object.keys(oldItemsMap), ...Object.keys(newItemsMap)])
-                const inboundAdjustmentItems: Record<string, any> = {}
-                const outboundAdjustmentItems: Record<string, any> = {}
+            if (syncEnabled) {
+                // Edit Mode: Update existing draft or create adjustment
+                const freshCreationDraftIdx = systemHistory.inbound.findIndex((inb: any) => inb.draft === true && !inb.is_adjustment)
 
-                let inIdx = 0
-                let outIdx = 0
-
-                allKeys.forEach(key => {
-                    const oldQty = oldItemsMap[key] || 0
-                    const newQty = newItemsMap[key] || 0
-                    const diff = newQty - oldQty
-
-                    const parts = key.split('|')
-                    const pId = parts[0]
-                    const unitName = parts.slice(1).join('|')
-                    const product = products.find(p => p.id === pId)
-
-                    if (diff > 0.000001) {
-                        inboundAdjustmentItems[inIdx++] = {
-                            product_id: pId,
+                if (freshCreationDraftIdx >= 0) {
+                    // Scenario A: Lot is still in "Pending Sync (Full Receive)" state.
+                    // Update existing draft to reflect new state (Full List)
+                    const inboundItems: Record<string, any> = {}
+                    validItems.forEach((item, idx) => {
+                        const product = products.find(p => p.id === item.productId)
+                        inboundItems[idx] = {
+                            product_id: item.productId,
                             product_sku: product?.sku,
                             product_name: product?.name,
-                            quantity: Number(diff.toFixed(6)),
-                            unit: unitName,
+                            quantity: item.quantity,
+                            unit: item.unit,
                             price: (product as any)?.cost_price || 0
                         }
-                    } else if (diff < -0.000001) {
-                        outboundAdjustmentItems[outIdx++] = {
-                            product_id: pId,
-                            product_sku: product?.sku,
-                            product_name: product?.name,
-                            exported_quantity: Number(Math.abs(diff).toFixed(6)),
-                            unit: unitName,
-                            cost_price: (product as any)?.cost_price || 0
-                        }
-                    }
-                })
+                    })
 
-                if (Object.keys(inboundAdjustmentItems).length > 0) {
-                    if (!systemHistory.inbound) systemHistory.inbound = []
-                    systemHistory.inbound.push({
-                        id: crypto.randomUUID(),
-                        date: new Date().toISOString(),
+                    systemHistory.inbound[freshCreationDraftIdx] = {
+                        ...systemHistory.inbound[freshCreationDraftIdx],
                         supplier_id: selectedSupplierId || null,
                         supplier_name: suppliers.find(s => s.id === selectedSupplierId)?.name || 'N/A',
-                        items: inboundAdjustmentItems,
-                        draft: true,
+                        items: inboundItems,
                         is_edit: true,
-                        is_adjustment: true,
-                        description: `Điều chỉnh số lượng LOT ${editingLot.code}`
-                    })
-                }
+                        updated_at: new Date().toISOString()
+                    }
+                } else {
+                    // Scenario B: Lot was finalized or already adjusted. Calculate DELTA.
 
-                if (Object.keys(outboundAdjustmentItems).length > 0) {
-                    if (!systemHistory.exports) systemHistory.exports = []
-                    systemHistory.exports.push({
-                        id: crypto.randomUUID(),
-                        date: new Date().toISOString(),
-                        customer: 'Hệ thống (Điều chỉnh)',
-                        description: `Điều chỉnh số lượng LOT ${editingLot.code}`,
-                        location_code: editingLot.warehouse_name || warehouseName || null,
-                        items: outboundAdjustmentItems,
-                        draft: true,
-                        is_edit: true,
-                        is_adjustment: true
+                    // 1. Snapshot OLD items for diffing
+                    const oldItemsMap: Record<string, number> = {}
+                    if (editingLot.lot_items) {
+                        editingLot.lot_items.forEach(li => {
+                            const key = `${li.product_id}|${(li as any).unit || ''}`
+                            oldItemsMap[key] = (oldItemsMap[key] || 0) + li.quantity
+                        })
+                    }
+
+                    // 2. Snapshot NEW items
+                    const newItemsMap: Record<string, number> = {}
+                    validItems.forEach(item => {
+                        const key = `${item.productId}|${item.unit || ''}`
+                        newItemsMap[key] = (newItemsMap[key] || 0) + item.quantity
                     })
+
+                    // 3. Calculate Deltas
+                    const allKeys = new Set([...Object.keys(oldItemsMap), ...Object.keys(newItemsMap)])
+                    const inboundAdjustmentItems: Record<string, any> = {}
+                    const outboundAdjustmentItems: Record<string, any> = {}
+
+                    let inIdx = 0
+                    let outIdx = 0
+
+                    allKeys.forEach(key => {
+                        const oldQty = oldItemsMap[key] || 0
+                        const newQty = newItemsMap[key] || 0
+                        const diff = newQty - oldQty
+
+                        const parts = key.split('|')
+                        const pId = parts[0]
+                        const unitName = parts.slice(1).join('|')
+                        const product = products.find(p => p.id === pId)
+
+                        if (diff > 0.000001) {
+                            inboundAdjustmentItems[inIdx++] = {
+                                product_id: pId,
+                                product_sku: product?.sku,
+                                product_name: product?.name,
+                                quantity: Number(diff.toFixed(6)),
+                                unit: unitName,
+                                price: (product as any)?.cost_price || 0
+                            }
+                        } else if (diff < -0.000001) {
+                            outboundAdjustmentItems[outIdx++] = {
+                                product_id: pId,
+                                product_sku: product?.sku,
+                                product_name: product?.name,
+                                exported_quantity: Number(Math.abs(diff).toFixed(6)),
+                                unit: unitName,
+                                cost_price: (product as any)?.cost_price || 0
+                            }
+                        }
+                    })
+
+                    if (Object.keys(inboundAdjustmentItems).length > 0) {
+                        if (!systemHistory.accounting_sync) systemHistory.accounting_sync = {}
+                        if (!systemHistory.accounting_sync.inbound) systemHistory.accounting_sync.inbound = []
+                        systemHistory.accounting_sync.inbound.push({
+                            id: crypto.randomUUID(),
+                            date: new Date().toISOString(),
+                            supplier_id: selectedSupplierId || null,
+                            supplier_name: suppliers.find(s => s.id === selectedSupplierId)?.name || 'N/A',
+                            items: inboundAdjustmentItems,
+                            draft: true,
+                            is_edit: true,
+                            is_adjustment: true,
+                            description: `Điều chỉnh tăng số lượng LOT ${editingLot.code}`
+                        })
+                    }
+
+                    if (Object.keys(outboundAdjustmentItems).length > 0) {
+                        if (!systemHistory.accounting_sync) systemHistory.accounting_sync = {}
+                        if (!systemHistory.accounting_sync.exports) systemHistory.accounting_sync.exports = []
+                        systemHistory.accounting_sync.exports.push({
+                            id: crypto.randomUUID(),
+                            date: new Date().toISOString(),
+                            customer: 'Hệ thống (Điều chỉnh)',
+                            description: `Điều chỉnh giảm số lượng LOT ${editingLot.code}`,
+                            location_code: editingLot.warehouse_name || warehouseName || null,
+                            items: outboundAdjustmentItems,
+                            draft: true,
+                            is_edit: true,
+                            is_adjustment: true
+                        })
+                    }
                 }
             }
         }

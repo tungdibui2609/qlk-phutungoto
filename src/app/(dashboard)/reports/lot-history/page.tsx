@@ -18,6 +18,7 @@ type LotWithDetails = {
     lot_items: Array<{
         id: string
         quantity: number
+        unit: string | null
         products: { name: string; sku: string; unit: string } | null
     }>
     lot_tags: Array<{
@@ -49,6 +50,7 @@ export default function LotHistoryPage() {
                 lot_items (
                     id,
                     quantity,
+                    unit,
                     products (name, sku, unit)
                 ),
                 lot_tags (tag, lot_item_id)
@@ -96,11 +98,14 @@ export default function LotHistoryPage() {
             return { type: 'split_origin', label: `Đã tách ra ${dests}`, variant: 'pink' }
         }
 
-        // 5. Exports
+        // 5. Exports (Actual Customer Exports)
         if (history?.exports && history.exports.length > 0) {
             const lastExport = history.exports[history.exports.length - 1]
-            const dest = lastExport.customer
-            return { type: 'export', label: `Đã xuất cho ${dest}`, variant: 'blue', date: lastExport.date }
+            // Skip adjustment exports here, they will be handled by the edit/adjustment section below
+            if (!lastExport.is_adjustment) {
+                const dest = lastExport.customer
+                return { type: 'export', label: `Đã xuất cho ${dest}`, variant: 'blue', date: lastExport.date }
+            }
         }
 
         // 6. Legacy Tags
@@ -110,7 +115,13 @@ export default function LotHistoryPage() {
         const legacySplit = lot.lot_tags?.find(t => t.tag.startsWith('SPLIT_FROM:'))
         if (legacySplit) return { type: 'split_result', label: 'Tách (Dữ liệu cũ)', variant: 'orange' }
 
-        // 6. Default Create
+        // 7. Manual Edits
+        if (history?.edits && history.edits.length > 0) {
+            const lastEdit = history.edits[history.edits.length - 1]
+            return { type: 'edit', label: 'Chỉnh sửa', variant: 'amber', date: lastEdit.date, changes: lastEdit.changes }
+        }
+
+        // 8. Default Create
         return { type: 'create', label: 'Tạo mới', variant: 'emerald' }
     }
 
@@ -132,7 +143,8 @@ export default function LotHistoryPage() {
             (actionTypeFilter === 'create' && actionData.type === 'create') ||
             (actionTypeFilter === 'merge' && (actionData.type === 'merge_target' || actionData.type === 'merge_source')) ||
             (actionTypeFilter === 'split' && (actionData.type === 'split_result' || actionData.type === 'split_origin')) ||
-            (actionTypeFilter === 'export' && actionData.type === 'export')
+            (actionTypeFilter === 'export' && actionData.type === 'export') ||
+            (actionTypeFilter === 'edit' && actionData.type === 'edit')
 
         return matchesSearch && matchesDate && matchesAction
     }).sort((a, b) => {
@@ -142,7 +154,7 @@ export default function LotHistoryPage() {
     })
 
     const getActionBadge = (lot: LotWithDetails) => {
-        const { label, variant } = getLotActionData(lot)
+        const { label, variant, changes } = getLotActionData(lot)
 
         const variants: Record<string, string> = {
             emerald: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800',
@@ -150,7 +162,8 @@ export default function LotHistoryPage() {
             orange: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-800',
             slate: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700',
             pink: 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-400 border-pink-200 dark:border-pink-800',
-            blue: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
+            blue: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800',
+            amber: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800'
         }
 
         const icons: Record<string, any> = {
@@ -159,14 +172,27 @@ export default function LotHistoryPage() {
             orange: <Split size={12} />,
             slate: <ArrowRightLeft size={12} />,
             pink: <Split size={12} />,
-            blue: <ArrowUpRight size={12} />
+            blue: <ArrowUpRight size={12} />,
+            amber: <History size={12} />
         }
 
         return (
-            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border uppercase tracking-tight ${variants[variant] || variants.emerald}`}>
-                {icons[variant] || icons.emerald}
-                {label}
-            </span>
+            <div className="flex flex-col items-start gap-1">
+                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border uppercase tracking-tight ${variants[variant] || variants.emerald}`}>
+                    {icons[variant] || icons.emerald}
+                    {label}
+                </span>
+
+                {changes && changes.length > 0 && (
+                    <div className="flex flex-col gap-0.5 ml-1">
+                        {changes.map((change: string, idx: number) => (
+                            <span key={idx} className="text-[9px] text-stone-500 dark:text-stone-400 font-medium leading-tight italic">
+                                • {change}
+                            </span>
+                        ))}
+                    </div>
+                )}
+            </div>
         )
     }
 
@@ -230,6 +256,7 @@ export default function LotHistoryPage() {
                         <option value="merge">Gộp LOT</option>
                         <option value="split">Tách LOT</option>
                         <option value="export">Xuất kho</option>
+                        <option value="edit">Chỉnh sửa</option>
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" size={16} />
                 </div>
