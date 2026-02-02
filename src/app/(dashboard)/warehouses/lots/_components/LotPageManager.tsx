@@ -27,6 +27,8 @@ export function LotPageManager() {
         loading,
         searchTerm,
         setSearchTerm,
+        positionFilter,
+        setPositionFilter,
         fetchLots,
         handleDeleteLot,
         handleToggleStar,
@@ -147,6 +149,8 @@ export function LotPageManager() {
             <LotFilter
                 searchTerm={searchTerm}
                 onSearchChange={setSearchTerm}
+                positionFilter={positionFilter}
+                onPositionFilterChange={setPositionFilter}
                 showMobileFilters={showMobileFilters}
                 toggleMobileFilters={() => setShowMobileFilters(!showMobileFilters)}
             />

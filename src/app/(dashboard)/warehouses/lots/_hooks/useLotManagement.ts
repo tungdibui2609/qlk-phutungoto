@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
+import { matchSearch } from '@/lib/searchUtils'
 
 export type Lot = Database['public']['Tables']['lots']['Row'] & {
     system_code?: string
@@ -32,6 +33,7 @@ export function useLotManagement() {
     const [lots, setLots] = useState<Lot[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
+    const [positionFilter, setPositionFilter] = useState<'all' | 'assigned' | 'unassigned'>('all')
 
     // Data for Selection
     const [products, setProducts] = useState<Product[]>([])
@@ -172,10 +174,16 @@ export function useLotManagement() {
         // For now, absolute hide as requested.
         if (lot.status === 'exported') return false
 
-        return (
-            lot.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (lot.notes && lot.notes.toLowerCase().includes(searchTerm.toLowerCase()))
-        )
+        // 1. Position Filter
+        const hasPosition = lot.positions && lot.positions.length > 0
+        if (positionFilter === 'assigned' && !hasPosition) return false
+        if (positionFilter === 'unassigned' && hasPosition) return false
+
+        // 2. Search Term Filter
+        if (!searchTerm) return true
+
+        // Dynamic deep search using shared utility
+        return matchSearch(lot, searchTerm)
     })
 
     return {
@@ -185,6 +193,8 @@ export function useLotManagement() {
         loading,
         searchTerm,
         setSearchTerm,
+        positionFilter,
+        setPositionFilter,
 
         // Common Data
         products,

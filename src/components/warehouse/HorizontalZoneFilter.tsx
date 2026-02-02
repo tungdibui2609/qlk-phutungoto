@@ -262,7 +262,7 @@ export default function HorizontalZoneFilter({
                             type="text"
                             value={searchTerm}
                             onChange={(e) => onSearchChange(e.target.value)}
-                            placeholder="Tìm LOT, SP..."
+                            placeholder="Tìm kiếm mã LOT, SP, ghi chú, vị trí, tag..."
                             className="w-full pl-9 pr-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-gray-800"
                         />
                         {searchTerm && (

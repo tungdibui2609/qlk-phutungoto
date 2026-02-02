@@ -14,6 +14,7 @@ import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { QuickBulkExportModal } from '@/components/warehouse/map/QuickBulkExportModal'
 import { usePositionActionManager } from '@/components/warehouse/map/PositionActionManager'
 import Protected from '@/components/auth/Protected'
+import { matchSearch } from '@/lib/searchUtils'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -57,15 +58,7 @@ function WarehouseMapContent() {
     const [collapsedZones, setCollapsedZones] = useState<Set<string>>(new Set())
     const [recentlyUpdatedPositionIds, setRecentlyUpdatedPositionIds] = useState<Set<string>>(new Set())
 
-    const [lotInfo, setLotInfo] = useState<Record<string, {
-        code: string,
-        items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags: string[] }>,
-        inbound_date?: string,
-        created_at?: string,
-        packaging_date?: string,
-        peeling_date?: string,
-        tags?: string[]
-    }>>({})
+    const [lotInfo, setLotInfo] = useState<Record<string, any>>({})
 
     // Detail View State
     const [viewingLot, setViewingLot] = useState<any>(null)
@@ -330,7 +323,7 @@ function WarehouseMapContent() {
 
         const { data: l, error } = await supabase
             .from('lots')
-            .select('id, code, quantity, inbound_date, created_at, packaging_date, peeling_date, products(name, unit, sku), lot_items(id, product_id, quantity, unit, products(name, unit, sku)), lot_tags(tag, lot_item_id)')
+            .select('*, suppliers(name), qc_info(name), products(name, unit, sku), lot_items(id, product_id, quantity, unit, products(name, unit, sku)), lot_tags(tag, lot_item_id)')
             .eq('id', lotId)
             .single()
 
@@ -374,13 +367,11 @@ function WarehouseMapContent() {
         }
 
         const info = {
-            code: l.code,
+            ...l, // Spread all fields to be future-proof
             items,
-            inbound_date: l.inbound_date || undefined,
-            created_at: l.created_at || undefined,
-            packaging_date: l.packaging_date || undefined,
-            peeling_date: l.peeling_date || undefined,
-            tags: accumulatedTags
+            tags: accumulatedTags,
+            qc_name: l.qc_info?.name,
+            supplier_name: l.suppliers?.name
         }
 
         setLotInfo(prev => ({
@@ -439,7 +430,7 @@ function WarehouseMapContent() {
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code')),
                 fetchAllZonesPos(),
                 fetchAll('zone_layouts'),
-                fetchAll('lots', undefined, 'id, code, quantity, inbound_date, created_at, packaging_date, peeling_date, products(name, unit, sku), lot_items(id, product_id, quantity, unit, products(name, unit, sku)), lot_tags(tag, lot_item_id)')
+                fetchAll('lots', undefined, '*, suppliers(name), qc_info(name), products(name, unit, sku), lot_items(id, product_id, quantity, unit, products(name, unit, sku)), lot_tags(tag, lot_item_id)')
             ])
 
             console.log(`[MapDataSummary] Zones: ${zoneData.length}, Positions: ${posData.length}, Links: ${zpData.length}, Lots: ${lotsData.length}`)
@@ -457,15 +448,7 @@ function WarehouseMapContent() {
                 return { ...pos, zone_id: zpLookup[pos.id] || null }
             })
 
-            const lotInfoMap: Record<string, {
-                code: string,
-                items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags: string[] }>,
-                inbound_date?: string,
-                created_at?: string,
-                packaging_date?: string,
-                peeling_date?: string,
-                tags?: string[]
-            }> = {};
+            const lotInfoMap: Record<string, any> = {};
 
             (lotsData as any[]).forEach((l: any) => {
                 const lotItems = l.lot_items || []
@@ -503,13 +486,11 @@ function WarehouseMapContent() {
                 }
 
                 lotInfoMap[l.id] = {
-                    code: l.code,
+                    ...l, // Spread all fields to be future-proof
                     items,
-                    inbound_date: l.inbound_date,
-                    created_at: l.created_at,
-                    packaging_date: l.packaging_date,
-                    peeling_date: l.peeling_date,
-                    tags: accumulatedTags // Store tags at top level for easy filtering
+                    tags: accumulatedTags,
+                    qc_name: l.qc_info?.name,
+                    supplier_name: l.suppliers?.name
                 }
             })
 
@@ -522,7 +503,7 @@ function WarehouseMapContent() {
             posWithZone.forEach(pos => {
                 if (pos.lot_id && lotInfoMap[pos.lot_id]) {
                     const lot = lotInfoMap[pos.lot_id]
-                    const totalQty = lot.items.reduce((sum, item) => sum + (item.quantity || 0), 0)
+                    const totalQty = lot.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
                     if (totalQty > 0) {
                         occupied.add(pos.id)
                     }
@@ -552,20 +533,17 @@ function WarehouseMapContent() {
             result = result.filter(p => {
                 const posCode = p.code.toLowerCase()
                 const lot = p.lot_id ? lotInfo[p.lot_id] : null
-                const lotCode = lot?.code?.toLowerCase() || ''
 
-                // Search in items
-                const hasItemMatch = lot?.items?.some(item =>
-                    (item.product_name?.toLowerCase() || '').includes(term) ||
-                    (item.sku?.toLowerCase() || '').includes(term)
-                )
+                // 1. Position Code Match
+                if (posCode.includes(term)) return true
 
-                const tags = lot?.tags || []
+                // If no lot, we only match by position code
+                if (!lot) return false
 
-                return posCode.includes(term) ||
-                    lotCode.includes(term) ||
-                    hasItemMatch ||
-                    tags.some((t: string) => t.toLowerCase().includes(term))
+                // 2. Dynamic deep search using shared utility
+                if (matchSearch(lot, searchTerm)) return true
+
+                return false
             })
         }
 
