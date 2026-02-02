@@ -11,7 +11,6 @@ export default function LotCodesPage() {
     const { systemType } = useSystem()
     const [loading, setLoading] = useState(false)
     const [masterTags, setMasterTags] = useState<{ name: string, created_at: string }[]>([])
-    const [usageTags, setUsageTags] = useState<string[]>([]) // From usage
     const [searchTerm, setSearchTerm] = useState('')
     const [newTag, setNewTag] = useState('')
     const [creating, setCreating] = useState(false)
@@ -19,16 +18,10 @@ export default function LotCodesPage() {
     const loadData = async () => {
         setLoading(true)
         try {
-            const [masterRes, usageRes] = await Promise.all([
-                fetch(`/api/lot-tags/master?systemCode=${systemType}`).then(r => r.json()),
-                fetch('/api/lot-tags?all=1').then(r => r.json())
-            ])
+            const masterRes = await fetch(`/api/lot-tags/master?systemCode=${systemType}`).then(r => r.json())
 
             if (masterRes.ok && Array.isArray(masterRes.tags)) {
                 setMasterTags(masterRes.tags)
-            }
-            if (usageRes.ok && Array.isArray(usageRes.uniqueTags)) {
-                setUsageTags(usageRes.uniqueTags)
             }
         } catch (e) {
             console.error('Failed to load tags', e)
@@ -91,19 +84,11 @@ export default function LotCodesPage() {
 
     // Merge and filter
     const displayedTags = useMemo(() => {
-        const all = new Set<string>()
-        masterTags.forEach(t => all.add(t.name))
-        usageTags.forEach(t => all.add(t))
-
-        // Remove empty or placeholder
-        all.delete('@')
-        all.delete('')
-
-        const list = Array.from(all).sort()
+        const list = masterTags.map(t => t.name).sort()
         if (!searchTerm.trim()) return list
 
         return list.filter(t => t.includes(searchTerm.toUpperCase()))
-    }, [masterTags, usageTags, searchTerm])
+    }, [masterTags, searchTerm])
 
     return (
         <section className="space-y-6 pb-12">
@@ -171,32 +156,22 @@ export default function LotCodesPage() {
                         {displayedTags.length === 0 ? (
                             <div className="p-8 text-center text-zinc-500">Chưa có mã phụ nào.</div>
                         ) : (
-                            displayedTags.map(tag => {
-                                const isMaster = masterTags.some(m => m.name === tag)
-                                return (
-                                    <div key={tag} className="flex items-center justify-between p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition">
-                                        <div className="flex items-center gap-3">
-                                            <TagDisplay tags={[tag]} />
-                                            {!isMaster && (
-                                                <span className="text-[10px] bg-zinc-100 text-zinc-500 px-1.5 py-0.5 rounded border border-zinc-200">
-                                                    Từ LOT
-                                                </span>
-                                            )}
-                                        </div>
-                                        {isMaster && (
-                                            <Protected permission="lotcode.manage">
-                                                <button
-                                                    onClick={() => handleDelete(tag)}
-                                                    className="p-2 text-zinc-400 hover:text-rose-500 transition"
-                                                    title="Xóa khỏi danh sách Master"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </Protected>
-                                        )}
+                            displayedTags.map(tag => (
+                                <div key={tag} className="flex items-center justify-between p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition">
+                                    <div className="flex items-center gap-3">
+                                        <TagDisplay tags={[tag]} />
                                     </div>
-                                )
-                            })
+                                    <Protected permission="lotcode.manage">
+                                        <button
+                                            onClick={() => handleDelete(tag)}
+                                            className="p-2 text-zinc-400 hover:text-rose-500 transition"
+                                            title="Xóa khỏi danh sách Master"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </Protected>
+                                </div>
+                            ))
                         )}
                     </div>
                 )}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
-import { X, Plus, Trash2 } from "lucide-react"
+import { X, Plus } from "lucide-react"
 import { TagDisplay } from "./TagDisplay"
 import { useSystem } from "@/contexts/SystemContext"
 import { supabase } from "@/lib/supabaseClient"
@@ -29,7 +29,6 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
     const [selectedIndex, setSelectedIndex] = useState(-1)
     const [loading, setLoading] = useState(false)
     const [saving, setSaving] = useState(false)
-    const [dropdownStyles, setDropdownStyles] = useState<{ top: number, left: number, width: number } | null>(null)
     const [lotItems, setLotItems] = useState<{ id: string, product_name: string, product_sku: string, unit: string }[]>([])
     const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
     const inputRef = useRef<HTMLInputElement>(null)
@@ -108,16 +107,6 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
     }).map(t => t.tag), [allLotTags, selectedItemId])
 
     useEffect(() => {
-        if (showSuggestions && inputRef.current) {
-            const rect = inputRef.current.getBoundingClientRect()
-            setDropdownStyles({
-                top: rect.bottom + 4,
-                left: rect.left,
-                width: rect.width
-            })
-        }
-    }, [showSuggestions, inputValue])
-    useEffect(() => {
         const trimmed = inputValue.trim().toUpperCase()
 
         // Always show top suggestions if empty
@@ -127,9 +116,9 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
             return
         }
 
-        const segments = inputValue.split(/[>;]/)
+        const segments = inputValue.split(/>/)
         const lastSegment = segments[segments.length - 1].trim().toUpperCase()
-        const endsWithSeparator = /[>;]$/.test(inputValue)
+        const endsWithSeparator = />$/.test(inputValue)
 
         // If waiting for next level, show all tags (top level recommendations)
         if (endsWithSeparator || lastSegment === "") {
@@ -170,7 +159,7 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
         setSaving(true)
         try {
             // 1. Ensure master tags exist for parts
-            const parts = trimmed.split(/[>;]/).map(p => p.trim()).filter(Boolean)
+            const parts = trimmed.split(/>/).map(p => p.trim()).filter(Boolean)
             for (const part of parts) {
                 if (part !== '@' && !existingTags.includes(part)) {
                     try {
@@ -255,14 +244,14 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
     }
 
     const handleSelectSuggestion = (suggestion: string) => {
-        const segments = inputValue.split(/([>;])/)
+        const segments = inputValue.split(/([>;:])/)
         // segments will be ["CONT1", ">", ""] or ["CONT1"]
         // We want to replace the last token (which might be partial)
 
         // Find the last actual text segment index
         let lastTextIndex = segments.length - 1;
         // If last segment is a separator, append
-        if (['>', ';'].includes(segments[lastTextIndex])) {
+        if (segments[lastTextIndex] === '>') {
             setInputValue(inputValue + suggestion)
         } else {
             segments[lastTextIndex] = suggestion
@@ -283,159 +272,250 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
     if (!lotId) return null
 
     return (
-        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-20 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
-                <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-4xl rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col h-[600px] max-h-[90vh]">
+                {/* Header */}
+                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-900 z-10">
                     <div>
-                        <h3 className="font-semibold text-lg text-slate-900 dark:text-slate-100">Gắn Mã Phụ</h3>
-                        <p className="text-xs text-slate-500 font-mono">{lotCodeDisplay || lotId}</p>
+                        <h3 className="font-bold text-xl text-slate-900 dark:text-slate-100">Gán Mã Phụ</h3>
+                        <div className="flex items-center gap-2 mt-0.5">
+                            <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-500 font-mono tracking-wider">LOT</span>
+                            <p className="text-xs text-slate-500 font-mono">{lotCodeDisplay || lotId}</p>
+                        </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-500">
-                        <X size={20} />
+                    <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-colors">
+                        <X size={22} />
                     </button>
                 </div>
 
-                <div className="p-4 overflow-y-auto flex-1 space-y-4">
-                    {/* Product Selection */}
-                    {lotItems.length > 1 && (
-                        <div>
-                            <label className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-2 block">
-                                Chọn sản phẩm
+                {/* Main Content Area: 2 Columns */}
+                <div className="flex-1 flex overflow-hidden">
+                    {/* Left Column: Product Selection */}
+                    <div className="w-[340px] border-r border-slate-100 dark:border-slate-800 flex flex-col bg-slate-50/30 dark:bg-slate-800/10">
+                        <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                                Danh sách sản phẩm
                             </label>
-                            <div className="space-y-2">
-                                {lotItems.map(item => (
+                            <span className="bg-slate-200/50 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                {lotItems.length}
+                            </span>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                            {lotItems.length === 0 && !loading && (
+                                <div className="text-center py-8 text-slate-400 text-sm italic">
+                                    Không có sản phẩm nào
+                                </div>
+                            )}
+                            {lotItems.map(item => {
+                                const itemTags = allLotTags.filter(t => t.lot_item_id === item.id);
+
+                                return (
                                     <div
                                         key={item.id}
                                         onClick={() => setSelectedItemId(item.id)}
-                                        className={`p-3 rounded-xl border cursor-pointer transition-colors ${selectedItemId === item.id
-                                            ? "bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 ring-1 ring-orange-200 dark:ring-orange-800"
-                                            : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                        className={`group p-3.5 rounded-2xl border cursor-pointer transition-all duration-200 ${selectedItemId === item.id
+                                            ? "bg-white dark:bg-slate-800 border-orange-500 dark:border-orange-500 shadow-md ring-1 ring-orange-500/20"
+                                            : "bg-transparent border-transparent hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-200 dark:hover:border-slate-700"
                                             }`}
                                     >
                                         <div className="flex justify-between items-start">
-                                            <div>
-                                                <div className="font-medium text-sm text-slate-900 dark:text-slate-100">{item.product_name}</div>
-                                                <div className="text-xs text-slate-500 mt-0.5">{item.product_sku} • {item.unit}</div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className={`font-bold text-sm truncate transition-colors ${selectedItemId === item.id ? "text-orange-600 dark:text-orange-400" : "text-slate-700 dark:text-slate-300 group-hover:text-slate-900"}`}>
+                                                    {item.product_name}
+                                                </div>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className="text-[10px] font-mono text-slate-400 border border-slate-200 dark:border-slate-700 px-1 rounded">
+                                                        {item.product_sku}
+                                                    </span>
+                                                    <span className="text-[10px] font-medium text-slate-500">• {item.unit}</span>
+                                                </div>
+
+                                                {/* Assigned Tags Preview */}
+                                                {itemTags.length > 0 && (
+                                                    <div className="mt-2.5 flex flex-wrap gap-1">
+                                                        {itemTags.map((t, idx) => (
+                                                            <span key={idx} className="text-[9px] px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-400 font-mono border border-orange-200 dark:border-orange-800/50">
+                                                                {t.tag.replace(/>/g, '›').replace('@', item.product_sku)}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                             {selectedItemId === item.id && (
-                                                <div className="w-4 h-4 rounded-full bg-orange-600 flex items-center justify-center">
-                                                    <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                                                <div className="w-5 h-5 rounded-full bg-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/30 shrink-0 ml-2 animate-in zoom-in-50 duration-200">
+                                                    <div className="w-2 h-2 rounded-full bg-white" />
                                                 </div>
                                             )}
                                         </div>
                                     </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Current Tags */}
-                    <div>
-                        <label className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-2 block">
-                            Đã gắn ({currentTags.length})
-                        </label>
-                        <div className="flex flex-wrap gap-2 min-h-[40px] p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">
-                            {currentTags.length === 0 && (
-                                <span className="text-sm text-slate-400 italic">Chưa có mã phụ nào</span>
-                            )}
-                            {currentTags.map(tag => (
-                                <div key={tag} className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-2 pr-1 py-1 shadow-sm">
-                                    <TagDisplay tags={[tag]} placeholderMap={{ '@': 'Product' }} />
-                                    <button
-                                        onClick={() => handleRemove(tag)}
-                                        disabled={saving}
-                                        className="p-1 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded ml-1"
-                                    >
-                                        <X size={14} />
-                                    </button>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
 
-                    {/* Input */}
-                    <div>
-                        <div className="flex justify-between items-center mb-2">
-                            <label className="text-sm font-medium text-slate-600 dark:text-slate-400">
-                                Thêm mới
-                            </label>
-                            <button
-                                onClick={insertPlaceholder}
-                                className="text-xs bg-orange-50 text-orange-600 px-2 py-1 rounded border border-orange-100 font-medium hover:bg-orange-100 transition-colors"
-                            >
-                                + Chèn Sản Phẩm (@)
-                            </button>
+                    {/* Right Column: Actions & Tags */}
+                    <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 relative">
+                        {/* Header of Right Column */}
+                        <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex justify-between items-center z-10">
+                            <div className="flex flex-col gap-0.5">
+                                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                                    {selectedItemId ? (
+                                        <>
+                                            Mã phụ cho:
+                                            <span className="text-slate-900 dark:text-slate-100 ml-1">
+                                                {lotItems.find(i => i.id === selectedItemId)?.product_name}
+                                            </span>
+                                        </>
+                                    ) : (
+                                        "Vui lòng chọn sản phẩm"
+                                    )}
+                                </h4>
+                                {selectedItemId && (
+                                    <span className="text-[10px] font-mono text-slate-400">
+                                        SKU: {lotItems.find(i => i.id === selectedItemId)?.product_sku}
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="text-[11px] font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+                                    {allLotTags.filter(t => t.lot_item_id === selectedItemId).length} Đã gán
+                                </span>
+                            </div>
                         </div>
 
-                        <div className="relative">
-                            <div className="flex gap-2">
-                                <input
-                                    ref={inputRef}
-                                    value={inputValue}
-                                    onChange={e => {
-                                        setInputValue(e.target.value.toUpperCase())
-                                        setShowSuggestions(true)
-                                    }}
-                                    onKeyDown={e => {
-                                        if (e.key === 'Enter') {
-                                            if (selectedIndex >= 0 && suggestions[selectedIndex]) {
-                                                handleSelectSuggestion(suggestions[selectedIndex])
-                                            } else {
-                                                handleAdd()
-                                            }
-                                        } else if (e.key === 'ArrowDown') {
-                                            e.preventDefault()
-                                            setSelectedIndex(p => (p < suggestions.length - 1 ? p + 1 : 0))
-                                        } else if (e.key === 'ArrowUp') {
-                                            e.preventDefault()
-                                            setSelectedIndex(p => (p > 0 ? p - 1 : suggestions.length - 1))
-                                        } else if (e.key === 'Escape') {
-                                            setShowSuggestions(false)
-                                        }
-                                    }}
-                                    onFocus={() => setShowSuggestions(true)}
-                                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                                    placeholder="VD: CONT1>@>TIENGIANG"
-                                    className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-sm uppercase focus:ring-2 focus:ring-orange-500"
-                                    disabled={saving}
-                                />
-                                <button
-                                    onClick={handleAdd}
-                                    disabled={!inputValue.trim() || saving}
-                                    className="bg-orange-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-orange-700 disabled:opacity-50"
-                                >
-                                    {saving ? '...' : <Plus size={20} />}
-                                </button>
-                            </div>
-
-                            {/* Suggestions */}
-                            {showSuggestions && suggestions.length > 0 && dropdownStyles && (
-                                <div
-                                    className="fixed bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-[100] max-h-60 overflow-y-auto"
-                                    style={{
-                                        top: dropdownStyles.top,
-                                        left: dropdownStyles.left,
-                                        width: dropdownStyles.width
-                                    }}
-                                >
-                                    {suggestions.map((s, i) => (
-                                        <div
-                                            key={s}
-                                            className={`px-4 py-3 cursor-pointer font-mono text-base border-b border-slate-100 dark:border-slate-800/50 last:border-0 ${i === selectedIndex ? "bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400" : "hover:bg-slate-50 dark:hover:bg-slate-800"
-                                                }`}
-                                            onMouseDown={() => handleSelectSuggestion(s)}
-                                        >
-                                            <TagDisplay tags={[s]} />
+                        {/* Current Tags Area */}
+                        <div className="flex-1 overflow-y-auto p-6">
+                            <div className="flex flex-wrap gap-2.5">
+                                {selectedItemId && allLotTags.filter(t => t.lot_item_id === selectedItemId).length === 0 && (
+                                    <div className="w-full flex flex-col items-center justify-center py-12 text-slate-400">
+                                        <div className="w-12 h-12 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center mb-3">
+                                            <Plus size={24} className="opacity-20" />
+                                        </div>
+                                        <p className="text-sm italic">Chưa có mã phụ nào được gắn cho sản phẩm này</p>
+                                    </div>
+                                )}
+                                {!selectedItemId && (
+                                    <div className="w-full flex flex-col items-center justify-center py-12 text-slate-400">
+                                        <p className="text-sm italic text-center">Chọn một sản phẩm từ danh sách bên trái<br />để xem và gán mã phụ</p>
+                                    </div>
+                                )}
+                                {selectedItemId && allLotTags
+                                    .filter(t => t.lot_item_id === selectedItemId)
+                                    .map(t => (
+                                        <div key={`${t.tag}-${t.added_at}`} className="flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-3 pr-1.5 py-1.5 shadow-sm hover:shadow-md transition-all group">
+                                            <TagDisplay tags={[t.tag]} placeholderMap={{ '@': lotItems.find(i => i.id === selectedItemId)?.product_sku || 'Product' }} />
+                                            <button
+                                                onClick={() => handleRemove(t.tag)}
+                                                disabled={saving}
+                                                className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                            >
+                                                <X size={14} />
+                                            </button>
                                         </div>
                                     ))}
-                                </div>
-                            )}
+                            </div>
                         </div>
-                        <p className="mt-2 text-xs text-slate-500">
-                            Dùng nút <strong>Chèn Sản Phẩm</strong> để thêm vị trí sản phẩm trong chuỗi mã.
-                        </p>
+
+                        {/* Input Area (Sticky at Bottom) */}
+                        {selectedItemId && (
+                            <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+                                <div className="flex justify-between items-center mb-3">
+                                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                                        Gán mã mới
+                                    </label>
+                                    <button
+                                        onClick={insertPlaceholder}
+                                        className="text-[10px] bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-3 py-1.5 rounded-full font-bold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-all flex items-center gap-1.5 border border-orange-200 dark:border-orange-800/50"
+                                    >
+                                        <Plus size={12} />
+                                        Chèn Sản Phẩm (@)
+                                    </button>
+                                </div>
+
+                                <div className="relative">
+                                    <div className="flex gap-3">
+                                        <div className="relative flex-1">
+                                            <input
+                                                ref={inputRef}
+                                                value={inputValue}
+                                                onChange={e => {
+                                                    setInputValue(e.target.value.toUpperCase())
+                                                    setShowSuggestions(true)
+                                                }}
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter') {
+                                                        if (selectedIndex >= 0 && suggestions[selectedIndex]) {
+                                                            handleSelectSuggestion(suggestions[selectedIndex])
+                                                        } else {
+                                                            handleAdd()
+                                                        }
+                                                    } else if (e.key === 'ArrowDown') {
+                                                        e.preventDefault()
+                                                        setSelectedIndex(p => (p < suggestions.length - 1 ? p + 1 : 0))
+                                                    } else if (e.key === 'ArrowUp') {
+                                                        e.preventDefault()
+                                                        setSelectedIndex(p => (p > 0 ? p - 1 : suggestions.length - 1))
+                                                    } else if (e.key === 'Escape') {
+                                                        setShowSuggestions(false)
+                                                    }
+                                                }}
+                                                onFocus={() => setShowSuggestions(true)}
+                                                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                                                placeholder="VD: CONT1>@>TIENGIANG"
+                                                className="w-full pl-4 pr-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-sm uppercase focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all outline-none"
+                                                disabled={saving}
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={handleAdd}
+                                            disabled={!inputValue.trim() || saving}
+                                            className="bg-orange-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-orange-700 disabled:opacity-50 shadow-lg shadow-orange-600/20 active:scale-95 transition-all flex items-center gap-2 shrink-0"
+                                        >
+                                            {saving ? '...' : (
+                                                <>
+                                                    <Plus size={20} />
+                                                    {inputValue.trim() ? "Lưu mã" : ""}
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+
+                                    {/* Suggestions (Absolute, above the input area) */}
+                                    {showSuggestions && suggestions.length > 0 && (
+                                        <div
+                                            className="absolute bottom-[calc(100%+12px)] left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-[100] max-h-64 overflow-hidden flex flex-col animate-in slide-in-from-bottom-2 duration-200"
+                                            onMouseDown={(e) => e.preventDefault()}
+                                        >
+                                            <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gợi ý mã phụ</span>
+                                                <span className="text-[10px] text-slate-300">Enter để chọn</span>
+                                            </div>
+                                            <div className="overflow-y-auto max-h-52">
+                                                {suggestions.map((s, i) => (
+                                                    <div
+                                                        key={s}
+                                                        className={`px-4 py-3.5 cursor-pointer font-mono text-base border-b border-slate-50 dark:border-slate-800/50 last:border-0 transition-colors ${i === selectedIndex ? "bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400" : "hover:bg-slate-50 dark:hover:bg-slate-800"
+                                                            }`}
+                                                        onMouseDown={(e) => {
+                                                            e.preventDefault();
+                                                            handleSelectSuggestion(s);
+                                                        }}
+                                                    >
+                                                        <TagDisplay tags={[s]} />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                                <p className="mt-4 text-[11px] text-slate-400 leading-relaxed text-center">
+                                    Nhập mã tự do hoặc chọn từ gợi ý. Dùng biểu tượng <strong>@</strong> để đại diện cho thông tin sản phẩm trong chuỗi ký tự.
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </div>
+
             </div>
         </div>
     )

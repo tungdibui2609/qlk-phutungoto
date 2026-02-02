@@ -281,7 +281,13 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                                 {lot.lot_tags && (
                                                     <div className="flex flex-wrap gap-1 mt-1">
                                                         <TagDisplay
-                                                            tags={lot.lot_tags.filter(t => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_FROM:') && !t.tag.startsWith('MERGED_DATA:')).map(t => t.tag)}
+                                                            tags={lot.lot_tags
+                                                                .filter(t =>
+                                                                    t.lot_item_id === item.id &&
+                                                                    !t.tag.startsWith('MERGED_FROM:') &&
+                                                                    !t.tag.startsWith('MERGED_DATA:')
+                                                                )
+                                                                .map(t => t.tag)}
                                                             placeholderMap={{ '@': item.products?.sku || '' }}
                                                         />
                                                     </div>

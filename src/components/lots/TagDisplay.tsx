@@ -15,7 +15,7 @@ export function TagDisplay({ tags, className = "", placeholderMap = {} }: TagDis
                 const parts = tag.split(">");
 
                 // If simple tag and no placeholder needed, just render
-                if (parts.length === 1 && parts[0] !== '@') {
+                if (parts.length === 1 && !parts[0].includes('@')) {
                     return (
                         <span key={`${tag}-${idx}`} className="inline-flex items-center px-2 py-1 rounded bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 text-xs font-medium font-mono border border-orange-200 dark:border-orange-800">
                             {tag}
@@ -29,13 +29,14 @@ export function TagDisplay({ tags, className = "", placeholderMap = {} }: TagDis
                         {parts.map((rawPart, pIdx) => {
                             const part = rawPart.trim();
 
-                            if (part === '@') {
+                            if (part.includes('@')) {
                                 const productDisplay = placeholderMap['@'] || '@';
+                                const renderedPart = part.replace('@', productDisplay);
                                 return (
                                     <span key={pIdx} className="flex items-center">
                                         {pIdx > 0 && <ChevronRight size={10} className="mx-0.5 text-slate-400" />}
                                         <span className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-1 rounded border border-indigo-100 dark:border-indigo-800/50">
-                                            {productDisplay}
+                                            {renderedPart}
                                         </span>
                                     </span>
                                 )
