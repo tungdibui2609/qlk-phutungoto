@@ -75,11 +75,24 @@ export default function UtilityConfigSection() {
             ? { ...currentSystem.modules }
             : {}
 
+        // Record activation dates for newly enabled modules
+        const oldMods = currentModules.utility_modules || []
+        const activationDates = currentModules.activation_dates || {}
+        let updatedDates = { ...activationDates }
+
+        utilityMods.forEach(modId => {
+            if (!oldMods.includes(modId)) {
+                // Newly enabled
+                updatedDates[modId] = new Date().toISOString()
+            }
+        })
+
         const { error } = await (supabase.from('systems') as any)
             .update({
                 modules: {
                     ...currentModules,
-                    utility_modules: utilityMods
+                    utility_modules: utilityMods,
+                    activation_dates: updatedDates
                 }
             })
             .eq('code', sysCode)

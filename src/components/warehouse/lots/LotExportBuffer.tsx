@@ -104,12 +104,17 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
 
             if (error) throw error
 
+            const activationDate = (currentSystem?.modules as any)?.activation_dates?.lot_accounting_sync
             const buffer: PendingExport[] = []
+
             data?.forEach(lot => {
                 const metadata = lot.metadata as any
                 const exports = metadata?.system_history?.exports || []
                 exports.forEach((exp: any) => {
                     if (exp.draft === true) {
+                        // Filter by activation date if available
+                        if (activationDate && exp.date < activationDate) return
+
                         buffer.push({
                             lot_id: lot.id,
                             lot_code: lot.code,

@@ -100,12 +100,17 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
 
             if (error) throw error
 
+            const activationDate = (currentSystem?.modules as any)?.activation_dates?.lot_accounting_sync
             const buffer: PendingInbound[] = []
+
             data?.forEach(lot => {
                 const metadata = lot.metadata as any
                 const inbounds = metadata?.system_history?.inbound || []
                 inbounds.forEach((inc: any) => {
                     if (inc.draft === true) {
+                        // Filter by activation date if available
+                        if (activationDate && inc.date < activationDate) return
+
                         buffer.push({
                             lot_id: lot.id,
                             lot_code: lot.code,
