@@ -241,6 +241,7 @@ export function useLotManagement() {
         searchTerm,
         setSearchTerm,
         positionFilter,
+        setPositionFilter,
         setSelectedZoneId,
         dateFilterField,
         setDateFilterField,

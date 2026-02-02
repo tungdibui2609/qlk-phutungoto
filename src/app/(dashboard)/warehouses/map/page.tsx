@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, Suspense, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { Map, Settings, Package, MapPin, Tag } from 'lucide-react'
+import { Map, Settings, Package, MapPin, Tag, Printer } from 'lucide-react'
 import MultiSelectActionBar from '@/components/warehouse/map/MultiSelectActionBar'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
 import LayoutConfigPanel from '@/components/warehouse/LayoutConfigPanel'
@@ -654,19 +654,35 @@ function WarehouseMapContent() {
                     </p>
                 </div>
 
-                {/* Design Mode Toggle */}
-                <Protected permission="warehousemap.manage">
+                <div className="flex items-center gap-2">
+                    {/* Print Button */}
                     <button
-                        onClick={() => setIsDesignMode(!isDesignMode)}
-                        className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors ${isDesignMode
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                            }`}
+                        onClick={() => {
+                            const params = new URLSearchParams()
+                            if (systemType) params.set('systemType', systemType)
+                            if (selectedZoneId) params.set('zoneId', selectedZoneId)
+                            if (searchTerm) params.set('search', searchTerm)
+                            window.open(`/print/warehouse-map?${params.toString()}`, '_blank')
+                        }}
+                        className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg font-medium flex items-center gap-2 transition-colors shadow-sm"
                     >
-                        <Settings size={18} />
-                        {isDesignMode ? 'Thoát Thiết kế' : 'Thiết kế Layout'}
+                        <Printer size={18} />
+                        In Sơ Đồ
                     </button>
-                </Protected>
+
+                    <Protected permission="warehousemap.manage">
+                        <button
+                            onClick={() => setIsDesignMode(!isDesignMode)}
+                            className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors ${isDesignMode
+                                ? 'bg-blue-500 text-white'
+                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                }`}
+                        >
+                            <Settings size={18} />
+                            {isDesignMode ? 'Thoát Thiết kế' : 'Thiết kế Layout'}
+                        </button>
+                    </Protected>
+                </div>
             </div>
 
             {/* Design mode hint */}
