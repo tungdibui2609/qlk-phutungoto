@@ -10,6 +10,8 @@ import { logActivity } from '@/lib/audit'
 
 export type InventoryCheck = TypedDatabase['public']['Tables']['inventory_checks']['Row'] & {
     user_profiles?: { full_name: string | null }
+    adjustment_inbound_order?: { code: string } | null
+    adjustment_outbound_order?: { code: string } | null
     scope?: 'ALL' | 'PARTIAL' | null
     participants?: any
 }
@@ -21,7 +23,7 @@ export type InventoryCheckItem = TypedDatabase['public']['Tables']['inventory_ch
 
 export function useAudit() {
     const { currentSystem } = useSystem()
-    const { user } = useUser()
+    const { user, profile } = useUser()
     const { showToast, showConfirm } = useToast()
     const router = useRouter()
 
@@ -167,7 +169,12 @@ export function useAudit() {
         // Fetch Header
         const { data: check, error: checkError } = await supabase
             .from('inventory_checks')
-            .select('*, user_profiles:created_by(full_name)')
+            .select(`
+                *,
+                user_profiles:created_by(full_name),
+                adjustment_inbound_order:inbound_orders!adjustment_inbound_order_id(code),
+                adjustment_outbound_order:outbound_orders!adjustment_outbound_order_id(code)
+            `)
             .eq('id', id)
             .single()
 
@@ -200,9 +207,9 @@ export function useAudit() {
             let lotsMap: Record<string, any> = {}
             if (lotIds.length > 0) {
                 const { data: lotsData } = await supabase
-                   .from('lots')
-                   .select('id, code, batch_code')
-                   .in('id', lotIds)
+                    .from('lots')
+                    .select('id, code, batch_code')
+                    .in('id', lotIds)
 
                 if (lotsData) {
                     lotsData.forEach(l => { lotsMap[l.id] = l })
@@ -269,93 +276,22 @@ export function useAudit() {
         }
     }
 
-    // Helper to create tickets
-    const createAdjustmentTicket = async (checkId: string, items: any[], type: 'INBOUND' | 'OUTBOUND') => {
-        if (!user || !currentSystem) return null
+    const linkAdjustmentTicket = async (checkId: string, orderId: string, orderType: 'INBOUND' | 'OUTBOUND') => {
+        const field = orderType === 'INBOUND' ? 'adjustment_inbound_order_id' : 'adjustment_outbound_order_id'
+        const { error } = await supabase
+            .from('inventory_checks')
+            .update({ [field]: orderId })
+            .eq('id', checkId)
 
-        // 1. Fetch appropriate Order Type
-        const { data: typeData } = await (supabase.from('order_types') as any)
-            .select('id')
-            .eq('system_code', currentSystem.code)
-            .eq('scope', type)
-            .ilike('name', '%Kiểm kê%')
-            .limit(1)
-            .single()
-
-        let orderTypeId = typeData?.id
-        if (!orderTypeId) {
-             // Fallback: Get any valid type
-             const { data: anyType } = await (supabase.from('order_types') as any)
-                .select('id')
-                .eq('system_code', currentSystem.code)
-                .eq('scope', type)
-                .limit(1)
-                .single()
-             orderTypeId = anyType?.id
+        if (error) {
+            console.error(`Error linking ${orderType} ticket:`, error)
+            showToast(`Lỗi liên kết phiếu ${orderType === 'INBOUND' ? 'nhập' : 'xuất'}`, 'error')
+            return false
         }
 
-        if (!orderTypeId) {
-            console.error(`Cannot find order type for ${type}`)
-            return null
-        }
-
-        // 2. Fetch/Define Supplier or Customer
-        // For Inbound: Need Supplier. Try finding 'Kho nội bộ' or take first.
-        let supplierId = null
-        if (type === 'INBOUND') {
-             const { data: supp } = await supabase.from('suppliers')
-                .select('id')
-                .eq('system_code', currentSystem.code)
-                .ilike('name', '%Nội bộ%')
-                .limit(1)
-                .single()
-             supplierId = supp?.id
-             if (!supplierId) {
-                 const { data: firstSupp } = await supabase.from('suppliers').select('id').eq('system_code', currentSystem.code).limit(1).single()
-                 supplierId = firstSupp?.id
-             }
-        }
-
-        // 3. Create Header
-        const table = type === 'INBOUND' ? 'inbound_orders' : 'outbound_orders'
-        const codePrefix = type === 'INBOUND' ? 'NK-KK-' : 'XK-KK-'
-        const code = `${codePrefix}${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 1000)}`
-
-        const headerData: any = {
-            code,
-            system_code: currentSystem.code,
-            created_by: user.id,
-            status: 'COMPLETED', // Auto-complete
-            order_type_id: orderTypeId,
-            description: `Phiếu ${type === 'INBOUND' ? 'nhập' : 'xuất'} điều chỉnh từ kiểm kê (Ref: ${checkId})`
-        }
-
-        if (type === 'INBOUND') headerData.supplier_id = supplierId
-        if (type === 'OUTBOUND') headerData.customer_name = 'Điều chỉnh kiểm kê'
-
-        const { data: order, error: orderError } = await (supabase.from(table as any) as any)
-            .insert(headerData)
-            .select()
-            .single()
-
-        if (orderError || !order) {
-            console.error(`Error creating ${type} ticket:`, orderError)
-            return null
-        }
-
-        // 4. Create Items
-        const itemsTable = type === 'INBOUND' ? 'inbound_order_items' : 'outbound_order_items'
-        const orderItems = items.map(item => ({
-            order_id: order.id,
-            product_id: item.product_id,
-            quantity: Math.abs(item.difference), // Always positive for ticket
-            unit: item.unit,
-            note: item.note
-        }))
-
-        await (supabase.from(itemsTable as any) as any).insert(orderItems)
-
-        return order.id
+        // Refresh detail to show the code
+        await fetchSessionDetail(checkId)
+        return true
     }
 
     // Approve Session
@@ -380,21 +316,23 @@ export function useAudit() {
             // 2. Iterate and Update Lot Items (Parallel)
             const updatePromises = items.map(async (item) => {
                 // Only process items that have been counted (actual_quantity !== null) AND have a difference
-                if (item.actual_quantity !== null && item.difference !== 0 && item.lot_item_id) {
-                    // Classify for Ticket
+                if (item.actual_quantity !== null && item.difference !== 0) {
+                    // Classify for Ticket (EVERYTHING with a difference goes here)
                     if (item.difference > 0) surplusItems.push(item)
                     else if (item.difference < 0) lossItems.push(item)
 
-                    // Update Lot Item Quantity (Execution Phase - Always update physical stock)
-                    const { error: updateError } = await supabase
-                        .from('lot_items')
-                        .update({ quantity: item.actual_quantity })
-                        .eq('id', item.lot_item_id)
+                    // Update Lot Item Quantity (ONLY if physical lot item exists)
+                    if (item.lot_item_id) {
+                        const { error: updateError } = await supabase
+                            .from('lot_items')
+                            .update({ quantity: item.actual_quantity })
+                            .eq('id', item.lot_item_id)
 
-                    if (updateError) {
-                        console.error(`Failed to update lot item ${item.lot_item_id}`, updateError)
-                    } else if (item.lot_id) {
-                        affectedLotIds.add(item.lot_id)
+                        if (updateError) {
+                            console.error(`Failed to update lot item ${item.lot_item_id}`, updateError)
+                        } else if (item.lot_id) {
+                            affectedLotIds.add(item.lot_id)
+                        }
                     }
                 }
             })
@@ -430,20 +368,7 @@ export function useAudit() {
             })
             await Promise.all(syncPromises)
 
-            // 4. Handle Accounting Tickets if requested
-            let inboundId = null
-            let outboundId = null
-
-            if (method === 'ACCOUNTING_TICKET') {
-                if (surplusItems.length > 0) {
-                    inboundId = await createAdjustmentTicket(checkId, surplusItems, 'INBOUND')
-                }
-                if (lossItems.length > 0) {
-                    outboundId = await createAdjustmentTicket(checkId, lossItems, 'OUTBOUND')
-                }
-            }
-
-            // 5. Mark Approved and Completed
+            // 4. Mark Approved and Completed
             await supabase
                 .from('inventory_checks')
                 .update({
@@ -451,9 +376,7 @@ export function useAudit() {
                     approval_status: 'APPROVED',
                     reviewer_id: user.id,
                     reviewed_at: new Date().toISOString(),
-                    completed_at: new Date().toISOString(),
-                    adjustment_inbound_order_id: inboundId,
-                    adjustment_outbound_order_id: outboundId
+                    completed_at: new Date().toISOString()
                 })
                 .eq('id', checkId)
 
@@ -521,37 +444,37 @@ export function useAudit() {
 
     // Quick Fill (Set all nulls to system qty)
     const quickFill = async () => {
-         const itemsToUpdate = sessionItems.filter(i => i.actual_quantity === null)
-         if (itemsToUpdate.length === 0) return
+        const itemsToUpdate = sessionItems.filter(i => i.actual_quantity === null)
+        if (itemsToUpdate.length === 0) return
 
-         if (!await showConfirm(`Tự động điền số lượng hệ thống cho ${itemsToUpdate.length} dòng chưa kiểm?`)) return
+        if (!await showConfirm(`Tự động điền số lượng hệ thống cho ${itemsToUpdate.length} dòng chưa kiểm?`)) return
 
-         setLoading(true)
+        setLoading(true)
 
-         // Optimistic Update
-         const newItems = sessionItems.map(item => {
-             if (item.actual_quantity === null) {
-                 return { ...item, actual_quantity: item.system_quantity, difference: 0 }
-             }
-             return item
-         })
-         setSessionItems(newItems)
+        // Optimistic Update
+        const newItems = sessionItems.map(item => {
+            if (item.actual_quantity === null) {
+                return { ...item, actual_quantity: item.system_quantity, difference: 0 }
+            }
+            return item
+        })
+        setSessionItems(newItems)
 
-         // Chunked updates
-         const chunkSize = 50 // Smaller chunks for updates
-         for (let i = 0; i < itemsToUpdate.length; i += chunkSize) {
-             const chunk = itemsToUpdate.slice(i, i + chunkSize)
-             const promises = chunk.map(item =>
-                 supabase.from('inventory_check_items').update({
-                     actual_quantity: item.system_quantity,
-                     difference: 0
-                 }).eq('id', item.id)
-             )
-             await Promise.all(promises)
-         }
+        // Chunked updates
+        const chunkSize = 50 // Smaller chunks for updates
+        for (let i = 0; i < itemsToUpdate.length; i += chunkSize) {
+            const chunk = itemsToUpdate.slice(i, i + chunkSize)
+            const promises = chunk.map(item =>
+                supabase.from('inventory_check_items').update({
+                    actual_quantity: item.system_quantity,
+                    difference: 0
+                }).eq('id', item.id)
+            )
+            await Promise.all(promises)
+        }
 
-         setLoading(false)
-         showToast('Đã điền tự động', 'success')
+        setLoading(false)
+        showToast('Đã điền tự động', 'success')
     }
 
     return {
@@ -567,6 +490,7 @@ export function useAudit() {
         approveSession,
         rejectSession,
         deleteSession,
-        quickFill
+        quickFill,
+        linkAdjustmentTicket
     }
 }

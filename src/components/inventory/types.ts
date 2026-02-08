@@ -31,7 +31,7 @@ export interface OrderItem {
 export interface OrderFormProps<T> {
     isOpen: boolean
     onClose: () => void
-    onSuccess: () => void
+    onSuccess: (id?: string) => void
     editOrderId?: string | null
     initialData?: any
     systemCode: string

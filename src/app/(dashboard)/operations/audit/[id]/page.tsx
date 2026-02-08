@@ -6,7 +6,10 @@ import { useAudit } from '../_hooks/useAudit'
 import { AuditSessionHeader } from '../_components/AuditSessionHeader'
 import { AuditItemCard } from '../_components/AuditItemCard'
 import { ApproveAuditModal } from '../_components/ApproveAuditModal'
+import InboundOrderModal from '@/components/inventory/inbound/InboundOrderModal'
+import OutboundOrderModal from '@/components/inventory/outbound/OutboundOrderModal'
 import { Search, Filter, Layers, Users, Eye } from 'lucide-react'
+import { useSystem } from '@/contexts/SystemContext'
 
 export default function AuditDetailPage() {
     const params = useParams()
@@ -20,11 +23,14 @@ export default function AuditDetailPage() {
         submitForApproval,
         approveSession,
         rejectSession,
-        quickFill
+        quickFill,
+        linkAdjustmentTicket
     } = useAudit()
+    const { currentSystem } = useSystem()
 
     const [searchTerm, setSearchTerm] = useState('')
     const [showApproveModal, setShowApproveModal] = useState(false)
+    const [activeModal, setActiveModal] = useState<'INBOUND' | 'OUTBOUND' | null>(null)
     const [filterMode, setFilterMode] = useState<'ALL' | 'MISMATCH' | 'UNCOUNTED'>('ALL')
 
     useEffect(() => {
@@ -61,6 +67,36 @@ export default function AuditDetailPage() {
         return groups
     }, [filteredItems])
 
+    // Classified items for adjustment tickets
+    const { surplusItems, lossItems } = useMemo(() => {
+        const surplus: any[] = []
+        const loss: any[] = []
+        sessionItems.forEach(item => {
+            if (item.actual_quantity !== null && item.difference > 0) {
+                surplus.push({
+                    id: crypto.randomUUID(),
+                    productId: item.product_id,
+                    productName: item.products?.name,
+                    unit: item.unit,
+                    quantity: item.difference,
+                    price: 0,
+                    note: `Điều chỉnh thừa từ kiểm kê ${currentSession?.code}`
+                })
+            } else if (item.actual_quantity !== null && item.difference < 0) {
+                loss.push({
+                    id: crypto.randomUUID(),
+                    productId: item.product_id,
+                    productName: item.products?.name,
+                    unit: item.unit,
+                    quantity: Math.abs(item.difference),
+                    price: 0,
+                    note: `Điều chỉnh thiếu từ kiểm kê ${currentSession?.code}`
+                })
+            }
+        })
+        return { surplusItems: surplus, lossItems: loss }
+    }, [sessionItems, currentSession])
+
     if (loading && !currentSession) {
         return (
             <div className="flex items-center justify-center min-h-screen">
@@ -79,6 +115,10 @@ export default function AuditDetailPage() {
                 onApprove={() => setShowApproveModal(true)}
                 onReject={() => rejectSession(id, 'Từ chối bởi quản lý')}
                 onQuickFill={quickFill}
+                hasSurplus={surplusItems.length > 0}
+                hasLoss={lossItems.length > 0}
+                onOpenInbound={() => setActiveModal('INBOUND')}
+                onOpenOutbound={() => setActiveModal('OUTBOUND')}
             />
 
             {/* Session Metadata (Participants & Scope) */}
@@ -118,6 +158,35 @@ export default function AuditDetailPage() {
                 isOpen={showApproveModal}
                 onClose={() => setShowApproveModal(false)}
                 onApprove={(method) => approveSession(id, method)}
+            />
+
+            <InboundOrderModal
+                isOpen={activeModal === 'INBOUND'}
+                onClose={() => setActiveModal(null)}
+                systemCode={currentSystem?.code || ''}
+                initialData={{
+                    items: surplusItems,
+                    description: `Phiếu nhập điều chỉnh từ kiểm kê ${currentSession.code}`,
+                    warehouseName: currentSession.warehouse_name
+                }}
+                onSuccess={(orderId?: string) => {
+                    if (orderId) linkAdjustmentTicket(id, orderId, 'INBOUND')
+                }}
+            />
+
+            <OutboundOrderModal
+                isOpen={activeModal === 'OUTBOUND'}
+                onClose={() => setActiveModal(null)}
+                systemCode={currentSystem?.code || ''}
+                initialData={{
+                    items: lossItems,
+                    customerName: 'Điều chỉnh kiểm kê',
+                    description: `Phiếu xuất điều chỉnh từ kiểm kê ${currentSession.code}`,
+                    warehouseName: currentSession.warehouse_name
+                }}
+                onSuccess={(orderId?: string) => {
+                    if (orderId) linkAdjustmentTicket(id, orderId, 'OUTBOUND')
+                }}
             />
 
             <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">

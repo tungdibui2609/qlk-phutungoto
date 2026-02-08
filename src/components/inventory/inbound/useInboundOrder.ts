@@ -286,7 +286,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                     }
                 }
             }
-            onSuccess()
+            onSuccess(orderId)
             onClose()
         } catch (e: any) {
             showToast(e.message, 'error')

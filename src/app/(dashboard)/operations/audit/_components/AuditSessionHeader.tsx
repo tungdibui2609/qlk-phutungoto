@@ -1,7 +1,7 @@
 'use client'
 
 import { InventoryCheck } from '../_hooks/useAudit'
-import { ArrowLeft, CheckCircle, Zap, ShieldCheck, XCircle } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Zap, ShieldCheck, XCircle, PlusCircle, MinusCircle, FileText } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useUser } from '@/contexts/UserContext'
 
@@ -11,9 +11,16 @@ interface AuditSessionHeaderProps {
     onApprove: () => void
     onReject: () => void
     onQuickFill: () => void
+    hasSurplus?: boolean
+    hasLoss?: boolean
+    onOpenInbound?: () => void
+    onOpenOutbound?: () => void
 }
 
-export function AuditSessionHeader({ session, onSubmit, onApprove, onReject, onQuickFill }: AuditSessionHeaderProps) {
+export function AuditSessionHeader({
+    session, onSubmit, onApprove, onReject, onQuickFill,
+    hasSurplus, hasLoss, onOpenInbound, onOpenOutbound
+}: AuditSessionHeaderProps) {
     const router = useRouter()
     const { hasPermission } = useUser()
     const canEdit = session.status === 'IN_PROGRESS' || session.status === 'DRAFT'
@@ -37,6 +44,16 @@ export function AuditSessionHeader({ session, onSubmit, onApprove, onReject, onQ
                                 {session.code}
                             </h1>
                             <StatusBadge status={session.status} />
+                            {session.adjustment_inbound_order && (
+                                <div className="flex items-center gap-1 text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400 px-2.5 py-1 rounded-lg text-[10px] font-bold border border-emerald-100 dark:border-emerald-800">
+                                    NHẬP: {session.adjustment_inbound_order.code}
+                                </div>
+                            )}
+                            {session.adjustment_outbound_order && (
+                                <div className="flex items-center gap-1 text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400 px-2.5 py-1 rounded-lg text-[10px] font-bold border border-orange-100 dark:border-orange-800">
+                                    XUẤT: {session.adjustment_outbound_order.code}
+                                </div>
+                            )}
                         </div>
                         <p className="text-xs text-slate-500 font-medium">
                             {session.warehouse_name || 'Toàn hệ thống'}
@@ -80,6 +97,29 @@ export function AuditSessionHeader({ session, onSubmit, onApprove, onReject, onQ
                                 <ShieldCheck size={18} />
                                 <span className="hidden sm:inline">Duyệt & Cân bằng</span>
                             </button>
+                        </>
+                    )}
+
+                    {session.status === 'COMPLETED' && (
+                        <>
+                            {hasSurplus && !session.adjustment_inbound_order_id && (
+                                <button
+                                    onClick={onOpenInbound}
+                                    className="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-2 rounded-xl font-bold text-sm transition-all flex items-center gap-2 border border-emerald-200"
+                                >
+                                    <PlusCircle size={18} />
+                                    <span className="hidden sm:inline">Tạo phiếu nhập</span>
+                                </button>
+                            )}
+                            {hasLoss && !session.adjustment_outbound_order_id && (
+                                <button
+                                    onClick={onOpenOutbound}
+                                    className="bg-orange-50 text-orange-600 hover:bg-orange-100 px-3 py-2 rounded-xl font-bold text-sm transition-all flex items-center gap-2 border border-orange-200"
+                                >
+                                    <MinusCircle size={18} />
+                                    <span className="hidden sm:inline">Tạo phiếu xuất</span>
+                                </button>
+                            )}
                         </>
                     )}
                 </div>

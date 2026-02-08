@@ -448,7 +448,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                     }
                 }
             }
-            onSuccess()
+            onSuccess(orderId)
             onClose()
         } catch (e: any) {
             showToast(e.message, 'error')
