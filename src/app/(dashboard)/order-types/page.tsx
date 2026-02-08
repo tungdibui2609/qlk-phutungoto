@@ -199,6 +199,19 @@ export default function OrderTypesPage() {
 
             {/* Content */}
             <div className="flex-1 p-6 overflow-hidden flex flex-col gap-4">
+                {/* Information Note */}
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 shadow-sm shadow-amber-100">
+                    <div className="p-2 bg-amber-500 text-white rounded-lg">
+                        <Filter size={18} />
+                    </div>
+                    <div>
+                        <h4 className="text-sm font-bold text-amber-900">Tính năng Bẻ gói Kế toán (PNK/PXK)</h4>
+                        <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                            Để tính năng tự động bẻ đơn vị (ví dụ: bẻ Bao thành Gói) hoạt động, bạn cần duy trì ít nhất một loại phiếu có tên gọi chứa cụm từ <span className="font-black underline italic">"Chuyển đổi"</span> hoặc có mã là <span className="font-black underline">"CONV"</span>.
+                        </p>
+                    </div>
+                </div>
+
                 {/* Filters */}
                 <div className="flex gap-4">
                     <div className="relative flex-1 max-w-sm">

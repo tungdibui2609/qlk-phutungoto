@@ -100,6 +100,33 @@ export default function UtilityConfigSection() {
         if (error) {
             showToast('Lỗi lưu cấu hình: ' + error.message, 'error')
         } else {
+            // Check and auto-create Order Type "Chuyển đổi" if module enabled
+            if (utilityMods.includes('auto_unbundle_order') && !oldMods.includes('auto_unbundle_order')) {
+                try {
+                    // Robust check: check by code CONV or name containing 'chuyển đổi'/'chuyen doi' (case-insensitive)
+                    const { data: existing } = await (supabase.from('order_types') as any)
+                        .select('id')
+                        .eq('system_code', sysCode)
+                        .or(`name.ilike.%chuyển đổi%,name.ilike.%chuyen doi%,code.eq.CONV`)
+                        .limit(1)
+
+                    if (!existing || existing.length === 0) {
+                        const { error: createErr } = await (supabase.from('order_types') as any).insert({
+                            system_code: sysCode,
+                            name: 'Chuyển đổi',
+                            code: 'CONV',
+                            scope: 'both',
+                            description: 'Loại phiếu dùng cho bẻ gói/quy đổi đơn vị tính (Tự động)',
+                            is_active: true
+                        })
+                        if (createErr) console.error('Auto-create order type error:', createErr)
+                        else showToast(`Đã tự động tạo loại phiếu "Chuyển đổi" cho kho ${sysCode}`, 'success')
+                    }
+                } catch (e) {
+                    console.error('Check order type failed:', e)
+                }
+            }
+
             showToast('Đã lưu cấu hình cho kho ' + sysCode, 'success')
             fetchSystems()
         }
@@ -201,6 +228,14 @@ export default function UtilityConfigSection() {
                                                 <p className={`text-xs leading-relaxed font-medium transition-colors ${isSelected ? 'text-stone-600' : 'text-gray-400'}`}>
                                                     {mod.description}
                                                 </p>
+                                                {mod.id === 'auto_unbundle_order' && isSelected && (
+                                                    <div className="mt-4 p-2 bg-amber-50 rounded-lg border border-amber-100 animate-in fade-in slide-in-from-top-1 duration-300">
+                                                        <p className="text-[10px] text-amber-700 font-bold leading-tight flex items-center gap-1">
+                                                            <Zap size={10} className="fill-current" />
+                                                            YÊU CẦU: Cần loại phiếu "Chuyển đổi" để hoạt động.
+                                                        </p>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     )

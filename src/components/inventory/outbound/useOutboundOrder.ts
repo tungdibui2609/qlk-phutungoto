@@ -325,8 +325,12 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         setConfirmDialog(prev => ({ ...prev, isOpen: false }))
         setSubmitting(true)
         try {
-            // Find Conversion Order Type
-            const conversionType = orderTypes.find(t => t.name.toLowerCase().includes('chuyển đổi'))
+            // Find Conversion Order Type - Robust matching
+            const conversionType = orderTypes.find(t => {
+                const normName = t.name.toLowerCase().replace(/\s+/g, ' ').trim()
+                const noAccents = normName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d")
+                return normName.includes('chuyển đổi') || noAccents.includes('chuyen doi') || t.code === 'CONV'
+            })
             const convTypeId = conversionType?.id
 
             // Step 1: Check and Perform Auto-Unbundle for items that need it
