@@ -14,7 +14,11 @@
     - [x] Update `products/page.tsx` default filter
     - [x] Update `api/inventory/route.ts` filter
     - [x] Update `ProductForm` to include `system_type`
-    - [x] Fix 404 Dashboard Error and Filter Data
+    - [ ] Debug: Google Drive Upload Error (invalid_grant)
+    - [x] Analyze error and identify cause
+    - [x] Create token recovery script `scripts/get-refresh-token.js`
+    - [x] Guide user to switch Google Cloud project to "In Production"
+    - [x] Coordinate with user to update `.env.local`
 - [x] Navigation & UX
     - [x] Header: Replace Search with System Switcher
     - [x] Sidebar: Implement nested menu for Users (Users, Roles, Permissions)
