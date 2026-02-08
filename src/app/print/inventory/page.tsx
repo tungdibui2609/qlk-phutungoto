@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Loader2, Printer, Download } from 'lucide-react'
 import { toJpeg } from 'html-to-image'
+import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { PrintHeader } from '@/components/print/PrintHeader'
@@ -100,11 +101,11 @@ export default function InventoryPrintPage() {
 
     // Capture and snapshot state
     const [isDownloading, setIsDownloading] = useState(false)
-    const [isCapturing, setIsCapturing] = useState(false)
+    const { isCapturing, downloadTimer, handleCapture } = useCaptureReceipt({
+        fileNamePrefix: `bao-cao-ton-${dateTo}`
+    })
     const isSnapshotMode = isSnapshot || isCapturing
     const isDownloadingState = isDownloading || isCapturing
-
-    const [downloadTimer, setDownloadTimer] = useState(0)
 
     useEffect(() => {
         // Hydrate editable fields from params if present
@@ -322,46 +323,7 @@ export default function InventoryPrintPage() {
         window.print()
     }
 
-    const handleDownload = async () => {
-        if (isDownloadingState) return
-
-        setIsCapturing(true)
-        setDownloadTimer(0)
-
-        const timerInterval = setInterval(() => {
-            setDownloadTimer(prev => prev + 1)
-        }, 1000)
-
-        try {
-            await new Promise(resolve => setTimeout(resolve, 500))
-
-            const node = document.getElementById('print-ready')
-            if (!node) throw new Error('Không tìm thấy vùng in (node #print-ready)')
-
-            const dataUrl = await toJpeg(node, {
-                quality: 0.95,
-                backgroundColor: '#ffffff',
-                cacheBust: true,
-                pixelRatio: 2,
-                width: 1150,
-            })
-
-            const a = document.createElement('a')
-            a.href = dataUrl
-            const fileName = `bao-cao-ton-${dateTo}.jpg`
-            a.download = fileName
-            document.body.appendChild(a)
-            a.click()
-            document.body.removeChild(a)
-        } catch (error: any) {
-            console.error(error)
-            alert(`Lỗi tải ảnh: ${error.message}`)
-        } finally {
-            clearInterval(timerInterval)
-            setIsCapturing(false)
-            setDownloadTimer(0)
-        }
-    }
+    const handleDownload = () => handleCapture(false, `bao-cao-ton-${dateTo}.jpg`)
 
     if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin mr-2" /> Đang tải dữ liệu...</div>
 

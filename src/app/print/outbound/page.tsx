@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Printer, Loader2, Download } from 'lucide-react'
 import { toJpeg } from 'html-to-image'
+import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { PrintHeader, PrintLegalHeader } from '@/components/print/PrintHeader'
@@ -136,11 +137,11 @@ function OutboundPrintContent() {
 
     // Capture and snapshot state
     const [isDownloading, setIsDownloading] = useState(false)
-    const [isCapturing, setIsCapturing] = useState(false)
+    const { isCapturing, downloadTimer, handleCapture } = useCaptureReceipt({
+        fileNamePrefix: `Phieu_xuat_${order?.code || 'scan'}`
+    })
     const isSnapshotMode = searchParams.get('snapshot') === '1' || isCapturing
     const isDownloadingState = isDownloading || isCapturing
-
-    const [downloadTimer, setDownloadTimer] = useState(0)
 
     const token = searchParams.get('token')
 
@@ -310,46 +311,7 @@ function OutboundPrintContent() {
         window.print()
     }
 
-    const handleDownload = async () => {
-        if (isDownloadingState) return
-
-        setIsCapturing(true)
-        setDownloadTimer(0)
-
-        const timerInterval = setInterval(() => {
-            setDownloadTimer(prev => prev + 1)
-        }, 1000)
-
-        try {
-            // Wait for React to render snapshot mode
-            await new Promise(resolve => setTimeout(resolve, 500))
-
-            const node = document.getElementById('print-ready')
-            if (!node) throw new Error('Không tìm thấy vùng in (node #print-ready)')
-
-            const dataUrl = await toJpeg(node, {
-                quality: 0.95,
-                backgroundColor: '#ffffff',
-                cacheBust: true,
-                pixelRatio: 2,
-                width: 1150,
-            })
-
-            const a = document.createElement('a')
-            a.href = dataUrl
-            a.download = `Phieu_xuat_${order?.code || 'scan'}.jpg`
-            document.body.appendChild(a)
-            a.click()
-            document.body.removeChild(a)
-        } catch (error: any) {
-            console.error(error)
-            alert(`Lỗi tải ảnh: ${error.message}`)
-        } finally {
-            clearInterval(timerInterval)
-            setIsCapturing(false)
-            setDownloadTimer(0)
-        }
-    }
+    const handleDownload = () => handleCapture(false)
 
     if (loading) {
         return (

@@ -5,6 +5,7 @@ import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Loader2, Printer, Download } from 'lucide-react'
 import { toJpeg } from 'html-to-image'
+import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { PrintHeader } from '@/components/print/PrintHeader'
 import { EditableText } from '@/components/print/PrintHelpers'
@@ -68,11 +69,11 @@ export default function WarehouseMapPrintPage() {
     const [pageBreakZoneIds, setPageBreakZoneIds] = useState<Set<string>>(new Set())
 
     const [isDownloading, setIsDownloading] = useState(false)
-    const [isCapturing, setIsCapturing] = useState(false)
+    const { isCapturing, downloadTimer, handleCapture } = useCaptureReceipt({
+        fileNamePrefix: `so-do-kho-${new Date().toISOString().split('T')[0]}`
+    })
     const isSnapshotMode = isSnapshot || isCapturing
     const isDownloadingState = isDownloading || isCapturing
-
-    const [downloadTimer, setDownloadTimer] = useState(0)
     const [orientation, setOrientation] = useState<'portrait' | 'landscape'>((searchParams.get('orientation') as any) || 'portrait')
 
     const router = useRouter()
@@ -278,43 +279,7 @@ export default function WarehouseMapPrintPage() {
 
     const handlePrint = () => window.print()
 
-    const handleDownload = async () => {
-        if (isDownloadingState) return
-        setIsCapturing(true)
-        setDownloadTimer(0)
-        const timerInterval = setInterval(() => setDownloadTimer(prev => prev + 1), 1000)
-
-        try {
-            await new Promise(resolve => setTimeout(resolve, 500))
-
-            const node = document.getElementById('print-ready')
-            if (!node) throw new Error('Không tìm thấy vùng in (node #print-ready)')
-
-            const width = orientation === 'landscape' ? 1400 : 1150
-
-            const dataUrl = await toJpeg(node, {
-                quality: 0.95,
-                backgroundColor: '#ffffff',
-                cacheBust: true,
-                pixelRatio: 2,
-                width: width,
-            })
-
-            const a = document.createElement('a')
-            a.href = dataUrl
-            a.download = `so-do-kho-${new Date().toISOString().split('T')[0]}.jpg`
-            document.body.appendChild(a)
-            a.click()
-            document.body.removeChild(a)
-        } catch (error: any) {
-            console.error(error)
-            alert(`Lỗi tải ảnh: ${error.message}`)
-        } finally {
-            clearInterval(timerInterval)
-            setIsCapturing(false)
-            setDownloadTimer(0)
-        }
-    }
+    const handleDownload = () => handleCapture(orientation === 'landscape', `so-do-kho-${new Date().toISOString().split('T')[0]}.jpg`)
 
     if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin mr-2" /> Đang tải dữ liệu...</div>
     if (error) return <div className="flex h-screen items-center justify-center text-red-600 font-bold">Lỗi: {error}</div>
