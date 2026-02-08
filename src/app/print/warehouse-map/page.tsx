@@ -3,7 +3,8 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, Printer } from 'lucide-react'
+import { Loader2, Printer, Download } from 'lucide-react'
+import { toJpeg } from 'html-to-image'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { PrintHeader } from '@/components/print/PrintHeader'
 import { EditableText } from '@/components/print/PrintHelpers'
@@ -67,6 +68,10 @@ export default function WarehouseMapPrintPage() {
     const [pageBreakZoneIds, setPageBreakZoneIds] = useState<Set<string>>(new Set())
 
     const [isDownloading, setIsDownloading] = useState(false)
+    const [isCapturing, setIsCapturing] = useState(false)
+    const isSnapshotMode = isSnapshot || isCapturing
+    const isDownloadingState = isDownloading || isCapturing
+
     const [downloadTimer, setDownloadTimer] = useState(0)
     const [orientation, setOrientation] = useState<'portrait' | 'landscape'>((searchParams.get('orientation') as any) || 'portrait')
 
@@ -274,45 +279,39 @@ export default function WarehouseMapPrintPage() {
     const handlePrint = () => window.print()
 
     const handleDownload = async () => {
-        if (isDownloading) return
-        setIsDownloading(true)
+        if (isDownloadingState) return
+        setIsCapturing(true)
         setDownloadTimer(0)
         const timerInterval = setInterval(() => setDownloadTimer(prev => prev + 1), 1000)
 
         try {
-            const params = new URLSearchParams(searchParams.toString())
-            params.set('editReportTitle', editReportTitle)
-            params.set('signTitle1', signTitle1)
-            params.set('signTitle2', signTitle2)
-            params.set('signTitle3', signTitle3)
-            params.set('signPerson1', signPerson1)
-            params.set('signPerson2', signPerson2)
-            params.set('signPerson3', signPerson3)
-            params.set('orientation', orientation)
+            await new Promise(resolve => setTimeout(resolve, 500))
 
-            const { data: { session } } = await supabase.auth.getSession()
-            if (session?.access_token) params.set('token', session.access_token)
+            const node = document.getElementById('print-ready')
+            if (!node) throw new Error('Không tìm thấy vùng in (node #print-ready)')
 
-            // We need a specific endpoint for this or reuse inventory if it supports generic snapshot
-            // For now, let's assume we use a generic one or create a new one later if needed
-            const res = await fetch(`/api/warehouse/print-image?${params.toString()}`)
-            if (!res.ok) throw new Error('Failed to generate image')
+            const width = orientation === 'landscape' ? 1400 : 1150
 
-            const blob = await res.blob()
-            const url = window.URL.createObjectURL(blob)
+            const dataUrl = await toJpeg(node, {
+                quality: 0.95,
+                backgroundColor: '#ffffff',
+                cacheBust: true,
+                pixelRatio: 2,
+                width: width,
+            })
+
             const a = document.createElement('a')
-            a.href = url
+            a.href = dataUrl
             a.download = `so-do-kho-${new Date().toISOString().split('T')[0]}.jpg`
             document.body.appendChild(a)
             a.click()
-            window.URL.revokeObjectURL(url)
             document.body.removeChild(a)
         } catch (error: any) {
             console.error(error)
             alert(`Lỗi tải ảnh: ${error.message}`)
         } finally {
             clearInterval(timerInterval)
-            setIsDownloading(false)
+            setIsCapturing(false)
             setDownloadTimer(0)
         }
     }
@@ -323,7 +322,7 @@ export default function WarehouseMapPrintPage() {
     return (
         <>
             {/* Toolbar */}
-            <div className={`fixed top-4 right-4 z-50 print:hidden flex gap-2 items-center ${isSnapshot ? 'hidden' : ''}`}>
+            <div className={`fixed top-4 right-4 z-50 print:hidden flex gap-2 items-center ${isSnapshotMode ? 'hidden' : ''}`}>
                 <div className="flex bg-white rounded-lg shadow-xl border border-gray-200 p-1">
                     <button
                         onClick={() => handleOrientationChange('portrait')}
@@ -340,10 +339,10 @@ export default function WarehouseMapPrintPage() {
                 </div>
                 <button
                     onClick={handleDownload}
-                    disabled={isDownloading}
+                    disabled={isDownloadingState}
                     className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-lg cursor-pointer transition-colors"
                 >
-                    {isDownloading ? <Loader2 size={20} className="animate-spin" /> : <Printer size={20} />}
+                    {isDownloadingState ? <Loader2 size={20} className="animate-spin" /> : <Download size={20} />}
                     Tải ảnh phiếu
                 </button>
                 <button
@@ -354,7 +353,21 @@ export default function WarehouseMapPrintPage() {
                 </button>
             </div>
 
-            <div id="print-ready" data-ready="true" className={`bg-white min-h-screen ${orientation === 'landscape' ? 'w-[297mm]' : 'w-[210mm]'} mx-auto text-black p-8 print:p-4 text-[13px]`}>
+            <div id="print-ready" data-ready="true" className={`bg-white min-h-screen ${orientation === 'landscape' ? 'w-[297mm]' : 'w-[210mm]'} mx-auto text-black p-8 print:p-4 text-[13px] ${isCapturing ? 'shadow-none !w-[1150px]' : ''} ${isCapturing && orientation === 'landscape' ? '!w-[1400px]' : ''}`}>
+                {isCapturing && (
+                    <style dangerouslySetInnerHTML={{
+                        __html: `
+                    #print-ready {
+                        width: ${orientation === 'landscape' ? '1400px' : '1150px'} !important;
+                        margin: 0 !important;
+                        padding: 40px 60px !important;
+                        display: flex !important;
+                        flex-direction: column !important;
+                        align-items: stretch !important;
+                        box-sizing: border-box !important;
+                    }
+                `}} />
+                )}
 
                 <div className="mb-6">
                     <PrintHeader companyInfo={companyInfo} logoSrc={logoSrc} size="compact" />
@@ -366,7 +379,7 @@ export default function WarehouseMapPrintPage() {
                         onChange={setEditReportTitle}
                         className="text-2xl font-bold uppercase text-center w-full"
                         style={{ fontFamily: "'Times New Roman', Times, serif" }}
-                        isSnapshot={isSnapshot}
+                        isSnapshot={isSnapshotMode}
                     />
                     <p className="italic mt-1">Ngày in: {new Date().toLocaleDateString('vi-VN')}</p>
                     {selectedZoneId && (
@@ -402,10 +415,10 @@ export default function WarehouseMapPrintPage() {
                         { title: signTitle3, setTitle: setSignTitle3, person: signPerson3, setPerson: setSignPerson3, extra: '(Ký, họ tên, đóng dấu)' }
                     ].map((s, i) => (
                         <div key={i} className="text-center w-1/3">
-                            <EditableText value={s.title} onChange={s.setTitle} className="font-bold text-center w-full mb-1" isSnapshot={isSnapshot} />
+                            <EditableText value={s.title} onChange={s.setTitle} className="font-bold text-center w-full mb-1" isSnapshot={isSnapshotMode} />
                             <p className="italic text-xs">{s.extra || '(Ký, họ tên)'}</p>
                             <div className="h-24"></div>
-                            <EditableText value={s.person} onChange={s.setPerson} className="font-bold text-center w-full" placeholder="Nhập tên..." isSnapshot={isSnapshot} />
+                            <EditableText value={s.person} onChange={s.setPerson} className="font-bold text-center w-full" placeholder="Nhập tên..." isSnapshot={isSnapshotMode} />
                         </div>
                     ))}
                 </div>

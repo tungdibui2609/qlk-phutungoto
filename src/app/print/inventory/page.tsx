@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, Printer } from 'lucide-react'
+import { Loader2, Printer, Download } from 'lucide-react'
+import { toJpeg } from 'html-to-image'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { PrintHeader } from '@/components/print/PrintHeader'
@@ -97,8 +98,12 @@ export default function InventoryPrintPage() {
     const [signPerson2, setSignPerson2] = useState('')
     const [signPerson3, setSignPerson3] = useState('')
 
-    // Download loading state
+    // Capture and snapshot state
     const [isDownloading, setIsDownloading] = useState(false)
+    const [isCapturing, setIsCapturing] = useState(false)
+    const isSnapshotMode = isSnapshot || isCapturing
+    const isDownloadingState = isDownloading || isCapturing
+
     const [downloadTimer, setDownloadTimer] = useState(0)
 
     useEffect(() => {
@@ -129,7 +134,7 @@ export default function InventoryPrintPage() {
         setLoading(true)
         setError(null)
         try {
-            // Check for pre-fetched data in URL (passed from print-image API)
+
             const preFetchedDataStr = searchParams.get('data')
             if (preFetchedDataStr) {
                 try {
@@ -318,66 +323,42 @@ export default function InventoryPrintPage() {
     }
 
     const handleDownload = async () => {
-        if (isDownloading) return
+        if (isDownloadingState) return
 
-        setIsDownloading(true)
+        setIsCapturing(true)
         setDownloadTimer(0)
 
-        // Start timer
         const timerInterval = setInterval(() => {
             setDownloadTimer(prev => prev + 1)
         }, 1000)
 
         try {
-            const params = new URLSearchParams()
-            // Append filters
-            if (type) params.set('type', type)
-            if (systemType) params.set('systemType', systemType)
-            if (dateFrom) params.set('from', dateFrom)
-            if (dateTo) params.set('to', dateTo)
-            if (warehouse) params.set('warehouse', warehouse)
-            if (searchTerm) params.set('search', searchTerm)
-            if (convertToKg) params.set('convertToKg', 'true')
+            await new Promise(resolve => setTimeout(resolve, 500))
 
-            // Append editable fields
-            params.set('editReportTitle', editReportTitle)
-            params.set('signTitle1', signTitle1)
-            params.set('signTitle2', signTitle2)
-            params.set('signTitle3', signTitle3)
-            params.set('signPerson1', signPerson1)
-            params.set('signPerson2', signPerson2)
-            params.set('signPerson3', signPerson3)
+            const node = document.getElementById('print-ready')
+            if (!node) throw new Error('Không tìm thấy vùng in (node #print-ready)')
 
-            // Get current session token to pass to the snapshot service
-            const { data: { session } } = await supabase.auth.getSession()
-            if (session?.access_token) {
-                params.set('token', session.access_token)
-            }
+            const dataUrl = await toJpeg(node, {
+                quality: 0.95,
+                backgroundColor: '#ffffff',
+                cacheBust: true,
+                pixelRatio: 2,
+                width: 1150,
+            })
 
-            const res = await fetch(`/api/inventory/print-image?${params.toString()}`)
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({}))
-                throw new Error(errData.details || errData.error || 'Failed to generate image')
-            }
-
-            const blob = await res.blob()
-            const url = window.URL.createObjectURL(blob)
             const a = document.createElement('a')
-            a.href = url
-            // Filename
+            a.href = dataUrl
             const fileName = `bao-cao-ton-${dateTo}.jpg`
             a.download = fileName
             document.body.appendChild(a)
             a.click()
-            window.URL.revokeObjectURL(url)
             document.body.removeChild(a)
-
         } catch (error: any) {
             console.error(error)
             alert(`Lỗi tải ảnh: ${error.message}`)
         } finally {
             clearInterval(timerInterval)
-            setIsDownloading(false)
+            setIsCapturing(false)
             setDownloadTimer(0)
         }
     }
@@ -387,22 +368,36 @@ export default function InventoryPrintPage() {
     if (error) return <div id="print-ready" data-ready="true" className="flex h-screen items-center justify-center text-red-600 font-bold">Lỗi tải dữ liệu: {error}</div>
 
     return (
-        <div id="print-ready" data-ready={!loading ? "true" : undefined} className="bg-white h-fit min-h-0 w-[210mm] mx-auto text-black pt-0 px-6 pb-6 print:p-4 text-[13px]">
+        <div id="print-ready" data-ready={!loading ? "true" : undefined} className={`bg-white h-fit min-h-0 mx-auto text-black pt-0 px-6 pb-6 print:p-4 text-[13px] ${isCapturing ? 'shadow-none !w-[1150px]' : 'w-[210mm]'}`}>
+            {isCapturing && (
+                <style dangerouslySetInnerHTML={{
+                    __html: `
+                    #print-ready {
+                        width: 1150px !important;
+                        margin: 0 !important;
+                        padding: 40px 60px !important;
+                        display: flex !important;
+                        flex-direction: column !important;
+                        align-items: stretch !important;
+                        box-sizing: border-box !important;
+                    }
+                `}} />
+            )}
             {/* Toolbar */}
-            <div className={`fixed top-4 right-4 print:hidden flex gap-2 ${isSnapshot ? 'hidden' : ''}`}>
+            <div className={`fixed top-4 right-4 print:hidden flex gap-2 ${isSnapshotMode ? 'hidden' : ''}`}>
                 <button
                     onClick={handleDownload}
-                    disabled={isDownloading}
-                    className={`flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-lg transition-all ${isDownloading ? 'opacity-70 cursor-wait' : ''}`}
+                    disabled={isDownloadingState}
+                    className={`flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-lg transition-all ${isDownloadingState ? 'opacity-70 cursor-wait' : ''}`}
                 >
-                    {isDownloading ? (
+                    {isDownloadingState ? (
                         <>
                             <Loader2 size={20} className="animate-spin" />
                             Đang tạo... ({downloadTimer}s)
                         </>
                     ) : (
                         <>
-                            <Printer size={20} />
+                            <Download size={20} />
                             Tải ảnh phiếu
                         </>
                     )}
@@ -433,7 +428,7 @@ export default function InventoryPrintPage() {
                         onChange={setEditReportTitle}
                         className="text-2xl font-bold uppercase text-center w-full"
                         style={{ fontFamily: "'Times New Roman', Times, serif" }}
-                        isSnapshot={isSnapshot}
+                        isSnapshot={isSnapshotMode}
                     />
                 </div>
 
@@ -562,32 +557,32 @@ export default function InventoryPrintPage() {
             <div className="flex justify-between mt-8 break-inside-avoid">
                 <div className="text-center w-1/3">
                     <div className="inline-block min-w-[200px]">
-                        <EditableText value={signTitle1} onChange={setSignTitle1} className="font-bold text-center w-full mb-1" isSnapshot={isSnapshot} />
+                        <EditableText value={signTitle1} onChange={setSignTitle1} className="font-bold text-center w-full mb-1" isSnapshot={isSnapshotMode} />
                     </div>
                     <p className="italic text-xs">(Ký, họ tên)</p>
                     <div className="h-24"></div>
                     <div className="inline-block min-w-[200px]">
-                        <EditableText value={signPerson1} onChange={setSignPerson1} className="font-bold text-center w-full" placeholder="Nhập tên..." isSnapshot={isSnapshot} />
+                        <EditableText value={signPerson1} onChange={setSignPerson1} className="font-bold text-center w-full" placeholder="Nhập tên..." isSnapshot={isSnapshotMode} />
                     </div>
                 </div>
                 <div className="text-center w-1/3">
                     <div className="inline-block min-w-[200px]">
-                        <EditableText value={signTitle2} onChange={setSignTitle2} className="font-bold text-center w-full mb-1" isSnapshot={isSnapshot} />
+                        <EditableText value={signTitle2} onChange={setSignTitle2} className="font-bold text-center w-full mb-1" isSnapshot={isSnapshotMode} />
                     </div>
                     <p className="italic text-xs">(Ký, họ tên)</p>
                     <div className="h-24"></div>
                     <div className="inline-block min-w-[200px]">
-                        <EditableText value={signPerson2} onChange={setSignPerson2} className="font-bold text-center w-full" placeholder="Nhập tên..." isSnapshot={isSnapshot} />
+                        <EditableText value={signPerson2} onChange={setSignPerson2} className="font-bold text-center w-full" placeholder="Nhập tên..." isSnapshot={isSnapshotMode} />
                     </div>
                 </div>
                 <div className="text-center w-1/3">
                     <div className="inline-block min-w-[200px]">
-                        <EditableText value={signTitle3} onChange={setSignTitle3} className="font-bold text-center w-full mb-1" isSnapshot={isSnapshot} />
+                        <EditableText value={signTitle3} onChange={setSignTitle3} className="font-bold text-center w-full mb-1" isSnapshot={isSnapshotMode} />
                     </div>
                     <p className="italic text-xs">(Ký, họ tên, đóng dấu)</p>
                     <div className="h-24"></div>
                     <div className="inline-block min-w-[200px]">
-                        <EditableText value={signPerson3} onChange={setSignPerson3} className="font-bold text-center w-full" placeholder="Nhập tên..." isSnapshot={isSnapshot} />
+                        <EditableText value={signPerson3} onChange={setSignPerson3} className="font-bold text-center w-full" placeholder="Nhập tên..." isSnapshot={isSnapshotMode} />
                     </div>
                 </div>
             </div>

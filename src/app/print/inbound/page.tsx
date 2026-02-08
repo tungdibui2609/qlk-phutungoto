@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Printer, Loader2 } from 'lucide-react'
+import { Printer, Loader2, Download } from 'lucide-react'
+import { toJpeg } from 'html-to-image'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { PrintHeader, PrintLegalHeader } from '@/components/print/PrintHeader'
@@ -136,8 +137,12 @@ function InboundPrintContent() {
     // General note field
     const [editNote, setEditNote] = useState('')
 
-    // Download loading state
+    // Capture and snapshot state
     const [isDownloading, setIsDownloading] = useState(false)
+    const [isCapturing, setIsCapturing] = useState(false)
+    const isSnapshotMode = searchParams.get('snapshot') === '1' || isCapturing
+    const isDownloadingState = isDownloading || isCapturing
+
     const [downloadTimer, setDownloadTimer] = useState(0)
 
     const token = searchParams.get('token')
@@ -319,9 +324,9 @@ function InboundPrintContent() {
     }
 
     const handleDownload = async () => {
-        if (isDownloading) return
+        if (isDownloadingState) return
 
-        setIsDownloading(true)
+        setIsCapturing(true)
         setDownloadTimer(0)
 
         const timerInterval = setInterval(() => {
@@ -329,62 +334,33 @@ function InboundPrintContent() {
         }, 1000)
 
         try {
-            const params = new URLSearchParams()
-            if (orderId) params.set('id', orderId)
-            params.set('type', printType)
+            // Wait for React to render snapshot mode
+            await new Promise(resolve => setTimeout(resolve, 500))
 
-            // Append all editable fields
-            params.set('editDay', editDay)
-            params.set('editMonth', editMonth)
-            params.set('editYear', editYear)
-            params.set('editSupplierName', editSupplierName)
-            params.set('editSupplierAddress', editSupplierAddress)
-            params.set('editTheoDoc', editTheoDoc)
-            params.set('editTheoSo', editTheoSo)
-            params.set('editTheoDay', editTheoDay)
-            params.set('editTheoMonth', editTheoMonth)
-            params.set('editTheoYear', editTheoYear)
-            params.set('editTheoCua', editTheoCua)
-            params.set('editWarehouse', editWarehouse)
-            params.set('editLocation', editLocation)
-            params.set('editDescription', editDescription)
-            params.set('amountInWords', amountInWords)
-            params.set('attachedDocs', attachedDocs)
-            params.set('signTitle1', signTitle1)
-            params.set('signTitle2', signTitle2)
-            params.set('signTitle3', signTitle3)
-            params.set('signPerson1', signPerson1)
-            params.set('signPerson2', signPerson2)
-            params.set('signPerson3', signPerson3)
-            params.set('signDay', signDay)
-            params.set('signMonth', signMonth)
-            params.set('signYear', signYear)
-            params.set('debitAccount', debitAccount)
-            params.set('creditAccount', creditAccount)
-            params.set('editNote', editNote)
-            params.set('t', Date.now().toString())
+            const node = document.getElementById('print-ready')
+            if (!node) throw new Error('Không tìm thấy vùng in (node #print-ready)')
 
-            const response = await fetch(`/api/inbound/print-image?${params.toString()}`)
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({}))
-                throw new Error(errData.details || errData.error || 'Failed to generate image')
-            }
+            // html-to-image options
+            const dataUrl = await toJpeg(node, {
+                quality: 0.95,
+                backgroundColor: '#ffffff',
+                cacheBust: true,
+                pixelRatio: 2,
+                width: 1150, // Slightly wider to ensure no truncation
+            })
 
-            const blob = await response.blob()
-            const url = window.URL.createObjectURL(blob)
             const a = document.createElement('a')
-            a.href = url
+            a.href = dataUrl
             a.download = `Phieu_nhap_${order?.code || 'scan'}.jpg`
             document.body.appendChild(a)
             a.click()
-            window.URL.revokeObjectURL(url)
             document.body.removeChild(a)
         } catch (error: any) {
             console.error(error)
             alert(`Lỗi tải ảnh: ${error.message}`)
         } finally {
             clearInterval(timerInterval)
-            setIsDownloading(false)
+            setIsCapturing(false)
             setDownloadTimer(0)
         }
     }
@@ -406,22 +382,40 @@ function InboundPrintContent() {
     }
 
     return (
-        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('inbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className="pt-0 px-6 pb-6 print:p-4 max-w-4xl mx-auto bg-white text-black text-[13px] leading-relaxed">
+        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('inbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-4 max-w-4xl mx-auto bg-white text-black text-[13px] leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
+            {isCapturing && (
+                <style dangerouslySetInnerHTML={{
+                    __html: `
+                    #print-ready {
+                        width: 1150px !important;
+                        max-width: none !important;
+                        margin: 0 !important;
+                        padding: 40px 60px !important;
+                        display: flex !important;
+                        flex-direction: column !important;
+                        align-items: stretch !important;
+                        box-sizing: border-box !important;
+                    }
+                    input, textarea {
+                        display: none !important;
+                    }
+                `}} />
+            )}
             {/* Toolbar - Hidden when printing or snapshotting */}
-            <div className={`fixed top-4 right-4 print:hidden z-50 flex items-center gap-2 ${isSnapshot ? 'hidden' : ''}`}>
+            <div className={`fixed top-4 right-4 print:hidden z-50 flex items-center gap-2 ${isSnapshotMode ? 'hidden' : ''}`}>
                 <button
                     onClick={handleDownload}
-                    disabled={isDownloading}
-                    className={`flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium rounded-full shadow-lg transition-all hover:scale-105 ${isDownloading ? 'opacity-70 cursor-wait' : ''}`}
+                    disabled={isDownloadingState}
+                    className={`flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium rounded-full shadow-lg transition-all hover:scale-105 ${isDownloadingState ? 'opacity-70 cursor-wait' : ''}`}
                 >
-                    {isDownloading ? (
+                    {isDownloadingState ? (
                         <>
                             <Loader2 size={20} className="animate-spin" />
                             Đang tạo ảnh... ({downloadTimer}s)
                         </>
                     ) : (
                         <>
-                            <Printer size={20} />
+                            <Download size={20} />
                             Tải ảnh phiếu
                         </>
                     )}
@@ -452,7 +446,7 @@ function InboundPrintContent() {
                 {!isInternal && hasModule('inbound_financials') && (
                     <div className="absolute top-4 right-36 text-left">
                         <div className="text-sm font-medium text-gray-700">
-                            <span className={`print:hidden ${isSnapshot ? 'hidden' : ''}`}>
+                            <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
                                 Nợ:{' '}
                                 <input
                                     type="text"
@@ -461,10 +455,10 @@ function InboundPrintContent() {
                                     className="w-16 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
                                 />
                             </span>
-                            <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''}`}>Nợ: <span className="inline-block min-w-[40px] border-b border-dashed border-gray-300">{debitAccount}</span></span>
+                            <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>Nợ: <span className="inline-block min-w-[40px] border-b border-dashed border-gray-300">{debitAccount}</span></span>
                         </div>
                         <div className="text-sm font-medium text-gray-700 mt-1">
-                            <span className={`print:hidden ${isSnapshot ? 'hidden' : ''}`}>
+                            <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
                                 Có:{' '}
                                 <input
                                     type="text"
@@ -473,13 +467,13 @@ function InboundPrintContent() {
                                     className="w-16 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
                                 />
                             </span>
-                            <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''}`}>Có: <span className="inline-block min-w-[40px] border-b border-dashed border-gray-300">{creditAccount}</span></span>
+                            <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>Có: <span className="inline-block min-w-[40px] border-b border-dashed border-gray-300">{creditAccount}</span></span>
                         </div>
                     </div>
                 )}
 
                 <div className="text-sm italic text-gray-600 mt-2">
-                    <span className={`print:hidden ${isSnapshot ? 'hidden' : ''}`}>
+                    <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
                         Ngày{' '}
                         <input
                             type="text"
@@ -502,7 +496,7 @@ function InboundPrintContent() {
                             className="w-14 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
                         />
                     </span>
-                    <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''}`}>
+                    <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>
                         Ngày {editDay} tháng {editMonth} năm {editYear}
                     </span>
                 </div>
@@ -519,7 +513,7 @@ function InboundPrintContent() {
                         value={editSupplierName}
                         onChange={setEditSupplierName}
                         className="ml-2 flex-1 font-bold"
-                        isSnapshot={isSnapshot}
+                        isSnapshot={isSnapshotMode}
                     />
                 </div>
                 <div className="flex items-center">
@@ -528,7 +522,7 @@ function InboundPrintContent() {
                         value={editSupplierAddress}
                         onChange={setEditSupplierAddress}
                         className="ml-2 flex-1 font-bold"
-                        isSnapshot={isSnapshot}
+                        isSnapshot={isSnapshotMode}
                     />
                 </div>
                 {!isInternal && (
@@ -540,7 +534,7 @@ function InboundPrintContent() {
                             className="mx-1 font-bold"
                             minWidth={60}
                             emptyWidth={100}
-                            isSnapshot={isSnapshot}
+                            isSnapshot={isSnapshotMode}
                         />
 
                         <span className="text-gray-600">số</span>
@@ -550,7 +544,7 @@ function InboundPrintContent() {
                             className="mx-1 font-bold"
                             minWidth={40}
                             emptyWidth={85}
-                            isSnapshot={isSnapshot}
+                            isSnapshot={isSnapshotMode}
                         />
 
                         <span className="text-gray-600">ngày</span>
@@ -560,7 +554,7 @@ function InboundPrintContent() {
                             className="mx-1 font-bold"
                             minWidth={25}
                             emptyWidth={30}
-                            isSnapshot={isSnapshot}
+                            isSnapshot={isSnapshotMode}
                         />
 
                         <span className="text-gray-600">tháng</span>
@@ -570,7 +564,7 @@ function InboundPrintContent() {
                             className="mx-1 font-bold"
                             minWidth={25}
                             emptyWidth={30}
-                            isSnapshot={isSnapshot}
+                            isSnapshot={isSnapshotMode}
                         />
 
                         <span className="text-gray-600">năm</span>
@@ -580,7 +574,7 @@ function InboundPrintContent() {
                             className="mx-1 font-bold"
                             minWidth={30}
                             emptyWidth={40}
-                            isSnapshot={isSnapshot}
+                            isSnapshot={isSnapshotMode}
                         />
 
                         <span className="text-gray-600">của</span>
@@ -590,7 +584,7 @@ function InboundPrintContent() {
                             className="mx-1 font-bold"
                             minWidth={100}
                             emptyWidth={100}
-                            isSnapshot={isSnapshot}
+                            isSnapshot={isSnapshotMode}
                         />
                     </div>
                 )}
@@ -601,7 +595,7 @@ function InboundPrintContent() {
                             value={editWarehouse}
                             onChange={setEditWarehouse}
                             className="ml-2 font-bold"
-                            isSnapshot={isSnapshot}
+                            isSnapshot={isSnapshotMode}
                         />
                     </div>
                     <div className="flex items-center flex-1">
@@ -610,9 +604,9 @@ function InboundPrintContent() {
                             type="text"
                             value={editLocation}
                             onChange={(e) => setEditLocation(e.target.value)}
-                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                         />
-                        <span className={`hidden print:inline ml-2 flex-1 min-w-[50px] font-bold ${isSnapshot ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
+                        <span className={`hidden print:inline ml-2 flex-1 min-w-[50px] font-bold ${isSnapshotMode ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
                     </div>
                 </div>
                 {editDescription && (
@@ -622,7 +616,7 @@ function InboundPrintContent() {
                             value={editDescription}
                             onChange={setEditDescription}
                             className="ml-2 flex-1 font-bold italic"
-                            isSnapshot={isSnapshot}
+                            isSnapshot={isSnapshotMode}
                         />
                     </div>
                 )}
@@ -632,9 +626,9 @@ function InboundPrintContent() {
                         type="text"
                         value={editNote}
                         onChange={(e) => setEditNote(e.target.value)}
-                        className={`print:hidden ${isSnapshot ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                     />
-                    <span className={`hidden print:inline ml-2 flex-1 font-bold ${isSnapshot ? 'inline' : ''}`}>{editNote || '\u00A0'}</span>
+                    <span className={`hidden print:inline ml-2 flex-1 font-bold ${isSnapshotMode ? 'inline' : ''}`}>{editNote || '\u00A0'}</span>
                 </div>
             </div>
 
@@ -730,7 +724,7 @@ function InboundPrintContent() {
                                                 value={docQuantities[item.id] !== undefined ? docQuantities[item.id] : (item.document_quantity || item.quantity).toString()}
                                                 onChange={(val) => setDocQuantities(prev => ({ ...prev, [item.id]: val }))}
                                                 className="text-center w-full"
-                                                isSnapshot={isSnapshot}
+                                                isSnapshot={isSnapshotMode}
                                             />
                                         </td>
                                     )}
@@ -859,9 +853,9 @@ function InboundPrintContent() {
                             type="text"
                             value={signTitle1}
                             onChange={(e) => setSignTitle1(e.target.value)}
-                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
+                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
                         />
-                        <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''}`}>{signTitle1}</span>
+                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle1}</span>
                     </div>
                     <div className="text-xs text-gray-500 italic hidden">(Hoặc bộ phận có nhu cầu nhập)</div>
                     <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
@@ -872,9 +866,9 @@ function InboundPrintContent() {
                             value={signPerson1}
                             onChange={(e) => setSignPerson1(e.target.value)}
                             placeholder="Nhập tên..."
-                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                         />
-                        <span className={`hidden print:inline font-bold ${isSnapshot ? 'inline' : ''}`}>{signPerson1}</span>
+                        <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson1}</span>
                     </div>
                 </div>
                 <div>
@@ -886,9 +880,9 @@ function InboundPrintContent() {
                             type="text"
                             value={signTitle2}
                             onChange={(e) => setSignTitle2(e.target.value)}
-                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
+                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
                         />
-                        <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''}`}>{signTitle2}</span>
+                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle2}</span>
                     </div>
                     <div className="text-xs text-gray-500 italic hidden">(Hoặc bộ phận có nhu cầu nhập)</div>
                     <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
@@ -899,14 +893,14 @@ function InboundPrintContent() {
                             value={signPerson2}
                             onChange={(e) => setSignPerson2(e.target.value)}
                             placeholder="Nhập tên..."
-                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                         />
-                        <span className={`hidden print:inline font-bold ${isSnapshot ? 'inline' : ''}`}>{signPerson2}</span>
+                        <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson2}</span>
                     </div>
                 </div>
                 <div>
                     <div className="text-sm italic text-center mb-1">
-                        <span className={`print:hidden ${isSnapshot ? 'hidden' : ''}`}>
+                        <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
                             Ngày
                             <input
                                 type="text"
@@ -929,7 +923,7 @@ function InboundPrintContent() {
                                 className="w-12 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-1 font-bold"
                             />
                         </span>
-                        <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''}`}>
+                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>
                             Ngày {signDay || '\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0'} tháng {signMonth || '\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0'} năm {signYear || ''}
                         </span>
                     </div>
@@ -938,9 +932,9 @@ function InboundPrintContent() {
                             type="text"
                             value={signTitle3}
                             onChange={(e) => setSignTitle3(e.target.value)}
-                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
+                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
                         />
-                        <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''}`}>{signTitle3}</span>
+                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle3}</span>
                     </div>
                     <div className="text-xs text-gray-500 italic">(Hoặc bộ phận có nhu cầu nhập)</div>
                     <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
@@ -951,9 +945,9 @@ function InboundPrintContent() {
                             value={signPerson3}
                             onChange={(e) => setSignPerson3(e.target.value)}
                             placeholder="Nhập tên..."
-                            className={`print:hidden ${isSnapshot ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                         />
-                        <span className={`hidden print:inline font-bold ${isSnapshot ? 'inline' : ''}`}>{signPerson3}</span>
+                        <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson3}</span>
                     </div>
                 </div>
             </div>
