@@ -9,24 +9,7 @@ import TeamModal from '@/components/construction/TeamModal'
 import MemberModal from '@/components/construction/MemberModal'
 import { useToast } from '@/components/ui/ToastProvider'
 
-// Define types locally since they are new
-export interface ConstructionTeam {
-    id: string
-    name: string
-    code: string | null
-    description: string | null
-    created_at: string
-}
-
-export interface ConstructionMember {
-    id: string
-    full_name: string
-    phone: string | null
-    role: string | null
-    team_id: string | null
-    is_active: boolean
-    teams?: ConstructionTeam // For join
-}
+import { ConstructionTeam, ConstructionMember } from './types'
 
 export default function ConstructionMembersPage() {
     const { profile } = useUser()

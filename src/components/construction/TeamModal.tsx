@@ -6,7 +6,7 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
 import { useSystem } from '@/contexts/SystemContext'
 import { X, Save } from 'lucide-react'
-import { ConstructionTeam } from '@/app/(dashboard)/construction/members/page'
+import { ConstructionTeam } from '@/app/(dashboard)/members-teams/types'
 
 interface Props {
     isOpen: boolean
