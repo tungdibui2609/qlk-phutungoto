@@ -44,6 +44,7 @@ export const MENU_STRUCTURE: MenuItemConfig[] = [
             { id: 'customers', name: 'Khách hàng', icon: Users },
             { id: 'order_types', name: 'Loại phiếu', icon: FileText },
             { id: 'qc', name: 'QC', icon: ShieldCheck },
+            { id: 'members_teams', name: 'Thành viên & Đội', icon: Users },
         ]
     },
     {
@@ -62,13 +63,12 @@ export const MENU_STRUCTURE: MenuItemConfig[] = [
     },
     {
         id: 'construction_cat',
-        name: 'Quản lý Công Trình',
+        name: 'Cấp phát hàng hóa',
         description: 'Dành riêng cho module quản lý vật tư tại công trình.',
         icon: HardHat,
         children: [
             { id: 'construction_overview', name: 'Tổng quan', icon: LayoutDashboard },
             { id: 'site_inventory', name: 'Cấp phát', icon: ClipboardCheck },
-            { id: 'site_members', name: 'Thành viên & Đội', icon: Users },
         ]
     },
     {

@@ -28,12 +28,12 @@ export default function SiteInventoryPage() {
                 <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-3xl flex items-center justify-center mb-6">
                     <HardHat size={40} className="text-slate-400" />
                 </div>
-                <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-2">
-                    Chưa kích hoạt tính năng
+                <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-100 mb-2">
+                    Cấp phát hàng hóa
                 </h2>
-                <p className="text-slate-500 max-w-md">
-                    Tính năng "Quản lý Cấp Phát Công Trình" chưa được bật cho kho này.
-                    Vui lòng vào Cài đặt {'>'} Tiện ích để kích hoạt.
+                <p className="text-stone-500 max-w-md">
+                    Tính năng "Cấp phát hàng hóa" chưa được bật cho kho này.
+                    Vui lòng vào Cài đặt {'>'} Tiện ích hệ thống để kích hoạt.
                 </p>
             </div>
         )
@@ -45,7 +45,7 @@ export default function SiteInventoryPage() {
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-white flex items-center gap-3">
                         <HardHat className="text-orange-600" size={32} />
-                        Quản lý Công Trình
+                        Cấp phát hàng hóa
                     </h1>
                     <p className="text-stone-500 dark:text-gray-400 mt-1">
                         Theo dõi mượn trả công cụ dụng cụ và cấp phát vật tư công trình.

@@ -1,6 +1,6 @@
-import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode } from 'lucide-react'
+import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users } from 'lucide-react'
 
-export type ModuleCategory = 'core' | 'automation' | 'specialized'
+export type ModuleCategory = 'core' | 'automation' | 'specialized' | 'info'
 
 export interface UtilityModule {
     id: string
@@ -47,7 +47,7 @@ export const UTILITY_MODULES: UtilityModule[] = [
     },
     {
         id: 'site_inventory_manager',
-        name: 'Quản lý Cấp Phát Công Trình',
+        name: 'Cấp phát hàng hóa',
         description: 'Theo dõi xuất vật tư tiêu hao theo tổ đội và sổ theo dõi mượn/trả công cụ dụng cụ.',
         icon: HardHat,
         category: 'specialized',
@@ -60,6 +60,15 @@ export const UTILITY_MODULES: UtilityModule[] = [
         icon: QrCode,
         category: 'automation',
         default_enabled: false
+    },
+    {
+        id: 'member_team_manager',
+        name: 'Thành viên & Đội',
+        description: 'Quản lý nhân sự và các đội nhóm thi công, vận hành.',
+        icon: Users,
+        category: 'info',
+        is_basic: true,
+        default_enabled: true
     }
 ]
 

@@ -44,6 +44,7 @@ const menuItems: MenuItem[] = [
             { id: 'customers', name: 'Khách hàng', href: '/customers', icon: Users, requiredPermission: 'partner.view' },
             { id: 'order_types', name: 'Loại phiếu', href: '/order-types', icon: FileText, requiredPermission: 'warehouse.manage' },
             { id: 'qc', name: 'QC', href: '/qc', icon: ShieldCheck, requiredPermission: 'qc.view' },
+            { id: 'members_teams', name: 'Thành viên & Đội', href: '/members-teams', icon: Users, requiredModule: 'member_team_manager' },
         ]
     },
     {
@@ -71,13 +72,12 @@ const menuItems: MenuItem[] = [
     },
     {
         id: 'construction_cat',
-        name: 'Quản lý Công Trình',
+        name: 'Cấp phát hàng hóa',
         icon: HardHat,
-        requiredModule: 'CONSTRUCTION', // Commercial Module Check
+        requiredModule: 'site_inventory_manager', // Matches Utility Module ID
         children: [
             { id: 'construction_overview', name: 'Tổng quan', href: '/construction', icon: LayoutDashboard, requiredPermission: 'site_inventory.view' },
             { id: 'site_inventory', name: 'Cấp phát', href: '/site-inventory', icon: ClipboardCheck, requiredPermission: 'site_inventory.view' },
-            { id: 'construction_members', name: 'Thành viên & Đội', href: '/construction/members', icon: Users, requiredPermission: 'site_inventory.view' },
         ]
     },
     {
@@ -174,7 +174,7 @@ export default function Sidebar() {
             if ((item.name === 'Người dùng' || item.name === 'Cài đặt') && !canAccessAdminMenus) {
                 return null
             }
-            if (item.name === 'Quản lý Công Trình' && !isUtilityEnabled('site_inventory_manager')) {
+            if (item.id === 'construction_cat' && !isUtilityEnabled('site_inventory_manager')) {
                 return null
             }
             // Check Item Permission
@@ -195,6 +195,9 @@ export default function Sidebar() {
                 const visibleChildren = item.children.filter(child => {
                     // Check subscription for child
                     if (child.requiredModule && !checkSubscription(child.requiredModule)) return false
+
+                    // Check Utility Module Gating for children with requiredModule
+                    if (child.requiredModule && !isUtilityEnabled(child.requiredModule)) return false
 
                     // Check all hidden menus (both system and user)
                     if (allHidden.includes(child.id) || allHidden.includes(child.name)) return false

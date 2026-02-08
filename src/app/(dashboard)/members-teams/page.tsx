@@ -46,11 +46,19 @@ export default function ConstructionMembersPage() {
     const [editingTeam, setEditingTeam] = useState<ConstructionTeam | null>(null)
     const [editingMember, setEditingMember] = useState<ConstructionMember | null>(null)
 
+    const isModuleEnabled = () => {
+        if (!currentSystem?.modules) return false
+        const modules = typeof currentSystem.modules === 'string'
+            ? JSON.parse(currentSystem.modules)
+            : currentSystem.modules
+        return Array.isArray(modules?.utility_modules) && modules.utility_modules.includes('member_team_manager')
+    }
+
     useEffect(() => {
-        if (currentSystem?.code) {
+        if (currentSystem?.code && isModuleEnabled()) {
             fetchData()
         }
-    }, [activeTab, currentSystem?.code])
+    }, [activeTab, currentSystem?.code, currentSystem?.modules])
 
     async function fetchData() {
         if (!currentSystem?.code) return
@@ -129,20 +137,37 @@ export default function ConstructionMembersPage() {
         }
     }
 
+    if (!isModuleEnabled()) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8 text-stone-900 dark:text-stone-100">
+                <div className="w-20 h-20 bg-stone-100 dark:bg-stone-800 rounded-3xl flex items-center justify-center mb-6">
+                    <Users size={40} className="text-stone-400" />
+                </div>
+                <h2 className="text-2xl font-bold mb-2">
+                    Cấp quyền tính năng
+                </h2>
+                <p className="text-stone-500 max-w-md">
+                    Tính năng "Thành viên & Đội" chưa được kích hoạt cho kho này.
+                    Vui lòng vào Cài đặt {'>'} Tiện ích hệ thống để bật.
+                </p>
+            </div>
+        )
+    }
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Thành viên & Đội thi công</h2>
-                    <p className="text-sm text-gray-500">Quản lý nhân sự thủ công và phân đội cho công trình ({currentSystem?.name || '...'})</p>
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Thành viên & Đội</h2>
+                    <p className="text-sm text-gray-500">Quản lý nhân sự và phân đội cho các hoạt động vận hành ({currentSystem?.name || '...'})</p>
                 </div>
 
                 <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
                     <button
                         onClick={() => setActiveTab('members')}
                         className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'members'
-                                ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
-                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                            ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
+                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
                             }`}
                     >
                         Thành viên
@@ -150,8 +175,8 @@ export default function ConstructionMembersPage() {
                     <button
                         onClick={() => setActiveTab('teams')}
                         className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'teams'
-                                ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
-                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                            ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
+                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
                             }`}
                     >
                         Đội thi công

@@ -21,7 +21,6 @@ export default function ConstructionLayout({
 
     const tabs = [
         { name: 'Tổng quan', href: '/construction', icon: LayoutDashboard, exact: true },
-        { name: 'Thành viên & Đội nhóm', href: '/construction/members', icon: Users },
         { name: 'Kho Công Trình', href: '/construction/inventory', icon: Package },
         { name: 'Báo cáo', href: '/construction/reports', icon: BarChart3 },
     ]

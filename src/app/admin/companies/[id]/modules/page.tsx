@@ -27,7 +27,7 @@ const ALL_MODULES = [
     ...PRODUCT_MODULES.map(m => ({ ...m, category: 'Sản phẩm' })),
     ...LOT_MODULES.map(m => ({ ...m, category: 'Quản lý LOT' })),
     ...DASHBOARD_MODULES.map(m => ({ ...m, category: 'Dashboard' })),
-    ...UTILITY_MODULES.map(m => ({ ...m, category: 'Tiện ích hệ thống' }))
+    ...UTILITY_MODULES.map(m => ({ ...m, category: m.category === 'info' ? 'Thông tin' : 'Tiện ích hệ thống' }))
 ]
 
 export default function CompanyModulesPage() {
@@ -205,7 +205,7 @@ export default function CompanyModulesPage() {
 
                         {viewMode === 'license' && (
                             <div className="flex gap-3 w-full md:w-auto">
-                                <div className="relative flex-1 md:w-96">
+                                <div className="relative flex-1 md:w-72">
                                     <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-400">
                                         <Search size={18} />
                                     </div>
@@ -214,16 +214,16 @@ export default function CompanyModulesPage() {
                                         placeholder="Tìm kiếm module..."
                                         value={searchTerm}
                                         onChange={(e) => setSearchTerm(e.target.value)}
-                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400 transition-all font-medium text-slate-700 placeholder:text-slate-400"
+                                        className="w-full pl-10 pr-4 py-2 bg-slate-100 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400 transition-all font-medium text-slate-700 placeholder:text-slate-400"
                                     />
                                 </div>
                                 <button
                                     onClick={handleSave}
                                     disabled={saving}
-                                    className="flex-1 md:flex-none flex items-center justify-center gap-2 px-10 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 text-white font-bold rounded-xl hover:from-amber-600 hover:to-yellow-600 active:scale-95 transition-all text-sm shadow-xl shadow-amber-200/50 disabled:opacity-50"
+                                    className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 text-white font-bold rounded-xl hover:from-amber-600 hover:to-yellow-600 active:scale-95 transition-all text-sm shadow-xl shadow-amber-200/50 disabled:opacity-50"
                                 >
                                     {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-                                    {saving ? 'Đang lưu...' : 'Lưu Thay Đổi'}
+                                    {saving ? 'Đang lưu' : 'Lưu Thay Đổi'}
                                 </button>
                             </div>
                         )}
@@ -244,6 +244,26 @@ export default function CompanyModulesPage() {
                             Cấu hình Kho hàng (Config)
                         </button>
                     </div>
+
+                    {viewMode === 'license' && (
+                        <div className="flex flex-wrap gap-2 pb-4 mt-2">
+                            <button
+                                onClick={() => setSelectedCategory('all')}
+                                className={`px-3 py-1.5 rounded-lg text-[10px] md:text-xs font-bold border transition-all ${selectedCategory === 'all' ? 'bg-amber-100 border-amber-200 text-amber-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                            >
+                                Tất cả
+                            </button>
+                            {categories.map(cat => (
+                                <button
+                                    key={cat}
+                                    onClick={() => setSelectedCategory(cat)}
+                                    className={`px-3 py-1.5 rounded-lg text-[10px] md:text-xs font-bold border transition-all ${selectedCategory === cat ? 'bg-amber-100 border-amber-200 text-amber-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                                >
+                                    {cat}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -260,6 +280,7 @@ export default function CompanyModulesPage() {
                                             {cat === 'Quản lý LOT' && <Archive size={18} />}
                                             {cat === 'Dashboard' && <LayoutDashboard size={18} />}
                                             {cat === 'Tiện ích hệ thống' && <Cog size={18} />}
+                                            {cat === 'Thông tin' && <Shield size={18} />}
                                         </div>
                                         <h2 className="text-base md:text-lg font-bold text-slate-700 uppercase tracking-wide">{cat}</h2>
                                         <span className="text-[10px] md:text-xs font-medium px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full">

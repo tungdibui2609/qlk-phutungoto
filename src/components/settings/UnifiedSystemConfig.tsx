@@ -21,7 +21,7 @@ const ALL_MODULES = [
     ...PRODUCT_MODULES.map(m => ({ ...m, category: 'Sản phẩm' })),
     ...LOT_MODULES.map(m => ({ ...m, category: 'Quản lý LOT' })),
     ...DASHBOARD_MODULES.map(m => ({ ...m, category: 'Dashboard' })),
-    ...UTILITY_MODULES.map(m => ({ ...m, category: 'Tiện ích hệ thống' }))
+    ...UTILITY_MODULES.map(m => ({ ...m, category: m.category === 'info' ? 'Thông tin' : 'Tiện ích hệ thống' }))
 ]
 
 export default function UnifiedSystemConfig() {
@@ -93,7 +93,7 @@ export default function UnifiedSystemConfig() {
         else if (category === 'Sản phẩm') type = 'product'
         else if (category === 'Quản lý LOT') type = 'lot'
         else if (category === 'Dashboard') type = 'dashboard'
-        else if (category === 'Tiện ích hệ thống') type = 'utility'
+        else if (category === 'Tiện ích hệ thống' || category === 'Thông tin') type = 'utility'
 
         if (!type) return
 
@@ -137,7 +137,7 @@ export default function UnifiedSystemConfig() {
         }
     }
 
-    const categories = ['Nhập kho', 'Xuất kho', 'Sản phẩm', 'Quản lý LOT', 'Dashboard', 'Tiện ích hệ thống']
+    const categories = ['Nhập kho', 'Xuất kho', 'Sản phẩm', 'Quản lý LOT', 'Dashboard', 'Tiện ích hệ thống', 'Thông tin']
     const system = systems.find(s => s.code === selectedSystemCode)
 
     return (
@@ -287,6 +287,7 @@ export default function UnifiedSystemConfig() {
                                         {cat === 'Quản lý LOT' && <Archive size={18} className="text-stone-400" />}
                                         {cat === 'Dashboard' && <LayoutDashboard size={18} className="text-stone-400" />}
                                         {cat === 'Tiện ích hệ thống' && <Cog size={18} className="text-stone-400" />}
+                                        {cat === 'Thông tin' && <ShieldAlert size={18} className="text-stone-400" />}
                                         {cat}
                                     </h3>
 
@@ -299,7 +300,7 @@ export default function UnifiedSystemConfig() {
                                             else if (cat === 'Sản phẩm') isChecked = config.product.includes(mod.id)
                                             else if (cat === 'Quản lý LOT') isChecked = config.lot.includes(mod.id)
                                             else if (cat === 'Dashboard') isChecked = config.dashboard.includes(mod.id)
-                                            else if (cat === 'Tiện ích hệ thống') isChecked = config.utility.includes(mod.id)
+                                            else if (cat === 'Tiện ích hệ thống' || cat === 'Thông tin') isChecked = config.utility.includes(mod.id)
 
                                             return (
                                                 <div
