@@ -28,7 +28,9 @@ interface CreateAuditModalProps {
         note: string,
         scope: 'ALL' | 'PARTIAL',
         productIds: string[],
-        participants: { name: string, role: string }[]
+        participants: { name: string, role: string }[],
+        productSelections?: { productId: string, units: string[] }[],
+        globalUnitSelections?: string[]
     ) => Promise<any>
 }
 
@@ -42,6 +44,8 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
     const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('')
     const [note, setNote] = useState('')
     const [scope, setScope] = useState<'ALL' | 'PARTIAL'>('ALL')
+    const [allSystemUnits, setAllSystemUnits] = useState<{ id: string, name: string }[]>([])
+    const [globalSelectedUnits, setGlobalSelectedUnits] = useState<string[]>([])
 
     // Team/Member Selection State
     const [teams, setTeams] = useState<ConstructionTeam[]>([])
@@ -57,14 +61,15 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
 
     // Product Search
     const [productSearch, setProductSearch] = useState('')
-    const [products, setProducts] = useState<{ id: string, name: string, sku: string }[]>([])
-    const [selectedProducts, setSelectedProducts] = useState<{ id: string, name: string, sku: string }[]>([])
+    const [products, setProducts] = useState<{ id: string, name: string, sku: string, units?: string[] }[]>([])
+    const [selectedProducts, setSelectedProducts] = useState<{ id: string, name: string, sku: string, units: string[], selectedUnits: string[] }[]>([])
     const [searchingProducts, setSearchingProducts] = useState(false)
 
     useEffect(() => {
         if (isOpen && currentSystem) {
             fetchWarehouses()
             fetchTeams()
+            fetchAllUnits()
         }
     }, [isOpen, currentSystem])
 
@@ -83,6 +88,15 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
         }, 500)
         return () => clearTimeout(timer)
     }, [productSearch])
+
+    const fetchAllUnits = async () => {
+        const { data } = await supabase
+            .from('units')
+            .select('id, name')
+            .eq('is_active', true)
+            .order('name')
+        if (data) setAllSystemUnits(data)
+    }
 
     const fetchWarehouses = async () => {
         setLoading(true)
@@ -150,9 +164,11 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
             return
         }
         setSearchingProducts(true)
+
+        // 1. Search products
         let query = supabase
             .from('products')
-            .select('id, name, sku')
+            .select('id, name, sku, unit')
             .or(`name.ilike.%${q}%,sku.ilike.%${q}%`)
             .limit(10)
 
@@ -160,18 +176,60 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
             query = query.eq('system_type', currentSystem.code)
         }
 
-        const { data } = await query
+        const { data: prodData } = await query
 
-        if (data) setProducts(data)
+        if (prodData) {
+            // 2. For each product, fetch its available units
+            const productIds = prodData.map(p => p.id)
+            const { data: unitData } = await (supabase
+                .from('product_units') as any)
+                .select('product_id, units:unit_id(name)')
+                .in('product_id', productIds)
+
+            const productsWithUnits = prodData.map(p => {
+                const pUnits = unitData
+                    ?.filter((u: any) => u.product_id === p.id)
+                    .map((u: any) => (u as any).units?.name)
+                    .filter(Boolean) || []
+
+                // Always include the base unit if not already there
+                const allUnits = Array.from(new Set([p.unit, ...pUnits])).filter(Boolean) as string[]
+
+                return {
+                    id: p.id,
+                    name: p.name,
+                    sku: p.sku,
+                    units: allUnits.length > 0 ? allUnits : ['Cái']
+                }
+            })
+            setProducts(productsWithUnits)
+        }
         setSearchingProducts(false)
     }
 
-    const addProduct = (prod: { id: string, name: string, sku: string }) => {
+    const addProduct = (prod: { id: string, name: string, sku: string, units?: string[] }) => {
         if (!selectedProducts.find(p => p.id === prod.id)) {
-            setSelectedProducts([...selectedProducts, prod])
+            const units = prod.units || ['Cái']
+            setSelectedProducts([...selectedProducts, {
+                ...prod,
+                units,
+                selectedUnits: [...units] // Select all units by default
+            }])
         }
         setProductSearch('')
         setProducts([])
+    }
+
+    const toggleUnit = (productId: string, unit: string) => {
+        setSelectedProducts(prev => prev.map(p => {
+            if (p.id === productId) {
+                const newSelected = p.selectedUnits.includes(unit)
+                    ? p.selectedUnits.filter(u => u !== unit)
+                    : [...p.selectedUnits, unit]
+                return { ...p, selectedUnits: newSelected }
+            }
+            return p
+        }))
     }
 
     const removeProduct = (id: string) => {
@@ -215,13 +273,19 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
 
         const allParticipants = [...teamParticipants, ...manualFiltered]
 
+        const productSelections = scope === 'PARTIAL'
+            ? selectedProducts.map(p => ({ productId: p.id, units: p.selectedUnits }))
+            : undefined
+
         await onCreate(
             selectedWarehouseId || null,
             whName,
             note,
             scope,
             selectedProducts.map(p => p.id),
-            allParticipants
+            allParticipants,
+            productSelections,
+            globalSelectedUnits.length > 0 ? globalSelectedUnits : undefined
         )
         setSubmitting(false)
         onClose()
@@ -267,6 +331,41 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
                                     <option value="PARTIAL">Tùy chọn sản phẩm</option>
                                 </select>
                             </div>
+                        </div>
+
+                        {/* 1.5 Global Unit selection (master filter) */}
+                        <div className="space-y-3 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Bộ lọc đơn vị tính (Toàn cục)</label>
+                            <div className="flex flex-wrap gap-2">
+                                {allSystemUnits.map(unit => {
+                                    const isSelected = globalSelectedUnits.includes(unit.name)
+                                    return (
+                                        <button
+                                            key={unit.id}
+                                            type="button"
+                                            onClick={() => {
+                                                setGlobalSelectedUnits(prev =>
+                                                    prev.includes(unit.name)
+                                                        ? prev.filter(u => u !== unit.name)
+                                                        : [...prev, unit.name]
+                                                )
+                                            }}
+                                            className={`
+                                                px-3 py-1.5 rounded-xl text-xs font-bold border transition-all
+                                                ${isSelected
+                                                    ? 'bg-orange-600 border-orange-600 text-white shadow-sm shadow-orange-500/20'
+                                                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-orange-200'}
+                                            `}
+                                        >
+                                            {unit.name}
+                                        </button>
+                                    )
+                                })}
+                                {allSystemUnits.length === 0 && <span className="text-xs text-slate-400 italic font-medium">Đang tải đơn vị...</span>}
+                            </div>
+                            <p className="text-[10px] text-slate-400 italic">
+                                * Nếu có chọn, hệ thống sẽ chỉ lấy các đơn vị này cho mọi sản phẩm.
+                            </p>
                         </div>
 
                         {/* 2. Tổ kiểm kê - Team Selection */}
@@ -419,11 +518,43 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
                                 </div>
 
                                 {/* Selected List */}
-                                <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                                <div className="space-y-3 max-h-60 overflow-y-auto">
                                     {selectedProducts.map(p => (
-                                        <div key={p.id} className="bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 text-xs px-2 py-1 rounded-full flex items-center gap-1">
-                                            <span>{p.sku}</span>
-                                            <button type="button" onClick={() => removeProduct(p.id)} className="hover:text-red-500"><X size={12} /></button>
+                                        <div key={p.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 rounded-xl space-y-2">
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate">{p.name}</div>
+                                                    <div className="text-[10px] font-mono text-slate-500">{p.sku}</div>
+                                                </div>
+                                                <button type="button" onClick={() => removeProduct(p.id)} className="p-1 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-all">
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </div>
+
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {p.units.map(unit => {
+                                                    const isSelected = p.selectedUnits.includes(unit)
+                                                    return (
+                                                        <button
+                                                            key={unit}
+                                                            type="button"
+                                                            onClick={() => toggleUnit(p.id, unit)}
+                                                            className={`
+                                                                px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all
+                                                                ${isSelected
+                                                                    ? 'bg-orange-600 border-orange-600 text-white shadow-sm shadow-orange-500/20'
+                                                                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-orange-200'}
+                                                            `}
+                                                        >
+                                                            {unit}
+                                                        </button>
+                                                    )
+                                                })}
+                                                {p.units.length === 0 && <span className="text-[10px] text-slate-400 italic">Không có đơn vị tính</span>}
+                                            </div>
+                                            {p.selectedUnits.length === 0 && (
+                                                <div className="text-[10px] text-red-500 font-medium">Vui lòng chọn ít nhất 1 đơn vị</div>
+                                            )}
                                         </div>
                                     ))}
                                     {selectedProducts.length === 0 && <span className="text-xs text-slate-400 italic">Chưa chọn sản phẩm nào</span>}
@@ -456,7 +587,7 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
                         </button>
                     </div>
                 </form>
-            </div>
-        </div>
+            </div >
+        </div >
     )
 }

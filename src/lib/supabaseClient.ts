@@ -208,6 +208,8 @@ type InventoryCheckItemLogsTable = {
         content: string
         actual_quantity: number | null
         system_quantity: number | null
+        unit: string | null
+        snapshot_data: any | null
         is_reviewer: boolean | null
         created_at: string
         company_id: string | null
@@ -220,6 +222,8 @@ type InventoryCheckItemLogsTable = {
         content: string
         actual_quantity?: number | null
         system_quantity?: number | null
+        unit?: string | null
+        snapshot_data?: any | null
         is_reviewer?: boolean | null
         created_at?: string
         company_id?: string | null
@@ -232,6 +236,8 @@ type InventoryCheckItemLogsTable = {
         content?: string
         actual_quantity?: number | null
         system_quantity?: number | null
+        unit?: string | null
+        snapshot_data?: any | null
         is_reviewer?: boolean | null
         created_at?: string
         company_id?: string | null

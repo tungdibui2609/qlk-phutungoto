@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { supabase, TypedDatabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
@@ -14,6 +14,16 @@ export type InventoryCheck = TypedDatabase['public']['Tables']['inventory_checks
     adjustment_outbound_order?: { code: string } | null
     scope?: 'ALL' | 'PARTIAL' | null
     participants?: any
+    stats?: {
+        total: number
+        counted: number
+        progress: number
+        balancing?: {
+            total: number
+            completed: number
+            percent: number
+        }
+    }
 }
 
 export type InventoryCheckItem = TypedDatabase['public']['Tables']['inventory_check_items']['Row'] & {
@@ -32,6 +42,46 @@ export function useAudit() {
     const [sessions, setSessions] = useState<InventoryCheck[]>([])
     const [currentSession, setCurrentSession] = useState<InventoryCheck | null>(null)
     const [sessionItems, setSessionItems] = useState<InventoryCheckItem[]>([])
+
+    // Automatically recalculate stats whenever items change to keep UI "live"
+    useEffect(() => {
+        if (currentSession && sessionItems.length > 0) {
+            const total = sessionItems.length
+            const counted = sessionItems.filter(i => i.actual_quantity !== null).length
+            const progress = total > 0 ? Math.round((counted / total) * 100) : 0
+
+            // Calculate balancing progress if completed
+            let balancing = undefined
+            if (currentSession.status === 'COMPLETED') {
+                const hasSurplus = sessionItems.some(i => i.actual_quantity !== null && i.difference > 0)
+                const hasLoss = sessionItems.some(i => i.actual_quantity !== null && i.difference < 0)
+
+                const balTotal = (hasSurplus ? 1 : 0) + (hasLoss ? 1 : 0)
+                if (balTotal > 0) {
+                    const balCompleted = (currentSession.adjustment_inbound_order_id ? 1 : 0) +
+                        (currentSession.adjustment_outbound_order_id ? 1 : 0)
+                    balancing = {
+                        total: balTotal,
+                        completed: balCompleted,
+                        percent: Math.round((balCompleted / balTotal) * 100)
+                    }
+                }
+            }
+
+            // Only update if stats actually changed to avoid infinite loop
+            if (
+                currentSession.stats?.counted !== counted ||
+                currentSession.stats?.total !== total ||
+                currentSession.stats?.progress !== progress ||
+                JSON.stringify(currentSession.stats?.balancing) !== JSON.stringify(balancing)
+            ) {
+                setCurrentSession(prev => prev ? {
+                    ...prev,
+                    stats: { total, counted, progress, balancing }
+                } : null)
+            }
+        }
+    }, [sessionItems, currentSession?.id, currentSession?.status, currentSession?.adjustment_inbound_order_id, currentSession?.adjustment_outbound_order_id])
 
     // Fetch list of sessions
     const fetchSessions = useCallback(async (status?: string) => {
@@ -53,8 +103,45 @@ export function useAudit() {
         if (error) {
             console.error('Error fetching inventory checks:', error)
             showToast('Lỗi tải danh sách kiểm kê', 'error')
-        } else {
-            setSessions(data as any)
+        } else if (data) {
+            // Fetch stats for these sessions
+            const sessionIds = data.map((s: any) => s.id)
+            const { data: items } = await supabase
+                .from('inventory_check_items')
+                .select('check_id, actual_quantity, system_quantity')
+                .in('check_id', sessionIds)
+
+            const sessionsWithStats = data.map((s: any) => {
+                const sessionItems = items?.filter(i => i.check_id === s.id) || []
+                const total = sessionItems.length
+                const counted = sessionItems.filter(i => i.actual_quantity !== null).length
+                const progress = total > 0 ? Math.round((counted / total) * 100) : 0
+
+                // Calculate balancing progress if completed
+                let balancing = undefined
+                if (s.status === 'COMPLETED') {
+                    const hasSurplus = sessionItems.some(i => i.actual_quantity !== null && (i.actual_quantity - (i as any).system_quantity) > 0)
+                    const hasLoss = sessionItems.some(i => i.actual_quantity !== null && (i.actual_quantity - (i as any).system_quantity) < 0)
+
+                    const balTotal = (hasSurplus ? 1 : 0) + (hasLoss ? 1 : 0)
+                    if (balTotal > 0) {
+                        const balCompleted = (s.adjustment_inbound_order_id ? 1 : 0) +
+                            (s.adjustment_outbound_order_id ? 1 : 0)
+                        balancing = {
+                            total: balTotal,
+                            completed: balCompleted,
+                            percent: Math.round((balCompleted / balTotal) * 100)
+                        }
+                    }
+                }
+
+                return {
+                    ...s,
+                    stats: { total, counted, progress, balancing }
+                }
+            })
+
+            setSessions(sessionsWithStats as any)
         }
         setLoading(false)
     }, [currentSystem, showToast])
@@ -66,7 +153,9 @@ export function useAudit() {
         note: string,
         scope: 'ALL' | 'PARTIAL' = 'ALL',
         productIds: string[] = [],
-        participants: any[] = []
+        participants: any[] = [],
+        productSelections?: { productId: string, units: string[] }[],
+        globalUnitSelections?: string[]
     ) => {
         if (!currentSystem?.code || !user) return null
 
@@ -126,29 +215,119 @@ export function useAudit() {
             const accData = await accRes.json()
             const inventorySnapshot = accData.items || []
 
-            // Create a lookup map for inventory balances
-            const balanceMap = new Map<string, number>()
-            inventorySnapshot.forEach((inv: any) => {
-                balanceMap.set(inv.productId, inv.balance)
-            })
-
             // 4. Prepare Bulk Insert
-            const checkItems = baseProducts.map((p: any) => {
-                const systemBalance = balanceMap.get(p.id) || 0
-                return {
-                    check_id: checkId,
-                    lot_id: null,
-                    lot_item_id: null,
-                    product_id: p.id,
-                    product_sku: p.sku,
-                    product_name: p.name,
-                    system_quantity: systemBalance,
-                    actual_quantity: null,
-                    difference: 0 - systemBalance,
-                    unit: p.unit || 'Cái',
-                    note: ''
+            const checkItems: any[] = []
+            const processedKeys = new Set<string>() // PID_UNIT
+
+            // Map for quick unit lookup in partial scope
+            const allowedUnitsMap = new Map<string, Set<string>>()
+            if (scope === 'PARTIAL' && productSelections) {
+                productSelections.forEach(ps => {
+                    allowedUnitsMap.set(ps.productId, new Set(ps.units))
+                })
+            }
+
+            // 4a. Add rows for everything in the inventory snapshot
+            inventorySnapshot.forEach((inv: any) => {
+                const key = `${inv.productId}_${inv.unit || 'Cái'}`
+
+                let shouldAdd = true
+
+                // Primary Filter: Global Unit Selection
+                if (globalUnitSelections && globalUnitSelections.length > 0) {
+                    shouldAdd = globalUnitSelections.includes(inv.unit || 'Cái')
+                }
+
+                // Secondary Filter: Scope specific
+                if (shouldAdd && scope === 'PARTIAL') {
+                    const allowedUnits = allowedUnitsMap.get(inv.productId)
+                    shouldAdd = !!(allowedUnits && allowedUnits.has(inv.unit || 'Cái'))
+                }
+
+                if (shouldAdd) {
+                    checkItems.push({
+                        check_id: checkId,
+                        lot_id: null,
+                        lot_item_id: null,
+                        product_id: inv.productId,
+                        product_sku: inv.productCode,
+                        product_name: inv.productName,
+                        system_quantity: inv.balance,
+                        actual_quantity: null,
+                        difference: 0 - inv.balance,
+                        unit: inv.unit || 'Cái',
+                        note: ''
+                    })
+                    processedKeys.add(key)
                 }
             })
+
+            // 4b. Add fallback rows for products in scope that weren't in the snapshot (or specifically selected zero units)
+            if (scope === 'PARTIAL' && productSelections) {
+                // For partial scope, we iterate through the selections to ensure all chosen units exist
+                productSelections.forEach((ps: { productId: string, units: string[] }) => {
+                    const p = baseProducts.find(bp => bp.id === ps.productId)
+                    if (!p) return
+
+                    ps.units.forEach((unit: string) => {
+                        // Check global filter first
+                        if (globalUnitSelections && globalUnitSelections.length > 0) {
+                            if (!globalUnitSelections.includes(unit)) return
+                        }
+
+                        const key = `${ps.productId}_${unit}`
+                        if (!processedKeys.has(key)) {
+                            checkItems.push({
+                                check_id: checkId,
+                                lot_id: null,
+                                lot_item_id: null,
+                                product_id: ps.productId,
+                                product_sku: p.sku,
+                                product_name: p.name,
+                                system_quantity: 0,
+                                actual_quantity: null,
+                                difference: 0,
+                                unit: unit,
+                                note: ''
+                            })
+                            processedKeys.add(key)
+                        }
+                    })
+                })
+            } else {
+                // For 'ALL' scope, we just add products that weren't in the snapshot at all (using default unit)
+                baseProducts.forEach((p: any) => {
+                    const defaultUnit = p.unit || 'Cái'
+                    const key = `${p.id}_${defaultUnit}`
+
+                    // Check global filter
+                    if (globalUnitSelections && globalUnitSelections.length > 0) {
+                        if (!globalUnitSelections.includes(defaultUnit)) return
+                    }
+
+                    // We only add if NO unit for this product was processed? 
+                    // Actually, if it's 'ALL', we want to make sure the product exists at least once.
+                    // If no unit for this product was found in the snapshot, add the default unit as 0.
+                    const hasAnyUnit = Array.from(processedKeys).some(k => k.startsWith(p.id + '_'))
+
+                    if (!hasAnyUnit) {
+                        checkItems.push({
+                            check_id: checkId,
+                            lot_id: null,
+                            lot_item_id: null,
+                            product_id: p.id,
+                            product_sku: p.sku,
+                            product_name: p.name,
+                            system_quantity: 0,
+                            actual_quantity: null,
+                            difference: 0,
+                            unit: defaultUnit,
+                            note: ''
+                        })
+                        processedKeys.add(key)
+                    }
+                })
+            }
 
             // Bulk insert in chunks of 100
             const chunkSize = 100
@@ -210,8 +389,41 @@ export function useAudit() {
 
         if (itemsError) {
             console.error('Error fetching items:', itemsError)
-            showToast('Lỗi tải chi tiết sản phẩm', 'error')
-        } else {
+            showToast('Lỗi tải danh sách sản phẩm', 'error')
+            setLoading(false)
+            return
+        }
+
+        // Calculate stats for current session
+        const total = rawItems.length
+        const counted = rawItems.filter(i => i.actual_quantity !== null).length
+        const progress = total > 0 ? Math.round((counted / total) * 100) : 0
+
+        // Calculate balancing progress if completed
+        let balancing = undefined
+        if ((check as any).status === 'COMPLETED') {
+            const hasSurplus = rawItems.some(i => i.actual_quantity !== null && i.difference > 0)
+            const hasLoss = rawItems.some(i => i.actual_quantity !== null && i.difference < 0)
+
+            const balTotal = (hasSurplus ? 1 : 0) + (hasLoss ? 1 : 0)
+            if (balTotal > 0) {
+                const balCompleted = ((check as any).adjustment_inbound_order_id ? 1 : 0) +
+                    ((check as any).adjustment_outbound_order_id ? 1 : 0)
+                balancing = {
+                    total: balTotal,
+                    completed: balCompleted,
+                    percent: Math.round((balCompleted / balTotal) * 100)
+                }
+            }
+        }
+
+        setCurrentSession({
+            ...check,
+            stats: { total, counted, progress, balancing }
+        } as any)
+        setSessionItems(rawItems as any)
+
+        if (rawItems) {
             // Manual Join for Lots (Due to loose coupling/missing FKs)
             const items = rawItems as any[]
             const lotIds = Array.from(new Set(items.map(i => i.lot_id).filter(Boolean)))
@@ -274,6 +486,22 @@ export function useAudit() {
 
         const item = sessionItems[targetIndex]
 
+        // Find all sibling units for this product in the same check
+        const siblingItems = sessionItems.filter(i =>
+            i.check_id === item.check_id &&
+            i.product_id === item.product_id &&
+            i.lot_id === item.lot_id
+        )
+
+        // Create snapshot for ALL units
+        const snapshotData = siblingItems.map(si => ({
+            id: si.id,
+            unit: si.unit,
+            actual_quantity: si.actual_quantity,
+            system_quantity: si.system_quantity,
+            difference: si.difference
+        }))
+
         // Optimistic update for UI
         const newLog = {
             id: 'temp-' + Date.now(),
@@ -283,6 +511,8 @@ export function useAudit() {
             content: content,
             actual_quantity: item.actual_quantity,
             system_quantity: item.system_quantity,
+            unit: item.unit,
+            snapshot_data: snapshotData,
             is_reviewer: isReviewer,
             created_at: new Date().toISOString(),
             company_id: profile.company_id
@@ -317,6 +547,8 @@ export function useAudit() {
                     content: content,
                     actual_quantity: item.actual_quantity,
                     system_quantity: item.system_quantity,
+                    unit: item.unit,
+                    snapshot_data: snapshotData,
                     is_reviewer: isReviewer,
                     company_id: profile.company_id
                 })

@@ -60,15 +60,18 @@ export default function AuditDetailPage() {
         })
     }, [sessionItems, searchTerm, filterMode])
 
-    // Grouping by Lot
+    // Grouping by Lot then Product
     const groupedItems = useMemo(() => {
-        const groups: Record<string, typeof sessionItems> = {}
+        const lotGroups: Record<string, Record<string, typeof sessionItems>> = {}
         filteredItems.forEach(item => {
-            const key = item.lots?.code || 'NO_LOT'
-            if (!groups[key]) groups[key] = []
-            groups[key].push(item)
+            const lotKey = item.lots?.code || 'NO_LOT'
+            const productKey = item.product_id
+
+            if (!lotGroups[lotKey]) lotGroups[lotKey] = {}
+            if (!lotGroups[lotKey][productKey]) lotGroups[lotKey][productKey] = []
+            lotGroups[lotKey][productKey].push(item)
         })
-        return groups
+        return lotGroups
     }, [filteredItems])
 
     // Classified items for adjustment tickets
@@ -232,7 +235,7 @@ export default function AuditDetailPage() {
 
                 {/* Content Grouped by Lot */}
                 <div className="space-y-6">
-                    {Object.entries(groupedItems).map(([lotCode, items]) => (
+                    {Object.entries(groupedItems).map(([lotCode, productGroups]) => (
                         <div key={lotCode} className="space-y-3">
                             <div className="flex items-center gap-2 px-1">
                                 <Layers size={16} className="text-slate-400" />
@@ -240,14 +243,14 @@ export default function AuditDetailPage() {
                                     Lot: {lotCode === 'NO_LOT' ? 'Không xác định' : lotCode}
                                 </h3>
                                 <span className="text-xs font-medium text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
-                                    {items.length} mục
+                                    {Object.keys(productGroups).length} sản phẩm
                                 </span>
                             </div>
                             <div className="space-y-3">
-                                {items.map(item => (
+                                {Object.entries(productGroups).map(([productId, items]) => (
                                     <AuditItemCard
-                                        key={item.id}
-                                        item={item}
+                                        key={productId}
+                                        items={items}
                                         onUpdate={updateItem}
                                         onAddFeedback={addFeedback}
                                         readonly={currentSession.status === 'WAITING_FOR_APPROVAL' || currentSession.status === 'COMPLETED'}
