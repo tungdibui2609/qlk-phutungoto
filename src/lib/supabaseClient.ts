@@ -139,6 +139,7 @@ type InventoryCheckItemsTable = {
         difference: number
         unit: string | null
         note: string | null
+        reviewer_note: string | null
         created_at: string
         lot_code?: string | null
         product_sku?: string | null
@@ -156,6 +157,7 @@ type InventoryCheckItemsTable = {
         difference?: number
         unit?: string | null
         note?: string | null
+        reviewer_note?: string | null
         created_at?: string
         lot_code?: string | null
         product_sku?: string | null
@@ -173,6 +175,7 @@ type InventoryCheckItemsTable = {
         difference?: number
         unit?: string | null
         note?: string | null
+        reviewer_note?: string | null
         created_at?: string
         lot_code?: string | null
         product_sku?: string | null
@@ -191,6 +194,61 @@ type InventoryCheckItemsTable = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
+            referencedColumns: ["id"]
+        }
+    ]
+}
+
+type InventoryCheckItemLogsTable = {
+    Row: {
+        id: string
+        item_id: string
+        user_id: string | null
+        user_name: string | null
+        content: string
+        actual_quantity: number | null
+        system_quantity: number | null
+        is_reviewer: boolean | null
+        created_at: string
+        company_id: string | null
+    }
+    Insert: {
+        id?: string
+        item_id: string
+        user_id?: string | null
+        user_name?: string | null
+        content: string
+        actual_quantity?: number | null
+        system_quantity?: number | null
+        is_reviewer?: boolean | null
+        created_at?: string
+        company_id?: string | null
+    }
+    Update: {
+        id?: string
+        item_id?: string
+        user_id?: string | null
+        user_name?: string | null
+        content?: string
+        actual_quantity?: number | null
+        system_quantity?: number | null
+        is_reviewer?: boolean | null
+        created_at?: string
+        company_id?: string | null
+    }
+    Relationships: [
+        {
+            foreignKeyName: "inventory_check_item_logs_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_check_items"
+            referencedColumns: ["id"]
+        },
+        {
+            foreignKeyName: "inventory_check_item_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
             referencedColumns: ["id"]
         }
     ]
@@ -456,6 +514,7 @@ type TypedTables = Database['public']['Tables'] & {
     audit_logs: AuditLogsTable
     inventory_checks: InventoryChecksTable
     inventory_check_items: InventoryCheckItemsTable
+    inventory_check_item_logs: InventoryCheckItemLogsTable
     operational_notes: OperationalNotesTable
     companies: CompaniesTable
     construction_teams: ConstructionTeamsTable

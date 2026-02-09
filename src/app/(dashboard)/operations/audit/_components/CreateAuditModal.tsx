@@ -88,10 +88,17 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
         setLoading(true)
         const { data } = await supabase
             .from('branches')
-            .select('id, name')
+            .select('id, name, is_default')
             .order('is_default', { ascending: false })
             .order('name')
-        if (data) setWarehouses(data)
+
+        if (data) {
+            setWarehouses(data)
+            // Tự động chọn kho đầu tiên nếu đó là kho mặc định
+            if (data.length > 0 && data[0].is_default) {
+                setSelectedWarehouseId(data[0].id)
+            }
+        }
         setLoading(false)
     }
 
@@ -138,12 +145,22 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
     }
 
     const searchProducts = async (q: string) => {
+        if (!q.trim()) {
+            setProducts([])
+            return
+        }
         setSearchingProducts(true)
-        const { data } = await supabase
+        let query = supabase
             .from('products')
             .select('id, name, sku')
-            .ilike('name', `%${q}%`)
-            .limit(5)
+            .or(`name.ilike.%${q}%,sku.ilike.%${q}%`)
+            .limit(10)
+
+        if (currentSystem?.code) {
+            query = query.eq('system_type', currentSystem.code)
+        }
+
+        const { data } = await query
 
         if (data) setProducts(data)
         setSearchingProducts(false)
@@ -252,49 +269,7 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
                             </div>
                         </div>
 
-                        {/* 2. Product Selection (If Partial) */}
-                        {scope === 'PARTIAL' && (
-                            <div className="space-y-3 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Chọn sản phẩm</label>
-                                <div className="relative">
-                                    <input
-                                        className="w-full h-10 pl-10 pr-4 rounded-lg border border-slate-200 dark:border-slate-700 text-sm"
-                                        placeholder="Tìm kiếm sản phẩm..."
-                                        value={productSearch}
-                                        onChange={e => setProductSearch(e.target.value)}
-                                    />
-                                    <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
-                                    {searchingProducts && <Loader2 size={16} className="absolute right-3 top-2.5 animate-spin text-orange-500" />}
-
-                                    {products.length > 0 && (
-                                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-h-40 overflow-y-auto">
-                                            {products.map(p => (
-                                                <div
-                                                    key={p.id}
-                                                    className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer text-sm"
-                                                    onClick={() => addProduct(p)}
-                                                >
-                                                    <span className="font-bold">{p.sku}</span> - {p.name}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Selected List */}
-                                <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                                    {selectedProducts.map(p => (
-                                        <div key={p.id} className="bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 text-xs px-2 py-1 rounded-full flex items-center gap-1">
-                                            <span>{p.sku}</span>
-                                            <button type="button" onClick={() => removeProduct(p.id)} className="hover:text-red-500"><X size={12} /></button>
-                                        </div>
-                                    ))}
-                                    {selectedProducts.length === 0 && <span className="text-xs text-slate-400 italic">Chưa chọn sản phẩm nào</span>}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* 3. Tổ kiểm kê - Team Selection */}
+                        {/* 2. Tổ kiểm kê - Team Selection */}
                         <div className="space-y-4 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-200 dark:border-blue-800">
                             <div className="flex justify-between items-center">
                                 <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
@@ -413,6 +388,48 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
                                 </div>
                             )}
                         </div>
+
+                        {/* 3. Product Selection (If Partial) */}
+                        {scope === 'PARTIAL' && (
+                            <div className="space-y-3 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Chọn sản phẩm</label>
+                                <div className="relative">
+                                    <input
+                                        className="w-full h-10 pl-10 pr-4 rounded-lg border border-slate-200 dark:border-slate-700 text-sm"
+                                        placeholder="Tìm kiếm sản phẩm..."
+                                        value={productSearch}
+                                        onChange={e => setProductSearch(e.target.value)}
+                                    />
+                                    <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
+                                    {searchingProducts && <Loader2 size={16} className="absolute right-3 top-2.5 animate-spin text-orange-500" />}
+
+                                    {products.length > 0 && (
+                                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-h-40 overflow-y-auto">
+                                            {products.map(p => (
+                                                <div
+                                                    key={p.id}
+                                                    className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer text-sm"
+                                                    onClick={() => addProduct(p)}
+                                                >
+                                                    <span className="font-bold">{p.sku}</span> - {p.name}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Selected List */}
+                                <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                                    {selectedProducts.map(p => (
+                                        <div key={p.id} className="bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                                            <span>{p.sku}</span>
+                                            <button type="button" onClick={() => removeProduct(p.id)} className="hover:text-red-500"><X size={12} /></button>
+                                        </div>
+                                    ))}
+                                    {selectedProducts.length === 0 && <span className="text-xs text-slate-400 italic">Chưa chọn sản phẩm nào</span>}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Ghi chú */}
                         <div className="space-y-2 pt-2">

@@ -10,6 +10,7 @@ import InboundOrderModal from '@/components/inventory/inbound/InboundOrderModal'
 import OutboundOrderModal from '@/components/inventory/outbound/OutboundOrderModal'
 import { Search, Filter, Layers, Users, Eye } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUser } from '@/contexts/UserContext'
 
 export default function AuditDetailPage() {
     const params = useParams()
@@ -20,6 +21,7 @@ export default function AuditDetailPage() {
         loading,
         fetchSessionDetail,
         updateItem,
+        addFeedback,
         submitForApproval,
         approveSession,
         rejectSession,
@@ -27,6 +29,8 @@ export default function AuditDetailPage() {
         linkAdjustmentTicket
     } = useAudit()
     const { currentSystem } = useSystem()
+    const { hasPermission } = useUser()
+    const canApprove = hasPermission('system.full_access') || hasPermission('audit.approve')
 
     const [searchTerm, setSearchTerm] = useState('')
     const [showApproveModal, setShowApproveModal] = useState(false)
@@ -245,6 +249,9 @@ export default function AuditDetailPage() {
                                         key={item.id}
                                         item={item}
                                         onUpdate={updateItem}
+                                        onAddFeedback={addFeedback}
+                                        readonly={currentSession.status === 'WAITING_FOR_APPROVAL' || currentSession.status === 'COMPLETED'}
+                                        canApprove={canApprove && currentSession.status === 'WAITING_FOR_APPROVAL'}
                                     />
                                 ))}
                             </div>

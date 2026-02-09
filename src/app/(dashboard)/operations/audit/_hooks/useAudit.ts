@@ -19,6 +19,7 @@ export type InventoryCheck = TypedDatabase['public']['Tables']['inventory_checks
 export type InventoryCheckItem = TypedDatabase['public']['Tables']['inventory_check_items']['Row'] & {
     lots?: { code: string; batch_code?: string | null } | null
     products?: { name: string; sku: string; unit: string | null; image_url?: string | null } | null
+    logs?: TypedDatabase['public']['Tables']['inventory_check_item_logs']['Row'][]
 }
 
 export function useAudit() {
@@ -98,56 +99,66 @@ export function useAudit() {
 
             const checkId = checkData.id
 
-            // 2. Fetch Accounting Inventory (Snapshot from API)
+            // 2. Fetch Base Products (Those that SHOULD be in the check)
+            let productsQuery = supabase
+                .from('products')
+                .select('id, name, sku, unit')
+                .eq('system_type', currentSystem.code)
+
+            if (scope === 'PARTIAL' && productIds.length > 0) {
+                productsQuery = productsQuery.in('id', productIds)
+            }
+
+            const { data: baseProducts, error: prodError } = await productsQuery
+            if (prodError) throw prodError
+            if (!baseProducts || baseProducts.length === 0) {
+                throw new Error('Không tìm thấy sản phẩm nào trong phạm vi đã chọn')
+            }
+
+            // 3. Fetch Accounting Inventory (Snapshot from API for balances)
             const dateTo = new Date().toISOString().split('T')[0]
             let apiUrl = `/api/inventory?dateTo=${dateTo}&systemType=${currentSystem.code}`
             if (warehouseName) {
                 apiUrl += `&warehouse=${encodeURIComponent(warehouseName)}`
             }
-            // Note: The API currently returns ALL aggregated items for the scope.
-            // We do filtering client-side if scope is PARTIAL.
 
             const accRes = await fetch(apiUrl)
             const accData = await accRes.json()
+            const inventorySnapshot = accData.items || []
 
-            if (!accData.ok) {
-                throw new Error('Failed to fetch accounting inventory data')
-            }
+            // Create a lookup map for inventory balances
+            const balanceMap = new Map<string, number>()
+            inventorySnapshot.forEach((inv: any) => {
+                balanceMap.set(inv.productId, inv.balance)
+            })
 
-            let accountingItems = accData.items || []
-
-            // Filter by selected products if PARTIAL
-            if (scope === 'PARTIAL' && productIds.length > 0) {
-                const allowedIds = new Set(productIds)
-                accountingItems = accountingItems.filter((item: any) => allowedIds.has(item.productId))
-            }
-
-            // 3. Prepare Bulk Insert
-            if (accountingItems.length > 0) {
-                const checkItems = accountingItems.map((item: any) => ({
+            // 4. Prepare Bulk Insert
+            const checkItems = baseProducts.map((p: any) => {
+                const systemBalance = balanceMap.get(p.id) || 0
+                return {
                     check_id: checkId,
-                    lot_id: null, // Accounting is product-based
+                    lot_id: null,
                     lot_item_id: null,
-                    product_id: item.productId,
-                    product_sku: item.productCode,
-                    product_name: item.productName,
-                    system_quantity: item.balance,
+                    product_id: p.id,
+                    product_sku: p.sku,
+                    product_name: p.name,
+                    system_quantity: systemBalance,
                     actual_quantity: null,
-                    difference: 0 - item.balance,
-                    unit: item.unit || 'Cái',
+                    difference: 0 - systemBalance,
+                    unit: p.unit || 'Cái',
                     note: ''
-                }))
-
-                // Bulk insert in chunks of 100
-                const chunkSize = 100
-                for (let i = 0; i < checkItems.length; i += chunkSize) {
-                    const chunk = checkItems.slice(i, i + chunkSize)
-                    const { error: insertError } = await supabase
-                        .from('inventory_check_items')
-                        .insert(chunk)
-
-                    if (insertError) throw insertError
                 }
+            })
+
+            // Bulk insert in chunks of 100
+            const chunkSize = 100
+            for (let i = 0; i < checkItems.length; i += chunkSize) {
+                const chunk = checkItems.slice(i, i + chunkSize)
+                const { error: insertError } = await supabase
+                    .from('inventory_check_items')
+                    .insert(chunk)
+
+                if (insertError) throw insertError
             }
 
             showToast('Đã tạo phiếu kiểm kê thành công', 'success')
@@ -191,7 +202,8 @@ export function useAudit() {
             .from('inventory_check_items')
             .select(`
                 *,
-                products (name, sku, unit, image_url)
+                products (name, sku, unit, image_url),
+                logs:inventory_check_item_logs(*)
             `)
             .eq('check_id', id)
             .order('created_at')
@@ -248,6 +260,72 @@ export function useAudit() {
 
         if (error) {
             showToast('Lỗi lưu số lượng', 'error')
+            setSessionItems(oldItems) // Revert
+        }
+    }
+
+    // Add Feedback (Discussion & Snapshot)
+    const addFeedback = async (itemId: string, content: string, isReviewer: boolean = false) => {
+        if (!content.trim() || !profile) return
+
+        const oldItems = [...sessionItems]
+        const targetIndex = sessionItems.findIndex(i => i.id === itemId)
+        if (targetIndex === -1) return
+
+        const item = sessionItems[targetIndex]
+
+        // Optimistic update for UI
+        const newLog = {
+            id: 'temp-' + Date.now(),
+            item_id: itemId,
+            user_id: user?.id || null,
+            user_name: profile.full_name,
+            content: content,
+            actual_quantity: item.actual_quantity,
+            system_quantity: item.system_quantity,
+            is_reviewer: isReviewer,
+            created_at: new Date().toISOString(),
+            company_id: profile.company_id
+        }
+
+        const newItem = {
+            ...item,
+            [isReviewer ? 'reviewer_note' : 'note']: content,
+            logs: [...(item.logs || []), newLog]
+        }
+
+        const newItems = [...sessionItems]
+        newItems[targetIndex] = newItem as any
+        setSessionItems(newItems)
+
+        try {
+            // 1. Update the main item note for quick view
+            const { error: itemError } = await supabase
+                .from('inventory_check_items')
+                .update({ [isReviewer ? 'reviewer_note' : 'note']: content })
+                .eq('id', itemId)
+
+            if (itemError) throw itemError
+
+            // 2. Add to logs for history & snapshot
+            const { error: logError } = await supabase
+                .from('inventory_check_item_logs')
+                .insert({
+                    item_id: itemId,
+                    user_id: user?.id,
+                    user_name: profile.full_name,
+                    content: content,
+                    actual_quantity: item.actual_quantity,
+                    system_quantity: item.system_quantity,
+                    is_reviewer: isReviewer,
+                    company_id: profile.company_id
+                })
+
+            if (logError) throw logError
+
+        } catch (error) {
+            console.error('Error adding feedback:', error)
+            showToast('Lỗi gửi phản hồi', 'error')
             setSessionItems(oldItems) // Revert
         }
     }
@@ -486,6 +564,7 @@ export function useAudit() {
         createSession,
         fetchSessionDetail,
         updateItem,
+        addFeedback,
         submitForApproval,
         approveSession,
         rejectSession,

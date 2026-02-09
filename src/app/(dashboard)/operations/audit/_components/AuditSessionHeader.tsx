@@ -23,10 +23,11 @@ export function AuditSessionHeader({
 }: AuditSessionHeaderProps) {
     const router = useRouter()
     const { hasPermission } = useUser()
-    const canEdit = session.status === 'IN_PROGRESS' || session.status === 'DRAFT'
+    const canEdit = session.status === 'IN_PROGRESS' || session.status === 'DRAFT' || session.status === 'REJECTED'
     const isPendingApproval = session.status === 'WAITING_FOR_APPROVAL'
     // Simple permission check: Assume 'system.full_access' or 'audit.approve' (if exists) is needed.
     const canApprove = hasPermission('system.full_access') || hasPermission('audit.approve')
+    const isRejected = session.status === 'REJECTED'
 
     return (
         <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30">
@@ -62,6 +63,14 @@ export function AuditSessionHeader({
                 </div>
 
                 <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => window.open(`/print/audit?id=${session.id}`, '_blank')}
+                        className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                        title="In phiếu kiểm kê"
+                    >
+                        <FileText size={20} />
+                    </button>
+
                     {canEdit && (
                         <>
                             <button
@@ -76,7 +85,9 @@ export function AuditSessionHeader({
                                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg shadow-blue-500/20 active:scale-95 transition-all flex items-center gap-2"
                             >
                                 <CheckCircle size={18} />
-                                <span className="hidden sm:inline">Gửi duyệt</span>
+                                <span className="hidden sm:inline">
+                                    {isRejected ? 'Gửi duyệt lại' : 'Gửi duyệt'}
+                                </span>
                             </button>
                         </>
                     )}
