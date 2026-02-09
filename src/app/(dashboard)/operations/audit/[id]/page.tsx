@@ -130,7 +130,7 @@ export default function AuditDetailPage() {
 
             {/* Session Metadata (Participants & Scope) */}
             {currentSession && (
-                <div className="max-w-3xl mx-auto px-4 pt-4">
+                <div className="max-w-6xl mx-auto px-4 pt-4">
                     <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row gap-4 text-sm">
                         <div className="flex-1 space-y-2">
                             <div className="flex items-center gap-2 text-slate-500 font-medium uppercase text-xs tracking-wider">
@@ -196,7 +196,7 @@ export default function AuditDetailPage() {
                 }}
             />
 
-            <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+            <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
                 {/* Search & Filter */}
                 <div className="flex flex-col gap-3 sticky top-[73px] z-20 bg-slate-50 dark:bg-black pb-2">
                     <div className="relative">
@@ -204,7 +204,7 @@ export default function AuditDetailPage() {
                         <input
                             type="text"
                             placeholder="Tìm sản phẩm, SKU, hoặc mã Lot..."
-                            className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none shadow-sm transition-all"
+                            className="w-full h-12 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none shadow-sm transition-all text-sm"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                         />

@@ -5,7 +5,7 @@ import { InventoryCheckItem } from '../_hooks/useAudit'
 import { Check, AlertTriangle, MessageSquare, Package, Minus, Plus, X, ShieldCheck, History, Send } from 'lucide-react'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { QuantityInput } from '@/components/ui/QuantityInput'
-import Image from 'next/image'
+import { getProductDisplayImage } from '@/lib/utils'
 
 interface AuditItemCardProps {
     items: InventoryCheckItem[]
@@ -27,7 +27,6 @@ export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApp
         ]))
     )
     const [newFeedback, setNewFeedback] = useState('')
-    const [showNote, setShowNote] = useState(items.some(i => i.note))
     const [showHistory, setShowHistory] = useState(items.some(i => i.logs?.length))
 
     // Update local state when prop changes
@@ -67,7 +66,7 @@ export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApp
 
     // Consolidated logs
     const allLogs = items.flatMap(i => i.logs || []).sort((a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     )
 
     const hasMismatch = items.some(i => i.actual_quantity !== null && i.difference !== 0)
@@ -76,7 +75,7 @@ export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApp
 
     const productName = firstItem.products?.name || (firstItem as any).product_name || 'Sản phẩm'
     const productSku = firstItem.products?.sku || (firstItem as any).product_sku || '---'
-    const imageUrl = firstItem.products?.image_url
+    const imageUrl = firstItem.products ? getProductDisplayImage(firstItem.products as any) : null
 
     return (
         <div className={`
@@ -86,11 +85,16 @@ export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApp
             ${hasUncounted && !hasMismatch ? 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800' : ''}
             ${readonly ? 'opacity-90' : ''}
         `}>
-            {/* Header: Product Info */}
-            <div className="flex gap-4">
-                <div className="w-14 h-14 relative rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-200 shadow-sm">
+            {/* Header: Product Info - Framed */}
+            <div className="flex gap-4 p-3 rounded-xl bg-white/40 dark:bg-black/20 border border-slate-100/50 dark:border-slate-800/50 shadow-sm">
+                <div className="w-14 h-14 relative rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-200 dark:border-slate-700 shadow-sm">
                     {imageUrl ? (
-                        <Image src={imageUrl} alt={productName} fill className="object-cover" />
+                        <img
+                            src={imageUrl}
+                            alt={productName}
+                            className="w-full h-full object-cover"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
                     ) : (
                         <div className="w-full h-full flex items-center justify-center text-slate-400">
                             <Package size={24} />
@@ -99,22 +103,24 @@ export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApp
                 </div>
                 <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
-                        <h4 className="font-bold text-slate-900 dark:text-slate-100 text-base line-clamp-2 leading-tight">
+                        <h4 className="font-bold text-slate-900 dark:text-slate-100 text-lg line-clamp-2 leading-tight">
                             {productName}
                         </h4>
-                        {isAllMatch && <Check size={20} className="text-emerald-600 shrink-0 mt-0.5" />}
-                        {hasMismatch && <AlertTriangle size={20} className="text-red-600 shrink-0 mt-0.5" />}
+                        <div className="flex gap-1">
+                            {isAllMatch && <Check size={20} className="text-emerald-600 shrink-0 mt-0.5" />}
+                            {hasMismatch && <AlertTriangle size={20} className="text-red-600 shrink-0 mt-0.5" />}
+                        </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 mt-2">
-                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500">
+                        <span className="text-xs font-mono font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500">
                             {productSku}
                         </span>
                         {firstItem.lots ? (
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded border border-orange-100 dark:border-orange-800">
+                            <span className="text-xs font-bold uppercase tracking-wider text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded border border-orange-100 dark:border-orange-800">
                                 LOT: {firstItem.lots.code}
                             </span>
                         ) : (firstItem as any).lot_code ? (
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                                 LOT: {(firstItem as any).lot_code}
                             </span>
                         ) : null}
@@ -122,8 +128,8 @@ export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApp
                 </div>
             </div>
 
-            {/* Units List */}
-            <div className="space-y-4 divide-y divide-slate-100 dark:divide-slate-800">
+            {/* Units List - Individually Framed */}
+            <div className="space-y-3">
                 {items.map(item => {
                     const state = itemStates[item.id] || { qty: '', note: '' }
                     const diff = item.actual_quantity !== null ? item.actual_quantity - item.system_quantity : 0 - item.system_quantity
@@ -131,19 +137,19 @@ export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApp
                     const isItemMismatch = item.actual_quantity !== null && diff !== 0
 
                     return (
-                        <div key={item.id} className="pt-4 first:pt-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div className="flex flex-col gap-0.5">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Đơn vị: {item.unit}</span>
+                        <div key={item.id} className="p-3 rounded-xl bg-white/50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+                            <div className="flex flex-col gap-1">
+                                <span className="text-xs font-bold text-slate-400 uppercase tracking-tighter">ĐƠN VỊ: <b className="text-slate-600 dark:text-slate-300 text-sm">{item.unit}</b></span>
                                 <div className="flex items-baseline gap-2">
-                                    <span className="text-xs text-slate-500">Hệ thống:</span>
-                                    <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
+                                    <span className="text-sm text-slate-500">Hệ thống:</span>
+                                    <span className="font-mono font-bold text-slate-700 dark:text-slate-300 text-lg">
                                         {formatQuantityFull(item.system_quantity)}
                                     </span>
                                 </div>
                                 {item.actual_quantity !== null && diff !== 0 && (
                                     <div className="flex items-center gap-1.5 mt-0.5">
                                         <div className={`w-1.5 h-1.5 rounded-full ${diff > 0 ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                                        <span className={`text-[11px] font-bold ${diff > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                        <span className={`text-sm font-bold ${diff > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                                             Lệch: {diff > 0 ? '+' : ''}{formatQuantityFull(diff)}
                                         </span>
                                     </div>
@@ -174,7 +180,7 @@ export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApp
                                     placeholder="-"
                                     disabled={readonly}
                                     className={`
-                                        flex-1 h-9 rounded-lg text-center font-bold text-base outline-none border-2 transition-all
+                                        flex-1 h-11 rounded-lg text-center font-bold text-xl outline-none border-2 transition-all
                                         focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10
                                         ${isItemMismatch ? 'border-red-200 text-red-600 bg-red-50/50' : ''}
                                         ${isItemMatch ? 'border-emerald-200 text-emerald-600 bg-emerald-50/50' : ''}
@@ -213,13 +219,6 @@ export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApp
             {/* Footer Actions: Discussion & Notes Toggle */}
             <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800/50">
                 <div className="flex items-center gap-4">
-                    <button
-                        onClick={() => setShowNote(!showNote)}
-                        className={`flex items-center gap-1.5 text-xs font-bold transition-colors ${showNote ? 'text-orange-600' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                        <MessageSquare size={14} />
-                        {showNote ? 'Ghi chú' : 'Thêm ghi chú'}
-                    </button>
 
                     {allLogs.length > 0 && (
                         <button
@@ -233,45 +232,6 @@ export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApp
                 </div>
             </div>
 
-            {/* Single Note for the Card / Main Product */}
-            {showNote && (
-                <div className="space-y-1 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ghi chú tổ kiểm kê</label>
-                    <div className="flex gap-2">
-                        <textarea
-                            value={itemStates[firstItem.id]?.note || ''}
-                            onChange={(e) => {
-                                const newNote = e.target.value
-                                setItemStates(prev => {
-                                    const next = { ...prev }
-                                    // Update note for all units of this product (simpler UX)
-                                    items.forEach(i => {
-                                        next[i.id] = { ...next[i.id], note: newNote }
-                                    })
-                                    return next
-                                })
-                            }}
-                            disabled={readonly}
-                            placeholder="Giải trình chênh lệch hoặc ghi chú chung cho sản phẩm..."
-                            className={`flex-1 text-sm p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:outline-none focus:border-orange-500 resize-none ${readonly ? 'cursor-not-allowed opacity-70' : ''}`}
-                            rows={2}
-                        />
-                        {!readonly && (
-                            <button
-                                onClick={() => {
-                                    items.forEach(item => {
-                                        const state = itemStates[item.id]
-                                        handleSave(item.id, state.qty, state.note)
-                                    })
-                                }}
-                                className="px-3 rounded-xl bg-orange-600 text-white hover:bg-orange-700 transition-all shadow-sm active:scale-95"
-                            >
-                                <Check size={20} />
-                            </button>
-                        )}
-                    </div>
-                </div>
-            )}
 
             {/* Consolidated History / Audit Trail */}
             {showHistory && allLogs.length > 0 && (
@@ -298,7 +258,7 @@ export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApp
                                     </div>
                                     <span className="text-[10px] text-slate-400">{new Date(log.created_at).toLocaleString('vi-VN')}</span>
                                 </div>
-                                <p className="italic mb-2 text-slate-800 dark:text-slate-200">"{log.content}"</p>
+                                <p className="mb-2 text-slate-800 dark:text-slate-200 text-sm">"{log.content}"</p>
 
                                 <div className="space-y-1.5 bg-white/60 dark:bg-black/20 p-2 rounded-lg border border-slate-100 dark:border-slate-800/50">
                                     {hasSnapshot ? (
@@ -341,9 +301,9 @@ export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApp
                             value={newFeedback}
                             onChange={(e) => setNewFeedback(e.target.value)}
                             placeholder={canApprove ? "Phản hồi cho tổ kiểm..." : "Giải trình cho người duyệt..."}
-                            className={`flex-1 text-xs p-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-offset-0 transition-all ${canApprove
-                                ? 'border-blue-100 dark:border-blue-900/50 bg-blue-50/20 dark:bg-blue-900/10 focus:border-blue-500 focus:ring-blue-500/20'
-                                : 'border-orange-100 dark:border-orange-900/50 bg-orange-50/10 dark:bg-orange-900/5 focus:border-orange-500 focus:ring-orange-500/20'
+                            className={`flex-1 text-sm p-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-offset-0 transition-all ${canApprove
+                                ? 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 focus:border-blue-500 focus:ring-blue-500/20'
+                                : 'border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20 focus:border-orange-500 focus:ring-orange-500/20'
                                 }`}
                         />
                         <button

@@ -56,7 +56,6 @@ const menuItems: MenuItem[] = [
             { id: 'warehouse_map', name: 'Sơ đồ kho', href: '/warehouses/map', icon: Map, requiredPermission: 'warehousemap.manage' },
             { id: 'warehouse_status', name: 'Trạng thái kho', href: '/warehouses/status', icon: BarChart3, requiredPermission: 'warehouse.view' },
             { id: 'lots', name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes, requiredPermission: 'inventory.view' },
-            { id: 'audit', name: 'Kiểm kê', href: '/operations/audit', icon: ClipboardCheck, requiredPermission: 'inventory.manage' },
             { id: 'notes', name: 'Ghi chú vận hành', href: '/operations/notes', icon: StickyNote, requiredPermission: 'warehouse.view' },
         ]
     },
@@ -87,6 +86,7 @@ const menuItems: MenuItem[] = [
         children: [
             { id: 'inbound', name: 'Nhập kho', href: '/inbound', icon: ArrowDownToLine, requiredPermission: 'inventory.manage' },
             { id: 'outbound', name: 'Xuất kho', href: '/outbound', icon: ArrowUpFromLine, requiredPermission: 'inventory.manage' },
+            { id: 'audit', name: 'Kiểm kê', href: '/operations/audit', icon: ClipboardCheck, requiredPermission: 'audit.view' },
         ]
     },
     {

@@ -446,12 +446,13 @@ export default function UserPermissionsPage() {
                                                         <th className="px-4 py-3 font-semibold">Chức năng</th>
                                                         <th className="px-4 py-3 font-semibold text-center w-24">Xem</th>
                                                         <th className="px-4 py-3 font-semibold text-center w-24">Quản lý</th>
+                                                        <th className="px-4 py-3 font-semibold text-center w-24">Xét duyệt</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-stone-100">
                                                     {(() => {
                                                         // Group permissions by feature (e.g., product.view + product.manage -> "Sản phẩm")
-                                                        const featureMap: Record<string, { view?: Permission; manage?: Permission; other: Permission[] }> = {}
+                                                        const featureMap: Record<string, { view?: Permission; manage?: Permission; approve?: Permission; other: Permission[] }> = {}
 
                                                         // HARDCODED TEST ROW
                                                         featureMap['TEST_SYSTEM'] = {
@@ -498,6 +499,8 @@ export default function UserPermissionsPage() {
                                                                 featureMap[feature].view = perm
                                                             } else if (action === 'manage') {
                                                                 featureMap[feature].manage = perm
+                                                            } else if (action === 'approve') {
+                                                                featureMap[feature].approve = perm
                                                             } else {
                                                                 featureMap[feature].other.push(perm)
                                                             }
@@ -521,13 +524,15 @@ export default function UserPermissionsPage() {
                                                             lot: 'Quản lý LOT',
                                                             report: 'Báo cáo',
                                                             customer: 'Khách hàng',
-                                                            supplier: 'Nhà cung cấp'
+                                                            supplier: 'Nhà cung cấp',
+                                                            audit: 'Kiểm kê'
                                                         }
 
-                                                        return Object.entries(featureMap).map(([feature, { view, manage, other }]) => {
+                                                        return Object.entries(featureMap).map(([feature, { view, manage, approve, other }]) => {
                                                             const displayName = featureNames[feature] || feature
                                                             const viewChecked = view && selectedPermissions.includes(view.code)
                                                             const manageChecked = manage && selectedPermissions.includes(manage.code)
+                                                            const approveChecked = approve && selectedPermissions.includes(approve.code)
 
                                                             // Handle special permissions (like warehouse.map)
                                                             if (!view && !manage && other.length > 0) {
@@ -539,7 +544,7 @@ export default function UserPermissionsPage() {
                                                                                 <span className="font-medium text-stone-800">{perm.name}</span>
                                                                                 <span className="text-xs text-stone-400 ml-2">({perm.module})</span>
                                                                             </td>
-                                                                            <td className="px-4 py-3 text-center" colSpan={2}>
+                                                                            <td className="px-4 py-3 text-center" colSpan={3}>
                                                                                 <label className="inline-flex items-center gap-2 cursor-pointer">
                                                                                     <input
                                                                                         type="checkbox"
@@ -582,6 +587,19 @@ export default function UserPermissionsPage() {
                                                                                 onChange={() => togglePermission(manage.code)}
                                                                                 className="w-5 h-5 rounded border-stone-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
                                                                                 title={manage.description || manage.name}
+                                                                            />
+                                                                        ) : (
+                                                                            <span className="text-stone-300">—</span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-center">
+                                                                        {approve ? (
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={approveChecked}
+                                                                                onChange={() => togglePermission(approve.code)}
+                                                                                className="w-5 h-5 rounded border-stone-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
+                                                                                title={approve.description || approve.name}
                                                                             />
                                                                         ) : (
                                                                             <span className="text-stone-300">—</span>

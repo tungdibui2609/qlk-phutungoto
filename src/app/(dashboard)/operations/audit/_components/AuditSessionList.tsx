@@ -1,7 +1,7 @@
 'use client'
 
 import { InventoryCheck } from '../_hooks/useAudit'
-import { Calendar, User, FileText, ChevronRight, ClipboardCheck, Trash2, Users, Layers, Target } from 'lucide-react'
+import { Calendar, User, FileText, ChevronRight, ClipboardCheck, Trash2, Users, Layers, Target, Ban } from 'lucide-react'
 import Link from 'next/link'
 
 interface AuditSessionListProps {
@@ -54,25 +54,35 @@ export function AuditSessionList({ sessions, loading, onDelete }: AuditSessionLi
                                     {session.code}
                                 </span>
                                 <StatusBadge status={session.status} />
-
-                                {['DRAFT', 'IN_PROGRESS', 'CANCELLED', 'REJECTED'].includes(session.status) && (
-                                    <button
-                                        onClick={(e) => {
-                                            e.preventDefault()
-                                            e.stopPropagation()
-                                            onDelete(session.id)
-                                        }}
-                                        className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all opacity-0 group-hover:opacity-100 ml-auto md:ml-0"
-                                        title="Xóa phiếu"
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
-                                )}
                             </div>
-                            <div className="flex items-center gap-1.5 text-[10px] font-bold ml-1 tracking-wider">
-                                <Calendar size={12} className="text-slate-400" />
-                                <span className="text-slate-400 uppercase">Ngày lập phiếu:</span>
-                                <span className="text-slate-900 dark:text-slate-100">{new Date(session.created_at).toLocaleDateString('vi-VN')}</span>
+                            <div className="space-y-2">
+                                <div className="flex items-center gap-1.5 text-[10px] font-bold ml-1 tracking-wider uppercase">
+                                    <Calendar size={12} className="text-slate-400" />
+                                    <span className="text-slate-400">Ngày lập phiếu:</span>
+                                    <span className="text-slate-900 dark:text-slate-100">{new Date(session.created_at).toLocaleDateString('vi-VN')}</span>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 ml-1 text-[10px] font-bold tracking-wider uppercase">
+                                    <span className="text-slate-400">Xóa phiếu:</span>
+                                    {['DRAFT', 'IN_PROGRESS', 'CANCELLED', 'REJECTED'].includes(session.status) ? (
+                                        <button
+                                            onClick={(e) => {
+                                                e.preventDefault()
+                                                e.stopPropagation()
+                                                onDelete(session.id)
+                                            }}
+                                            className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 group/del hover:bg-emerald-50 dark:hover:bg-emerald-900/20 px-1.5 py-0.5 rounded transition-all"
+                                        >
+                                            <span>Được xóa</span>
+                                            <Trash2 size={12} className="group-hover/del:text-red-500 transition-colors" />
+                                        </button>
+                                    ) : (
+                                        <div className="flex items-center gap-1 text-slate-400 px-1.5 py-0.5">
+                                            <span>Không được xóa</span>
+                                            <Ban size={12} />
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
@@ -96,7 +106,7 @@ export function AuditSessionList({ sessions, loading, onDelete }: AuditSessionLi
                             </div>
 
                             {/* Context & Metadata info consolidated */}
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-100 dark:border-slate-800/50 pt-3">
+                            <div className="grid grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-800/50 pt-3">
                                 <div className="flex items-center gap-2 text-[11px] font-bold text-slate-800 dark:text-slate-200">
                                     <div className="w-1.5 h-1.5 rounded-full bg-orange-400 shadow-[0_0_5px_rgba(251,146,60,0.5)]" />
                                     {session.warehouse_name || 'Toàn hệ thống'}
@@ -172,18 +182,34 @@ export function AuditSessionList({ sessions, loading, onDelete }: AuditSessionLi
 function StatusBadge({ status }: { status: string }) {
     switch (status) {
         case 'DRAFT':
-            return <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-slate-100 text-slate-500">Nháp</span>
+            return <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-slate-100 text-slate-500 border border-slate-200">Nháp</span>
         case 'IN_PROGRESS':
-            return <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">Đang kiểm</span>
+            return (
+                <span className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-100 dark:border-blue-800">
+                    <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500"></span>
+                    </span>
+                    Đang kiểm
+                </span>
+            )
         case 'WAITING_FOR_APPROVAL':
-            return <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400">Chờ duyệt</span>
+            return (
+                <span className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 border border-orange-100 dark:border-orange-800">
+                    <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-orange-500"></span>
+                    </span>
+                    Chờ duyệt
+                </span>
+            )
         case 'COMPLETED':
-            return <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">Hoàn thành</span>
+            return <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800">Hoàn thành</span>
         case 'REJECTED':
-            return <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">Từ chối</span>
+            return <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 border border-red-100 dark:border-red-800">Từ chối</span>
         case 'CANCELLED':
-            return <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-slate-100 text-slate-500">Đã hủy</span>
+            return <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-slate-100 text-slate-500 border border-slate-200">Đã hủy</span>
         default:
-            return <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-slate-100 text-slate-500">{status}</span>
+            return <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-slate-100 text-slate-500 border border-slate-200">{status}</span>
     }
 }

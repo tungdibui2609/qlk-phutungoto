@@ -57,7 +57,6 @@ export const MENU_STRUCTURE: MenuItemConfig[] = [
             { id: 'warehouse_map', name: 'Sơ đồ kho', icon: Map },
             { id: 'warehouse_status', name: 'Trạng thái kho', icon: BarChart3 },
             { id: 'lots', name: 'Quản lý LOT', icon: Boxes },
-            { id: 'audit', name: 'Kiểm kê', icon: ClipboardCheck },
             { id: 'notes', name: 'Ghi chú vận hành', icon: StickyNote },
         ]
     },
@@ -79,6 +78,7 @@ export const MENU_STRUCTURE: MenuItemConfig[] = [
         children: [
             { id: 'inbound', name: 'Nhập kho', icon: ArrowDownToLine },
             { id: 'outbound', name: 'Xuất kho', icon: ArrowUpFromLine },
+            { id: 'audit', name: 'Kiểm kê', icon: ClipboardCheck },
         ]
     },
     {

@@ -28,7 +28,7 @@ export type InventoryCheck = TypedDatabase['public']['Tables']['inventory_checks
 
 export type InventoryCheckItem = TypedDatabase['public']['Tables']['inventory_check_items']['Row'] & {
     lots?: { code: string; batch_code?: string | null } | null
-    products?: { name: string; sku: string; unit: string | null; image_url?: string | null } | null
+    products?: { name: string; sku: string; unit: string | null; image_url?: string | null; product_media?: { url: string; type: string }[] } | null
     logs?: TypedDatabase['public']['Tables']['inventory_check_item_logs']['Row'][]
 }
 
@@ -83,6 +83,75 @@ export function useAudit() {
         }
     }, [sessionItems, currentSession?.id, currentSession?.status, currentSession?.adjustment_inbound_order_id, currentSession?.adjustment_outbound_order_id])
 
+    // Subscribe to real-time changes for the current session
+    useEffect(() => {
+        if (!currentSession?.id) return
+
+        const channel = supabase
+            .channel(`audit_session_${currentSession.id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'inventory_checks',
+                    filter: `id=eq.${currentSession.id}`
+                },
+                (payload) => {
+                    const newData = payload.new as InventoryCheck
+                    setCurrentSession(prev => {
+                        if (!prev) return null
+                        // Keep the stats as they are calculated locally from items
+                        return { ...prev, ...newData, stats: prev.stats }
+                    })
+                }
+            )
+            .subscribe()
+
+        return () => {
+            supabase.removeChannel(channel)
+        }
+    }, [currentSession?.id])
+
+    // Subscribe to real-time changes for the sessions list
+    useEffect(() => {
+        if (!currentSystem?.code) return
+
+        const channel = supabase
+            .channel(`audit_sessions_list_${currentSystem.code}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'inventory_checks',
+                    filter: `system_code=eq.${currentSystem.code}`
+                },
+                (payload) => {
+                    const eventType = (payload as any).eventType
+                    if (eventType === 'INSERT') {
+                        const newSession = payload.new as InventoryCheck
+                        setSessions(prev => [newSession, ...prev])
+                    } else if (eventType === 'UPDATE') {
+                        const updatedSession = payload.new as InventoryCheck
+                        setSessions(prev => prev.map(s =>
+                            s.id === updatedSession.id
+                                ? { ...s, ...updatedSession, stats: s.stats }
+                                : s
+                        ))
+                    } else if (eventType === 'DELETE') {
+                        const deletedId = (payload.old as any).id
+                        setSessions(prev => prev.filter(s => s.id !== deletedId))
+                    }
+                }
+            )
+            .subscribe()
+
+        return () => {
+            supabase.removeChannel(channel)
+        }
+    }, [currentSystem?.code])
+
     // Fetch list of sessions
     const fetchSessions = useCallback(async (status?: string) => {
         if (!currentSystem?.code) return
@@ -112,16 +181,16 @@ export function useAudit() {
                 .in('check_id', sessionIds)
 
             const sessionsWithStats = data.map((s: any) => {
-                const sessionItems = items?.filter(i => i.check_id === s.id) || []
-                const total = sessionItems.length
-                const counted = sessionItems.filter(i => i.actual_quantity !== null).length
+                const sItems = items?.filter(i => i.check_id === s.id) || []
+                const total = sItems.length
+                const counted = sItems.filter(i => i.actual_quantity !== null).length
                 const progress = total > 0 ? Math.round((counted / total) * 100) : 0
 
                 // Calculate balancing progress if completed
                 let balancing = undefined
                 if (s.status === 'COMPLETED') {
-                    const hasSurplus = sessionItems.some(i => i.actual_quantity !== null && (i.actual_quantity - (i as any).system_quantity) > 0)
-                    const hasLoss = sessionItems.some(i => i.actual_quantity !== null && (i.actual_quantity - (i as any).system_quantity) < 0)
+                    const hasSurplus = sItems.some(i => i.actual_quantity !== null && (i.actual_quantity - (i as any).system_quantity) > 0)
+                    const hasLoss = sItems.some(i => i.actual_quantity !== null && (i.actual_quantity - (i as any).system_quantity) < 0)
 
                     const balTotal = (hasSurplus ? 1 : 0) + (hasLoss ? 1 : 0)
                     if (balTotal > 0) {
@@ -381,7 +450,7 @@ export function useAudit() {
             .from('inventory_check_items')
             .select(`
                 *,
-                products (name, sku, unit, image_url),
+                products (name, sku, unit, image_url, product_media (url, type)),
                 logs:inventory_check_item_logs(*)
             `)
             .eq('check_id', id)
