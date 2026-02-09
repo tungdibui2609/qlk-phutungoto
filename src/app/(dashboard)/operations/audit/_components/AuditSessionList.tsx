@@ -142,13 +142,11 @@ export function AuditSessionList({ sessions, loading, onDelete }: AuditSessionLi
 
                                         {/* Balancing Progress Bar */}
                                         {session.status === 'COMPLETED' && session.stats.balancing && (
-                                            <div className="space-y-1.5">
-                                                <div className="flex justify-between items-center text-[10px] font-bold">
-                                                    <span className="text-blue-500 uppercase tracking-tighter">Cân bằng kho</span>
+                                            <div className="space-y-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/50">
+                                                <div className="flex justify-end items-center text-[10px] font-bold">
                                                     <span className="text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
-                                                        <ClipboardCheck size={10} className="text-blue-400" />
                                                         {session.stats.balancing.completed}/{session.stats.balancing.total}
-                                                        <span className="ml-1">{session.stats.balancing.percent}%</span>
+                                                        <span className="ml-1">({session.stats.balancing.percent}%)</span>
                                                     </span>
                                                 </div>
                                                 <div className="h-2 w-full bg-blue-50 dark:bg-blue-900/20 rounded-full overflow-hidden border border-blue-100/30 dark:border-blue-800/30 p-0.5">

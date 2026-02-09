@@ -76,15 +76,15 @@ export function AuditSessionHeader({
 
                                     {/* Balancing Progress (Only for COMPLETED) */}
                                     {session.status === 'COMPLETED' && session.stats.balancing && (
-                                        <div className="flex items-center gap-3 mt-1.5 pt-1.5 border-t border-slate-100/50 dark:border-slate-800/50">
-                                            <div className="h-1.5 w-32 bg-blue-50 dark:bg-blue-900/20 rounded-full overflow-hidden border border-blue-100/30 dark:border-blue-800/30">
+                                        <div className="flex items-center gap-2 mt-1.5 pt-1.5 border-t border-slate-100/50 dark:border-slate-800/50">
+                                            <div className="h-2 w-48 bg-blue-50 dark:bg-blue-900/20 rounded-full overflow-hidden border border-blue-100/30 dark:border-blue-800/30">
                                                 <div
-                                                    className="h-full bg-blue-500 transition-all duration-500"
+                                                    className="h-full bg-gradient-to-r from-blue-400 to-blue-600 transition-all duration-500 ease-out shadow-sm"
                                                     style={{ width: `${session.stats.balancing.percent}%` }}
                                                 />
                                             </div>
-                                            <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 whitespace-nowrap uppercase tracking-tighter">
-                                                Cân bằng: {session.stats.balancing.completed}/{session.stats.balancing.total} ({session.stats.balancing.percent}%)
+                                            <span className="text-xs font-black text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                                                {session.stats.balancing.completed}/{session.stats.balancing.total} ({session.stats.balancing.percent}%)
                                             </span>
                                         </div>
                                     )}
