@@ -119,9 +119,7 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
                     if (targetUnitId && isConvertible) {
                         displayUnit = targetUnit!.name
                         displayQty = convertUnit(pid, unit, targetUnit!.name, qty, baseUnit)
-                        key = `${pid}_${targetUnitId}`
-                    } else if (targetUnitId) {
-                        key = `${pid}_${unit}_UNCONVERTIBLE`
+                        key = `${pid}_${targetUnit!.name}`
                     }
 
                     const current = lotQtyMap.get(key) || {
