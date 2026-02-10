@@ -97,6 +97,15 @@ export const MENU_STRUCTURE: MenuItemConfig[] = [
         ]
     },
     {
+        id: 'work_cat',
+        name: 'Công việc',
+        description: 'Quản lý các nghiệp vụ công việc, lệnh điều phối.',
+        icon: ClipboardCheck,
+        children: [
+            { id: 'export_order', name: 'Lệnh xuất kho', icon: ArrowUpFromLine },
+        ]
+    },
+    {
         id: 'users_cat',
         name: 'Người dùng',
         description: 'Quản lý tài khoản, vai trò và phân quyền chi tiết.',

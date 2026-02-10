@@ -1,4 +1,4 @@
-import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users } from 'lucide-react'
+import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText } from 'lucide-react'
 
 export type ModuleCategory = 'core' | 'automation' | 'specialized' | 'info'
 
@@ -68,6 +68,14 @@ export const UTILITY_MODULES: UtilityModule[] = [
         icon: Users,
         category: 'info',
         is_basic: true,
+        default_enabled: true
+    },
+    {
+        id: 'work_export_order',
+        name: 'Lệnh xuất kho',
+        description: 'Module quản lý các lệnh xuất kho và điều phối hàng hóa.',
+        icon: FileText,
+        category: 'core',
         default_enabled: true
     }
 ]

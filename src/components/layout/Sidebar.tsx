@@ -104,6 +104,14 @@ const menuItems: MenuItem[] = [
         ]
     },
     {
+        id: 'work_cat',
+        name: 'Công việc',
+        icon: ClipboardCheck,
+        children: [
+            { id: 'export_order', name: 'Lệnh xuất kho', href: '/work/export-order', icon: ArrowUpFromLine, requiredModule: 'work_export_order' },
+        ]
+    },
+    {
         id: 'users_cat',
         name: 'Người dùng',
         icon: Shield,
