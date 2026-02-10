@@ -15,11 +15,12 @@ interface AuditSessionHeaderProps {
     hasLoss?: boolean
     onOpenInbound?: () => void
     onOpenOutbound?: () => void
+    onConfirmLot?: () => void
 }
 
 export function AuditSessionHeader({
     session, onSubmit, onApprove, onReject, onQuickFill,
-    hasSurplus, hasLoss, onOpenInbound, onOpenOutbound
+    hasSurplus, hasLoss, onOpenInbound, onOpenOutbound, onConfirmLot
 }: AuditSessionHeaderProps) {
     const router = useRouter()
     const { hasPermission } = useUser()
@@ -74,8 +75,8 @@ export function AuditSessionHeader({
                                         </span>
                                     </div>
 
-                                    {/* Balancing Progress (Only for COMPLETED) */}
-                                    {session.status === 'COMPLETED' && session.stats.balancing && (
+                                    {/* Balancing Progress (For WAITING_FOR_APPROVAL or COMPLETED) */}
+                                    {['WAITING_FOR_APPROVAL', 'COMPLETED'].includes(session.status) && session.stats.balancing && (
                                         <div className="flex items-center gap-2 mt-1.5 pt-1.5 border-t border-slate-100/50 dark:border-slate-800/50">
                                             <div className="h-2 w-48 bg-blue-50 dark:bg-blue-900/20 rounded-full overflow-hidden border border-blue-100/30 dark:border-blue-800/30">
                                                 <div
@@ -149,9 +150,9 @@ export function AuditSessionHeader({
                         </>
                     )}
 
-                    {session.status === 'COMPLETED' && (
+                    {['WAITING_FOR_APPROVAL', 'COMPLETED'].includes(session.status) && (
                         <>
-                            {hasSurplus && !session.adjustment_inbound_order_id && (
+                            {hasSurplus && !session.adjustment_inbound_order_id && session.status === 'COMPLETED' && (
                                 <button
                                     onClick={onOpenInbound}
                                     className="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-2 rounded-xl font-bold text-sm transition-all flex items-center gap-2 border border-emerald-200"
@@ -160,13 +161,22 @@ export function AuditSessionHeader({
                                     <span className="hidden sm:inline">Tạo phiếu nhập</span>
                                 </button>
                             )}
-                            {hasLoss && !session.adjustment_outbound_order_id && (
+                            {hasLoss && !session.adjustment_outbound_order_id && session.status === 'COMPLETED' && (
                                 <button
                                     onClick={onOpenOutbound}
                                     className="bg-orange-50 text-orange-600 hover:bg-orange-100 px-3 py-2 rounded-xl font-bold text-sm transition-all flex items-center gap-2 border border-orange-200"
                                 >
                                     <MinusCircle size={18} />
                                     <span className="hidden sm:inline">Tạo phiếu xuất</span>
+                                </button>
+                            )}
+                            {session.stats?.balancing?.lotMismatchCount && session.stats.balancing.lotMismatchCount > 0 && !session.lot_adjusted_at && (
+                                <button
+                                    onClick={onConfirmLot}
+                                    className="bg-purple-50 text-purple-600 hover:bg-purple-100 px-3 py-2 rounded-xl font-bold text-sm transition-all flex items-center gap-2 border border-purple-200 animate-pulse"
+                                >
+                                    <ShieldCheck size={18} />
+                                    <span className="hidden sm:inline text-xs">Xác nhận rà soát LOT</span>
                                 </button>
                             )}
                         </>

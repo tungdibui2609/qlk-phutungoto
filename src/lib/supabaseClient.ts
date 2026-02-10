@@ -67,6 +67,8 @@ type InventoryChecksTable = {
         approval_status: 'PENDING' | 'APPROVED' | 'REJECTED' | null
         adjustment_inbound_order_id: string | null
         adjustment_outbound_order_id: string | null
+        lot_adjusted_at: string | null
+        lot_adjusted_by: string | null
     }
     Insert: {
         id?: string
@@ -87,6 +89,8 @@ type InventoryChecksTable = {
         approval_status?: 'PENDING' | 'APPROVED' | 'REJECTED' | null
         adjustment_inbound_order_id?: string | null
         adjustment_outbound_order_id?: string | null
+        lot_adjusted_at?: string | null
+        lot_adjusted_by?: string | null
     }
     Update: {
         id?: string
@@ -107,6 +111,8 @@ type InventoryChecksTable = {
         approval_status?: 'PENDING' | 'APPROVED' | 'REJECTED' | null
         adjustment_inbound_order_id?: string | null
         adjustment_outbound_order_id?: string | null
+        lot_adjusted_at?: string | null
+        lot_adjusted_by?: string | null
     }
     Relationships: [
         {
@@ -135,6 +141,7 @@ type InventoryCheckItemsTable = {
         lot_item_id: string | null
         product_id: string
         system_quantity: number
+        lot_system_quantity: number
         actual_quantity: number | null
         difference: number
         unit: string | null
@@ -153,6 +160,7 @@ type InventoryCheckItemsTable = {
         lot_item_id?: string | null
         product_id: string
         system_quantity?: number
+        lot_system_quantity?: number
         actual_quantity?: number | null
         difference?: number
         unit?: string | null
@@ -171,6 +179,7 @@ type InventoryCheckItemsTable = {
         lot_item_id?: string | null
         product_id?: string
         system_quantity?: number
+        lot_system_quantity?: number
         actual_quantity?: number | null
         difference?: number
         unit?: string | null

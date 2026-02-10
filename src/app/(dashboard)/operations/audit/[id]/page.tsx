@@ -26,7 +26,8 @@ export default function AuditDetailPage() {
         approveSession,
         rejectSession,
         quickFill,
-        linkAdjustmentTicket
+        linkAdjustmentTicket,
+        confirmLotAdjustment
     } = useAudit()
     const { currentSystem } = useSystem()
     const { hasPermission } = useUser()
@@ -48,8 +49,7 @@ export default function AuditDetailPage() {
         return sessionItems.filter(item => {
             const matchesSearch =
                 item.products?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                item.products?.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                item.lots?.code.toLowerCase().includes(searchTerm.toLowerCase())
+                item.products?.sku.toLowerCase().includes(searchTerm.toLowerCase())
 
             if (!matchesSearch) return false
 
@@ -60,18 +60,9 @@ export default function AuditDetailPage() {
         })
     }, [sessionItems, searchTerm, filterMode])
 
-    // Grouping by Lot then Product
-    const groupedItems = useMemo(() => {
-        const lotGroups: Record<string, Record<string, typeof sessionItems>> = {}
-        filteredItems.forEach(item => {
-            const lotKey = item.lots?.code || 'NO_LOT'
-            const productKey = item.product_id
-
-            if (!lotGroups[lotKey]) lotGroups[lotKey] = {}
-            if (!lotGroups[lotKey][productKey]) lotGroups[lotKey][productKey] = []
-            lotGroups[lotKey][productKey].push(item)
-        })
-        return lotGroups
+    // Sorting by product name
+    const sortedItems = useMemo(() => {
+        return [...filteredItems].sort((a, b) => (a.products?.name || '').localeCompare(b.products?.name || ''))
     }, [filteredItems])
 
     // Classified items for adjustment tickets
@@ -126,6 +117,7 @@ export default function AuditDetailPage() {
                 hasLoss={lossItems.length > 0}
                 onOpenInbound={() => setActiveModal('INBOUND')}
                 onOpenOutbound={() => setActiveModal('OUTBOUND')}
+                onConfirmLot={() => confirmLotAdjustment(id)}
             />
 
             {/* Session Metadata (Participants & Scope) */}
@@ -164,7 +156,8 @@ export default function AuditDetailPage() {
             <ApproveAuditModal
                 isOpen={showApproveModal}
                 onClose={() => setShowApproveModal(false)}
-                onApprove={(method) => approveSession(id, method)}
+                onApprove={() => approveSession(id)}
+                lotMismatchCount={currentSession.stats?.balancing?.lotMismatchCount}
             />
 
             <InboundOrderModal
@@ -203,7 +196,7 @@ export default function AuditDetailPage() {
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                         <input
                             type="text"
-                            placeholder="Tìm sản phẩm, SKU, hoặc mã Lot..."
+                            placeholder="Tìm sản phẩm hoặc SKU..."
                             className="w-full h-12 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none shadow-sm transition-all text-sm"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
@@ -233,33 +226,19 @@ export default function AuditDetailPage() {
                     </div>
                 </div>
 
-                {/* Content Grouped by Lot */}
                 <div className="space-y-6">
-                    {Object.entries(groupedItems).map(([lotCode, productGroups]) => (
-                        <div key={lotCode} className="space-y-3">
-                            <div className="flex items-center gap-2 px-1">
-                                <Layers size={16} className="text-slate-400" />
-                                <h3 className="font-bold text-slate-700 dark:text-slate-300">
-                                    Lot: {lotCode === 'NO_LOT' ? 'Không xác định' : lotCode}
-                                </h3>
-                                <span className="text-xs font-medium text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
-                                    {Object.keys(productGroups).length} sản phẩm
-                                </span>
-                            </div>
-                            <div className="space-y-3">
-                                {Object.entries(productGroups).map(([productId, items]) => (
-                                    <AuditItemCard
-                                        key={productId}
-                                        items={items}
-                                        onUpdate={updateItem}
-                                        onAddFeedback={addFeedback}
-                                        readonly={currentSession.status === 'WAITING_FOR_APPROVAL' || currentSession.status === 'COMPLETED'}
-                                        canApprove={canApprove && currentSession.status === 'WAITING_FOR_APPROVAL'}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-                    ))}
+                    <div className="space-y-3">
+                        {sortedItems.map((item) => (
+                            <AuditItemCard
+                                key={item.id}
+                                items={[item]} // Wrap in array as component expects list of units for same product
+                                onUpdate={updateItem}
+                                onAddFeedback={addFeedback}
+                                readonly={currentSession.status === 'WAITING_FOR_APPROVAL' || currentSession.status === 'COMPLETED'}
+                                canApprove={canApprove && currentSession.status === 'WAITING_FOR_APPROVAL'}
+                            />
+                        ))}
+                    </div>
 
                     {filteredItems.length === 0 && (
                         <div className="text-center py-12 text-slate-400">

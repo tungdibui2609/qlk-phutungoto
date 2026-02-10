@@ -151,7 +151,7 @@ export function AuditSessionList({ sessions, loading, onDelete }: AuditSessionLi
                                         </div>
 
                                         {/* Balancing Progress Bar */}
-                                        {session.status === 'COMPLETED' && session.stats.balancing && (
+                                        {['WAITING_FOR_APPROVAL', 'COMPLETED'].includes(session.status) && session.stats.balancing && (
                                             <div className="space-y-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/50">
                                                 <div className="flex justify-end items-center text-[10px] font-bold">
                                                     <span className="text-blue-600 dark:text-blue-400 flex items-center gap-1.5">

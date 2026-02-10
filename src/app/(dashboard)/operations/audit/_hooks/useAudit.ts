@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
 import { useRouter } from 'next/navigation'
 import { logActivity } from '@/lib/audit'
+import { getPhysicalInventorySnapshot } from '@/lib/inventoryService'
 
 export type InventoryCheck = TypedDatabase['public']['Tables']['inventory_checks']['Row'] & {
     user_profiles?: { full_name: string | null }
@@ -22,6 +23,7 @@ export type InventoryCheck = TypedDatabase['public']['Tables']['inventory_checks
             total: number
             completed: number
             percent: number
+            lotMismatchCount?: number
         }
     }
 }
@@ -50,20 +52,24 @@ export function useAudit() {
             const counted = sessionItems.filter(i => i.actual_quantity !== null).length
             const progress = total > 0 ? Math.round((counted / total) * 100) : 0
 
-            // Calculate balancing progress if completed
+            // Calculate balancing progress if needed
             let balancing = undefined
-            if (currentSession.status === 'COMPLETED') {
+            if (['WAITING_FOR_APPROVAL', 'COMPLETED'].includes(currentSession.status)) {
                 const hasSurplus = sessionItems.some(i => i.actual_quantity !== null && i.difference > 0)
                 const hasLoss = sessionItems.some(i => i.actual_quantity !== null && i.difference < 0)
+                const hasLotMismatch = sessionItems.some(i => i.actual_quantity !== null && i.actual_quantity !== i.lot_system_quantity)
+                const lotMismatchCount = sessionItems.filter(i => i.actual_quantity !== null && i.actual_quantity !== i.lot_system_quantity).length
 
-                const balTotal = (hasSurplus ? 1 : 0) + (hasLoss ? 1 : 0)
+                const balTotal = (hasSurplus ? 1 : 0) + (hasLoss ? 1 : 0) + (hasLotMismatch ? 1 : 0)
                 if (balTotal > 0) {
                     const balCompleted = (currentSession.adjustment_inbound_order_id ? 1 : 0) +
-                        (currentSession.adjustment_outbound_order_id ? 1 : 0)
+                        (currentSession.adjustment_outbound_order_id ? 1 : 0) +
+                        (currentSession.lot_adjusted_at ? 1 : 0)
                     balancing = {
                         total: balTotal,
                         completed: balCompleted,
-                        percent: Math.round((balCompleted / balTotal) * 100)
+                        percent: Math.round((balCompleted / balTotal) * 100),
+                        lotMismatchCount
                     }
                 }
             }
@@ -177,7 +183,7 @@ export function useAudit() {
             const sessionIds = data.map((s: any) => s.id)
             const { data: items } = await supabase
                 .from('inventory_check_items')
-                .select('check_id, actual_quantity, system_quantity')
+                .select('check_id, actual_quantity, system_quantity, lot_system_quantity, difference')
                 .in('check_id', sessionIds)
 
             const sessionsWithStats = data.map((s: any) => {
@@ -186,20 +192,24 @@ export function useAudit() {
                 const counted = sItems.filter(i => i.actual_quantity !== null).length
                 const progress = total > 0 ? Math.round((counted / total) * 100) : 0
 
-                // Calculate balancing progress if completed
+                // Calculate balancing progress if applicable
                 let balancing = undefined
-                if (s.status === 'COMPLETED') {
-                    const hasSurplus = sItems.some(i => i.actual_quantity !== null && (i.actual_quantity - (i as any).system_quantity) > 0)
-                    const hasLoss = sItems.some(i => i.actual_quantity !== null && (i.actual_quantity - (i as any).system_quantity) < 0)
+                if (['WAITING_FOR_APPROVAL', 'COMPLETED'].includes(s.status)) {
+                    const hasSurplus = sItems.some(i => i.actual_quantity !== null && i.difference > 0)
+                    const hasLoss = sItems.some(i => i.actual_quantity !== null && i.difference < 0)
+                    const hasLotMismatch = sItems.some(i => i.actual_quantity !== null && i.actual_quantity !== i.lot_system_quantity)
+                    const lotMismatchCount = sItems.filter(i => i.actual_quantity !== null && i.actual_quantity !== i.lot_system_quantity).length
 
-                    const balTotal = (hasSurplus ? 1 : 0) + (hasLoss ? 1 : 0)
+                    const balTotal = (hasSurplus ? 1 : 0) + (hasLoss ? 1 : 0) + (hasLotMismatch ? 1 : 0)
                     if (balTotal > 0) {
                         const balCompleted = (s.adjustment_inbound_order_id ? 1 : 0) +
-                            (s.adjustment_outbound_order_id ? 1 : 0)
+                            (s.adjustment_outbound_order_id ? 1 : 0) +
+                            (s.lot_adjusted_at ? 1 : 0)
                         balancing = {
                             total: balTotal,
                             completed: balCompleted,
-                            percent: Math.round((balCompleted / balTotal) * 100)
+                            percent: Math.round((balCompleted / balTotal) * 100),
+                            lotMismatchCount
                         }
                     }
                 }
@@ -284,6 +294,14 @@ export function useAudit() {
             const accData = await accRes.json()
             const inventorySnapshot = accData.items || []
 
+            // 3b. Fetch Physical Inventory (From Lots)
+            let lotTotals = new Map<string, number>()
+            try {
+                lotTotals = await getPhysicalInventorySnapshot(supabase, currentSystem.code, warehouseName || undefined)
+            } catch (err) {
+                console.error('Error fetching lot snapshot:', err)
+            }
+
             // 4. Prepare Bulk Insert
             const checkItems: any[] = []
             const processedKeys = new Set<string>() // PID_UNIT
@@ -299,6 +317,7 @@ export function useAudit() {
             // 4a. Add rows for everything in the inventory snapshot
             inventorySnapshot.forEach((inv: any) => {
                 const key = `${inv.productId}_${inv.unit || 'Cái'}`
+                const physicalQty = lotTotals.get(key) || 0
 
                 let shouldAdd = true
 
@@ -322,6 +341,7 @@ export function useAudit() {
                         product_sku: inv.productCode,
                         product_name: inv.productName,
                         system_quantity: inv.balance,
+                        lot_system_quantity: physicalQty,
                         actual_quantity: null,
                         difference: 0 - inv.balance,
                         unit: inv.unit || 'Cái',
@@ -345,6 +365,8 @@ export function useAudit() {
                         }
 
                         const key = `${ps.productId}_${unit}`
+                        const physicalQty = lotTotals.get(key) || 0
+
                         if (!processedKeys.has(key)) {
                             checkItems.push({
                                 check_id: checkId,
@@ -354,6 +376,7 @@ export function useAudit() {
                                 product_sku: p.sku,
                                 product_name: p.name,
                                 system_quantity: 0,
+                                lot_system_quantity: physicalQty,
                                 actual_quantity: null,
                                 difference: 0,
                                 unit: unit,
@@ -380,6 +403,8 @@ export function useAudit() {
                     const hasAnyUnit = Array.from(processedKeys).some(k => k.startsWith(p.id + '_'))
 
                     if (!hasAnyUnit) {
+                        const physicalQty = lotTotals.get(key) || 0
+
                         checkItems.push({
                             check_id: checkId,
                             lot_id: null,
@@ -388,6 +413,7 @@ export function useAudit() {
                             product_sku: p.sku,
                             product_name: p.name,
                             system_quantity: 0,
+                            lot_system_quantity: physicalQty,
                             actual_quantity: null,
                             difference: 0,
                             unit: defaultUnit,
@@ -468,20 +494,24 @@ export function useAudit() {
         const counted = rawItems.filter(i => i.actual_quantity !== null).length
         const progress = total > 0 ? Math.round((counted / total) * 100) : 0
 
-        // Calculate balancing progress if completed
+        // Calculate balancing progress if applicable
         let balancing = undefined
-        if ((check as any).status === 'COMPLETED') {
+        if (['WAITING_FOR_APPROVAL', 'COMPLETED'].includes((check as any).status)) {
             const hasSurplus = rawItems.some(i => i.actual_quantity !== null && i.difference > 0)
             const hasLoss = rawItems.some(i => i.actual_quantity !== null && i.difference < 0)
+            const hasLotMismatch = rawItems.some(i => i.actual_quantity !== null && i.actual_quantity !== i.lot_system_quantity)
+            const lotMismatchCount = rawItems.filter(i => i.actual_quantity !== null && i.actual_quantity !== i.lot_system_quantity).length
 
-            const balTotal = (hasSurplus ? 1 : 0) + (hasLoss ? 1 : 0)
+            const balTotal = (hasSurplus ? 1 : 0) + (hasLoss ? 1 : 0) + (hasLotMismatch ? 1 : 0)
             if (balTotal > 0) {
                 const balCompleted = ((check as any).adjustment_inbound_order_id ? 1 : 0) +
-                    ((check as any).adjustment_outbound_order_id ? 1 : 0)
+                    ((check as any).adjustment_outbound_order_id ? 1 : 0) +
+                    ((check as any).lot_adjusted_at ? 1 : 0)
                 balancing = {
                     total: balTotal,
                     completed: balCompleted,
-                    percent: Math.round((balCompleted / balTotal) * 100)
+                    percent: Math.round((balCompleted / balTotal) * 100),
+                    lotMismatchCount
                 }
             }
         }
@@ -674,92 +704,35 @@ export function useAudit() {
     }
 
     // Approve Session
-    const approveSession = async (checkId: string, method: 'DIRECT_ADJUSTMENT' | 'ACCOUNTING_TICKET') => {
+    const approveSession = async (checkId: string) => {
         if (!user) return
         if (!await showConfirm('Xác nhận duyệt phiếu và cân bằng kho?')) return
 
         setLoading(true)
         try {
-            // 1. Get latest items state
-            const { data: items, error: itemsError } = await supabase
-                .from('inventory_check_items')
-                .select('*')
-                .eq('check_id', checkId)
-
-            if (itemsError) throw itemsError
-
-            const affectedLotIds = new Set<string>()
-            const surplusItems: any[] = []
-            const lossItems: any[] = []
-
-            // 2. Iterate and Update Lot Items (Parallel)
-            const updatePromises = items.map(async (item) => {
-                // Only process items that have been counted (actual_quantity !== null) AND have a difference
-                if (item.actual_quantity !== null && item.difference !== 0) {
-                    // Classify for Ticket (EVERYTHING with a difference goes here)
-                    if (item.difference > 0) surplusItems.push(item)
-                    else if (item.difference < 0) lossItems.push(item)
-
-                    // Update Lot Item Quantity (ONLY if physical lot item exists)
-                    if (item.lot_item_id) {
-                        const { error: updateError } = await supabase
-                            .from('lot_items')
-                            .update({ quantity: item.actual_quantity })
-                            .eq('id', item.lot_item_id)
-
-                        if (updateError) {
-                            console.error(`Failed to update lot item ${item.lot_item_id}`, updateError)
-                        } else if (item.lot_id) {
-                            affectedLotIds.add(item.lot_id)
-                        }
-                    }
-                }
+            const { data, error } = await (supabase.rpc as any)('approve_inventory_check', {
+                p_check_id: checkId,
+                p_reviewer_id: user.id
             })
-            await Promise.all(updatePromises)
 
-            // 3. Sync Lots Quantity and Log Activity (Parallel by Lot)
-            const syncPromises = Array.from(affectedLotIds).map(async (lotId) => {
-                // Recalculate total quantity for the lot
-                const { data: lotItemsData } = await supabase
-                    .from('lot_items')
-                    .select('quantity')
-                    .eq('lot_id', lotId)
+            if (error) throw error
 
-                if (lotItemsData) {
-                    const newTotalQty = lotItemsData.reduce((sum, i) => sum + (i.quantity || 0), 0)
+            const result = data as any
+            if (!result.success) {
+                throw new Error(result.message)
+            }
 
-                    // Update Lot
-                    await supabase
-                        .from('lots')
-                        .update({ quantity: newTotalQty })
-                        .eq('id', lotId)
-
-                    // Log
-                    await logActivity({
-                        supabase,
-                        tableName: 'lots',
-                        recordId: lotId,
-                        action: 'UPDATE',
-                        newData: { quantity: newTotalQty, note: 'Inventory Audit Adjustment (Approved)' },
-                        oldData: { note: 'Previous Quantity Unknown' }
-                    })
-                }
+            // Log activity for the check itself (optional, the individual logs are harder via RPC without complex logic)
+            await logActivity({
+                supabase,
+                tableName: 'inventory_checks',
+                recordId: checkId,
+                action: 'UPDATE',
+                newData: { status: 'COMPLETED', approval_status: 'APPROVED' },
+                oldData: { status: 'WAITING_FOR_APPROVAL' }
             })
-            await Promise.all(syncPromises)
 
-            // 4. Mark Approved and Completed
-            await supabase
-                .from('inventory_checks')
-                .update({
-                    status: 'COMPLETED',
-                    approval_status: 'APPROVED',
-                    reviewer_id: user.id,
-                    reviewed_at: new Date().toISOString(),
-                    completed_at: new Date().toISOString()
-                })
-                .eq('id', checkId)
-
-            showToast('Đã duyệt và cân bằng kho thành công', 'success')
+            showToast(result.message || 'Đã duyệt và cân bằng kho thành công', 'success')
             router.push('/operations/audit')
 
         } catch (error: any) {
@@ -839,21 +812,78 @@ export function useAudit() {
         })
         setSessionItems(newItems)
 
-        // Chunked updates
-        const chunkSize = 50 // Smaller chunks for updates
-        for (let i = 0; i < itemsToUpdate.length; i += chunkSize) {
-            const chunk = itemsToUpdate.slice(i, i + chunkSize)
-            const promises = chunk.map(item =>
-                supabase.from('inventory_check_items').update({
-                    actual_quantity: item.system_quantity,
-                    difference: 0
-                }).eq('id', item.id)
-            )
-            await Promise.all(promises)
-        }
+        try {
+            // Bulk update using upsert or multiple update calls in chunks
+            // Supabase doesn't support a true bulk UPDATE with different values easily in a single call 
+            // without a specific RPC, but we can use upsert with id
+            const updates = itemsToUpdate.map(item => ({
+                id: item.id,
+                check_id: item.check_id,
+                product_id: item.product_id,
+                actual_quantity: item.system_quantity,
+                difference: 0
+            }))
 
-        setLoading(false)
-        showToast('Đã điền tự động', 'success')
+            const chunkSize = 100
+            for (let i = 0; i < updates.length; i += chunkSize) {
+                const chunk = updates.slice(i, i + chunkSize)
+                const { error } = await supabase
+                    .from('inventory_check_items')
+                    .upsert(chunk, { onConflict: 'id' })
+
+                if (error) throw error
+            }
+
+            showToast('Đã điền tự động', 'success')
+        } catch (error: any) {
+            console.error('Error in quickFill:', error)
+            showToast('Lỗi điền tự động: ' + error.message, 'error')
+            // Optionally revert sessionItems here, but since it's a large update, 
+            // fetching the latest might be better
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const confirmLotAdjustment = async (checkId: string) => {
+        if (!user) return
+
+        setLoading(true)
+        try {
+            const now = new Date().toISOString()
+            const { error } = await supabase
+                .from('inventory_checks')
+                .update({
+                    lot_adjusted_at: now,
+                    lot_adjusted_by: user.id
+                })
+                .eq('id', checkId)
+
+            if (error) throw error
+
+            if (currentSession?.id === checkId) {
+                setCurrentSession(prev => prev ? {
+                    ...prev,
+                    lot_adjusted_at: now,
+                    lot_adjusted_by: user.id
+                } : null)
+            }
+
+            showToast('Đã xác nhận rà soát LOT', 'success')
+            logActivity({
+                supabase,
+                tableName: 'inventory_checks',
+                recordId: checkId,
+                action: 'UPDATE',
+                userId: user.id,
+                newData: { lot_adjusted_at: now, lot_adjusted_by: user.id }
+            })
+        } catch (error: any) {
+            console.error('Error confirming LOT adjustment:', error)
+            showToast('Lỗi xác nhận: ' + error.message, 'error')
+        } finally {
+            setLoading(false)
+        }
     }
 
     return {
@@ -871,6 +901,7 @@ export function useAudit() {
         rejectSession,
         deleteSession,
         quickFill,
-        linkAdjustmentTicket
+        linkAdjustmentTicket,
+        confirmLotAdjustment
     }
 }

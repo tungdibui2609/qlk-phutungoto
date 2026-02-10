@@ -6,6 +6,7 @@ import { Loader2, AlertTriangle, CheckCircle, Printer, ChevronDown, Warehouse } 
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import MobileReconciliationList from './MobileReconciliationList'
+import { getLotInventoryForReconciliation } from '@/lib/inventoryService'
 
 // Types
 interface AccountingItem {
@@ -96,32 +97,8 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
                 accountingMap.set(key, current)
             })
 
-            // 2. Fetch LOT Inventory (Active lots with their items)
-            let lotQuery = supabase
-                .from('lots')
-                .select(`
-                    id,
-                    product_id,
-                    quantity,
-                    warehouse_name,
-                    lot_items (
-                        product_id,
-                        quantity,
-                        unit,
-                        products (name, sku, unit, system_type)
-                    ),
-                    products (name, sku, unit, system_type)
-                `)
-                .eq('status', 'active')
-                .eq('system_code', systemType)
-
-            if (selectedBranch && selectedBranch !== "Tất cả") {
-                lotQuery = lotQuery.eq('warehouse_name', selectedBranch)
-            }
-
-            const { data: lots, error } = await lotQuery
-
-            if (error) throw error
+            // 2. Fetch LOT Inventory (Active lots with their items) using shared service
+            const lots = await getLotInventoryForReconciliation(supabase, systemType, selectedBranch || undefined)
 
             // 3. Aggregate Lot Data by Product + Unit
             const lotQtyMap = new Map<string, { qty: number, code: string, name: string, unit: string, productId: string }>()

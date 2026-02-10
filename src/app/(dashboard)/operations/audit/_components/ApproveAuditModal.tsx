@@ -1,21 +1,22 @@
 'use client'
 
 import { useState } from 'react'
-import { X, CheckCircle, Scale, FileText, AlertTriangle } from 'lucide-react'
+import { X, CheckCircle, Scale, FileText, AlertTriangle, ShieldCheck } from 'lucide-react'
 
 interface ApproveAuditModalProps {
     isOpen: boolean
     onClose: () => void
-    onApprove: (method: 'DIRECT_ADJUSTMENT' | 'ACCOUNTING_TICKET') => Promise<void>
+    onApprove: () => Promise<void>
+    lotMismatchCount?: number
 }
 
-export function ApproveAuditModal({ isOpen, onClose, onApprove }: ApproveAuditModalProps) {
+export function ApproveAuditModal({ isOpen, onClose, onApprove, lotMismatchCount }: ApproveAuditModalProps) {
     const [method, setMethod] = useState<'DIRECT_ADJUSTMENT' | 'ACCOUNTING_TICKET'>('ACCOUNTING_TICKET')
     const [loading, setLoading] = useState(false)
 
     const handleConfirm = async () => {
         setLoading(true)
-        await onApprove(method)
+        await onApprove()
         setLoading(false)
         onClose()
     }
@@ -66,6 +67,19 @@ export function ApproveAuditModal({ isOpen, onClose, onApprove }: ApproveAuditMo
                             </div>
                         </label>
                     </div>
+
+                    {lotMismatchCount && lotMismatchCount > 0 ? (
+                        <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 p-4 rounded-xl space-y-2">
+                            <div className="flex items-center gap-2 text-purple-700 dark:text-purple-400 font-bold text-sm">
+                                <ShieldCheck size={18} />
+                                Yêu cầu rà soát LOT ({lotMismatchCount} mã lệch)
+                            </div>
+                            <p className="text-xs text-purple-600 dark:text-purple-400 leading-relaxed">
+                                Phát hiện sai lệch giữa số lượng đếm thực tế và dữ liệu Lô (LOT).
+                                Bạn cần <b>rà soát và điều chỉnh thủ công</b> các vị trí Lô sau khi duyệt phiếu này để đảm bảo dữ liệu khớp chính xác.
+                            </p>
+                        </div>
+                    ) : null}
 
                     <div className="bg-amber-50 text-amber-800 text-xs p-3 rounded-lg border border-amber-100 flex gap-2">
                         <AlertTriangle size={14} className="shrink-0 mt-0.5" />
