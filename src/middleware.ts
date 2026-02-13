@@ -1,4 +1,5 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
@@ -66,12 +67,28 @@ export async function middleware(request: NextRequest) {
     const isCustomDomain = !hostname.includes('localhost') && !hostname.includes('vercel.app') && !hostname.includes('toanthang.vn')
 
     if (isCustomDomain && !path.startsWith('/_next') && !path.startsWith('/static')) {
+        // Use Service Role for Lookup to bypass RLS issues
+        const supabaseAdmin = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY! || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            {
+                auth: {
+                    persistSession: false,
+                    autoRefreshToken: false,
+                }
+            }
+        )
+
         // Look up company by domain
-        const { data: company } = await supabase
+        const { data: company, error } = await supabaseAdmin
             .from('companies')
             .select('id, name')
             .eq('custom_domain', hostname)
             .single()
+
+        if (error) {
+            console.log('[Middleware] Domain Lookup Error:', error.message)
+        }
 
         if (company) {
             // Found company for this domain
