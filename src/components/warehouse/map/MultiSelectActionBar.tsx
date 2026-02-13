@@ -20,6 +20,7 @@ interface MultiSelectActionBarProps {
     onClear: () => void
     onTag: (lotId: string) => void
     onBulkExport: () => void
+    onExportOrder: (positionIds: string[], lotIds: string[]) => void
 }
 
 export default function MultiSelectActionBar({
@@ -28,7 +29,8 @@ export default function MultiSelectActionBar({
     lotInfo,
     onClear,
     onTag,
-    onBulkExport
+    onBulkExport,
+    onExportOrder
 }: MultiSelectActionBarProps) {
 
     // Get selected positions data
@@ -127,11 +129,12 @@ export default function MultiSelectActionBar({
                         {/* Action buttons group */}
                         <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar">
                             <button
+                                onClick={() => onExportOrder(Array.from(selectedPositionIds), Array.from(selectedLotIds))}
                                 className="flex items-center gap-2 px-2 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all active:scale-95 group whitespace-nowrap"
-                                title="Tạo lệnh xuất"
+                                title="Lệnh xuất kho"
                             >
                                 <FileOutput size={14} className="text-blue-500 group-hover:scale-110 transition-transform" />
-                                <span>Tạo lệnh xuất</span>
+                                <span>Lệnh xuất kho</span>
                             </button>
 
                             <button

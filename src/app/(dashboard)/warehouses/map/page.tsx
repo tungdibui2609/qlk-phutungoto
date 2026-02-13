@@ -659,6 +659,13 @@ function WarehouseMapContent() {
     const totalPositions = positions.length
     const totalZones = zones.length
 
+    function handleExportOrder(positionIds: string[], lotIds: string[]) {
+        const params = new URLSearchParams()
+        if (positionIds.length > 0) params.set('posIds', positionIds.join(','))
+        if (lotIds.length > 0) params.set('lotIds', lotIds.join(','))
+        router.push(`/work/export-order?${params.toString()}`)
+    }
+
     return (
         <div className="space-y-4">
             {/* Header */}
@@ -841,6 +848,7 @@ function WarehouseMapContent() {
                 onClear={clearSelection}
                 onTag={(lotId) => setTaggingLotId(lotId)}
                 onBulkExport={() => setIsBulkExportOpen(true)}
+                onExportOrder={handleExportOrder}
             />
 
             {/* Quick Bulk Export Modal */}

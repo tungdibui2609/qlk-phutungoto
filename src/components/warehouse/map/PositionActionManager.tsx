@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft } from 'lucide-react'
+import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft, FileOutput } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 
 import { LotForm } from '@/app/(dashboard)/warehouses/lots/_components/LotForm'
@@ -80,10 +80,17 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
         })
     }
 
-    const handleMenuAction = async (action: 'create' | 'edit' | 'assign' | 'move') => {
+    const handleMenuAction = async (action: 'create' | 'edit' | 'assign' | 'move' | 'export') => {
         if (!contextMenu?.position) return
         const pos = contextMenu.position
         setContextMenu(null)
+
+        if (action === 'export') {
+            const lotId = pos.lot_id
+            const posId = pos.id
+            window.location.href = `/work/export-order?posIds=${posId}&lotIds=${lotId || ''}`
+            return
+        }
 
         if (action === 'assign') {
             alert('Tính năng chọn LOT có sẵn đang phát triển')
@@ -158,6 +165,13 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
                                 >
                                     <Edit size={16} className="text-blue-500" />
                                     <span>Sửa thông tin LOT</span>
+                                </button>
+                                <button
+                                    onClick={() => handleMenuAction('export')}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors text-left"
+                                >
+                                    <FileOutput size={16} className="text-emerald-500" />
+                                    <span>Lệnh xuất kho</span>
                                 </button>
                                 <button
                                     onClick={() => handleMenuAction('move')}

@@ -213,6 +213,104 @@ export type Database = {
         }
         Relationships: []
       }
+      export_task_items: {
+        Row: {
+          created_at: string
+          id: string
+          lot_id: string | null
+          position_id: string | null
+          product_id: string | null
+          quantity: number
+          status: string | null
+          task_id: string
+          unit: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lot_id?: string | null
+          position_id?: string | null
+          product_id?: string | null
+          quantity: number
+          status?: string | null
+          task_id: string
+          unit?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lot_id?: string | null
+          position_id?: string | null
+          product_id?: string | null
+          quantity?: number
+          status?: string | null
+          task_id?: string
+          unit?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "export_task_items_lot_id_fkey"
+            columns: ["lot_id"]
+            isOneToOne: false
+            referencedRelation: "lots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "export_task_items_position_id_fkey"
+            columns: ["position_id"]
+            isOneToOne: false
+            referencedRelation: "positions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "export_task_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "export_task_items_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "export_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      export_tasks: {
+        Row: {
+          code: string
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          status: string
+          system_code: string | null
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          status?: string
+          system_code?: string | null
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          status?: string
+          system_code?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           address: string | null

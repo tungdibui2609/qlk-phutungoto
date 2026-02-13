@@ -1,38 +1,242 @@
 'use client'
 
-import React from 'react'
-import { FileText, Hammer } from 'lucide-react'
+import React, { Suspense, useState, useEffect, useMemo } from 'react'
+import { FileText, LayoutList, Loader2, Trash2, Printer } from 'lucide-react'
+import { useSearchParams, useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabaseClient'
+import { format } from 'date-fns'
+import { useToast } from '@/components/ui/ToastProvider'
+import { useSystem } from '@/contexts/SystemContext'
+
+// Types for DB Data
+interface ExportOrderItem {
+    id?: string
+    lot_code: string
+    position_name: string
+    product_name: string
+    sku: string
+    quantity: number
+    unit: string
+    lot_id?: string
+    position_id?: string
+    product_id?: string
+    status: string // status for individual item
+    notes?: string | null
+    // Additional data for display
+    product_image?: string
+    lot_inbound_date?: string
+}
+
+interface ExportTask {
+    id: string
+    code: string
+    status: string
+    created_at: string
+    created_by_name?: string // Join with user_profiles
+    items_count?: number
+    notes?: string | null
+    items?: ExportOrderItem[]
+    created_by?: { full_name: string } | null
+    export_task_items?: { count: number }[] | null
+}
+
+function ExportOrderContent() {
+    const searchParams = useSearchParams()
+    const router = useRouter()
+    const { showToast, showConfirm } = useToast()
+
+    // State
+    const [tasks, setTasks] = useState<ExportTask[]>([])
+    const [loading, setLoading] = useState(true)
+
+    useEffect(() => {
+        fetchTasks()
+    }, [])
+
+    const fetchTasks = async () => {
+        try {
+            setLoading(true)
+            // 1. Fetch tasks and item counts
+            const { data: tasksData, error: tasksError } = await supabase
+                .from('export_tasks')
+                .select('*, export_task_items(count)')
+                .order('created_at', { ascending: false })
+
+            if (tasksError) throw tasksError
+
+            // 2. Extract unique creator IDs
+            const userIds = Array.from(new Set((tasksData || []).map(t => t.created_by).filter(Boolean)))
+
+            // 3. Fetch user profiles safely
+            let userMap: Record<string, string> = {}
+            if (userIds.length > 0) {
+                const { data: usersData } = await supabase
+                    .from('user_profiles')
+                    .select('id, full_name')
+                    .in('id', userIds as string[])
+                if (usersData) {
+                    usersData.forEach((u: any) => {
+                        userMap[u.id] = u.full_name
+                    })
+                }
+            }
+
+            // 4. Map data
+            const formattedTasks: ExportTask[] = (tasksData || []).map((t) => {
+                const task = t
+                return {
+                    id: task.id,
+                    code: task.code,
+                    status: task.status,
+                    created_at: task.created_at,
+                    notes: task.notes,
+                    // Map name from userMap
+                    created_by_name: task.created_by ? (userMap[task.created_by] || 'Unknown') : 'Unknown',
+                    items_count: task.export_task_items?.[0]?.count || 0
+                }
+            })
+
+            setTasks(formattedTasks)
+        } catch (error) {
+            console.error('Error fetching export tasks:', error)
+            showToast('Lỗi tải danh sách lệnh xuất', 'error')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const handleDeleteTask = async (id: string, e: React.MouseEvent) => {
+        e.stopPropagation()
+
+        const confirmed = await showConfirm('Bạn có chắc chắn muốn xóa lệnh xuất kho này? Hành động này không thể hoàn tác.')
+
+        if (confirmed) {
+            try {
+                // Delete items first (cascade should handle but manual is safer)
+                const { error: itemsError } = await supabase
+                    .from('export_task_items')
+                    .delete()
+                    .eq('task_id', id)
+
+                if (itemsError) throw itemsError
+
+                const { error } = await supabase
+                    .from('export_tasks')
+                    .delete()
+                    .eq('id', id)
+
+                if (error) throw error
+
+                showToast('Đã xóa lệnh xuất kho', 'success')
+                fetchTasks()
+            } catch (error) {
+                console.error('Error deleting task:', error)
+                showToast('Không thể xóa lệnh xuất kho', 'error')
+            }
+        }
+    }
+
+
+    return (
+        <div className="p-6 max-w-7xl mx-auto space-y-6 pb-24 h-full">
+            {/* Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-stone-800 dark:text-stone-100 flex items-center gap-3">
+                        <LayoutList className="text-blue-600" />
+                        Danh sách Lệnh Xuất Kho
+                    </h1>
+                    <p className="text-stone-500 dark:text-stone-400 mt-1">Quản lý các yêu cầu xuất hàng từ kho</p>
+                </div>
+            </div>
+
+            {/* List */}
+            {loading ? (
+                <div className="flex justify-center p-12">
+                    <Loader2 className="animate-spin text-blue-600" size={32} />
+                </div>
+            ) : (
+                <div className="grid gap-4">
+                    {tasks.length === 0 ? (
+                        <div className="text-center p-12 bg-stone-50 rounded-xl border border-dashed border-stone-200">
+                            <FileText className="mx-auto text-stone-300 mb-4" size={48} />
+                            <p className="text-stone-500 font-medium">Chưa có lệnh xuất kho nào</p>
+                        </div>
+                    ) : (
+                        tasks.map((task) => (
+                            <div
+                                key={task.id}
+                                className="bg-white dark:bg-zinc-800 rounded-xl border border-stone-200 dark:border-zinc-700 shadow-sm overflow-hidden hover:shadow-md transition-shadow group"
+                            >
+                                <div
+                                    className="p-4 flex items-center justify-between cursor-pointer hover:bg-stone-50 dark:hover:bg-zinc-700/50 transition-colors"
+                                    onClick={() => router.push(`/work/export-order/${task.id}`)}
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <div className="p-2 rounded-full bg-stone-100 text-stone-400">
+                                            <FileText size={20} />
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-3">
+                                                <h3 className="text-lg font-black text-blue-600 dark:text-blue-400 font-mono tracking-tight">{task.code}</h3>
+                                                {format(new Date(), 'yyyy-MM-dd') === format(new Date(task.created_at), 'yyyy-MM-dd') && (
+                                                    <span className="bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase">Mới</span>
+                                                )}
+                                                <span className={`text-xs px-2 py-0.5 rounded-full font-bold uppercase
+                                                    ${task.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' :
+                                                        task.status === 'Completed' ? 'bg-green-100 text-green-700' :
+                                                            task.status === 'Cancelled' ? 'bg-red-100 text-red-700' :
+                                                                'bg-blue-100 text-blue-700'
+                                                    }
+                                                `}>
+                                                    {task.status === 'Pending' ? 'Chờ xử lý' :
+                                                        task.status === 'Completed' ? 'Hoàn thành' :
+                                                            task.status === 'Cancelled' ? 'Đã hủy' : 'Đang xử lý'}
+                                                </span>
+                                            </div>
+                                            <div className="text-sm text-stone-500 dark:text-zinc-400 flex items-center gap-2 mt-1">
+                                                <span>Tạo bởi: <span className="font-bold text-stone-700 dark:text-zinc-300">{task.created_by_name}</span></span>
+                                                <span>•</span>
+                                                <span className="font-mono">{format(new Date(task.created_at), 'HH:mm:ss dd/MM/yyyy')}</span>
+                                                <span>•</span>
+                                                <span className="font-bold">{task.items_count} mặt hàng</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                window.open(`/print/export-order?id=${task.id}`, '_blank')
+                                            }}
+                                            className="p-2 text-stone-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                            title="Chi tiết & In"
+                                        >
+                                            <Printer size={18} />
+                                        </button>
+                                        <button
+                                            onClick={(e) => handleDeleteTask(task.id, e)}
+                                            className="p-2 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                            title="Xóa"
+                                        >
+                                            <Trash2 size={18} />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            )}
+        </div>
+    )
+}
 
 export default function ExportOrderPage() {
     return (
-        <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center bg-white rounded-2xl border border-stone-200 shadow-sm m-6">
-            <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mb-6 animate-pulse">
-                <FileText size={40} className="text-orange-500" />
-            </div>
-
-            <h1 className="text-3xl font-bold text-stone-800 mb-4">Lệnh Xuất Kho</h1>
-
-            <div className="bg-orange-50 px-4 py-2 rounded-full flex items-center gap-2 mb-6">
-                <Hammer size={18} className="text-orange-600" />
-                <span className="text-orange-700 font-semibold text-sm">Đang trong quá trình phát triển</span>
-            </div>
-
-            <p className="text-stone-500 max-w-md mx-auto leading-relaxed">
-                Module lệnh xuất kho đang được xây dựng. Đây là nơi bạn sẽ quản lý, điều phối và theo dõi các lệnh xuất kho trong tương lai.
-            </p>
-
-            <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-2xl">
-                {[
-                    { label: 'Tạo lệnh mới', icon: FileText },
-                    { label: 'Phê duyệt lệnh', icon: Hammer },
-                    { label: 'Lịch sử điều phối', icon: FileText }
-                ].map((item, i) => (
-                    <div key={i} className="p-4 rounded-xl border border-stone-100 bg-stone-50 text-stone-400 flex flex-col items-center gap-2 opacity-60">
-                        <item.icon size={20} />
-                        <span className="text-xs font-medium">{item.label}</span>
-                    </div>
-                ))}
-            </div>
-        </div>
+        <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh] text-stone-400 font-bold">Đang tải dữ liệu...</div>}>
+            <ExportOrderContent />
+        </Suspense>
     )
 }
