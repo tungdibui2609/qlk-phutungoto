@@ -91,12 +91,7 @@ export function QrCodeModal({ lot, onClose }: QrCodeModalProps) {
                         <div className="text-[10px] font-mono text-blue-600 dark:text-blue-400 break-all mb-3 pb-3 border-b border-zinc-200 dark:border-zinc-700">
                             {scanUrl}
                         </div>
-                        <div className="flex justify-between items-start mb-2">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Dữ liệu hiển thị khi quét</span>
-                        </div>
-                        <pre className="text-[10px] font-mono text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap leading-relaxed">
-                            {qrValue}
-                        </pre>
+
                     </div>
 
                     <button

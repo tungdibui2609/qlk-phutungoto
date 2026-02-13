@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useUser } from '@/contexts/UserContext'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
@@ -8,8 +8,11 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { QrCode, RotateCcw, Boxes, MapPin, CheckCircle2, Loader2, Keyboard, Camera, X } from 'lucide-react'
 import { Scanner } from '@yudiel/react-qr-scanner'
 
-// Steps: 0 = Scan LOT, 1 = Scan Position, 2 = Success/Result
+import { ZoneCascadeSelector } from './_components/ZoneCascadeSelector'
+import { Database } from '@/lib/database.types'
+
 type ScanStep = 0 | 1 | 2
+type Zone = Database['public']['Tables']['zones']['Row']
 
 export default function FastScanPage() {
     const { checkSubscription, profile } = useUser()
@@ -18,7 +21,7 @@ export default function FastScanPage() {
 
     // State
     const [step, setStep] = useState<ScanStep>(0)
-    const [assignMode, setAssignMode] = useState<'manual' | 'scan'>('manual') // Mode 1: Manual, Mode 2: Scan
+    const [assignMode, setAssignMode] = useState<'manual' | 'scan' | 'auto'>('manual') // Mode 3: Auto
     const [useCamera, setUseCamera] = useState(true)
     const [manualCode, setManualCode] = useState('')
 
@@ -31,12 +34,17 @@ export default function FastScanPage() {
     const [allPositions, setAllPositions] = useState<{ id: string, code: string, lot_id: string | null }[]>([])
     const [suggestions, setSuggestions] = useState<{ id: string, code: string, lot_id: string | null }[]>([])
 
+    // Auto Assign Data
+    const [zones, setZones] = useState<Zone[]>([])
+    const [zonePositions, setZonePositions] = useState<{ zone_id: string, position_id: string }[]>([])
+    const [selectedTargetZoneId, setSelectedTargetZoneId] = useState<string | null>(null)
+
     const inputRef = useRef<HTMLInputElement>(null)
 
     // Check module permission
     const isAllowed = checkSubscription('utility_qr_assign')
 
-    // 0. Pre-fetch positions for fuzzy search
+    // 0. Fetch Data
     useEffect(() => {
         const fetchPositions = async () => {
             if (!currentSystem?.code) return
@@ -54,13 +62,36 @@ export default function FastScanPage() {
                 setAllPositions(data)
             }
         }
+
+        const fetchZonesAndMap = async () => {
+            if (!currentSystem?.code) return
+
+            // Zones
+            const { data: zData } = await supabase
+                .from('zones')
+                .select('*')
+                .eq('system_type', currentSystem.code)
+                .order('level')
+                .order('code')
+            if (zData) setZones(zData)
+
+            // Zone Positions
+            const { data: zpData } = await supabase
+                .from('zone_positions')
+                .select('zone_id, position_id, positions!inner(system_type)')
+                .eq('positions.system_type', currentSystem.code)
+
+            if (zpData) setZonePositions(zpData.map((x: any) => ({ zone_id: x.zone_id, position_id: x.position_id })))
+        }
+
         fetchPositions()
+        fetchZonesAndMap()
     }, [currentSystem])
 
     // Normalize utility
     const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
 
-    // 1. Compute suggestions based on manualCode
+    // 1. Compute suggestions based on manualCode (Legacy Manual Mode)
     useEffect(() => {
         if (step === 1 && assignMode === 'manual' && manualCode.length >= 1) {
             const normalizedInput = normalize(manualCode)
@@ -77,6 +108,32 @@ export default function FastScanPage() {
             setSuggestions([])
         }
     }, [manualCode, step, assignMode, allPositions])
+
+    // COMPUTE AUTO-ASSIGN QUEUE
+    const autoQueue = useMemo(() => {
+        if (!selectedTargetZoneId || zones.length === 0 || allPositions.length === 0) return []
+
+        // 1. Find all descendant zones
+        const validZoneIds = new Set<string>()
+        const collect = (pId: string) => {
+            validZoneIds.add(pId)
+            zones.filter(z => z.parent_id === pId).forEach(child => collect(child.id))
+        }
+        collect(selectedTargetZoneId)
+
+        // 2. Find positions in these zones
+        const validPositionIds = new Set<string>()
+        zonePositions.forEach(zp => {
+            if (validZoneIds.has(zp.zone_id)) validPositionIds.add(zp.position_id)
+        })
+
+        // 3. Filter positions: Must match zone AND be empty (lot_id is null)
+        const queue = allPositions.filter(p => validPositionIds.has(p.id) && !p.lot_id)
+
+        // 4. Sort naturally (A-01, A-02...)
+        return queue.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: 'base' }))
+    }, [selectedTargetZoneId, zones, allPositions, zonePositions])
+
 
     // Auto-focus manual input when step 1 and mode manual
     useEffect(() => {
@@ -121,10 +178,78 @@ export default function FastScanPage() {
 
         setPaused(true) // Stop processing new frames
 
-        if (step === 0) {
-            await processLotScan(code)
-        } else if (step === 1) {
-            await processPositionScan(code)
+        if (assignMode === 'auto') {
+            await processAutoAssign(code)
+        } else {
+            if (step === 0) {
+                await processLotScan(code)
+            } else if (step === 1) {
+                await processPositionScan(code)
+            }
+        }
+    }
+
+    const processAutoAssign = async (lotCode: string) => {
+        if (!currentSystem?.code || !profile?.company_id) return
+
+        // 1. Validate Queue
+        if (autoQueue.length === 0) {
+            showToast('Khu vực này đã đầy hoặc chưa cấu hình!', 'error')
+            setPaused(false)
+            return
+        }
+
+        setLoading(true)
+        try {
+            // 2. Find LOT
+            const { data: lot, error } = await supabase
+                .from('lots')
+                .select('id, code, products(name)')
+                .eq('code', lotCode)
+                .single()
+
+            if (error || !lot) {
+                showToast(`Không tìm thấy LOT "${lotCode}"`, 'error')
+                setPaused(false)
+                setLoading(false)
+                return
+            }
+
+            // 3. Pick Destination
+            const targetPos = autoQueue[0]
+
+            // 4. Assign
+            const { error: updateError } = await supabase
+                .from('positions')
+                .update({ lot_id: lot.id } as any)
+                .eq('id', targetPos.id)
+
+            if (updateError) throw updateError
+
+            // 5. Update Local State (Optimistic)
+            setAllPositions(prev => prev.map(p => p.id === targetPos.id ? { ...p, lot_id: lot.id } : p))
+
+            // 6. Success Feedback
+            setAssignedPos(`${targetPos.code}`)
+            setLotData(lot) // Show brief info
+            setStep(2) // Show success screen
+            showToast(`Gán ${lot.code} vào ${targetPos.code} thành công!`, 'success')
+
+            // 7. Auto Continue
+            setTimeout(() => {
+                setStep(0) // Back to scanning (Note: in Reset we clear lots, but we want to stay in Auto mode)
+                setLotData(null)
+                setAssignedPos('')
+                setManualCode('')
+                setPaused(false) // Ready for next scan
+            }, 1500) // Faster reset for auto mode
+
+        } catch (e: any) {
+            console.error(e)
+            showToast('Lỗi: ' + e.message, 'error')
+            setPaused(false)
+        } finally {
+            setLoading(false)
         }
     }
 
@@ -297,14 +422,123 @@ export default function FastScanPage() {
                     >
                         CĐ 2: Quét mã vị trí
                     </button>
+                    <button
+                        onClick={() => setAssignMode('auto')}
+                        className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${assignMode === 'auto' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500'}`}
+                    >
+                        CĐ 3: Tự động
+                    </button>
                 </div>
             </div>
 
             {/* Main Content Area */}
             <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center pt-16">
 
-                {/* CAMERA VIEW (Step 0 or Step 1 with scan mode) */}
-                {useCamera && step !== 2 && (step === 0 || assignMode === 'scan') && (
+                {/* AUTO ASSIGN MODE UI */}
+                {assignMode === 'auto' && step !== 2 && (
+                    <div className="w-full max-w-2xl space-y-6 animate-in slide-in-from-bottom-5">
+                        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-xl border border-slate-200 dark:border-slate-800">
+                            <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                                <MapPin className="text-orange-600" />
+                                Cấu hình Tự động
+                            </h2>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-sm font-medium text-slate-500 mb-2 block">Khu vực gán:</label>
+                                    <ZoneCascadeSelector
+                                        zones={zones}
+                                        selectedZoneId={selectedTargetZoneId}
+                                        onSelect={setSelectedTargetZoneId}
+                                    />
+                                </div>
+
+                                {/* Queue Status */}
+                                {selectedTargetZoneId && (
+                                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-100 dark:border-slate-800">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Hàng chờ vị trí</span>
+                                            <span className="text-xs bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded-full text-slate-600 dark:text-slate-300 font-mono">
+                                                {autoQueue.length} trống
+                                            </span>
+                                        </div>
+
+                                        {autoQueue.length > 0 ? (
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex-1">
+                                                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Tiếp theo:</div>
+                                                    <div className="text-3xl font-black text-orange-600 dark:text-orange-500 font-mono tracking-tight">
+                                                        {autoQueue[0].code}
+                                                    </div>
+                                                </div>
+                                                <div className="w-px h-10 bg-slate-200 dark:bg-slate-700 mx-2"></div>
+                                                <div className="opacity-50 text-right">
+                                                    <div className="text-[10px] text-slate-400">Sau đó:</div>
+                                                    <div className="text-lg font-bold text-slate-400 font-mono">
+                                                        {autoQueue[1]?.code || '---'}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-2 text-red-500 text-sm font-medium">
+                                                Khu vực này đã đầy hoặc không có vị trí!
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Scanner for Auto Mode */}
+                        {selectedTargetZoneId && autoQueue.length > 0 && (
+                            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-xl border border-slate-200 dark:border-slate-800">
+                                <h3 className="text-center font-bold text-slate-900 dark:text-white mb-4">Quét mã LOT để gán vào {autoQueue[0].code}</h3>
+                                {useCamera ? (
+                                    <div className="w-full max-w-xs aspect-square relative bg-black rounded-2xl overflow-hidden shadow-inner mx-auto border-2 border-slate-100 dark:border-slate-800">
+                                        <Scanner
+                                            onScan={(result) => {
+                                                if (result && result.length > 0) {
+                                                    handleScanResult(result[0].rawValue)
+                                                }
+                                            }}
+                                            styles={{ container: { width: '100%', height: '100%' } }}
+                                            components={{ finder: false }}
+                                            constraints={{ facingMode: 'environment' }}
+                                        />
+                                        <div className="absolute inset-0 border-2 border-orange-500/50 rounded-2xl animate-pulse pointer-events-none"></div>
+                                        {loading && (
+                                            <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-xl backdrop-blur-sm">
+                                                <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <form onSubmit={(e) => { e.preventDefault(); handleScanResult(manualCode, true); }}>
+                                        <input
+                                            ref={inputRef}
+                                            type="text"
+                                            value={manualCode}
+                                            onChange={(e) => setManualCode(e.target.value)}
+                                            className="w-full p-4 bg-slate-100 dark:bg-slate-800 rounded-xl text-center text-xl font-bold uppercase mb-4 focus:ring-2 focus:ring-orange-500 outline-none text-slate-900 dark:text-white"
+                                            placeholder="Nhập mã LOT..."
+                                            autoFocus
+                                        />
+                                        <button
+                                            type="submit"
+                                            disabled={loading || !manualCode}
+                                            className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold transition-colors disabled:opacity-50"
+                                        >
+                                            {loading ? 'Đang xử lý...' : 'Xác nhận gán'}
+                                        </button>
+                                    </form>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* CAMERA VIEW (Step 0 or Step 1 with scan mode) for MANUAL/SCAN modes */}
+                {assignMode !== 'auto' && useCamera && step !== 2 && (step === 0 || assignMode === 'scan') && (
                     <div className="w-full max-w-xs aspect-square relative bg-black rounded-3xl overflow-hidden shadow-xl border-4 border-white dark:border-slate-800 mb-6 mx-auto">
                         <Scanner
                             onScan={(result) => {
@@ -342,7 +576,7 @@ export default function FastScanPage() {
                 )}
 
                 {/* INSTRUCTION TEXT */}
-                {step !== 2 && (
+                {assignMode !== 'auto' && step !== 2 && (
                     <div className="text-center space-y-2 mb-6">
                         <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
                             {step === 0 ? 'Quét mã LOT' : (assignMode === 'manual' ? 'Nhập Vị trí' : 'Quét Vị trí')}
@@ -356,7 +590,7 @@ export default function FastScanPage() {
                 )}
 
                 {/* MANUAL INPUT VIEW (ALWAYS for Step 1 Manual Mode, or Step 0 if useCamera is false) */}
-                {step !== 2 && (
+                {assignMode !== 'auto' && step !== 2 && (
                     <div className={`w-full max-w-md p-6 z-10 transition-all duration-300 ${((step === 0 && !useCamera) || (step === 1 && assignMode === 'manual')) ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none absolute'}`}>
                         <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-xl border border-slate-200 dark:border-slate-800">
                             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4 text-center">
@@ -441,7 +675,7 @@ export default function FastScanPage() {
                                 {lotData.products?.sku} • {new Date(lotData.packaging_date).toLocaleDateString('vi-VN')}
                             </p>
                         </div>
-                        {step === 1 && (
+                        {step === 1 && assignMode !== 'auto' && (
                             <div className="w-10 h-10 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-full flex items-center justify-center animate-pulse">
                                 {assignMode === 'manual' ? <Keyboard size={20} /> : <MapPin size={20} />}
                             </div>
