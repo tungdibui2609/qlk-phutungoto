@@ -5,7 +5,7 @@ import { useUser } from '@/contexts/UserContext'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
-import { QrCode, RotateCcw, Boxes, MapPin, CheckCircle2, Loader2, Keyboard, Camera, X } from 'lucide-react'
+import { QrCode, RotateCcw, Boxes, MapPin, CheckCircle2, Loader2, Keyboard, Camera, X, ChevronDown, ChevronUp } from 'lucide-react'
 import { Scanner } from '@yudiel/react-qr-scanner'
 
 import { ZoneCascadeSelector } from './_components/ZoneCascadeSelector'
@@ -39,6 +39,7 @@ export default function FastScanPage() {
     const [zones, setZones] = useState<Zone[]>([])
     const [zonePositions, setZonePositions] = useState<{ zone_id: string, position_id: string }[]>([])
     const [selectedTargetZoneId, setSelectedTargetZoneId] = useState<string | null>(null)
+    const [isConfigOpen, setIsConfigOpen] = useState(true)
 
     const inputRef = useRef<HTMLInputElement>(null)
 
@@ -450,60 +451,79 @@ export default function FastScanPage() {
                 {/* AUTO ASSIGN MODE UI */}
                 {assignMode === 'auto' && step !== 2 && (
                     <div className="w-full max-w-2xl space-y-4 md:space-y-6 animate-in slide-in-from-bottom-5 pb-20">
-                        <div className="bg-white dark:bg-slate-900 rounded-2xl md:rounded-3xl p-4 md:p-6 shadow-xl border border-slate-200 dark:border-slate-800">
-                            <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                                <MapPin className="text-orange-600" />
-                                Cấu hình Tự động
-                            </h2>
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl md:rounded-3xl p-4 md:p-6 shadow-xl border border-slate-200 dark:border-slate-800 transition-all">
+                            <div
+                                className="flex items-center justify-between cursor-pointer"
+                                onClick={() => setIsConfigOpen(!isConfigOpen)}
+                            >
+                                <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                    <MapPin className="text-orange-600" size={20} />
+                                    Cấu hình Tự động
+                                </h2>
+                                <button className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500">
+                                    {isConfigOpen ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                                </button>
+                            </div>
 
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="text-sm font-medium text-slate-500 mb-2 block">Khu vực gán:</label>
-                                    <ZoneCascadeSelector
-                                        zones={zones}
-                                        selectedZoneId={selectedTargetZoneId}
-                                        onSelect={setSelectedTargetZoneId}
-                                    />
-                                </div>
+                            {/* Collapsible Content */}
+                            {isConfigOpen && (
+                                <div className="space-y-4 mt-4 animate-in slide-in-from-top-2 duration-200">
+                                    <div>
+                                        <label className="text-sm font-medium text-slate-500 mb-2 block">Khu vực gán:</label>
+                                        <ZoneCascadeSelector
+                                            zones={zones}
+                                            selectedZoneId={selectedTargetZoneId}
+                                            onSelect={setSelectedTargetZoneId}
+                                        />
+                                    </div>
 
-                                {/* Queue Status */}
-                                {selectedTargetZoneId && (
-                                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-100 dark:border-slate-800">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Hàng chờ vị trí</span>
-                                            <span className="text-xs bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded-full text-slate-600 dark:text-slate-300 font-mono">
-                                                {autoQueue.length} trống
-                                            </span>
-                                        </div>
+                                    {/* Queue Status */}
+                                    {selectedTargetZoneId && (
+                                        <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-100 dark:border-slate-800">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Hàng chờ vị trí</span>
+                                                <span className="text-xs bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded-full text-slate-600 dark:text-slate-300 font-mono">
+                                                    {autoQueue.length} trống
+                                                </span>
+                                            </div>
 
-                                        {autoQueue.length > 0 ? (
-                                            <div className="flex flex-col gap-2">
-                                                <div>
-                                                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-1 font-semibold">Tiếp theo:</div>
-                                                    <div className="text-xl md:text-2xl font-black text-orange-600 dark:text-orange-500 font-mono tracking-tight break-all leading-snug">
-                                                        {autoQueue[0].code}
-                                                    </div>
-                                                </div>
-
-                                                {autoQueue[1] && (
-                                                    <div className="pt-2 border-t border-slate-100 dark:border-slate-700">
-                                                        <div className="flex items-center gap-2 opacity-70">
-                                                            <div className="text-[10px] text-slate-400 font-medium">Sau đó:</div>
-                                                            <div className="text-sm font-bold text-slate-500 dark:text-slate-400 font-mono break-all">
-                                                                {autoQueue[1].code}
-                                                            </div>
+                                            {autoQueue.length > 0 ? (
+                                                <div className="flex flex-col gap-2">
+                                                    <div>
+                                                        <div className="text-xs text-slate-500 uppercase tracking-wider mb-1 font-semibold">Tiếp theo:</div>
+                                                        <div className="text-xl md:text-2xl font-black text-orange-600 dark:text-orange-500 font-mono tracking-tight break-all leading-snug">
+                                                            {autoQueue[0].code}
                                                         </div>
                                                     </div>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <div className="text-center py-2 text-red-500 text-sm font-medium">
-                                                Khu vực này đã đầy hoặc không có vị trí!
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
+
+                                                    {autoQueue[1] && (
+                                                        <div className="pt-2 border-t border-slate-100 dark:border-slate-700">
+                                                            <div className="flex items-center gap-2 opacity-70">
+                                                                <div className="text-[10px] text-slate-400 font-medium">Sau đó:</div>
+                                                                <div className="text-sm font-bold text-slate-500 dark:text-slate-400 font-mono break-all">
+                                                                    {autoQueue[1].code}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="text-center py-2 text-red-500 text-sm font-medium">
+                                                    Khu vực này đã đầy hoặc không có vị trí!
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Collapsed Summary */}
+                            {!isConfigOpen && selectedTargetZoneId && autoQueue.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-sm">
+                                    <span className="text-slate-500">Đang gán vào: <span className="font-bold text-orange-600 font-mono">{autoQueue[0].code}</span></span>
+                                    <span className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-full text-slate-500">{autoQueue.length} vị trí</span>
+                                </div>
+                            )}
                         </div>
 
                         {/* Scanner for Auto Mode */}
