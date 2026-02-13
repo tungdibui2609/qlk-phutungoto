@@ -108,12 +108,17 @@ export async function middleware(request: NextRequest) {
 
                 if (profile && profile.company_id !== company.id && !isSuperAdmin) {
                     // Unauthorized for this tenant
-                    // Redirect to login with specific error or sign out
-                    // We redirect to a generic error page or login with param
-                    const errorUrl = request.nextUrl.clone()
-                    errorUrl.pathname = '/login'
-                    errorUrl.searchParams.set('error', 'unauthorized_domain')
-                    return NextResponse.redirect(errorUrl)
+
+                    // FAILSAFE: If we are already on '/login' with the error param, DO NOT redirect again.
+                    // This breaks the loop.
+                    const isLoginError = path === '/login' && url.searchParams.get('error') === 'unauthorized_domain'
+
+                    if (!isLoginError) {
+                        const errorUrl = request.nextUrl.clone()
+                        errorUrl.pathname = '/login'
+                        errorUrl.searchParams.set('error', 'unauthorized_domain')
+                        return NextResponse.redirect(errorUrl)
+                    }
                 }
             }
 
