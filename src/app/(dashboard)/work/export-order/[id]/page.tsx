@@ -19,9 +19,9 @@ interface ExportOrderItem {
     position_id?: string
     product_id?: string
     status: 'Pending' | 'Exported'
-    notes?: string
-    product_image?: string
-    lot_inbound_date?: string
+    notes?: string | null
+    product_image?: string | null
+    lot_inbound_date?: string | null
 }
 
 interface ExportTask {
@@ -29,9 +29,9 @@ interface ExportTask {
     code: string
     status: 'Pending' | 'In Progress' | 'Completed' | 'Cancelled'
     created_at: string
-    created_by_name?: string
+    created_by_name?: string | null
     items_count?: number
-    notes?: string
+    notes?: string | null
     items?: ExportOrderItem[]
 }
 
