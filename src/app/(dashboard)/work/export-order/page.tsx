@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
+import { CreateExportTaskModal } from '@/components/export/CreateExportTaskModal'
 
 // Types for DB Data
 interface ExportOrderItem {
@@ -52,6 +53,117 @@ function ExportOrderContent() {
     useEffect(() => {
         fetchTasks()
     }, [])
+
+    // Check for creation params
+    const posIds = searchParams.get('posIds')
+    const lotIds = searchParams.get('lotIds')
+
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+    const [createModalData, setCreateModalData] = useState<{
+        positionIds: string[]
+        lotIds: string[]
+        items: any[]
+    }>({ positionIds: [], lotIds: [], items: [] })
+
+    useEffect(() => {
+        if (posIds || lotIds) {
+            fetchExportDetails(posIds, lotIds)
+        }
+    }, [posIds, lotIds])
+
+    const fetchExportDetails = async (pIds: string | null, lIds: string | null) => {
+        try {
+            setLoading(true)
+            const positionIds = pIds ? pIds.split(',') : []
+            const lotIds = lIds ? lIds.split(',') : []
+
+            if (positionIds.length === 0 && lotIds.length === 0) return
+
+            // Fetch lots details to get items
+            // We need to fetch positions to know which specific position is selected if needed,
+            // but for now let's assume we export based on LOTs found in those positions or direct LOT IDs.
+
+            // Logic:
+            // 1. If we have posIds, find their lot_ids
+            // 2. Combine with lotIds
+            // 3. Fetch detailed lot items
+
+            let finalLotIds = new Set(lotIds)
+
+            if (positionIds.length > 0) {
+                const { data: posData } = await supabase
+                    .from('positions')
+                    .select('id, lot_id')
+                    .in('id', positionIds)
+
+                if (posData) {
+                    posData.forEach(p => {
+                        if (p.lot_id) finalLotIds.add(p.lot_id)
+                    })
+                }
+            }
+
+            const uniqueLotIds = Array.from(finalLotIds)
+            if (uniqueLotIds.length === 0) {
+                showToast('Không tìm thấy LOT nào trong các vị trí đã chọn', 'error')
+                return
+            }
+
+            // Fetch LOT details
+            const { data: lotsData, error } = await supabase
+                .from('lots')
+                .select(`
+                    id, code,
+                    lot_items (
+                        id, product_id, quantity, unit,
+                        products ( name, sku )
+                    )
+                `)
+                .in('id', uniqueLotIds)
+
+            if (error) throw error
+
+            // Flatten items
+            const items: any[] = []
+            lotsData?.forEach((lot: any) => {
+                if (lot.lot_items) {
+                    lot.lot_items.forEach((li: any) => {
+                        items.push({
+                            lot_id: lot.id,
+                            product_id: li.product_id,
+                            quantity: li.quantity,
+                            unit: li.unit,
+                            product_name: li.products?.name,
+                            sku: li.products?.sku,
+                            // Ideally we should know which position this comes from if we selected by position
+                            // For simplicity, we just link to the LOT. 
+                            // If user selected specific positions, we might want to link those?
+                            // For now, let's leave position_id null or try to map back if possible.
+                            position_id: null
+                        })
+                    })
+                }
+            })
+
+            // If we selected positions, we might want to map items to those positions more accurately?
+            // But a LOT might be in multiple positions? 
+            // Simplified: We export the LOT content.
+            // Requirement from user is "Export Order from selected positions".
+
+            setCreateModalData({
+                positionIds,
+                lotIds: uniqueLotIds,
+                items
+            })
+            setIsCreateModalOpen(true)
+
+        } catch (error: any) {
+            console.error(error)
+            showToast('Lỗi tải thông tin hàng hóa: ' + error.message, 'error')
+        } finally {
+            setLoading(false)
+        }
+    }
 
     const fetchTasks = async () => {
         try {
@@ -229,6 +341,28 @@ function ExportOrderContent() {
                     )}
                 </div>
             )}
+
+            <CreateExportTaskModal
+                isOpen={isCreateModalOpen}
+                initialData={createModalData}
+                onClose={() => {
+                    setIsCreateModalOpen(false)
+                    // Clear search params
+                    const url = new URL(window.location.href)
+                    url.searchParams.delete('posIds')
+                    url.searchParams.delete('lotIds')
+                    router.replace(url.pathname)
+                }}
+                onSuccess={(newId) => {
+                    setIsCreateModalOpen(false)
+                    // Clear search params
+                    const url = new URL(window.location.href)
+                    url.searchParams.delete('posIds')
+                    url.searchParams.delete('lotIds')
+                    router.replace(url.pathname)
+                    fetchTasks()
+                }}
+            />
         </div>
     )
 }
