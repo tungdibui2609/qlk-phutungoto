@@ -103,10 +103,17 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target
         setFormData(prev => {
-            const updates = { ...prev, [name]: value }
+            let updates = { ...prev, [name]: value }
+
             if (name === 'name' && !initialData) {
                 updates.code = generateCode(value)
             }
+
+            // Auto-clean domain input
+            if (name === 'custom_domain') {
+                updates.custom_domain = value.replace(/^https?:\/\//, '').replace(/\/$/, '').toLowerCase()
+            }
+
             return updates
         })
     }
