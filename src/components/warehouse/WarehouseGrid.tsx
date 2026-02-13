@@ -32,7 +32,7 @@ export default function WarehouseGrid({
         <div
             className="grid gap-2 p-4"
             style={{
-                gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`
+                gridTemplateColumns: `repeat(${columns}, minmax(auto, 1fr))`
             }}
         >
             {positions.map(pos => {
@@ -62,7 +62,7 @@ export default function WarehouseGrid({
                         )}
 
                         {/* Position code */}
-                        <span className="font-mono text-xs font-bold text-gray-800 dark:text-gray-200 text-center break-all">
+                        <span className="font-mono text-xs font-bold text-gray-800 dark:text-gray-200 text-center whitespace-nowrap px-1">
                             {pos.code}
                         </span>
                     </div>

@@ -27,9 +27,10 @@ interface LotExportBufferProps {
     onClose: () => void
     onSuccess: () => void
     onFillInfo?: (data: any) => void
+    onUpdate?: () => void
 }
 
-export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClose, onSuccess, onFillInfo }) => {
+export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClose, onSuccess, onFillInfo, onUpdate }) => {
     const { systemType, currentSystem } = useSystem()
     const { showToast, showConfirm } = useToast()
     const [pendingExports, setPendingExports] = useState<PendingExport[]>([])
@@ -170,6 +171,9 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             newSelected.delete(exportId)
             setSelectedIds(newSelected)
             showToast('Đã xóa khỏi hàng chờ', 'success')
+
+            // Notify parent to update count
+            if (onUpdate) onUpdate()
         } catch (e: any) {
             showToast('Lỗi khi xóa: ' + e.message, 'error')
         }

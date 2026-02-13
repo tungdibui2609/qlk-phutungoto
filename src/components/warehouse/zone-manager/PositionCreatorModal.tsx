@@ -131,25 +131,73 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
             const sourceMap = getRelativeMap(sourceId)
             const targetMap = getRelativeMap(zoneId)
 
+
+            // Calculate Full Prefixes for Root Zones
+            const getFullPrefix = (zId: string) => {
+                const parts: string[] = []
+                let curr: LocalZone | undefined = zones.find(z => z.id === zId)
+                while (curr) {
+                    if (curr.code) parts.unshift(curr.code)
+                    const parentId = curr.parent_id
+                    curr = zones.find(z => z.id === parentId)
+                }
+                return parts.join('.')
+            }
+
+            const sourceFullPrefix = getFullPrefix(sourceId)
+            const targetFullPrefix = getFullPrefix(zoneId)
+
             const updates: Record<string, LocalPosition[]> = {}
             let totalCloned = 0
 
             // 2. Pair zones and clone positions
-            sourceMap.forEach((sId, path) => {
+            sourceMap.forEach((_, path) => {
+                // Note: we iterate sourceMap keys (paths) to find if target has same path
+                // path is relative like "" or "D1" or "D1.T1"
+
+                // Get actual IDs from maps
+                const sId = sourceMap.get(path) // Should exist since we iterating sourceMap
                 const tId = targetMap.get(path)
-                if (!tId) return
+
+                if (!sId || !tId) return
 
                 const sPositions = positionsMap[sId] || []
                 if (sPositions.length === 0) return
 
-                const cloned = sPositions.map(p => ({
-                    ...p,
-                    id: generateId(),
-                    code: p.code.replace(new RegExp(`^${sourceZone.code}`, 'i'), currentZone.code),
-                    _status: 'new',
-                    lot_id: null, // Clear lots on clone
-                    system_type: systemType
-                } as any))
+                const cloned = sPositions.map(p => {
+                    let newCode = p.code
+
+                    // Robust Prefix Replacement
+                    // Create regex for source prefix logic
+                    // We escape dots to ensure accurate matching
+                    const escapedSource = sourceFullPrefix.replace(/\./g, '\\.')
+                    const regex = new RegExp(`^${escapedSource}`, 'i')
+
+                    if (regex.test(newCode)) {
+                        newCode = newCode.replace(regex, targetFullPrefix)
+                    } else {
+                        // If strict prefix match fails, try replacing just the segment
+                        // e.g. if code was manually named but contains sourceZone.code
+                        const sCodeEscaped = sourceZone.code.replace(/\./g, '\\.')
+                        const subRegex = new RegExp(sCodeEscaped, 'i')
+                        if (subRegex.test(newCode)) {
+                            newCode = newCode.replace(subRegex, currentZone.code)
+                        }
+                    }
+
+                    return {
+                        ...p,
+                        id: generateId(),
+                        code: newCode.toUpperCase(),
+                        display_order: p.display_order,
+                        batch_name: `Cloned from ${sourceZone.name}`,
+                        created_at: new Date().toISOString(),
+                        status: 'active',
+                        lot_id: null, // Clear lots on clone
+                        _status: 'new',
+                        system_type: systemType
+                    } as any
+                })
 
                 updates[tId] = cloned
                 totalCloned += cloned.length

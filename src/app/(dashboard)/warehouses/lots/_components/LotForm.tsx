@@ -140,11 +140,24 @@ export function LotForm({
                             setImages([])
                             setNewLotNotes('')
 
-                            if (parsed.supplierId) setSelectedSupplierId(parsed.supplierId)
-                            if (parsed.qcId) setSelectedQCId(parsed.qcId)
+                            // Validate and restore Supplier
+                            if (parsed.supplierId && suppliers.some(s => s.id === parsed.supplierId)) {
+                                setSelectedSupplierId(parsed.supplierId)
+                            }
+
+                            // Validate and restore QC
+                            if (parsed.qcId && qcList.some(q => q.id === parsed.qcId)) {
+                                setSelectedQCId(parsed.qcId)
+                            }
+
                             if (parsed.peelingDate) setPeelingDate(parsed.peelingDate)
                             if (parsed.packagingDate) setPackagingDate(parsed.packagingDate)
-                            if (parsed.warehouseName) setWarehouseName(parsed.warehouseName)
+
+                            // Validate and restore Warehouse
+                            if (parsed.warehouseName && branches.some(b => b.name === parsed.warehouseName)) {
+                                setWarehouseName(parsed.warehouseName)
+                            }
+
                             if (parsed.batchCode) setBatchCode(parsed.batchCode)
                             if (parsed.extraInfo) setExtraInfo(parsed.extraInfo.toUpperCase())
                             if (parsed.inboundDate) setInboundDate(parsed.inboundDate)

@@ -72,12 +72,9 @@ export default function ProductForm({ initialData, isEditMode = false, readOnly 
                 </div>
 
                 {!readOnly && (
-                    <div className="flex gap-3">
-                        <Link href="/inventory" className="px-5 py-2.5 rounded-xl font-medium text-stone-600 bg-stone-100 border border-stone-200 hover:border-stone-300 hover:text-stone-800 transition-colors">Hủy bỏ</Link>
-                        <button type="submit" disabled={loading} className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium text-white transition-all duration-200 disabled:opacity-50 hover:-translate-y-0.5" style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)' }}>
-                            {loading ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                            {isEditMode ? 'Lưu sản phẩm' : 'Tạo sản phẩm'}
-                        </button>
+                    <div className="hidden md:flex gap-3">
+                        {/* Hidden on desktop header, moved to bottom. Kept visible? No, user wants it moved. */}
+                        {/* Actually, user said "chuyển xuống dưới", implying remove from top and put at bottom. */}
                     </div>
                 )}
             </div>
@@ -143,6 +140,19 @@ export default function ProductForm({ initialData, isEditMode = false, readOnly 
                     )}
                 </div>
             </div>
-        </form>
+
+
+            {
+                !readOnly && (
+                    <div className="flex justify-end gap-3 pt-6 border-t border-stone-200">
+                        <Link href="/inventory" className="px-5 py-2.5 rounded-xl font-medium text-stone-600 bg-stone-100 border border-stone-200 hover:border-stone-300 hover:text-stone-800 transition-colors">Hủy bỏ</Link>
+                        <button type="submit" disabled={loading} className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium text-white transition-all duration-200 disabled:opacity-50 hover:-translate-y-0.5" style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)' }}>
+                            {loading ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
+                            {isEditMode ? 'Lưu sản phẩm' : 'Tạo sản phẩm'}
+                        </button>
+                    </div>
+                )
+            }
+        </form >
     )
 }

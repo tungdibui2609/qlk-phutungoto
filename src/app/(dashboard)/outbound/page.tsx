@@ -350,6 +350,7 @@ export default function OutboundPage() {
                     setIsModalOpen(true)
                     setBufferOpen(false)
                 }}
+                onUpdate={updateBufferCount}
             />
         </div>
     )

@@ -151,10 +151,10 @@ export default function FlexibleZoneGrid({
                                     style={{
                                         gridTemplateColumns: cellWidth > 0
                                             ? `repeat(${positionColumns}, ${cellWidth}px)`
-                                            : `repeat(${positionColumns}, minmax(0, 1fr))`
+                                            : `repeat(${positionColumns}, minmax(auto, 1fr))`
                                     }}
                                 >
-                                    {zone.positions.map(pos => renderPositionCell(pos, cellHeight))}
+                                    {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth))}
                                 </div>
                             )}
                             {/* Render child zones */}
@@ -175,10 +175,10 @@ export default function FlexibleZoneGrid({
                             style={{
                                 gridTemplateColumns: cellWidth > 0
                                     ? `repeat(${positionColumns}, ${cellWidth}px)`
-                                    : `repeat(${positionColumns}, minmax(0, 1fr))`
+                                    : `repeat(${positionColumns}, minmax(auto, 1fr))`
                             }}
                         >
-                            {zone.positions.map(pos => renderPositionCell(pos, cellHeight))}
+                            {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth))}
                         </div>
                     )}
                     {/* Render children directly at current level - pass currentBreadcrumb to include hidden parent names */}
@@ -272,10 +272,10 @@ export default function FlexibleZoneGrid({
                                 style={{
                                     gridTemplateColumns: cellWidth > 0
                                         ? `repeat(${positionColumns}, ${cellWidth}px)`
-                                        : `repeat(${positionColumns}, minmax(0, 1fr))`
+                                        : `repeat(${positionColumns}, minmax(auto, 1fr))`
                                 }}
                             >
-                                {zone.positions.map(pos => renderPositionCell(pos, cellHeight))}
+                                {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth))}
                             </div>
 
                             {/* Also render child zones if any */}
@@ -369,10 +369,10 @@ export default function FlexibleZoneGrid({
                                         style={{
                                             gridTemplateColumns: cellWidth > 0
                                                 ? `repeat(${positionColumns}, ${cellWidth}px)`
-                                                : `repeat(${positionColumns}, minmax(0, 1fr))`
+                                                : `repeat(${positionColumns}, minmax(auto, 1fr))`
                                         }}
                                     >
-                                        {zone.positions.map(pos => renderPositionCell(pos, cellHeight))}
+                                        {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth))}
                                     </div>
                                 )}
                                 {hasChildren && (
@@ -441,10 +441,10 @@ export default function FlexibleZoneGrid({
                                         style={{
                                             gridTemplateColumns: cellWidth > 0
                                                 ? `repeat(${positionColumns}, ${cellWidth}px)`
-                                                : `repeat(${positionColumns}, minmax(0, 1fr))`
+                                                : `repeat(${positionColumns}, minmax(auto, 1fr))`
                                         }}
                                     >
-                                        {zone.positions.map(pos => renderPositionCell(pos, cellHeight))}
+                                        {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth))}
                                     </div>
                                 )}
 
@@ -469,7 +469,7 @@ export default function FlexibleZoneGrid({
                                         {zone.children.map(child => (
                                             <div
                                                 key={child.id}
-                                                className={childLayout === 'horizontal' ? 'flex-shrink-0' : ''}
+                                                className={childLayout === 'horizontal' ? 'shrink-0 grow' : ''}
                                                 style={
                                                     childLayout === 'horizontal' && childWidth > 0
                                                         ? { width: `${childWidth}px` }
@@ -489,7 +489,7 @@ export default function FlexibleZoneGrid({
     }
 
     // Helper function to render a position cell
-    function renderPositionCell(pos: PositionWithZone, cellHeight: number): React.ReactNode {
+    function renderPositionCell(pos: PositionWithZone, cellHeight: number, cellWidth: number): React.ReactNode {
         const isOccupied = occupiedIds.has(pos.id)
         const isSelected = selectedPositionIds.has(pos.id)
 
@@ -576,7 +576,7 @@ export default function FlexibleZoneGrid({
                         </button>
                     )}
 
-                    <span className="font-mono text-[10px] items-center text-black dark:text-white font-bold leading-none">
+                    <span className={`font-mono text-[10px] items-center text-black dark:text-white font-bold leading-none ${cellWidth === 0 ? 'whitespace-nowrap px-1' : ''}`}>
                         {pos.code}
                     </span>
 

@@ -19,6 +19,7 @@ interface LayoutSettings {
     display_type: string
     layout_gap: number
     container_height: number
+    use_full_title: boolean
 }
 
 interface DeepLayoutTemplate {
@@ -80,6 +81,7 @@ export default function StatusLayoutConfigPanel({
     const [displayType, setDisplayType] = useState(layout?.display_type ?? 'auto')
     const [layoutGap, setLayoutGap] = useState(layout?.layout_gap ?? 16)
     const [containerHeight, setContainerHeight] = useState(layout?.container_height ?? 0)
+    const [useFullTitle, setUseFullTitle] = useState(layout?.use_full_title ?? false)
     const [isSaving, setIsSaving] = useState(false)
     const [hasClipboard, setHasClipboard] = useState(!!layoutDeepClipboard)
 
@@ -95,6 +97,7 @@ export default function StatusLayoutConfigPanel({
         setDisplayType(layout?.display_type ?? 'auto')
         setLayoutGap(layout?.layout_gap ?? 16)
         setContainerHeight(layout?.container_height ?? 0)
+        setUseFullTitle(layout?.use_full_title ?? false)
     }, [layout, zone.id])
 
     // Count siblings (excluding current zone)
@@ -115,7 +118,7 @@ export default function StatusLayoutConfigPanel({
                 ...getCurrentSettings()
             } as any);
         }
-    }, [positionColumns, cellWidth, cellHeight, childLayout, childColumns, childWidth, collapsible, displayType, layoutGap, containerHeight]);
+    }, [positionColumns, cellWidth, cellHeight, childLayout, childColumns, childWidth, collapsible, displayType, layoutGap, containerHeight, useFullTitle]);
 
     function getCurrentSettings(): LayoutSettings {
         return {
@@ -128,7 +131,8 @@ export default function StatusLayoutConfigPanel({
             collapsible,
             display_type: displayType,
             layout_gap: layoutGap,
-            container_height: containerHeight
+            container_height: containerHeight,
+            use_full_title: useFullTitle
         }
     }
 
@@ -148,7 +152,8 @@ export default function StatusLayoutConfigPanel({
                 collapsible: s.collapsible ?? true,
                 display_type: s.display_type ?? 'auto',
                 layout_gap: s.layout_gap ?? 16,
-                container_height: s.container_height ?? 0
+                container_height: s.container_height ?? 0,
+                use_full_title: s.use_full_title ?? false
             });
 
             // If it's the root of the copy, use the current local states
@@ -184,6 +189,7 @@ export default function StatusLayoutConfigPanel({
         setDisplayType(rootSettings.display_type || 'auto');
         setLayoutGap(rootSettings.layout_gap ?? 16);
         setContainerHeight(rootSettings.container_height ?? 0);
+        setUseFullTitle(rootSettings.use_full_title ?? false);
 
         // 2. Recursively collect and apply settings for descendants
         const batchToSave: any[] = [];
@@ -248,6 +254,7 @@ export default function StatusLayoutConfigPanel({
         setDisplayType('auto')
         setLayoutGap(16)
         setContainerHeight(0)
+        setUseFullTitle(false)
         showToast('Đã đặt về mặc định trạng thái!', 'info')
     }
 
@@ -491,17 +498,38 @@ export default function StatusLayoutConfigPanel({
             </div>
 
             {/* Options */}
-            <div className="pt-2">
+            <div className="pt-2 grid grid-cols-2 gap-2">
                 <label className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-100 transition-colors">
                     <div className={`w-5 h-5 border-2 flex items-center justify-center transition-colors ${collapsible ? 'bg-indigo-600 border-indigo-600' : 'bg-white dark:bg-slate-800 border-slate-300'}`}>
                         {collapsible && <div className="w-2 h-2 bg-white"></div>}
                     </div>
                     <input
                         type="checkbox" className="hidden"
-                        checked={collapsible} onChange={(e) => setCollapsible(e.target.checked)}
+                        checked={collapsible} onChange={(e) => {
+                            const val = e.target.checked
+                            setCollapsible(val)
+                            if (val && displayType === 'grouped') setUseFullTitle(false)
+                        }}
                     />
                     <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-tight">Thu gọn được</span>
                 </label>
+
+                {displayType === 'grouped' && (
+                    <label className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-100 transition-colors">
+                        <div className={`w-5 h-5 border-2 flex items-center justify-center transition-colors ${useFullTitle ? 'bg-indigo-600 border-indigo-600' : 'bg-white dark:bg-slate-800 border-slate-300'}`}>
+                            {useFullTitle && <div className="w-2 h-2 bg-white"></div>}
+                        </div>
+                        <input
+                            type="checkbox" className="hidden"
+                            checked={useFullTitle} onChange={(e) => {
+                                const val = e.target.checked
+                                setUseFullTitle(val)
+                                if (val) setCollapsible(false)
+                            }}
+                        />
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-tight">Hiện tên đầy đủ</span>
+                    </label>
+                )}
             </div>
 
             {/* Actions */}

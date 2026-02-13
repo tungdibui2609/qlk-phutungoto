@@ -275,12 +275,15 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     // 2. Basic Modules (Default):
     // These are visible in Admin and can be toggled.
     // They generally should be enabled, but we respect the DB / System Config.
-    // [UPDATED] Use dynamic basicModuleIds instead of static constant
+    // [UPDATED] Use dynamic basicModuleIds instead of change
     const isBasic = basicModuleIds.includes(moduleId)
     if (isBasic) {
-      if (unlockedModules.length > 0 && !unlockedModules.includes(moduleId)) return false;
+      // Basic modules are implicitly "unlocked" for everyone, 
+      // UNLESS we want to enforce license even for basic (which usually we don't).
+      // The previous check: if (unlockedModules.length > 0 && !unlockedModules.includes(moduleId)) return false;
+      // prevented basic modules from working if the company had ANY unlocked modules but not this specific basic one.
 
-      // If allowed globally, check if this SPECIFIC system has it enabled.
+      // If allowed globally (basic), check if this SPECIFIC system has it enabled.
       // If the system has module configuration (not null/empty), we respect it.
       // If the system is new (no config), we default to TRUE for basic modules.
       if (currentSystem && currentSystem.modules) {
@@ -315,19 +318,20 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     const utilityModules = Array.isArray(legacyModules?.utility_modules) ? legacyModules.utility_modules : []
 
     // 3. Strict check for new column types
-    if (moduleId.startsWith('inbound_')) {
+    if (moduleId.startsWith('inbound_') && moduleId !== 'inbound_date') {
       // Enforce Company License Check (unless it's a Core Module, which is handled above)
-      if (!unlockedModules.includes(moduleId)) return false
+      // [FIX] Allow basic modules to bypass license check
+      if (!isBasic && !unlockedModules.includes(moduleId)) return false
       return inboundModules.includes(moduleId)
     }
     if (moduleId.startsWith('outbound_')) {
-      if (!unlockedModules.includes(moduleId)) return false
+      if (!isBasic && !unlockedModules.includes(moduleId)) return false
       return outboundModules.includes(moduleId)
     }
 
     // Enforce License Check for other modules (Product, Dashboard, Lot, Utility etc.)
     // If not unlocked by Admin, it should not be active even if enabled in System Config.
-    if (!unlockedModules.includes(moduleId)) return false
+    if (!isBasic && !unlockedModules.includes(moduleId)) return false
 
     return productModules.includes(moduleId) ||
       dashboardModules.includes(moduleId) ||

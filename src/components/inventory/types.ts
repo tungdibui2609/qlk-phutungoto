@@ -50,6 +50,7 @@ export type ProductWithCategory = {
     categories: {
         name: string
     } | null
+    category_id: string | null
     product_media: {
         url: string
         type: string

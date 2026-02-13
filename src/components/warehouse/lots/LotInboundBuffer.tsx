@@ -25,9 +25,10 @@ interface LotInboundBufferProps {
     onClose: () => void
     onSuccess: () => void
     onFillInfo?: (data: any) => void
+    onUpdate?: () => void
 }
 
-export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onClose, onSuccess, onFillInfo }) => {
+export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onClose, onSuccess, onFillInfo, onUpdate }) => {
     const { systemType, currentSystem } = useSystem()
     const { showToast, showConfirm } = useToast()
     const [pendingInbounds, setPendingInbounds] = useState<PendingInbound[]>([])
@@ -165,6 +166,9 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
             newSelected.delete(inboundId)
             setSelectedIds(newSelected)
             showToast('Đã xóa khỏi hàng chờ', 'success')
+
+            // Notify parent to update count
+            if (onUpdate) onUpdate()
         } catch (e: any) {
             showToast('Lỗi khi xóa: ' + e.message, 'error')
         }

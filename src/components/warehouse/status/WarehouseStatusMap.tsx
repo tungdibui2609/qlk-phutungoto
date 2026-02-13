@@ -86,8 +86,13 @@ export default function WarehouseStatusMap({
                 return (
                     <div key={zone.id} className="contents">
                         {hasPositions && (
-                            <div className="grid mb-4" style={{ gridTemplateColumns: `repeat(${positionColumns}, minmax(0, 1fr))`, gap: `${layout?.layout_gap ?? 16}px` }}>
-                                {zone.positions.map(pos => renderStatusCell(pos, cellHeight))}
+                            <div className="grid mb-4" style={{
+                                gridTemplateColumns: cellWidth > 0
+                                    ? `repeat(${positionColumns}, ${cellWidth}px)`
+                                    : `repeat(${positionColumns}, minmax(auto, 1fr))`,
+                                gap: `${layout?.layout_gap ?? 16}px`
+                            }}>
+                                {zone.positions.map(pos => renderStatusCell(pos, cellHeight, layout))}
                             </div>
                         )}
                         {zone.children.map(child => renderZone(child as any, depth, currentBreadcrumb))}
@@ -104,8 +109,13 @@ export default function WarehouseStatusMap({
                         </button>
                     </div>
                     {hasPositions && (
-                        <div className="grid mb-2" style={{ gridTemplateColumns: `repeat(${positionColumns}, minmax(0, 1fr))`, gap: `${layout?.layout_gap ?? 4}px` }}>
-                            {zone.positions.map(pos => renderStatusCell(pos, cellHeight))}
+                        <div className="grid mb-2" style={{
+                            gridTemplateColumns: cellWidth > 0
+                                ? `repeat(${positionColumns}, ${cellWidth}px)`
+                                : `repeat(${positionColumns}, minmax(auto, 1fr))`,
+                            gap: `${layout?.layout_gap ?? 4}px`
+                        }}>
+                            {zone.positions.map(pos => renderStatusCell(pos, cellHeight, layout))}
                         </div>
                     )}
                     {zone.children.map(child => renderZone(child as any, depth + 1, currentBreadcrumb))}
@@ -174,11 +184,11 @@ export default function WarehouseStatusMap({
                                 style={{
                                     gridTemplateColumns: cellWidth > 0
                                         ? `repeat(${positionColumns}, ${cellWidth}px)`
-                                        : `repeat(${positionColumns}, minmax(0, 1fr))`,
+                                        : `repeat(${positionColumns}, minmax(auto, 1fr))`,
                                     gap: `${layout?.layout_gap ?? 4}px`
                                 }}
                             >
-                                {zone.positions.map(pos => renderStatusCell(pos, cellHeight))}
+                                {zone.positions.map(pos => renderStatusCell(pos, cellHeight, layout))}
                             </div>
                         )}
                         {hasChildren && (
@@ -193,7 +203,7 @@ export default function WarehouseStatusMap({
                                 style={{
                                     gap: `${layout?.layout_gap ?? 16}px`,
                                     ...(childLayout === 'grid' && childColumns > 0
-                                        ? { gridTemplateColumns: `repeat(${childColumns}, minmax(0, 1fr))` }
+                                        ? { gridTemplateColumns: `repeat(${childColumns}, minmax(auto, 1fr))` }
                                         : childLayout === 'grid'
                                             ? { gridTemplateColumns: `repeat(auto-fill, minmax(280px, 1fr))` }
                                             : {})
@@ -202,7 +212,7 @@ export default function WarehouseStatusMap({
                                 {zone.children.map(child => (
                                     <div
                                         key={child.id}
-                                        className={childLayout === 'horizontal' ? 'flex-shrink-0' : ''}
+                                        className={childLayout === 'horizontal' ? 'shrink-0 grow' : ''}
                                         style={
                                             childLayout === 'horizontal' && childWidth > 0
                                                 ? { width: `${childWidth}px` }
@@ -239,7 +249,8 @@ export default function WarehouseStatusMap({
         const containerHeight = layout?.container_height ?? 0
 
         // Use zone code as title if available, otherwise use last part of name
-        const compactTitle = zone.code || zone.name
+        // If use_full_title is enabled, use full name
+        const compactTitle = layout?.use_full_title ? zone.name : (zone.code || zone.name)
 
         return (
             <div
@@ -330,7 +341,7 @@ export default function WarehouseStatusMap({
         return result
     }
 
-    function renderStatusCell(pos: PositionWithZone, cellHeight: number): React.ReactNode {
+    function renderStatusCell(pos: PositionWithZone, cellHeight: number, layout: any): React.ReactNode {
         const isOccupied = occupiedIds.has(pos.id)
         const lotDetail = pos.lot_id ? lotInfo[pos.lot_id] : null
 
@@ -367,7 +378,7 @@ export default function WarehouseStatusMap({
                 title={`${pos.code}${lotDetail ? `\nLOT: ${lotDetail.code}\n${lotDetail.items.map(i => `${i.sku}: ${i.quantity}`).join(', ')}` : '\n(Trống)'}`}
             >
                 {/* Minimalist content for "Status" view */}
-                <span className={`text-[8px] font-bold leading-none ${isOccupied ? 'text-slate-900 dark:text-white' : 'text-slate-400'}`}>
+                <span className={`text-[8px] font-bold leading-none ${isOccupied ? 'text-slate-900 dark:text-white' : 'text-slate-400'} ${layout?.cell_width === 0 ? 'whitespace-nowrap px-0.5' : ''}`}>
                     {pos.code.split('-').pop()}
                 </span>
 

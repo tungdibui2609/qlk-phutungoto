@@ -19,22 +19,31 @@ type Product = Database['public']['Tables']['products']['Row']
 
 export default function InventoryPage() {
     const { showToast, showConfirm } = useToast()
+    const [categories, setCategories] = useState<any[]>([])
+    const [selectedCategory, setSelectedCategory] = useState<string>('all')
     const [unitsMap, setUnitsMap] = useState<Record<string, string>>({})
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
     const [isModalOpen, setIsModalOpen] = useState(false)
 
-    // Load Units dictionary
+    // Load Units dictionary & Categories
     useEffect(() => {
-        async function fetchUnits() {
-            const { data } = await supabase.from('units').select('id, name')
-            if (data) {
+        async function fetchCommonData() {
+            const [unitsRes, catsRes] = await Promise.all([
+                supabase.from('units').select('id, name'),
+                supabase.from('categories').select('id, name').order('name')
+            ])
+
+            if (unitsRes.data) {
                 const uMap: Record<string, string> = {}
-                data.forEach((u: any) => uMap[u.id] = u.name)
+                unitsRes.data.forEach((u: any) => uMap[u.id] = u.name)
                 setUnitsMap(uMap)
             }
+            if (catsRes.data) {
+                setCategories(catsRes.data)
+            }
         }
-        fetchUnits()
+        fetchCommonData()
     }, [])
 
     const {
@@ -47,6 +56,11 @@ export default function InventoryPage() {
         select: `*, categories ( name ), product_media ( url, type ), product_units ( conversion_rate, unit_id )`,
         orderBy: { column: 'created_at', ascending: false }
     })
+
+    const displayedProducts = React.useMemo(() => {
+        if (selectedCategory === 'all') return products
+        return products.filter(p => p.category_id === selectedCategory)
+    }, [products, selectedCategory])
 
     const handleViewProduct = (product: ProductWithCategory) => {
         setSelectedProduct(product as any)
@@ -87,16 +101,33 @@ export default function InventoryPage() {
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={20} />
                     <input
                         type="text"
-                        placeholder="Tìm kiếm theo Tên, SKU, Mã phụ tùng, danh mục..."
+                        placeholder="Tìm kiếm theo Tên, SKU, Mã phụ tùng..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-full pl-12 pr-4 py-3 rounded-2xl bg-stone-50 border border-stone-200 text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-100 transition-all font-medium"
                     />
                 </div>
-                <button className="flex items-center justify-center gap-2 px-6 py-3 rounded-2xl text-stone-600 font-bold bg-stone-50 border border-stone-200 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 transition-all">
-                    <Filter size={18} />
-                    BỘ LỌC
-                </button>
+
+                <div className="relative min-w-[200px]">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Filter size={18} className="text-stone-400" />
+                    </div>
+                    <select
+                        value={selectedCategory}
+                        onChange={(e) => setSelectedCategory(e.target.value)}
+                        className="w-full pl-10 pr-8 py-3 rounded-2xl bg-stone-50 border border-stone-200 text-stone-800 focus:outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-100 transition-all font-bold appearance-none cursor-pointer"
+                    >
+                        <option value="all">Tất cả danh mục</option>
+                        {categories.map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                    </select>
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                        <svg className="h-4 w-4 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </div>
+                </div>
             </div>
 
             {/* TABLE (Desktop) */}
@@ -119,18 +150,18 @@ export default function InventoryPage() {
                                         <p className="text-stone-400 font-bold uppercase tracking-widest text-xs">Đang tải...</p>
                                     </td>
                                 </tr>
-                            ) : products.length === 0 ? (
+                            ) : displayedProducts.length === 0 ? (
                                 <tr>
                                     <td colSpan={4} className="p-10">
                                         <EmptyState
                                             icon={Package}
                                             title="Không tìm thấy sản phẩm"
-                                            description={searchTerm ? `Không có kết quả nào cho "${searchTerm}"` : "Hãy bắt đầu thêm sản phẩm của bạn."}
+                                            description={searchTerm || selectedCategory !== 'all' ? `Không có kết quả nào phù hợp` : "Hãy bắt đầu thêm sản phẩm của bạn."}
                                         />
                                     </td>
                                 </tr>
                             ) : (
-                                products.map((item, index) => (
+                                displayedProducts.map((item, index) => (
                                     <tr
                                         key={item.id}
                                         onClick={() => handleViewProduct(item)}
@@ -171,7 +202,7 @@ export default function InventoryPage() {
                                                         )}
                                                         {item.product_units?.slice(0, 2).map((u, idx) => (
                                                             <span key={idx} className="text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-indigo-50 text-indigo-500 border border-indigo-100">
-                                                                1 {unitsMap[u.unit_id] || '---'} = {u.conversion_rate} {item.unit}
+                                                                1 {unitsMap[u.unit_id] || '---'} = {parseFloat(Number(u.conversion_rate).toFixed(3))} {item.unit}
                                                             </span>
                                                         ))}
                                                     </div>
@@ -218,7 +249,7 @@ export default function InventoryPage() {
 
                 <div className="px-8 py-5 flex justify-between items-center bg-stone-50/50 border-t border-stone-200">
                     <div className="text-[11px] font-black uppercase tracking-widest text-stone-400 bg-stone-100 px-3 py-1 rounded-full">
-                        {products.length} Kết quả
+                        {displayedProducts.length} Kết quả
                     </div>
                     <div className="flex gap-2">
                         <button className="px-5 py-2 rounded-xl bg-white text-stone-300 border border-stone-200 text-xs font-bold uppercase cursor-not-allowed" disabled>Trước</button>
@@ -235,7 +266,7 @@ export default function InventoryPage() {
                     </div>
                 ) : (
                     <MobileProductList
-                        products={products}
+                        products={displayedProducts}
                         unitsMap={unitsMap}
                         onView={handleViewProduct}
                         onDelete={handleDelete}

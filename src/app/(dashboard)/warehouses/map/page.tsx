@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, Suspense, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { Map, Settings, Package, MapPin, Tag, Printer } from 'lucide-react'
+import { Map, Settings, Package, MapPin, Tag, Printer, ChevronsDown, ChevronsUp } from 'lucide-react'
 import MultiSelectActionBar from '@/components/warehouse/map/MultiSelectActionBar'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
 import LayoutConfigPanel from '@/components/warehouse/LayoutConfigPanel'
@@ -624,6 +624,15 @@ function WarehouseMapContent() {
         })
     }
 
+    function handleExpandAll() {
+        setCollapsedZones(new Set())
+    }
+
+    function handleCollapseAll() {
+        const allIds = new Set(zones.map(z => z.id))
+        setCollapsedZones(allIds)
+    }
+
     function handleLayoutSave(updatedLayout: ZoneLayout) {
         setLayouts(prev => {
             const existing = prev.find(l => l.zone_id === updatedLayout.zone_id)
@@ -767,23 +776,22 @@ function WarehouseMapContent() {
                 toggleMobileFilters={() => setShowMobileFilters(!showMobileFilters)}
             />
 
-            {/* Legend */}
-            <div className="flex flex-wrap items-center gap-6 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400">
-                <span className="font-medium text-gray-500">Chú thích:</span>
-                <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800"></div>
-                    <span>Trống</span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 border border-amber-300 rounded bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center">
-                        <Package size={10} className="text-amber-500" />
-                    </div>
-                    <span>Có hàng</span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 border border-blue-500 rounded bg-blue-50 dark:bg-blue-900/30"></div>
-                    <span>Đang chọn</span>
-                </div>
+            {/* Collapse/Expand Controls */}
+            <div className="flex items-center gap-2">
+                <button
+                    onClick={handleCollapseAll}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors shadow-sm"
+                >
+                    <ChevronsUp size={16} className="text-gray-500" />
+                    Thu gọn tất cả
+                </button>
+                <button
+                    onClick={handleExpandAll}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors shadow-sm"
+                >
+                    <ChevronsDown size={16} className="text-gray-500" />
+                    Mở tất cả
+                </button>
             </div>
 
             {/* Main Grid */}
