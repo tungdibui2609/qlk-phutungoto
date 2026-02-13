@@ -165,9 +165,11 @@ export async function middleware(request: NextRequest) {
     // 2. Authenticated User Logic
     if (user) {
         const isSuperAdmin = user.email?.trim().toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
+        const hasErrorParam = url.searchParams.has('error')
 
         // 2.1 Handling Login Pages (Redirect if already logged in)
-        if (IS_LOGIN_PAGE) {
+        // ONLY Redirect if there is NO error param (to avoid loop when we redirect to login with error)
+        if (IS_LOGIN_PAGE && !hasErrorParam) {
             if (isSuperAdmin) {
                 url.pathname = '/admin/dashboard'
             } else {

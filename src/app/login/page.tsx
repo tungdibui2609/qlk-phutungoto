@@ -15,6 +15,21 @@ export default function LoginPage() {
     const [companyName, setCompanyName] = useState(COMPANY_INFO.name)
     const [logoUrl, setLogoUrl] = useState<string | null>(null)
 
+    const [isUnauthorizedDomain, setIsUnauthorizedDomain] = useState(false)
+
+    useEffect(() => {
+        // Check for error param
+        const params = new URLSearchParams(window.location.search)
+        const errorType = params.get('error')
+        if (errorType === 'unauthorized_domain') {
+            setIsUnauthorizedDomain(true)
+            setMessage({
+                text: 'Tài khoản của bạn không thuộc công ty/tên miền này. Vui lòng đăng xuất hoặc truy cập đúng địa chỉ.',
+                type: 'error'
+            })
+        }
+    }, [])
+
     useEffect(() => {
         async function fetchCompanySettings() {
             const { data } = await supabase
@@ -69,12 +84,28 @@ export default function LoginPage() {
             })
             if (error) throw error
 
-            router.push('/select-system')
+            // Update: We rely on middleware or next navigation, but let's push to select-system
+            // If they are unauthorized, the middleware will catch them again?
+            // Yes, so if they try to login again with SAME wrong account, they get loop?
+            // No, signInWithPassword upgrades the session.
+            // If they login with CORRECT account, they proceed.
+            // If they login with WRONG account (again), they get redirected back here with error.
+
+            router.refresh() // Refresh middleware context first
+            setTimeout(() => {
+                router.push('/select-system')
+            }, 500)
+
         } catch (error: any) {
             setMessage({ text: error.message, type: 'error' })
         } finally {
             setLoading(false)
         }
+    }
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut()
+        window.location.href = '/login' // Hard refresh to clear everything
     }
 
     return (
@@ -215,6 +246,18 @@ export default function LoginPage() {
                         )}
                     </button>
                 </form>
+
+                {isUnauthorizedDomain && (
+                    <div className="mt-4 pt-4 border-t border-slate-100">
+                        <button
+                            type="button"
+                            onClick={handleLogout}
+                            className="w-full py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all duration-200 bg-red-50 text-red-600 hover:bg-red-100 font-medium"
+                        >
+                            Đăng xuất tài khoản hiện tại
+                        </button>
+                    </div>
+                )}
 
                 {/* Footer */}
                 <div className="mt-8 text-center">
