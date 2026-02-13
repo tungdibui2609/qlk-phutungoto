@@ -60,6 +60,57 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone()
     const path = url.pathname
 
+    // CUSTOM DOMAIN LOGIC
+    const hostname = request.headers.get('host')!
+    // Simple check: assume 'localhost' and 'vercel.app' are NOT custom domains
+    const isCustomDomain = !hostname.includes('localhost') && !hostname.includes('vercel.app') && !hostname.includes('toanthang.vn')
+
+    if (isCustomDomain && !path.startsWith('/_next') && !path.startsWith('/static')) {
+        // Look up company by domain
+        const { data: company } = await supabase
+            .from('companies')
+            .select('id, name')
+            .eq('custom_domain', hostname)
+            .single()
+
+        if (company) {
+            // Found company for this domain
+            // 1. Enforce Isolation: If user is logged in, must belong to this company
+            if (user) {
+                // We need to fetch user profile to check company_id
+                const { data: profile } = await supabase
+                    .from('user_profiles')
+                    .select('company_id')
+                    .eq('id', user.id)
+                    .single()
+
+                // If user has no profile or belongs to different company -> Redirect/Error
+                // Exception: Super Admin (but Super Admin should probably use main domain? Or allowed?)
+                // Let's strictly enforce: Accessing via custom domain requires membership.
+                const isSuperAdmin = user.email === 'tungdibui2609@gmail.com'
+
+                if (profile && profile.company_id !== company.id && !isSuperAdmin) {
+                    // Unauthorized for this tenant
+                    // Redirect to login with specific error or sign out
+                    // We redirect to a generic error page or login with param
+                    const errorUrl = request.nextUrl.clone()
+                    errorUrl.pathname = '/login'
+                    errorUrl.searchParams.set('error', 'unauthorized_domain')
+                    return NextResponse.redirect(errorUrl)
+                }
+            }
+
+            // 2. Set Context Header for Server Components (optional but good)
+            response.headers.set('x-company-id', company.id)
+        } else {
+            // Domain points here but not configured in DB -> 404
+            // Only if it's NOT a static asset/api (already filtered above partially)
+            if (!path.startsWith('/api')) {
+                return new NextResponse(`Domain ${hostname} is not configured in the system.`, { status: 404 })
+            }
+        }
+    }
+
     // Constants
     const SUPER_ADMIN_EMAIL = 'tungdibui2609@gmail.com'
     const IS_ADMIN_ROUTE = path.startsWith('/admin')

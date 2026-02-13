@@ -24,6 +24,7 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
         phone: '',
         email: '',
         tax_code: '',
+        custom_domain: '',
         // Admin User Data (Create Mode)
         admin_name: '',
         admin_email: '',
@@ -47,7 +48,8 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
                 address: initialData.address || '',
                 phone: initialData.phone || '',
                 email: initialData.email || '',
-                tax_code: initialData.tax_code || ''
+                tax_code: initialData.tax_code || '',
+                custom_domain: initialData.custom_domain || ''
             }))
             fetchAdmins(initialData.id)
         }
@@ -196,7 +198,8 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
                     address: formData.address,
                     phone: formData.phone,
                     email: formData.email,
-                    tax_code: formData.tax_code
+                    tax_code: formData.tax_code,
+                    custom_domain: formData.custom_domain || null
                 }).eq('id', initialData.id)
                 if (error) throw error
                 showToast('Cập nhật thông tin công ty thành công', 'success')
@@ -212,6 +215,7 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
                         phone: formData.phone,
                         email: formData.email,
                         tax_code: formData.tax_code,
+                        custom_domain: formData.custom_domain,
                         admin_name: formData.admin_name,
                         admin_email: formData.admin_email,
                         admin_password: formData.admin_password
@@ -301,6 +305,18 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
                                         className="w-full px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-900 focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all placeholder:text-slate-400"
                                         placeholder="010xxxxxxx"
                                     />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Tên miền riêng (Custom Domain)</label>
+                                    <input
+                                        name="custom_domain"
+                                        value={formData.custom_domain}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-900 focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all placeholder:text-slate-400"
+                                        placeholder="ví dụ: khachhang.com (Không bắt buộc)"
+                                    />
+                                    <p className="text-xs text-slate-400 mt-1.5 pl-1">Trỏ tên miền về server để kích hoạt.</p>
                                 </div>
 
                                 <div>
@@ -413,8 +429,8 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
                                                     key={admin.id}
                                                     onClick={() => selectAdminForEdit(admin)}
                                                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all border ${selectedAdmin?.id === admin.id
-                                                            ? 'bg-amber-50 text-amber-700 border-amber-200 shadow-sm'
-                                                            : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                                                        ? 'bg-amber-50 text-amber-700 border-amber-200 shadow-sm'
+                                                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
                                                         }`}
                                                 >
                                                     {admin.full_name || admin.email}
@@ -423,8 +439,8 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
                                             <button
                                                 onClick={() => setIsAddingAdmin(!isAddingAdmin)}
                                                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all border border-dashed flex items-center gap-1.5 ${isAddingAdmin
-                                                        ? 'bg-slate-100 text-slate-700 border-slate-300'
-                                                        : 'text-slate-500 border-slate-300 hover:text-amber-600 hover:border-amber-300'
+                                                    ? 'bg-slate-100 text-slate-700 border-slate-300'
+                                                    : 'text-slate-500 border-slate-300 hover:text-amber-600 hover:border-amber-300'
                                                     }`}
                                             >
                                                 {isAddingAdmin ? <X size={14} /> : <Plus size={14} />}

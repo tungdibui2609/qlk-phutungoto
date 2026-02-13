@@ -75,7 +75,7 @@ async function seedCompanyData(companyId: string) {
 export async function POST(request: Request) {
     try {
         const body = await request.json()
-        const { name, code, address, phone, email, tax_code, admin_name, admin_email, admin_password } = body
+        const { name, code, address, phone, email, tax_code, custom_domain, admin_name, admin_email, admin_password } = body
 
         if (!name || !code || !admin_email || !admin_password) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -138,6 +138,7 @@ export async function POST(request: Request) {
                 phone,
                 email,
                 tax_code,
+                custom_domain: custom_domain || null,
                 unlocked_modules: dynamicBasicIds // Auto-unlock default modules
             })
             .select()

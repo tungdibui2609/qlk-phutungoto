@@ -139,6 +139,7 @@ export type Database = {
           is_system: boolean | null
           prefix: string | null
           unlocked_modules: string[] | null
+          custom_domain: string | null
         }
         Insert: {
           id?: string
