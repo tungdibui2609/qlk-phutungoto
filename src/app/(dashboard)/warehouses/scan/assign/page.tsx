@@ -27,6 +27,7 @@ export default function FastScanPage() {
 
     const [loading, setLoading] = useState(false)
     const [paused, setPaused] = useState(false) // Pause scanner processing
+    const [cameraError, setCameraError] = useState<string | null>(null)
 
     // Data
     const [lotData, setLotData] = useState<any>(null)
@@ -218,6 +219,12 @@ export default function FastScanPage() {
             // 3. Pick Destination
             const targetPos = autoQueue[0]
 
+            // [FIX] Clear LOT from any previous positions first to avoid duplicates
+            await supabase
+                .from('positions')
+                .update({ lot_id: null } as any)
+                .eq('lot_id', lot.id)
+
             // 4. Assign
             const { error: updateError } = await supabase
                 .from('positions')
@@ -341,6 +348,12 @@ export default function FastScanPage() {
                 return
             }
 
+            // [FIX] Clear LOT from any previous positions first
+            await supabase
+                .from('positions')
+                .update({ lot_id: null } as any)
+                .eq('lot_id', lotData.id)
+
             // 2. Assign
             const { error: updateError } = await supabase
                 .from('positions')
@@ -385,8 +398,8 @@ export default function FastScanPage() {
     return (
         <div className="h-[calc(100vh-64px)] flex flex-col bg-slate-50 dark:bg-slate-900 overflow-hidden relative">
 
-            {/* Header Overlay */}
-            <div className="absolute top-0 left-0 right-0 z-20 p-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
+            {/* Header - Static Layout to avoid covering content */}
+            <div className="z-20 p-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0">
                 <div className="flex items-center justify-between mb-3">
                     <div>
                         <h1 className="font-bold text-lg text-slate-900 dark:text-white">Gán Vị Trí</h1>
@@ -408,36 +421,36 @@ export default function FastScanPage() {
                     </div>
                 </div>
 
-                {/* MODE SELECTOR */}
+                {/* MODE SELECTOR - Compact */}
                 <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
                     <button
                         onClick={() => setAssignMode('manual')}
-                        className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${assignMode === 'manual' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500'}`}
+                        className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${assignMode === 'manual' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500'}`}
                     >
-                        CĐ 1: Nhập tay vị trí
+                        Nhập tay
                     </button>
                     <button
                         onClick={() => setAssignMode('scan')}
-                        className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${assignMode === 'scan' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500'}`}
+                        className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${assignMode === 'scan' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500'}`}
                     >
-                        CĐ 2: Quét mã vị trí
+                        Quét mã
                     </button>
                     <button
                         onClick={() => setAssignMode('auto')}
-                        className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${assignMode === 'auto' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500'}`}
+                        className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${assignMode === 'auto' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500'}`}
                     >
-                        CĐ 3: Tự động
+                        Tự động
                     </button>
                 </div>
             </div>
 
-            {/* Main Content Area */}
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center pt-16">
+            {/* Main Content Area - No top padding needed now */}
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center">
 
                 {/* AUTO ASSIGN MODE UI */}
                 {assignMode === 'auto' && step !== 2 && (
-                    <div className="w-full max-w-2xl space-y-6 animate-in slide-in-from-bottom-5">
-                        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-xl border border-slate-200 dark:border-slate-800">
+                    <div className="w-full max-w-2xl space-y-4 md:space-y-6 animate-in slide-in-from-bottom-5 pb-20">
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl md:rounded-3xl p-4 md:p-6 shadow-xl border border-slate-200 dark:border-slate-800">
                             <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
                                 <MapPin className="text-orange-600" />
                                 Cấu hình Tự động
@@ -464,20 +477,24 @@ export default function FastScanPage() {
                                         </div>
 
                                         {autoQueue.length > 0 ? (
-                                            <div className="flex items-center gap-3">
-                                                <div className="flex-1">
-                                                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Tiếp theo:</div>
-                                                    <div className="text-3xl font-black text-orange-600 dark:text-orange-500 font-mono tracking-tight">
+                                            <div className="flex flex-col gap-2">
+                                                <div>
+                                                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-1 font-semibold">Tiếp theo:</div>
+                                                    <div className="text-xl md:text-2xl font-black text-orange-600 dark:text-orange-500 font-mono tracking-tight break-all leading-snug">
                                                         {autoQueue[0].code}
                                                     </div>
                                                 </div>
-                                                <div className="w-px h-10 bg-slate-200 dark:bg-slate-700 mx-2"></div>
-                                                <div className="opacity-50 text-right">
-                                                    <div className="text-[10px] text-slate-400">Sau đó:</div>
-                                                    <div className="text-lg font-bold text-slate-400 font-mono">
-                                                        {autoQueue[1]?.code || '---'}
+
+                                                {autoQueue[1] && (
+                                                    <div className="pt-2 border-t border-slate-100 dark:border-slate-700">
+                                                        <div className="flex items-center gap-2 opacity-70">
+                                                            <div className="text-[10px] text-slate-400 font-medium">Sau đó:</div>
+                                                            <div className="text-sm font-bold text-slate-500 dark:text-slate-400 font-mono break-all">
+                                                                {autoQueue[1].code}
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                )}
                                             </div>
                                         ) : (
                                             <div className="text-center py-2 text-red-500 text-sm font-medium">
@@ -491,20 +508,37 @@ export default function FastScanPage() {
 
                         {/* Scanner for Auto Mode */}
                         {selectedTargetZoneId && autoQueue.length > 0 && (
-                            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-xl border border-slate-200 dark:border-slate-800">
+                            <div className="bg-white dark:bg-slate-900 rounded-2xl md:rounded-3xl p-4 md:p-6 shadow-xl border border-slate-200 dark:border-slate-800">
                                 <h3 className="text-center font-bold text-slate-900 dark:text-white mb-4">Quét mã LOT để gán vào {autoQueue[0].code}</h3>
                                 {useCamera ? (
                                     <div className="w-full max-w-xs aspect-square relative bg-black rounded-2xl overflow-hidden shadow-inner mx-auto border-2 border-slate-100 dark:border-slate-800">
-                                        <Scanner
-                                            onScan={(result) => {
-                                                if (result && result.length > 0) {
-                                                    handleScanResult(result[0].rawValue)
-                                                }
-                                            }}
-                                            styles={{ container: { width: '100%', height: '100%' } }}
-                                            components={{ finder: false }}
-                                            constraints={{ facingMode: 'environment' }}
-                                        />
+                                        {cameraError ? (
+                                            <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center bg-slate-100 dark:bg-slate-800">
+                                                <X className="w-8 h-8 text-red-500 mb-2" />
+                                                <p className="text-xs text-red-500 font-medium mb-2">Không thể mở camera</p>
+                                                <button
+                                                    onClick={() => { setCameraError(null); setUseCamera(false); setTimeout(() => setUseCamera(true), 100); }}
+                                                    className="px-3 py-1 bg-white dark:bg-slate-700 shadow-sm border rounded-lg text-xs font-bold"
+                                                >
+                                                    Thử lại
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <Scanner
+                                                onScan={(result) => {
+                                                    if (result && result.length > 0) {
+                                                        handleScanResult(result[0].rawValue)
+                                                    }
+                                                }}
+                                                onError={(error: any) => {
+                                                    console.error('Scanner Error:', error)
+                                                    setCameraError(error?.message || 'Lỗi camera')
+                                                }}
+                                                styles={{ container: { width: '100%', height: '100%' } }}
+                                                components={{ finder: false }}
+                                                constraints={{ facingMode: 'environment' }}
+                                            />
+                                        )}
                                         <div className="absolute inset-0 border-2 border-orange-500/50 rounded-2xl animate-pulse pointer-events-none"></div>
                                         {loading && (
                                             <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-xl backdrop-blur-sm">
@@ -540,23 +574,41 @@ export default function FastScanPage() {
                 {/* CAMERA VIEW (Step 0 or Step 1 with scan mode) for MANUAL/SCAN modes */}
                 {assignMode !== 'auto' && useCamera && step !== 2 && (step === 0 || assignMode === 'scan') && (
                     <div className="w-full max-w-xs aspect-square relative bg-black rounded-3xl overflow-hidden shadow-xl border-4 border-white dark:border-slate-800 mb-6 mx-auto">
-                        <Scanner
-                            onScan={(result) => {
-                                if (result && result.length > 0) {
-                                    handleScanResult(result[0].rawValue)
-                                }
-                            }}
-                            styles={{
-                                container: { width: '100%', height: '100%' },
-                                video: { objectFit: 'cover' }
-                            }}
-                            components={{
-                                finder: false
-                            }}
-                            constraints={{
-                                facingMode: 'environment'
-                            }}
-                        />
+                        {cameraError ? (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-100 dark:bg-slate-800 z-10">
+                                <X className="w-12 h-12 text-red-500 mb-4" />
+                                <p className="text-sm text-red-500 font-bold mb-1">Lỗi Camera</p>
+                                <p className="text-xs text-slate-500 mb-4">{cameraError}</p>
+                                <button
+                                    onClick={() => { setCameraError(null); setUseCamera(false); setTimeout(() => setUseCamera(true), 100); }}
+                                    className="px-4 py-2 bg-white dark:bg-slate-700 shadow-sm border rounded-xl text-sm font-bold hover:bg-slate-50"
+                                >
+                                    Thử lại
+                                </button>
+                            </div>
+                        ) : (
+                            <Scanner
+                                onScan={(result) => {
+                                    if (result && result.length > 0) {
+                                        handleScanResult(result[0].rawValue)
+                                    }
+                                }}
+                                onError={(error: any) => {
+                                    console.error('Scanner Error:', error)
+                                    setCameraError(error?.message || 'Lỗi kết nối camera')
+                                }}
+                                styles={{
+                                    container: { width: '100%', height: '100%' },
+                                    video: { objectFit: 'cover' }
+                                }}
+                                components={{
+                                    finder: false
+                                }}
+                                constraints={{
+                                    facingMode: 'environment'
+                                }}
+                            />
+                        )}
                         {/* Custom Finder / Overlay UI */}
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                             <div className="w-56 h-56 border-2 border-white/50 rounded-3xl relative">

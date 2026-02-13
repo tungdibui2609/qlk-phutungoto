@@ -4,6 +4,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Map, Settings, Package, MapPin, Tag, Printer, ChevronsDown, ChevronsUp } from 'lucide-react'
+import { useToast } from '@/components/ui/ToastProvider'
 import MultiSelectActionBar from '@/components/warehouse/map/MultiSelectActionBar'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
 import LayoutConfigPanel from '@/components/warehouse/LayoutConfigPanel'
@@ -28,6 +29,7 @@ interface PositionWithZone extends Position {
 }
 
 function WarehouseMapContent() {
+    const { showToast } = useToast()
     const { systemType, currentSystem } = useSystem()
     const [positions, setPositions] = useState<PositionWithZone[]>([])
     const [zones, setZones] = useState<Zone[]>([])
@@ -121,7 +123,19 @@ function WarehouseMapContent() {
                 .eq('id', positionId)
                 .then(({ error }) => {
                     if (error) {
-                        alert('Lỗi cập nhật vị trí: ' + error.message)
+                        // Use warn instead of error to prevent Next.js Dev Overlay
+                        console.warn('Update position error:', error)
+
+                        const code = (error as any)?.code || ''
+                        const rawMsg = (error as any)?.message || (error as any)?.details || ''
+
+                        let displayMsg = rawMsg || 'Có lỗi xảy ra khi cập nhật vị trí'
+
+                        if (code === '23505' || rawMsg.includes('unique_lot_in_positions') || rawMsg.includes('duplicate key')) {
+                            displayMsg = 'LOT này đã được gán ở vị trí khác! Vui lòng gỡ bỏ khỏi vị trí cũ trước.'
+                        }
+
+                        showToast(displayMsg, 'error')
                         fetchData()
                     }
                 })

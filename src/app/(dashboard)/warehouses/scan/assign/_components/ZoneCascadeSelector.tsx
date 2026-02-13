@@ -70,8 +70,8 @@ export function ZoneCascadeSelector({ zones, selectedZoneId, onSelect }: ZoneCas
             if (options.length === 0) return null
 
             return (
-                <div key={level.parentId} className="flex items-center gap-2 animate-in slide-in-from-left-2 fade-in duration-300">
-                    {idx > 0 && <ChevronRight size={16} className="text-slate-400" />}
+                <div key={level.parentId} className="col-span-1 animate-in slide-in-from-left-2 fade-in duration-300 flex items-center gap-2 md:w-auto">
+                    {idx > 0 && <ChevronRight size={16} className="text-slate-400 hidden md:block" />}
                     <select
                         value={level.selectedId || ''}
                         onChange={(e) => {
@@ -79,7 +79,7 @@ export function ZoneCascadeSelector({ zones, selectedZoneId, onSelect }: ZoneCas
                             onSelect(val || (level.parentId === 'root' ? null : level.parentId))
                         }}
                         className={`
-                            px-3 py-2 rounded-lg border text-sm font-medium transition-all outline-none
+                            w-full px-2 py-2 md:px-3 md:py-2 rounded-lg border text-xs md:text-sm font-medium transition-all outline-none appearance-none md:appearance-auto truncate
                             ${level.selectedId
                                 ? 'bg-white dark:bg-slate-800 border-orange-200 dark:border-orange-800 text-slate-900 dark:text-white shadow-sm'
                                 : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500'
@@ -87,7 +87,7 @@ export function ZoneCascadeSelector({ zones, selectedZoneId, onSelect }: ZoneCas
                             focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500
                         `}
                     >
-                        <option value="">{idx === 0 ? '-- Chọn Khu vực --' : '-- Chọn chi tiết --'}</option>
+                        <option value="">{idx === 0 ? 'Khu vực' : 'Chi tiết'}</option>
                         {options.map(z => (
                             <option key={z.id} value={z.id}>
                                 {z.name}
@@ -100,8 +100,8 @@ export function ZoneCascadeSelector({ zones, selectedZoneId, onSelect }: ZoneCas
     }
 
     return (
-        <div className="flex flex-wrap items-center gap-y-2">
-            <div className="mr-2 p-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500">
+        <div className="grid grid-cols-3 gap-2 md:flex md:flex-wrap md:items-center">
+            <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500 hidden md:block">
                 <Layers size={18} />
             </div>
             {renderLevels()}
