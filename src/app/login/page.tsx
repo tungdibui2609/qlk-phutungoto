@@ -1,13 +1,14 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { LogIn, Mail, Lock, Loader2, Info } from 'lucide-react'
 import Image from 'next/image'
 import { COMPANY_INFO } from '@/lib/constants'
 
 export default function LoginPage() {
     const router = useRouter()
+    const searchParams = useSearchParams()
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [loading, setLoading] = useState(false)
@@ -19,8 +20,7 @@ export default function LoginPage() {
 
     useEffect(() => {
         // Check for error param
-        const params = new URLSearchParams(window.location.search)
-        const errorType = params.get('error')
+        const errorType = searchParams.get('error')
         if (errorType === 'unauthorized_domain') {
             setIsUnauthorizedDomain(true)
             setMessage({
@@ -28,7 +28,7 @@ export default function LoginPage() {
                 type: 'error'
             })
         }
-    }, [])
+    }, [searchParams])
 
     useEffect(() => {
         async function fetchCompanySettings() {
