@@ -48,46 +48,79 @@ export default function FastScanPage() {
 
     // 0. Fetch Data
     useEffect(() => {
-        const fetchPositions = async () => {
-            if (!currentSystem?.code) return
-            console.log('Fetching positions for system:', currentSystem.code)
-            const { data, error } = await supabase
-                .from('positions')
-                .select('id, code, lot_id')
-                .eq('system_type', currentSystem.code)
+        const fetchAll = async (table: keyof Database['public']['Tables'], queryModifier?: (q: any) => any) => {
+            let allData: any[] = []
+            let from = 0
+            const limit = 1000
 
-            if (error) {
-                console.error('Error fetching positions:', error)
+            while (true) {
+                // @ts-ignore - Dynamic table access with types is tricky in this loop structure
+                let q = supabase.from(table).select('*').range(from, from + limit - 1)
+                if (queryModifier) q = queryModifier(q)
+
+                const { data, error } = await q
+                if (error) {
+                    console.error(`Error fetching ${table}:`, error)
+                    break
+                }
+
+                if (data) {
+                    allData = [...allData, ...data]
+                    if (data.length < limit) break
+                } else {
+                    break
+                }
+                from += limit
             }
-            if (data) {
-                console.log(`Loaded ${data.length} positions`)
-                setAllPositions(data)
-            }
+            return allData
         }
 
-        const fetchZonesAndMap = async () => {
+        const loadData = async () => {
             if (!currentSystem?.code) return
+            console.log('Fetching data for system:', currentSystem.code)
+            setLoading(true)
 
-            // Zones
-            const { data: zData } = await supabase
-                .from('zones')
-                .select('*')
-                .eq('system_type', currentSystem.code)
-                .order('level')
-                .order('code')
-            if (zData) setZones(zData)
+            // Parallel fetch
+            const [posData, zData, zpData] = await Promise.all([
+                // Positions
+                fetchAll('positions', (q) => q.select('id, code, lot_id').eq('system_type', currentSystem.code)),
+                // Zones
+                fetchAll('zones', (q) => q.eq('system_type', currentSystem.code).order('level').order('code')),
+                // Zone Positions - Need custom query style for inner join? 
+                // Supabase JS client handles joined select pagination tricky? 
+                // Actually fetchAll works on the main table. For 'zone_positions', we want to filter by system_type via join.
+                // But simply, we can just fetch ALL zone_positions and filter correctly in memory or try joined filter.
+                // Let's use the explicit loop for zone_positions to be safe with the join syntax.
+                (async () => {
+                    let allZp: any[] = []
+                    let from = 0
+                    const limit = 1000
+                    while (true) {
+                        const { data, error } = await supabase
+                            .from('zone_positions')
+                            .select('zone_id, position_id, positions!inner(system_type)')
+                            .eq('positions.system_type', currentSystem.code)
+                            .range(from, from + limit - 1)
 
-            // Zone Positions
-            const { data: zpData } = await supabase
-                .from('zone_positions')
-                .select('zone_id, position_id, positions!inner(system_type)')
-                .eq('positions.system_type', currentSystem.code)
+                        if (error) break
+                        if (!data || data.length === 0) break
 
-            if (zpData) setZonePositions(zpData.map((x: any) => ({ zone_id: x.zone_id, position_id: x.position_id })))
+                        allZp = [...allZp, ...data]
+                        if (data.length < limit) break
+                        from += limit
+                    }
+                    return allZp
+                })()
+            ])
+
+            console.log(`Loaded ${posData.length} positions, ${zData.length} zones`)
+            setAllPositions(posData)
+            setZones(zData)
+            setZonePositions(zpData.map((x: any) => ({ zone_id: x.zone_id, position_id: x.position_id })))
+            setLoading(false)
         }
 
-        fetchPositions()
-        fetchZonesAndMap()
+        loadData()
     }, [currentSystem])
 
     // Normalize utility

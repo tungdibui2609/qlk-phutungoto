@@ -48,7 +48,12 @@ export function LotPageManager() {
         units,
         productUnits,
         branches,
-        fetchCommonData
+        fetchCommonData,
+        // Pagination
+        page,
+        setPage,
+        pageSize,
+        totalLots
     } = useLotManagement()
 
     const { currentSystem } = useSystem()
@@ -66,7 +71,7 @@ export function LotPageManager() {
 
     useEffect(() => {
         if (currentSystem?.code) {
-            fetchLots()
+            // fetchLots() - Hook handles this now via effects
         }
     }, [currentSystem])
 
@@ -100,6 +105,8 @@ export function LotPageManager() {
     const handleExport = (lot: Lot) => {
         setExportingLot(lot)
     }
+
+    const totalPages = Math.ceil(totalLots / pageSize)
 
     return (
         <section className="space-y-6 pb-12">
@@ -172,21 +179,62 @@ export function LotPageManager() {
             />
 
             {/* Main Grid */}
-            <LotList
-                loading={loading}
-                lots={lots}
-                isModuleEnabled={isModuleEnabled}
-                isUtilityEnabled={isUtilityEnabled}
-                onEdit={handleEdit}
-                onDelete={handleDeleteLot}
-                onView={setViewingLot}
-                onToggleStar={handleToggleStar}
-                onQr={setQrLot}
-                onAssignTag={setTaggingLot}
-                onMerge={handleMerge}
-                onSplit={handleSplit}
-                onExport={handleExport}
-            />
+            <div className="space-y-4">
+                <LotList
+                    loading={loading}
+                    lots={lots}
+                    isModuleEnabled={isModuleEnabled}
+                    isUtilityEnabled={isUtilityEnabled}
+                    onEdit={handleEdit}
+                    onDelete={handleDeleteLot}
+                    onView={setViewingLot}
+                    onToggleStar={handleToggleStar}
+                    onQr={setQrLot}
+                    onAssignTag={setTaggingLot}
+                    onMerge={handleMerge}
+                    onSplit={handleSplit}
+                    onExport={handleExport}
+                />
+
+                {/* Pagination Controls */}
+                {!loading && totalLots > 0 && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+                        <div className="text-sm text-slate-500 dark:text-slate-400">
+                            Hiển thị <span className="font-bold text-slate-700 dark:text-slate-200">{page * pageSize + 1}</span> - <span className="font-bold text-slate-700 dark:text-slate-200">{Math.min((page + 1) * pageSize, totalLots)}</span> trong tổng số <span className="font-bold text-slate-700 dark:text-slate-200">{totalLots}</span> LOT
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setPage(Math.max(0, page - 1))}
+                                disabled={page === 0}
+                                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                            >
+                                Trước
+                            </button>
+
+                            <div className="flex items-center gap-1">
+                                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                    // Logic to show generic page window around current page could be complex.
+                                    // Simple logic: Show first 5 or logic like [1] ... [current] ... [last]
+                                    // For now, let's keep it simple: Show current page number
+                                    return null
+                                })}
+                                <span className="text-sm font-medium px-2 text-slate-600 dark:text-slate-300">
+                                    Trang {page + 1} / {totalPages}
+                                </span>
+                            </div>
+
+                            <button
+                                onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
+                                disabled={page >= totalPages - 1}
+                                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                            >
+                                Sau
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
 
             {/* QR Code Modal */}
             {qrLot && (
