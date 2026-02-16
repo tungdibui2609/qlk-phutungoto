@@ -20,6 +20,7 @@ import { useMapFilters } from './_hooks/useMapFilters'
 import { MapHeader } from './_components/MapHeader'
 import { MapBanners } from './_components/MapBanners'
 import { ZoneCollapseControls } from './_components/ZoneCollapseControls'
+import { MapSearchStats } from './_components/MapSearchStats'
 
 type Zone = Database['public']['Tables']['zones']['Row']
 type ZoneLayout = Database['public']['Tables']['zone_layouts']['Row']
@@ -283,6 +284,13 @@ function WarehouseMapContent() {
                 onEndDateChange={setEndDate}
                 showMobileFilters={showMobileFilters}
                 toggleMobileFilters={() => setShowMobileFilters(!showMobileFilters)}
+            />
+
+            <MapSearchStats
+                filteredPositions={filteredPositions}
+                zones={zones}
+                lotInfo={lotInfo}
+                searchTerm={searchTerm}
             />
 
             {/* Map Grid Area */}
