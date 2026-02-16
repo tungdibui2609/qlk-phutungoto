@@ -15,6 +15,7 @@ interface HorizontalZoneFilterProps {
     showSearch?: boolean
     compact?: boolean
     variant?: 'default' | 'subtle'
+    zones?: Zone[]
 }
 
 export default function HorizontalZoneFilter({
@@ -24,10 +25,13 @@ export default function HorizontalZoneFilter({
     onSearchChange,
     showSearch = true,
     compact = false,
-    variant = 'default'
+    variant = 'default',
+    zones: externalZones
 }: HorizontalZoneFilterProps) {
     const { systemType } = useSystem()
-    const [zones, setZones] = useState<Zone[]>([])
+    const [internalZones, setInternalZones] = useState<Zone[]>([])
+
+    const zones = externalZones || internalZones
     const [loading, setLoading] = useState(true)
     const [session, setSession] = useState<any>(null)
 
@@ -46,27 +50,23 @@ export default function HorizontalZoneFilter({
 
     useEffect(() => {
         if (accessToken && systemType) {
-            fetchZones()
+            setLoading(true)
+            supabase
+                .from('zones')
+                .select('*')
+                .eq('system_type', systemType)
+                .order('level')
+                .order('name')
+                .then(({ data, error }) => {
+                    if (!error && data) {
+                        setInternalZones(data)
+                    }
+                    setLoading(false)
+                })
+        } else {
+            setLoading(false) // Not loading if no accessToken or systemType
         }
-    }, [accessToken, systemType])
-
-    async function fetchZones() {
-        if (!accessToken || !systemType) return
-        setLoading(true)
-        const { data, error } = await supabase
-            .from('zones')
-            .select('*')
-            .eq('system_type', systemType)
-            .order('level')
-            .order('name')
-
-        if (!error && data) {
-            setZones(data)
-            // If nothing selected, maybe select the first warehouse?
-            // For now, let's keep it null => All
-        }
-        setLoading(false)
-    }
+    }, [accessToken, systemType, externalZones])
 
     // Helper: Build tree or map for easy lookup
     const zoneMap = useMemo(() => {

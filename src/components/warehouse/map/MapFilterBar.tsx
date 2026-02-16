@@ -34,9 +34,9 @@ export function MapFilterBar({
     return (
         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-2.5 shadow-sm space-y-2">
             {/* Row 1: Search & Date Filters */}
-            <div className="flex flex-wrap items-center gap-2 w-full">
+            <div className="flex items-center gap-2 w-full">
                 {/* Search */}
-                <div className="relative flex-[3.5] min-w-[280px]">
+                <div className="relative flex-1 min-w-0">
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                     <input
                         type="text"
@@ -47,8 +47,16 @@ export function MapFilterBar({
                     />
                 </div>
 
-                {/* Extra Filters Wrapper */}
-                <div className={`${showMobileFilters ? 'flex' : 'hidden lg:flex'} flex-wrap items-center gap-2 flex-[4]`}>
+                {/* Mobile Filter Toggle */}
+                <button
+                    className="lg:hidden p-2 rounded-xl bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400 shadow-sm border border-orange-200 dark:border-orange-800 shrink-0"
+                    onClick={toggleMobileFilters}
+                >
+                    <Filter size={18} />
+                </button>
+
+                {/* Desktop Extra Filters Wrapper */}
+                <div className="hidden lg:flex items-center gap-2">
                     <DateRangeFilter
                         dateFilterField={dateFilterField}
                         onDateFieldChange={onDateFieldChange}
@@ -56,18 +64,25 @@ export function MapFilterBar({
                         onStartDateChange={onStartDateChange}
                         endDate={endDate}
                         onEndDateChange={onEndDateChange}
-                        className="flex-[1.5] min-w-[310px]"
+                        className="min-w-[310px]"
                     />
                 </div>
-
-                {/* Mobile Filter Toggle */}
-                <button
-                    className="lg:hidden ml-auto p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 shadow-sm"
-                    onClick={toggleMobileFilters}
-                >
-                    <Filter size={18} />
-                </button>
             </div>
+
+            {/* Mobile Expanded Filters */}
+            {showMobileFilters && (
+                <div className="lg:hidden flex flex-col gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 animate-in slide-in-from-top-2">
+                    <DateRangeFilter
+                        dateFilterField={dateFilterField}
+                        onDateFieldChange={onDateFieldChange}
+                        startDate={startDate}
+                        onStartDateChange={onStartDateChange}
+                        endDate={endDate}
+                        onEndDateChange={onEndDateChange}
+                        className="w-full"
+                    />
+                </div>
+            )}
 
             {/* Row 2: Cascading Zone Filter */}
             <div className={`${showMobileFilters ? 'block' : 'hidden lg:block'}`}>

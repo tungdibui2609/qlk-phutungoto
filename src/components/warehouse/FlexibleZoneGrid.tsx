@@ -20,6 +20,7 @@ interface FlexibleZoneGridProps {
     collapsedZones: Set<string>
     selectedPositionIds: Set<string>
     isDesignMode?: boolean
+    isAssignmentMode?: boolean
     onToggleCollapse: (zoneId: string) => void
     onPositionSelect: (positionId: string) => void
     onViewDetails?: (lotId: string) => void
@@ -51,6 +52,14 @@ export default function FlexibleZoneGrid({
     pageBreakIds = new Set(),
     onTogglePageBreak
 }: FlexibleZoneGridProps) {
+    const [isMobile, setIsMobile] = React.useState(false)
+
+    React.useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth < 768)
+        checkMobile()
+        window.addEventListener('resize', checkMobile)
+        return () => window.removeEventListener('resize', checkMobile)
+    }, [])
 
     // Build zone tree with positions count
     const zoneTree = useMemo(() => {
@@ -98,7 +107,13 @@ export default function FlexibleZoneGrid({
         const isCollapsed = collapsedZones.has(zone.id)
         const hasChildren = zone.children.length > 0
         const hasPositions = zone.positions.length > 0
-        const positionColumns = layout?.position_columns ?? 8
+
+        // Mobile optimization: Limit columns to 2 on mobile if originally > 2
+        let positionColumns = layout?.position_columns ?? 8
+        if (isMobile && positionColumns > 2) {
+            positionColumns = 2
+        }
+
         const cellWidth = layout?.cell_width ?? 0
         const cellHeight = layout?.cell_height ?? 0
         const childLayout = layout?.child_layout ?? 'vertical'
@@ -216,10 +231,10 @@ export default function FlexibleZoneGrid({
                         {/* QLK-style header with breadcrumb */}
                         <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-emerald-50 to-white dark:from-emerald-900/20 dark:to-gray-800 border-b border-emerald-100 dark:border-emerald-900/50">
                             <div className="flex items-center gap-3">
-                                <div className="w-1 h-8 bg-emerald-500 rounded-full"></div>
+                                <div className="w-1 h-8 bg-emerald-500 rounded-full shrink-0"></div>
                                 <div>
-                                    <h2 className="text-lg font-bold text-emerald-900 dark:text-emerald-100 tracking-tight">
-                                        {currentBreadcrumb.join(' • ')}
+                                    <h2 className={`font-bold text-emerald-900 dark:text-emerald-100 tracking-tight ${isMobile ? 'text-sm' : 'text-lg'}`}>
+                                        {isMobile ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • ')}
                                     </h2>
                                     {totalPositions > 0 && (
                                         <p className="text-xs text-emerald-600 dark:text-emerald-400">
@@ -311,10 +326,10 @@ export default function FlexibleZoneGrid({
                                         ? <ChevronRight size={16} className="text-emerald-500" />
                                         : <ChevronDown size={16} className="text-emerald-500" />
                                 )}
-                                <div className="w-1 h-8 bg-emerald-500 rounded-full"></div>
+                                <div className="w-1 h-8 bg-emerald-500 rounded-full shrink-0"></div>
                                 <div>
-                                    <h2 className="text-lg font-bold text-emerald-900 dark:text-emerald-100 tracking-tight">
-                                        {currentBreadcrumb.join(' • ')}
+                                    <h2 className={`font-bold text-emerald-900 dark:text-emerald-100 tracking-tight ${isMobile ? 'text-sm' : 'text-lg'}`}>
+                                        {isMobile ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • ')}
                                     </h2>
                                     {totalPositions > 0 && (
                                         <p className="text-xs text-emerald-600 dark:text-emerald-400">
@@ -526,9 +541,9 @@ export default function FlexibleZoneGrid({
             <div
                 key={pos.id}
                 onClick={isAssignmentMode ? () => onPositionSelect(pos.id) : undefined}
-                style={cellHeight > 0 ? { height: `${cellHeight}px` } : { minHeight: '80px' }} // Increased min-height for content
+                style={cellHeight > 0 ? { height: `${cellHeight}px` } : { minHeight: isMobile ? '60px' : '80px' }} // Increased min-height for content
                 className={`
-                    relative ${isAssignmentMode ? 'cursor-pointer' : ''} p-1.5 rounded-lg border-2 transition-all
+                    relative ${isAssignmentMode ? 'cursor-pointer' : ''} ${isMobile ? 'p-1' : 'p-1.5'} rounded-lg border-2 transition-all
                     flex flex-col justify-between overflow-hidden
                     ${bgClass} ${borderClass} ${ringClass}
                     ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.02] hover:z-10' : ''}

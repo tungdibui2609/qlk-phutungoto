@@ -327,7 +327,7 @@ export default function FastScanPage() {
             // 1. Try exact match first
             const { data: exactData } = await supabase
                 .from('positions')
-                .select('id, code')
+                .select('id, code, lot_id')
                 .eq('code', posCode)
                 .eq('system_type', currentSystem.code)
                 .single()
@@ -347,6 +347,16 @@ export default function FastScanPage() {
                 setPaused(false)
                 setLoading(false)
                 return
+            }
+
+            // [NEW] Check if position is occupied by ANOTHER lot
+            if (targetPos.lot_id && targetPos.lot_id !== lotData.id) {
+                const isConfirmed = window.confirm(`Vị trí ${targetPos.code} đang có chứa LOT khác. Bạn có chắc chắn muốn thay thế?`)
+                if (!isConfirmed) {
+                    setPaused(false)
+                    setLoading(false)
+                    return
+                }
             }
 
             // [FIX] Clear LOT from any previous positions first
