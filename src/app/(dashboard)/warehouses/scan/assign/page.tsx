@@ -268,7 +268,24 @@ export default function FastScanPage() {
             if (updateError) throw updateError
 
             // 5. Update Local State (Optimistic)
-            setAllPositions(prev => prev.map(p => p.id === targetPos.id ? { ...p, lot_id: lot.id } : p))
+            // Using functional update to ensure we have latest state
+            setAllPositions(prev => {
+                const newPositions = [...prev]
+                const index = newPositions.findIndex(p => p.id === targetPos.id)
+                if (index !== -1) {
+                    newPositions[index] = { ...newPositions[index], lot_id: lot.id }
+                }
+
+                // Also clear old position if it existed locally in the list?
+                // The DB update clears it, but local state might still show it.
+                // We should find where lot_id was previously and clear it.
+                const oldIndex = newPositions.findIndex(p => p.lot_id === lot.id && p.id !== targetPos.id)
+                if (oldIndex !== -1) {
+                    newPositions[oldIndex] = { ...newPositions[oldIndex], lot_id: null }
+                }
+
+                return newPositions
+            })
 
             // 6. Success Feedback
             setAssignedPos(`${targetPos.code}`)
@@ -283,10 +300,10 @@ export default function FastScanPage() {
                 setAssignedPos('')
                 setManualCode('')
                 setPaused(false) // Ready for next scan
-            }, 1500) // Faster reset for auto mode
+            }, 1000) // Faster reset for auto mode
 
         } catch (e: any) {
-            console.error(e)
+            console.error('Auto Assign Error:', e)
             showToast('Lỗi: ' + e.message, 'error')
             setPaused(false)
         } finally {

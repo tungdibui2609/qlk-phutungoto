@@ -227,31 +227,66 @@ export function useLotManagement() {
             }
 
             // 3. Position / Zone Filter
-            // This is the hardest part to do purely server-side without inner joins in the main query.
-            // If we need strict filtering, we might need to change the main query to use !inner for positions.
-            if (positionFilter === 'assigned' || selectedZoneId) {
-                // For now, let's just accept we might filtering post-fetch for complex zone logic 
-                // OR we modify the select string to use inner join.
+            // Strategy: Pre-fetch occupied LOT IDs to filter efficiently
+            if (positionFilter !== 'all' || selectedZoneId) {
+                let positionQuery = supabase
+                    .from('positions')
+                    .select('lot_id, zone_positions!inner(zone_id)')
+                    .eq('system_type', currentSystem.code)
+                    .not('lot_id', 'is', null)
 
-                // Let's try to stick to efficient server pagination.
-                // If filtering by zone, we can find positions in that zone first.
                 if (selectedZoneId) {
-                    // Get all positions in this zone (and descendants?)
-                    // Client side logic had descendant check.
-                    // This implies too much logic for simple valid ID list.
-                    // Compromise: Filter by zone is Client Side for now? 
-                    // NO, pagination requirement prevents client side filtering.
+                    positionQuery = positionQuery.eq('zone_positions.zone_id', selectedZoneId)
+                }
 
-                    // Simplified: Only filter by DIRECT zone or don't support zone filter in server mode yet?
-                    // User expects optimization.
-                    // Let's defer Zone Filter to "Coming Soon" or implement strict "In Zone" if easy.
+                // We get all lot_ids that match the position criteria
+                const { data: posData } = await positionQuery
+                const validLotIds = Array.from(new Set(posData?.map(p => p.lot_id).filter(Boolean) as string[])) || []
 
-                    // NOTE: PostgREST supports filtering on embedded resources.
-                    // users?select=*,posts!inner(*)&posts.title=eq.Hello
-                    // So we can do: select=*,positions!inner(zone_positions!inner(zone_id))&positions.zone_positions.zone_id=eq.X
-                    // BUT we need to handle "Descendants".
+                if (positionFilter === 'assigned') {
+                    if (validLotIds.length > 0) {
+                        query = query.in('id', validLotIds)
+                    } else {
+                        // User wants assigned, but no positions are assigned -> return empty
+                        query = query.eq('id', '00000000-0000-0000-0000-000000000000')
+                    }
+                } else if (positionFilter === 'unassigned') {
+                    if (validLotIds.length > 0) {
+                        // If we are filtering by Zone, 'unassigned' in a zone context is ambiguous. 
+                        // Usually means "Lots NOT in this zone"? Or "Lots NOT in ANY zone"?
+                        // Standard "Unassigned" means "Not in any position".
+                        // If selectedZoneId is present, Unassigned + Zone is mutually exclusive?
+                        // UI should probably disable Unassigned if Zone is selected, or this means "Unassigned lots" (global)
+                        // Let's assume Unassigned means "Global Unassigned" regardless of zone selector, 
+                        // OR if zone is selected, "Lots in this zone"? No.
+                        // Let's stick to Global Unassigned if filter is 'unassigned'.
+                        if (selectedZoneId) {
+                            // "Unassigned" + "Zone A" -> Logic conflict. 
+                            // If user selects "Unassigned", they want lots not on map. Zone filter should be ignored or reset.
+                            // But if they persist, we just treat as Global Unassigned.
+                            // Effectively we ignore selectedZoneId for UNASSIGNED filter?
+                            // Let's filter out ALL occupied lots.
 
-                    // Optimization Step 1: Just handle basic filters.
+                            // Re-fetch ALL occupied IDs for global unassigned check
+                            const { data: allBusy } = await supabase
+                                .from('positions')
+                                .select('lot_id')
+                                .eq('system_type', currentSystem.code)
+                                .not('lot_id', 'is', null)
+
+                            const allBusyIds = allBusy?.map(p => p.lot_id) || []
+                            if (allBusyIds.length > 0) query = query.not('id', 'in', allBusyIds)
+                        } else {
+                            query = query.not('id', 'in', validLotIds)
+                        }
+                    }
+                } else if (positionFilter === 'all' && selectedZoneId) {
+                    // Show only lots in this zone
+                    if (validLotIds.length > 0) {
+                        query = query.in('id', validLotIds)
+                    } else {
+                        query = query.eq('id', '00000000-0000-0000-0000-000000000000')
+                    }
                 }
             }
 
