@@ -41,7 +41,7 @@ export function useLotManagement() {
 
     // Pagination State
     const [page, setPage] = useState(0)
-    const [pageSize, setPageSize] = useState(20)
+    const [pageSize, setPageSize] = useState(21)
     const [totalLots, setTotalLots] = useState(0)
 
     const [searchTerm, setSearchTerm] = useState('')
@@ -135,52 +135,47 @@ export function useLotManagement() {
         if (showLoading) setLoading(true)
 
         try {
+            // 1. Dynamic Select Query Builder
+            let selectQuery = `
+                *,
+                packaging_date,
+                warehouse_name,
+                images,
+                metadata,
+                lot_items (
+                    id,
+                    quantity,
+                    product_id,
+                    products (
+                        name,
+                        unit,
+                        sku,
+                        cost_price,
+                        product_code:id
+                    ),
+                    unit
+                ),
+                suppliers (name),
+                qc_info (name),
+                lot_tags (tag, lot_item_id),
+                products (name, unit, sku, cost_price)
+            `
+
+            // Position Relation - Dynamic based on filter
+            if (positionFilter === 'assigned' || selectedZoneId) {
+                // Use !inner to force existence (Assigned) and allow filtering on nested fields
+                selectQuery += `, positions!inner(id, code, zone_positions!left(zone_id))`
+            } else {
+                // Standard Left Join
+                selectQuery += `, positions(id, code, zone_positions!left(zone_id))`
+            }
+
             let query = supabase
                 .from('lots')
-                .select(`
-                    *,
-                    packaging_date,
-                    warehouse_name,
-                    images,
-                    metadata,
-                    lot_items (
-                        id,
-                        quantity,
-                        product_id,
-                        products (
-                            name,
-                            unit,
-                            sku,
-                            cost_price,
-                            product_code:id
-                        ),
-                        unit
-                    ),
-                    suppliers (name),
-                    qc_info (name),
-                    positions (
-                        id,
-                        code,
-                        zone_positions !left (zone_id)
-                    ),
-                    lot_tags (tag, lot_item_id),
-                    products (name, unit, sku, cost_price)
-                `, { count: 'exact' })
+                .select(selectQuery, { count: 'exact' })
                 .eq('system_code', currentSystem.code)
-            // Filter out exported status by default?
-            // .neq('status', 'exported') 
-
-            // 1. Position Filter
-            if (positionFilter === 'assigned') {
-                // Lots that HAVE positions
-                // Supabase filtering on 1-many existence is tricky without !inner join
-                // But we are selecting positions. If we use !inner on positions, it filters lots.
-                query = query.not('positions', 'is', null) // strict null check on relation? No.
-                // We need to use !inner to enforce existence
-                // But we already defined select string. We can't re-define join type easily in JS client?
-                // Actually we can just apply a filter on the joined table if we use !inner in the select string.
-                // Let's modify the select string dynamically?
-            }
+                .neq('status', 'exported') // Exclude exported lots
+                .neq('status', 'hidden')   // Exclude hidden lots 
 
             // Implementation Strategy for filters:
             // Since complex filtering (OR across tables, Existence checks) is hard in one go,
@@ -227,67 +222,36 @@ export function useLotManagement() {
             }
 
             // 3. Position / Zone Filter
-            // Strategy: Pre-fetch occupied LOT IDs to filter efficiently
-            if (positionFilter !== 'all' || selectedZoneId) {
-                let positionQuery = supabase
+            // 'assigned' is handled by !inner join implicitly (lots must have positions)
+
+            if (positionFilter === 'unassigned') {
+                // For Unassigned, we need "Not In Occupied List"
+                // Safety check for URL length to prevent "failed to parse filter"
+                const { data: allBusy } = await supabase
                     .from('positions')
-                    .select('lot_id, zone_positions!inner(zone_id)')
+                    .select('lot_id')
                     .eq('system_type', currentSystem.code)
                     .not('lot_id', 'is', null)
 
-                if (selectedZoneId) {
-                    positionQuery = positionQuery.eq('zone_positions.zone_id', selectedZoneId)
-                }
+                const allBusyIds = Array.from(new Set(allBusy?.map(p => p.lot_id) || []))
 
-                // We get all lot_ids that match the position criteria
-                const { data: posData } = await positionQuery
-                const validLotIds = Array.from(new Set(posData?.map(p => p.lot_id).filter(Boolean) as string[])) || []
-
-                if (positionFilter === 'assigned') {
-                    if (validLotIds.length > 0) {
-                        query = query.in('id', validLotIds)
+                if (allBusyIds.length > 0) {
+                    if (allBusyIds.length < 150) { // Safety limit (approx 6KB URL)
+                        // PostgREST syntax for array not.in
+                        query = query.not('id', 'in', `(${allBusyIds.join(',')})`)
                     } else {
-                        // User wants assigned, but no positions are assigned -> return empty
-                        query = query.eq('id', '00000000-0000-0000-0000-000000000000')
-                    }
-                } else if (positionFilter === 'unassigned') {
-                    if (validLotIds.length > 0) {
-                        // If we are filtering by Zone, 'unassigned' in a zone context is ambiguous. 
-                        // Usually means "Lots NOT in this zone"? Or "Lots NOT in ANY zone"?
-                        // Standard "Unassigned" means "Not in any position".
-                        // If selectedZoneId is present, Unassigned + Zone is mutually exclusive?
-                        // UI should probably disable Unassigned if Zone is selected, or this means "Unassigned lots" (global)
-                        // Let's assume Unassigned means "Global Unassigned" regardless of zone selector, 
-                        // OR if zone is selected, "Lots in this zone"? No.
-                        // Let's stick to Global Unassigned if filter is 'unassigned'.
-                        if (selectedZoneId) {
-                            // "Unassigned" + "Zone A" -> Logic conflict. 
-                            // If user selects "Unassigned", they want lots not on map. Zone filter should be ignored or reset.
-                            // But if they persist, we just treat as Global Unassigned.
-                            // Effectively we ignore selectedZoneId for UNASSIGNED filter?
-                            // Let's filter out ALL occupied lots.
-
-                            // Re-fetch ALL occupied IDs for global unassigned check
-                            const { data: allBusy } = await supabase
-                                .from('positions')
-                                .select('lot_id')
-                                .eq('system_type', currentSystem.code)
-                                .not('lot_id', 'is', null)
-
-                            const allBusyIds = allBusy?.map(p => p.lot_id) || []
-                            if (allBusyIds.length > 0) query = query.not('id', 'in', allBusyIds)
-                        } else {
-                            query = query.not('id', 'in', validLotIds)
-                        }
-                    }
-                } else if (positionFilter === 'all' && selectedZoneId) {
-                    // Show only lots in this zone
-                    if (validLotIds.length > 0) {
-                        query = query.in('id', validLotIds)
-                    } else {
-                        query = query.eq('id', '00000000-0000-0000-0000-000000000000')
+                        // Too many to filter via URL. 
+                        console.warn('Too many busy lots to filterUnassigned server-side.')
+                        showToast('Số lượng LOT đã gán quá lớn (>150), không thể lọc "Chưa gán".', 'warning')
+                        // We do NOT apply the filter.
                     }
                 }
+            }
+
+            if (selectedZoneId) {
+                // Filter by specific zone using the embedded resource
+                // Since we used !inner on positions, we can safely filter on it
+                query = query.eq('positions.zone_positions.zone_id', selectedZoneId)
             }
 
             // Pagination
