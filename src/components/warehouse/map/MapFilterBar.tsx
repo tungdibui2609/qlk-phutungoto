@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { Search, Filter } from 'lucide-react'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { DateRangeFilter, DateFilterField } from '@/components/warehouse/DateRangeFilter'
@@ -31,6 +32,25 @@ export function MapFilterBar({
     showMobileFilters,
     toggleMobileFilters
 }: MapFilterBarProps) {
+    // Local state for debounce
+    const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm)
+
+    // Sync local state when parent state changes (e.g. clear filter)
+    useEffect(() => {
+        setLocalSearchTerm(searchTerm)
+    }, [searchTerm])
+
+    // Debounce effect
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (localSearchTerm !== searchTerm) {
+                onSearchChange(localSearchTerm)
+            }
+        }, 500) // 500ms delay
+
+        return () => clearTimeout(timer)
+    }, [localSearchTerm, onSearchChange, searchTerm])
+
     return (
         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-2.5 shadow-sm space-y-2">
             {/* Row 1: Search & Date Filters */}
@@ -41,8 +61,8 @@ export function MapFilterBar({
                     <input
                         type="text"
                         placeholder="Tìm kiếm mã LOT, lô hàng, sản phẩm..."
-                        value={searchTerm}
-                        onChange={(e) => onSearchChange(e.target.value)}
+                        value={localSearchTerm}
+                        onChange={(e) => setLocalSearchTerm(e.target.value)}
                         className="w-full pl-10 pr-4 py-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all font-medium text-xs lg:text-sm"
                     />
                 </div>

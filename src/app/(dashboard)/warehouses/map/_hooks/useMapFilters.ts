@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react'
-import { matchSearch } from '@/lib/searchUtils'
 import { matchDateRange } from '@/lib/dateUtils'
 import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { PositionWithZone } from './useWarehouseData'
@@ -25,19 +24,40 @@ export function useMapFilters({ positions, zones, lotInfo }: UseMapFiltersProps)
 
         // Filter by search term
         if (searchTerm) {
-            const term = searchTerm.toLowerCase()
+            const term = searchTerm.toLowerCase().trim()
+            if (!term) return result
+
             result = result.filter(p => {
-                const posCode = p.code.toLowerCase()
-                const lot = p.lot_id ? lotInfo[p.lot_id] : null
-
                 // 1. Position Code Match
-                if (posCode.includes(term)) return true
+                if (p.code.toLowerCase().includes(term)) return true
 
-                // If no lot, we only match by position code
+                const lot = p.lot_id ? lotInfo[p.lot_id] : null
                 if (!lot) return false
 
-                // 2. Dynamic deep search using shared utility
-                if (matchSearch(lot, searchTerm)) return true
+                // 2. Targeted Lot Fields Search
+                // Lot Code
+                if (lot.code && lot.code.toLowerCase().includes(term)) return true
+
+                // Supplier & QC
+                if (lot.supplier_name && lot.supplier_name.toLowerCase().includes(term)) return true
+                if (lot.qc_name && lot.qc_name.toLowerCase().includes(term)) return true
+
+                // Items (Products, SKUs, Tags)
+                if (lot.items && Array.isArray(lot.items)) {
+                    for (const item of lot.items) {
+                        if (item.product_name && item.product_name.toLowerCase().includes(term)) return true
+                        if (item.sku && item.sku.toLowerCase().includes(term)) return true
+                        if (item.tags && Array.isArray(item.tags)) {
+                            if (item.tags.some((t: string) => t.toLowerCase().includes(term))) return true
+                        }
+                    }
+                }
+
+                // Fallback for single product structure if items array missing/empty
+                if (lot.products) {
+                    if (lot.products.name && lot.products.name.toLowerCase().includes(term)) return true
+                    if (lot.products.sku && lot.products.sku.toLowerCase().includes(term)) return true
+                }
 
                 return false
             })
