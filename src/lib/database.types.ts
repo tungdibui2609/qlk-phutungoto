@@ -1828,6 +1828,12 @@ export type Database = {
           p_username: string
         }
         Returns: string | null
+      },
+      get_unassigned_lots: {
+        Args: {
+          p_system_code: string
+        }
+        Returns: Database["public"]["Tables"]["lots"]["Row"][]
       }
     }
     Enums: {

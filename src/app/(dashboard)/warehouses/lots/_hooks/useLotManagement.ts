@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { useSystem } from '@/contexts/SystemContext'
@@ -59,6 +59,10 @@ export function useLotManagement() {
     const [productUnits, setProductUnits] = useState<ProductUnit[]>([])
     const [branches, setBranches] = useState<any[]>([])
 
+    // Use Ref to access latest fetchLots in subscription without re-subscribing
+    const fetchLotsRef = useRef(fetchLots)
+    fetchLotsRef.current = fetchLots
+
     useEffect(() => {
         if (currentSystem?.code) {
             // Reset page when system changes
@@ -78,7 +82,8 @@ export function useLotManagement() {
                     table: 'positions'
                 },
                 (payload) => {
-                    fetchLots(false)
+                    // Use Ref to get LATEST fetchLots with current state (filters)
+                    fetchLotsRef.current(false)
                 }
             )
             .subscribe()
@@ -86,7 +91,7 @@ export function useLotManagement() {
         return () => {
             supabase.removeChannel(channel)
         }
-    }, [currentSystem])
+    }, [currentSystem?.code])
 
     // Re-fetch when filters change (debounce search term?)
     // For now, let the UI trigger fetchLots explicitly or we add effects here?
@@ -161,25 +166,35 @@ export function useLotManagement() {
                 products (name, unit, sku, cost_price)
             `
 
-            // Position Relation - Dynamic based on filter
-            if (positionFilter === 'assigned' || selectedZoneId) {
-                // Use !inner to force existence (Assigned) and allow filtering on nested fields
-                selectQuery += `, positions!inner(id, code, zone_positions!left(zone_id))`
-            } else {
-                // Standard Left Join
-                selectQuery += `, positions(id, code, zone_positions!left(zone_id))`
-            }
+            let query: any;
 
-            let query = supabase
-                .from('lots')
-                .select(selectQuery, { count: 'exact' })
-                .eq('system_code', currentSystem.code)
-                .neq('status', 'exported') // Exclude exported lots
-                .neq('status', 'hidden')   // Exclude hidden lots 
+            if (positionFilter === 'unassigned') {
+                // Unassigned: Use RPC for scalable filtering
+                // Left Join on positions is still needed to fetch (empty) positions array for type consistency
+                selectQuery += `, positions(id, code, zone_positions!left(zone_id))`
+
+                query = (supabase.rpc as any)('get_unassigned_lots', { p_system_code: currentSystem.code })
+                    .select(selectQuery, { count: 'exact' })
+                // RPC handles system_code and status check internally
+            } else {
+                // Standard Logic
+                if (positionFilter === 'assigned' || selectedZoneId) {
+                    selectQuery += `, positions!inner(id, code, zone_positions!left(zone_id))`
+                } else {
+                    selectQuery += `, positions(id, code, zone_positions!left(zone_id))`
+                }
+
+                query = supabase
+                    .from('lots')
+                    .select(selectQuery, { count: 'exact' })
+                    .eq('system_code', currentSystem.code)
+                    .neq('status', 'exported')
+                    .neq('status', 'hidden')
+            }
 
             // Implementation Strategy for filters:
             // Since complex filtering (OR across tables, Existence checks) is hard in one go,
-            // we will find matching LOT IDs first if needed, then fetch range.
+            // we use RPC for unassigned, and matching IDs for search term.
 
             let matchingIds: string[] | null = null
 
@@ -223,30 +238,7 @@ export function useLotManagement() {
 
             // 3. Position / Zone Filter
             // 'assigned' is handled by !inner join implicitly (lots must have positions)
-
-            if (positionFilter === 'unassigned') {
-                // For Unassigned, we need "Not In Occupied List"
-                // Safety check for URL length to prevent "failed to parse filter"
-                const { data: allBusy } = await supabase
-                    .from('positions')
-                    .select('lot_id')
-                    .eq('system_type', currentSystem.code)
-                    .not('lot_id', 'is', null)
-
-                const allBusyIds = Array.from(new Set(allBusy?.map(p => p.lot_id) || []))
-
-                if (allBusyIds.length > 0) {
-                    if (allBusyIds.length < 150) { // Safety limit (approx 6KB URL)
-                        // PostgREST syntax for array not.in
-                        query = query.not('id', 'in', `(${allBusyIds.join(',')})`)
-                    } else {
-                        // Too many to filter via URL. 
-                        console.warn('Too many busy lots to filterUnassigned server-side.')
-                        showToast('Số lượng LOT đã gán quá lớn (>150), không thể lọc "Chưa gán".', 'warning')
-                        // We do NOT apply the filter.
-                    }
-                }
-            }
+            // 'unassigned' is handled by RPC call above.
 
             if (selectedZoneId) {
                 // Filter by specific zone using the embedded resource
