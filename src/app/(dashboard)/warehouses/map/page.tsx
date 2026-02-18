@@ -229,6 +229,17 @@ function WarehouseMapContent() {
         router.push(`/work/export-order?${params.toString()}`)
     }
 
+    function handleBulkSelect(ids: string[], shouldSelect: boolean) {
+        setSelectedPositionIds(prev => {
+            const next = new Set(prev)
+            ids.forEach(id => {
+                if (shouldSelect) next.add(id)
+                else next.delete(id)
+            })
+            return next
+        })
+    }
+
     // --- Render ---
 
     // Convert layouts array to record for FlexibleZoneGrid
@@ -291,6 +302,11 @@ function WarehouseMapContent() {
                 zones={zones}
                 lotInfo={lotInfo}
                 searchTerm={searchTerm}
+                onPositionSelect={handlePositionSelect}
+                onPositionMenu={(pos, e) => handlePositionMenu(pos, e)}
+                onViewDetails={fetchFullLotDetails}
+                selectedPositionIds={selectedPositionIds}
+                onBulkSelect={handleBulkSelect}
             />
 
             {/* Map Grid Area */}

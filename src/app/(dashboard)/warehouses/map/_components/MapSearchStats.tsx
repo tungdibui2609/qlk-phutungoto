@@ -1,18 +1,34 @@
 import { useMemo, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, MoreHorizontal, Eye, CheckSquare, Square } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { PositionWithZone } from '../_hooks/useWarehouseData'
 
 type Zone = Database['public']['Tables']['zones']['Row']
+type Position = Database['public']['Tables']['positions']['Row']
 
 interface MapSearchStatsProps {
     filteredPositions: PositionWithZone[]
     zones: Zone[]
     lotInfo: Record<string, any>
     searchTerm: string
+    onPositionSelect?: (positionId: string) => void
+    onPositionMenu?: (pos: Position, e: React.MouseEvent) => void
+    onViewDetails?: (lotId: string) => void
+    selectedPositionIds?: Set<string>
+    onBulkSelect?: (ids: string[], shouldSelect: boolean) => void
 }
 
-export function MapSearchStats({ filteredPositions, zones, lotInfo, searchTerm }: MapSearchStatsProps) {
+export function MapSearchStats({
+    filteredPositions,
+    zones,
+    lotInfo,
+    searchTerm,
+    onPositionSelect,
+    onPositionMenu,
+    onViewDetails,
+    selectedPositionIds = new Set(),
+    onBulkSelect
+}: MapSearchStatsProps) {
     // Helper to build full zone path
     const getZonePath = (zoneId: string) => {
         let currentId: string | null = zoneId
@@ -82,18 +98,67 @@ export function MapSearchStats({ filteredPositions, zones, lotInfo, searchTerm }
     const renderPositionCard = (pos: PositionWithZone) => {
         const hasLot = !!pos.lot_id
         const lot = hasLot ? lotInfo[pos.lot_id!] : null
+        const isSelected = selectedPositionIds.has(pos.id)
 
         let bgClass = "bg-white dark:bg-slate-800"
         let borderClass = "border-slate-200 dark:border-slate-700"
 
-        if (hasLot) {
+        if (isSelected) {
+            bgClass = "bg-blue-50 dark:bg-blue-900/30"
+            borderClass = "border-blue-500"
+        } else if (hasLot) {
             bgClass = "bg-amber-50 dark:bg-amber-900/10"
             borderClass = "border-amber-200 dark:border-amber-800"
         }
 
         return (
-            <div key={pos.id} className={`flex flex-col p-1 rounded border ${bgClass} ${borderClass} aspect-square text-[10px]`}>
-                <div className="font-bold text-center text-slate-700 dark:text-slate-200 mb-0.5 border-b border-slate-100 dark:border-slate-700/50 pb-0.5 truncate text-[10px]" title={pos.code}>
+            <div
+                key={pos.id}
+                className={`relative group flex flex-col p-1 rounded border ${bgClass} ${borderClass} aspect-square text-[10px] transition-all hover:shadow-md`}
+            >
+                {/* Selection Checkbox */}
+                {onPositionSelect && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            onPositionSelect(pos.id)
+                        }}
+                        className={`absolute bottom-1 left-1 z-10 p-0.5 rounded bg-white/80 dark:bg-gray-800/80 hover:bg-blue-50 dark:hover:bg-blue-900/50 transition-colors ${isSelected ? 'text-blue-600' : 'text-gray-400'}`}
+                        title={isSelected ? "Bỏ chọn" : "Chọn vị trí"}
+                    >
+                        {isSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+                    </button>
+                )}
+
+                {/* View Details Eye Icon */}
+                {hasLot && onViewDetails && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            onViewDetails(pos.lot_id!)
+                        }}
+                        className="absolute top-1 left-1 z-10 p-0.5 rounded bg-white/80 dark:bg-gray-800/80 text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/50 transition-all"
+                        title="Xem chi tiết"
+                    >
+                        <Eye size={14} />
+                    </button>
+                )}
+
+                {/* Context Menu Icon */}
+                {onPositionMenu && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            onPositionMenu(pos, e)
+                        }}
+                        className="absolute top-1 right-1 z-10 p-0.5 rounded bg-white/80 dark:bg-gray-800/80 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
+                        title="Thao tác"
+                    >
+                        <MoreHorizontal size={14} />
+                    </button>
+                )}
+
+                <div className="font-bold text-center text-slate-700 dark:text-slate-200 mb-0.5 border-b border-slate-100 dark:border-slate-700/50 pb-0.5 truncate text-[10px] pt-4" title={pos.code}>
                     {pos.code}
                 </div>
                 {lot ? (
@@ -121,7 +186,7 @@ export function MapSearchStats({ filteredPositions, zones, lotInfo, searchTerm }
                         )}
                     </div>
                 ) : (
-                    <div className="text-slate-400 italic mt-auto text-[10px] text-center mb-auto pt-4">Trống</div>
+                    <div className="text-slate-400 italic mt-auto text-[10px] text-center mb-auto pt-2">Trống</div>
                 )}
             </div>
         )
@@ -158,6 +223,7 @@ export function MapSearchStats({ filteredPositions, zones, lotInfo, searchTerm }
                         const isExpanded = expandedZoneId === zone.id
                         // Filter positions for this zone
                         const zonePositions = filteredPositions.filter(p => p.zone_id === zone.id)
+                        const allSelected = zonePositions.length > 0 && zonePositions.every(p => selectedPositionIds.has(p.id))
 
                         return (
                             <div key={idx} className="flex flex-col bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 rounded overflow-hidden">
@@ -167,6 +233,21 @@ export function MapSearchStats({ filteredPositions, zones, lotInfo, searchTerm }
                                     onClick={() => toggleZone(zone.id)}
                                 >
                                     <div className="flex items-center gap-2 flex-1 min-w-0">
+                                        {onBulkSelect && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    onBulkSelect(
+                                                        zonePositions.map(p => p.id),
+                                                        !allSelected
+                                                    )
+                                                }}
+                                                className={`p-0.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors ${allSelected ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+                                                title={allSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+                                            >
+                                                {allSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                                            </button>
+                                        )}
                                         <ChevronDown size={14} className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                                         <span className="font-medium text-slate-700 dark:text-slate-300 truncate text-sm" title={zone.name}>
                                             {zone.name}
@@ -187,7 +268,7 @@ export function MapSearchStats({ filteredPositions, zones, lotInfo, searchTerm }
                                 {/* Expanded Position Grid */}
                                 {isExpanded && (
                                     <div className="p-2 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                                        <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-2">
+                                        <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2">
                                             {zonePositions.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })).map(pos => renderPositionCard(pos))}
                                         </div>
                                     </div>
