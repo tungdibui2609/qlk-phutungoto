@@ -1,4 +1,5 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { PositionWithZone } from '../_hooks/useWarehouseData'
 
@@ -31,7 +32,7 @@ export function MapSearchStats({ filteredPositions, zones, lotInfo, searchTerm }
     const stats = useMemo(() => {
         if (!searchTerm) return null
 
-        const zoneStats: Record<string, { count: number; quantity: number; name: string }> = {}
+        const zoneStats: Record<string, { id: string; count: number; quantity: number; name: string }> = {}
         let totalQty = 0
 
         filteredPositions.forEach(pos => {
@@ -48,6 +49,7 @@ export function MapSearchStats({ filteredPositions, zones, lotInfo, searchTerm }
             if (pos.zone_id) {
                 if (!zoneStats[pos.zone_id]) {
                     zoneStats[pos.zone_id] = {
+                        id: pos.zone_id,
                         count: 0,
                         quantity: 0,
                         name: getZonePath(pos.zone_id)
@@ -67,6 +69,63 @@ export function MapSearchStats({ filteredPositions, zones, lotInfo, searchTerm }
             zoneBreakdown: sortedZones
         }
     }, [filteredPositions, zones, lotInfo, searchTerm])
+
+    // State for expanded zones
+    const [expandedZoneId, setExpandedZoneId] = useState<string | null>(null)
+
+    // Helper to toggle expansion
+    const toggleZone = (id: string) => {
+        setExpandedZoneId(prev => prev === id ? null : id)
+    }
+
+    // Helper to render a simplified position card
+    const renderPositionCard = (pos: PositionWithZone) => {
+        const hasLot = !!pos.lot_id
+        const lot = hasLot ? lotInfo[pos.lot_id!] : null
+
+        let bgClass = "bg-white dark:bg-slate-800"
+        let borderClass = "border-slate-200 dark:border-slate-700"
+
+        if (hasLot) {
+            bgClass = "bg-amber-50 dark:bg-amber-900/10"
+            borderClass = "border-amber-200 dark:border-amber-800"
+        }
+
+        return (
+            <div key={pos.id} className={`flex flex-col p-1 rounded border ${bgClass} ${borderClass} aspect-square text-[10px]`}>
+                <div className="font-bold text-center text-slate-700 dark:text-slate-200 mb-0.5 border-b border-slate-100 dark:border-slate-700/50 pb-0.5 truncate text-[10px]" title={pos.code}>
+                    {pos.code}
+                </div>
+                {lot ? (
+                    <div className="flex flex-col gap-0.5 flex-1 justify-center overflow-hidden">
+                        <div className="font-medium text-center text-purple-600 dark:text-purple-400 truncate text-[9px]" title={lot.code}>{lot.code}</div>
+                        {lot.items?.[0] && (
+                            <>
+                                <div className="text-[9px] text-slate-500 line-clamp-2 text-center" title={lot.items[0].product_name}>
+                                    {lot.items[0].product_name}
+                                </div>
+                                <div className="font-mono text-[9px] text-blue-600 dark:text-blue-400 mt-auto font-bold text-center">
+                                    {lot.items[0].quantity} {lot.items[0].unit}
+                                </div>
+                            </>
+                        )}
+                        {!lot.items?.[0] && lot.products && (
+                            <>
+                                <div className="text-[9px] text-slate-500 line-clamp-2 text-center" title={lot.products.name}>
+                                    {lot.products.name}
+                                </div>
+                                <div className="font-mono text-[9px] text-blue-600 dark:text-blue-400 mt-auto font-bold text-center">
+                                    {lot.quantity} {lot.products.unit}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                ) : (
+                    <div className="text-slate-400 italic mt-auto text-[10px] text-center mb-auto pt-4">Trống</div>
+                )}
+            </div>
+        )
+    }
 
     if (!stats || !searchTerm) return null
 
@@ -94,24 +153,48 @@ export function MapSearchStats({ filteredPositions, zones, lotInfo, searchTerm }
 
             <div className="space-y-2">
                 <div className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Phân bố theo khu vực</div>
-                <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto pr-1">
-                    {stats.zoneBreakdown.map((zone, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-2 rounded bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 text-sm">
-                            <span className="font-medium text-slate-700 dark:text-slate-300 mr-2 flex-1 break-words" title={zone.name}>
-                                {zone.name}
-                            </span>
-                            <div className="flex items-center gap-3 text-xs shrink-0">
-                                <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded">
-                                    {zone.count} vt
-                                </span>
-                                {zone.quantity > 0 && (
-                                    <span className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded">
-                                        {zone.quantity.toLocaleString()}
-                                    </span>
+                <div className="grid grid-cols-1 gap-2 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
+                    {stats.zoneBreakdown.map((zone, idx) => {
+                        const isExpanded = expandedZoneId === zone.id
+                        // Filter positions for this zone
+                        const zonePositions = filteredPositions.filter(p => p.zone_id === zone.id)
+
+                        return (
+                            <div key={idx} className="flex flex-col bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 rounded overflow-hidden">
+                                {/* Zone Header Row */}
+                                <div
+                                    className="flex items-center justify-between p-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none"
+                                    onClick={() => toggleZone(zone.id)}
+                                >
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                        <ChevronDown size={14} className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                        <span className="font-medium text-slate-700 dark:text-slate-300 truncate text-sm" title={zone.name}>
+                                            {zone.name}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-3 text-xs shrink-0 ml-2">
+                                        <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded">
+                                            {zone.count} vt
+                                        </span>
+                                        {zone.quantity > 0 && (
+                                            <span className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded">
+                                                {zone.quantity.toLocaleString()}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Expanded Position Grid */}
+                                {isExpanded && (
+                                    <div className="p-2 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50">
+                                        <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-2">
+                                            {zonePositions.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })).map(pos => renderPositionCard(pos))}
+                                        </div>
+                                    </div>
                                 )}
                             </div>
-                        </div>
-                    ))}
+                        )
+                    })}
                 </div>
             </div>
         </div>
