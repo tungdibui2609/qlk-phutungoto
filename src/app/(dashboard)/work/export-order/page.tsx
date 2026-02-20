@@ -89,6 +89,7 @@ function ExportOrderContent() {
             // 3. Fetch detailed lot items
 
             let finalLotIds = new Set(lotIds)
+            let lotToPositionMap: Record<string, string> = {}
 
             if (positionIds.length > 0) {
                 const { data: posData } = await supabase
@@ -98,7 +99,10 @@ function ExportOrderContent() {
 
                 if (posData) {
                     posData.forEach(p => {
-                        if (p.lot_id) finalLotIds.add(p.lot_id)
+                        if (p.lot_id) {
+                            finalLotIds.add(p.lot_id)
+                            lotToPositionMap[p.lot_id] = p.id
+                        }
                     })
                 }
             }
@@ -117,7 +121,8 @@ function ExportOrderContent() {
                     lot_items (
                         id, product_id, quantity, unit,
                         products ( name, sku )
-                    )
+                    ),
+                    positions (id, code)
                 `)
                 .in('id', uniqueLotIds)
 
@@ -126,6 +131,11 @@ function ExportOrderContent() {
             // Flatten items
             const items: any[] = []
             lotsData?.forEach((lot: any) => {
+                let defaultPositionId = lotToPositionMap[lot.id]
+                if (!defaultPositionId && lot.positions && lot.positions.length > 0) {
+                    defaultPositionId = lot.positions[0].id
+                }
+
                 if (lot.lot_items) {
                     lot.lot_items.forEach((li: any) => {
                         items.push({
@@ -135,11 +145,7 @@ function ExportOrderContent() {
                             unit: li.unit,
                             product_name: li.products?.name,
                             sku: li.products?.sku,
-                            // Ideally we should know which position this comes from if we selected by position
-                            // For simplicity, we just link to the LOT. 
-                            // If user selected specific positions, we might want to link those?
-                            // For now, let's leave position_id null or try to map back if possible.
-                            position_id: null
+                            position_id: defaultPositionId || null
                         })
                     })
                 }

@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/ToastProvider'
+import { ExportMapDiagram } from '@/components/export/ExportMapDiagram'
 
 interface ExportOrderItem {
     id?: string
@@ -62,7 +63,7 @@ function ExportOrderDetailContent() {
                         quantity,
                         unit,
                         status,
-                        lots (code, inbound_date),
+                        lots (code, inbound_date, positions(code)),
                         positions (code),
                         products (name, sku, image_url)
                     )
@@ -77,18 +78,24 @@ function ExportOrderDetailContent() {
                 status: data.status as ExportTask['status'],
                 created_by_name: 'Admin',
                 items_count: data.items?.length || 0,
-                items: data.items?.map((item: any) => ({
-                    id: item.id,
-                    lot_code: item.lots?.code || 'N/A',
-                    lot_inbound_date: item.lots?.inbound_date,
-                    position_name: item.positions?.code || 'N/A',
-                    product_name: item.products?.name || 'Sản phẩm không tên',
-                    sku: item.products?.sku || 'N/A',
-                    product_image: item.products?.image_url,
-                    quantity: item.quantity,
-                    unit: item.unit,
-                    status: item.status || 'Pending'
-                }))
+                items: data.items?.map((item: any) => {
+                    let posCode = item.positions?.code
+                    if (!posCode && item.lots?.positions && item.lots?.positions.length > 0) {
+                        posCode = item.lots.positions[0].code
+                    }
+                    return {
+                        id: item.id,
+                        lot_code: item.lots?.code || 'N/A',
+                        lot_inbound_date: item.lots?.inbound_date,
+                        position_name: posCode || 'N/A',
+                        product_name: item.products?.name || 'Sản phẩm không tên',
+                        sku: item.products?.sku || 'N/A',
+                        product_image: item.products?.image_url,
+                        quantity: item.quantity,
+                        unit: item.unit,
+                        status: item.status || 'Pending'
+                    }
+                })
             }
 
             setTask(formattedTask)
@@ -256,6 +263,35 @@ function ExportOrderDetailContent() {
                     </table>
                 </div>
             </div>
+
+            {/* Warehouse Diagram */}
+            {task.items && task.items.length > 0 && (
+                <div className="bg-white dark:bg-zinc-800 rounded-3xl border border-stone-200 dark:border-zinc-700 shadow-sm p-6 overflow-hidden">
+                    <h2 className="text-lg font-bold mb-4 border-b border-stone-100 dark:border-zinc-700 pb-2">Sơ đồ vị trí xuất kho</h2>
+                    <div className="overflow-x-auto print:-mx-0 mx-[-1rem] px-[1rem] print:px-0">
+                        <ExportMapDiagram
+                            items={task.items.map(item => ({
+                                id: item.id,
+                                quantity: item.quantity,
+                                unit: item.unit,
+                                status: item.status,
+                                lots: {
+                                    code: item.lot_code,
+                                    inbound_date: item.lot_inbound_date,
+                                    notes: null // Missing in detail currently but satisfies TS
+                                },
+                                positions: {
+                                    code: item.position_name
+                                },
+                                products: {
+                                    name: item.product_name,
+                                    sku: item.sku
+                                }
+                            }))}
+                        />
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

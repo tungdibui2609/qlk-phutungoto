@@ -45,6 +45,14 @@ export default function FastScanPage() {
     const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([])
     const [scannedLots, setScannedLots] = useState<Set<string>>(new Set()) // Track scanned lots in session
 
+    // Custom Duplicate Warning State
+    const [duplicateWarning, setDuplicateWarning] = useState<{
+        isOpen: boolean,
+        lot: any,
+        targetPos?: any,
+        isAutoMode: boolean
+    }>({ isOpen: false, lot: null, isAutoMode: false })
+
     const inputRef = useRef<HTMLInputElement>(null)
 
     // Check module permission
@@ -274,14 +282,32 @@ export default function FastScanPage() {
             // Check for duplicate scan
             if (scannedLots.has(lot.id)) {
                 addHistory('info', `Cảnh báo trùng lặp: ${lot.code}`, `LOT này đã được xếp vào ${targetPos.code}`)
-                const isConfirmed = window.confirm(`Cảnh báo: LOT ${lot.code} đã được quét trong phiên này.\nVị trí hiện tại: ${targetPos.code}\nBạn có chắc chắn muốn gán lại mã này?`)
-                if (!isConfirmed) {
-                    setPaused(false)
-                    setLoading(false)
-                    return
-                }
+                // Show custom modal instead of window.confirm
+                setDuplicateWarning({
+                    isOpen: true,
+                    lot,
+                    targetPos,
+                    isAutoMode: true
+                })
+                setLoading(false)
+                return // Pause execution until user confirms
             }
 
+            await proceedWithAutoAssign(lot, targetPos)
+        } catch (e: any) {
+            console.error('Auto Assign Error:', e)
+            showToast('Lỗi: ' + e.message, 'error')
+            setPaused(false)
+        } finally {
+            if (!duplicateWarning.isOpen) {
+                setLoading(false)
+            }
+        }
+    }
+
+    const proceedWithAutoAssign = async (lot: any, targetPos: any) => {
+        setLoading(true)
+        try {
             setScannedLots(prev => new Set(prev).add(lot.id))
 
             // [FIX] Clear LOT from any previous positions first to avoid duplicates
@@ -381,34 +407,43 @@ export default function FastScanPage() {
                 // Check for duplicate scan
                 if (scannedLots.has(data.id)) {
                     addHistory('info', `Cảnh báo trùng lặp: ${data.code}`, `LOT này đã được quét trước đó`)
-                    const isConfirmed = window.confirm(`Cảnh báo: LOT ${data.code} đã được quét trong phiên này. Bạn có chắc chắn muốn quét lại?`)
-                    if (!isConfirmed) {
-                        setPaused(false)
-                        return
-                    }
+                    // Show custom modal
+                    setDuplicateWarning({
+                        isOpen: true,
+                        lot: data,
+                        isAutoMode: false
+                    })
+                    setLoading(false)
+                    return // Pause execution until user confirms
                 }
 
-                setScannedLots(prev => new Set(prev).add(data.id))
-
-                addHistory('info', `Nhận diện LOT: ${data.code}`, `Sản phẩm: ${data.products?.name}`)
-                setLotData(data)
-                setStep(1) // Move to Position Scan
-                setManualCode('')
-                showToast('Đã nhận diện LOT. Vui lòng xác định vị trí.', 'success')
-
-                // If in scan mode, we let camera continue. If manual, we pause camera logic.
-                if (assignMode === 'manual') {
-                    setPaused(true)
-                } else {
-                    setTimeout(() => setPaused(false), 1000)
-                }
+                proceedWithLotScan(data)
             }
         } catch (e: any) {
             console.error(e)
             showToast('Lỗi xử lý: ' + e.message, 'error')
             setPaused(false)
         } finally {
-            setLoading(false)
+            if (!duplicateWarning.isOpen) {
+                setLoading(false)
+            }
+        }
+    }
+
+    const proceedWithLotScan = (data: any) => {
+        setScannedLots(prev => new Set(prev).add(data.id))
+
+        addHistory('info', `Nhận diện LOT: ${data.code}`, `Sản phẩm: ${data.products?.name}`)
+        setLotData(data)
+        setStep(1) // Move to Position Scan
+        setManualCode('')
+        showToast('Đã nhận diện LOT. Vui lòng xác định vị trí.', 'success')
+
+        // If in scan mode, we let camera continue. If manual, we pause camera logic.
+        if (assignMode === 'manual') {
+            setPaused(true)
+        } else {
+            setTimeout(() => setPaused(false), 1000)
         }
     }
 
@@ -842,6 +877,55 @@ export default function FastScanPage() {
                 <ScanHistory items={scanHistory} onClear={() => setScanHistory([])} />
 
             </div>
+
+            {/* Custom Duplicate Warning Modal */}
+            {duplicateWarning.isOpen && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 md:p-8 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800">
+                        <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 text-amber-500 rounded-full flex items-center justify-center mb-6 mx-auto">
+                            <RotateCcw size={32} />
+                        </div>
+                        <h3 className="text-xl font-bold text-center text-slate-900 dark:text-white mb-2">
+                            Quét Lại Mã LOT
+                        </h3>
+                        <div className="text-center text-slate-600 dark:text-slate-400 mb-8 space-y-2">
+                            <p>LOT <strong className="text-slate-900 dark:text-white font-mono">{duplicateWarning.lot?.code}</strong> đã được quét trong phiên làm việc này.</p>
+                            {duplicateWarning.isAutoMode && duplicateWarning.targetPos && (
+                                <p className="bg-slate-50 dark:bg-slate-800 p-3 rounded-xl text-sm border border-slate-100 dark:border-slate-700 mt-4">
+                                    Mã này đang chờ được gán vào vị trí: <br />
+                                    <strong className="text-orange-600 font-mono text-base">{duplicateWarning.targetPos.code}</strong>
+                                </p>
+                            )}
+                            <p className="text-sm font-medium text-slate-500 mt-4">Bạn có chắc chắn muốn quét lại mã này?</p>
+                        </div>
+                        <div className="flex gap-3 relative z-50">
+                            <button
+                                onClick={() => {
+                                    setDuplicateWarning({ isOpen: false, lot: null, isAutoMode: false })
+                                    setPaused(false)
+                                    setLoading(false)
+                                }}
+                                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-bold transition-colors"
+                            >
+                                Hủy Bỏ
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setDuplicateWarning(prev => ({ ...prev, isOpen: false }))
+                                    if (duplicateWarning.isAutoMode) {
+                                        proceedWithAutoAssign(duplicateWarning.lot, duplicateWarning.targetPos)
+                                    } else {
+                                        proceedWithLotScan(duplicateWarning.lot)
+                                    }
+                                }}
+                                className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold transition-colors shadow-lg shadow-amber-500/20"
+                            >
+                                Vẫn Tiếp Tục
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Bottom Info Sheet (Always visible if we have data) */}
             {lotData && step !== 2 && (

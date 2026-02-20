@@ -3,7 +3,8 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Printer, Loader2, Download } from 'lucide-react'
+import { Calendar, Download, Loader2, Printer } from 'lucide-react'
+import { ExportMapDiagram } from '@/components/export/ExportMapDiagram'
 import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
@@ -137,20 +138,32 @@ function ExportOrderPrintContent() {
                 }
 
                 // Fetch Items
-                const { data: itemsData, error: itemsError } = await supabase
+                const { data: itemsDataRaw, error: itemsError } = await supabase
                     .from('export_task_items')
                     .select(`
                         id,
                         quantity,
                         unit,
                         status,
-                        lots (code, inbound_date, notes),
+                        lots (code, inbound_date, notes, positions(code)),
                         positions (code),
                         products (name, sku)
                     `)
                     .eq('task_id', taskId)
 
                 if (itemsError) throw itemsError
+
+                // Map the data to include fallback position
+                const itemsData = (itemsDataRaw || []).map((item: any) => {
+                    let posCode = item.positions?.code
+                    if (!posCode && item.lots?.positions && item.lots?.positions.length > 0) {
+                        posCode = item.lots.positions[0].code
+                    }
+                    return {
+                        ...item,
+                        positions: posCode ? { code: posCode } : null
+                    }
+                })
                 // Explicitly cast or handle potential nulls if needed, though interface update should handle it
                 setItems(itemsData as unknown as ExportOrderItem[] || [])
 
@@ -185,118 +198,6 @@ function ExportOrderPrintContent() {
 
     const handleDownload = () => handleCapture(false)
 
-    // Layout Processing for Diagram
-    const diagramData = useMemo(() => {
-        type GridItem = {
-            data: ExportOrderItem
-            tier: number
-            slot: number
-        }
-
-        type GridGroup = {
-            name: string
-            items: GridItem[]
-            tiers: number[]
-            slots: number[]
-            key: string
-            grid: {
-                tiers: number[]
-                slots: number[]
-            }
-        }
-
-        const groups: Record<string, Omit<GridGroup, 'key' | 'grid'>> = {}
-
-        items.forEach(item => {
-            if (!item.positions?.code) return
-
-            const code = item.positions.code
-            const parts = code.split(/[-.]/)
-
-            let zone = '?'
-            let rack = '?'
-            let tier = 1
-            let slot = 1
-
-            if (parts.length >= 2) {
-                zone = parts[0]
-                const rackTierPart = parts[1] // K1D1T1
-
-                // Extract Tier
-                const tierMatch = rackTierPart.match(/T(\d+)$/)
-                if (tierMatch) {
-                    tier = parseInt(tierMatch[1])
-                    rack = rackTierPart.replace(/T\d+$/, '') // K1D1
-                } else {
-                    rack = rackTierPart
-                }
-
-                // Extract Slot
-                const slotPart = parts[2] || ''
-                const slotMatch = slotPart.match(/(\d+)/)
-                if (slotMatch) {
-                    slot = parseInt(slotMatch[1])
-                }
-            } else {
-                rack = code
-            }
-
-            const groupKey = `${zone}-${rack}`
-
-            if (!groups[groupKey]) {
-                groups[groupKey] = {
-                    name: `${zone} - ${rack}`,
-                    items: [],
-                    tiers: [],
-                    slots: []
-                }
-            }
-
-            groups[groupKey].items.push({ data: item, tier, slot })
-            if (!groups[groupKey].tiers.includes(tier)) groups[groupKey].tiers.push(tier)
-            if (!groups[groupKey].slots.includes(slot)) groups[groupKey].slots.push(slot)
-        })
-
-        return Object.entries(groups).map(([key, group]) => {
-            const sortedTiers = group.tiers.sort((a, b) => a - b)
-            const sortedSlots = group.slots.sort((a, b) => a - b)
-
-            // Determine actual range with buffer
-            const minTierRaw = sortedTiers.length ? Math.min(...sortedTiers) : 1
-            const maxTierRaw = sortedTiers.length ? Math.max(...sortedTiers) : 1
-            const minSlotRaw = sortedSlots.length ? Math.min(...sortedSlots) : 1
-            const maxSlotRaw = sortedSlots.length ? Math.max(...sortedSlots) : 1
-
-            const displayMinTier = Math.max(1, minTierRaw)
-            const displayMaxTier = maxTierRaw
-
-            const displayMinSlot = Math.max(1, minSlotRaw)
-            const displayMaxSlot = maxSlotRaw
-
-            // Generate arrays for the grid
-            // Tiers from Max to Min (Top to Bottom)
-            const tiers = []
-            for (let i = displayMaxTier; i >= displayMinTier; i--) {
-                tiers.push(i)
-            }
-
-            const slots = []
-            for (let i = displayMinSlot; i <= displayMaxSlot; i++) {
-                slots.push(i)
-            }
-
-            return {
-                ...group,
-                key,
-                grid: {
-                    tiers,
-                    slots
-                }
-            }
-        })
-
-    }, [items])
-
 
     if (loading) {
         return (
@@ -316,12 +217,19 @@ function ExportOrderPrintContent() {
     }
 
     return (
-        <div id="print-ready" className={`pt-8 px-8 pb-8 print:p-0 max-w-[210mm] mx-auto bg-white text-black text-[13px] leading-relaxed font-serif ${isCapturing ? 'w-[210mm]' : ''}`}>
+        <div id="print-ready" className={`print:p-0 mx-auto text-black bg-stone-100 print:bg-white text-[13px] leading-relaxed font-serif py-8 print:py-0 min-h-screen flex flex-col items-center gap-8 print:block print:gap-0`}>
             <style jsx global>{`
                 @media print {
                     @page {
                         margin: 10mm;
-                        size: A4;
+                        size: A4 portrait;
+                    }
+                    @page landscape-page {
+                        size: A4 landscape;
+                        margin: 10mm;
+                    }
+                    .landscape-section {
+                        page: landscape-page;
                     }
                     body {
                         print-color-adjust: exact;
@@ -357,7 +265,7 @@ function ExportOrderPrintContent() {
             </div>
 
             {/* PAGE 1: EXPORT ORDER DETAIL */}
-            <div>
+            <div className={`pt-8 px-8 pb-8 print:p-0 w-full max-w-[210mm] print:max-w-none bg-white shadow-md print:shadow-none ${isCapturing ? 'w-[210mm]' : ''}`}>
                 {/* Header */}
                 <div className="flex justify-between items-start mb-6">
                     <div className="flex gap-4 items-start">
@@ -397,7 +305,7 @@ function ExportOrderPrintContent() {
                 <h3 className="font-bold text-sm mb-2">Chi tiết hàng hóa xuất kho</h3>
 
                 {/* Table */}
-                <table className="w-full border-collapse border border-black mb-4 text-xs break-inside-avoid">
+                <table className="w-full border-collapse border border-black mb-4 text-xs">
                     <thead>
                         <tr>
                             <th className="border border-black p-2 w-10 text-center">STT</th>
@@ -413,12 +321,12 @@ function ExportOrderPrintContent() {
                     </thead>
                     <tbody>
                         {items.map((item, idx) => (
-                            <tr key={item.id}>
+                            <tr key={item.id} className="break-inside-avoid">
                                 <td className="border border-black p-2 text-center">{idx + 1}</td>
                                 <td className="border border-black p-2 text-center">{item.lots?.code}</td>
                                 <td className="border border-black p-2 text-center">{item.positions?.code}</td>
                                 <td className="border border-black p-2">
-                                    <div className="font-bold">{item.products?.name}</div>
+                                    <div className="font-bold">{item.products?.sku} - {item.products?.name}</div>
                                     {item.lots?.notes && <div className="text-[10px] font-bold mt-1 uppercase">{item.lots.notes}</div>}
                                 </td>
                                 <td className="border border-black p-2 text-center font-bold">{formatQuantityFull(item.quantity)}</td>
@@ -513,66 +421,10 @@ function ExportOrderPrintContent() {
                 </div>
             </div>
 
-            <div className="page-break my-8 border-t border-dashed border-stone-300 print:border-none"></div>
-
             {/* PAGE 2: DIAGRAM */}
-            <div>
+            <div className={`landscape-section pt-8 px-8 pb-8 print:p-0 w-full max-w-[297mm] print:max-w-none bg-white shadow-md print:shadow-none ${isCapturing ? 'w-[297mm]' : ''}`}>
                 <h2 className="font-bold text-lg mb-4 text-center uppercase border-b border-black pb-2">Sơ đồ vị trí xuất kho</h2>
-
-                {diagramData.map(group => (
-                    <div key={group.key} className="mb-8 break-inside-avoid">
-                        <div className="font-bold mb-2 text-sm">Kho {group.key.split('-')[0]} • {group.items.length} vị trí</div>
-                        <div className="font-bold text-lg mb-4">Khu {group.key.split('-')[0]} - Dãy {group.key.split('-').slice(1).join('')}</div>
-
-                        {/* Grid Render */}
-                        <div className="space-y-2">
-                            {group.grid.tiers.map(tier => (
-                                <div key={tier} className="flex gap-2">
-                                    <div className="w-16 flex items-center font-bold shrink-0 text-sm">
-                                        Tầng {tier}
-                                    </div>
-                                    <div className="flex gap-2 overflow-x-auto print:overflow-visible">
-                                        {group.grid.slots.map(slot => {
-                                            // Find all items at this Tier/Slot
-                                            const slotItems = group.items.filter(i => i.tier === tier && i.slot === slot).map(i => i.data)
-
-                                            const hasItem = slotItems.length > 0
-                                            const firstItem = slotItems[0]
-
-                                            return (
-                                                <div key={slot} className={`
-                                                    border border-black rounded w-28 h-20 p-1 flex flex-col justify-between relative shrink-0
-                                                    ${hasItem ? 'bg-white' : 'bg-stone-50 print:bg-white'}
-                                                `}>
-                                                    {/* Slot Label (PL1) */}
-                                                    <div className="text-[10px] text-center font-bold text-stone-500 mb-0.5">PL{slot}</div>
-
-                                                    {hasItem ? (
-                                                        <div className="flex flex-col h-full justify-between items-center pb-1">
-                                                            <div className="text-[9px] text-center font-bold break-all leading-tight px-0.5">
-                                                                {firstItem.positions?.code}
-                                                            </div>
-                                                            <div className="text-[9px] text-center w-full">
-                                                                <div className="font-bold truncate px-0.5" title={firstItem.products?.name}>
-                                                                    {firstItem.products?.sku}
-                                                                </div>
-                                                                <div className="font-bold text-black scale-90 origin-bottom">
-                                                                    {slotItems.length > 1 ? `${slotItems.length} items` : `${formatQuantityFull(firstItem.quantity)} ${firstItem.unit}`}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="h-full"></div>
-                                                    )}
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                ))}
+                <ExportMapDiagram items={items} />
             </div>
         </div>
     )

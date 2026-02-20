@@ -201,13 +201,29 @@ export function useLotManagement() {
             // 1. Search Term Logic (Deep Search)
             if (searchTerm) {
                 const term = `%${searchTerm}%`
-                // Find products matching
-                const { data: prods } = await supabase.from('products').select('id').ilike('name', term).eq('system_type', currentSystem.code)
+                let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`]
+
+                // Safe check if searchTerm is a UUID to search in 'id' column without crashing postgres
+                const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(searchTerm)
+                if (isUUID) {
+                    orConditionsProd.push(`id.eq.${searchTerm}`)
+                }
+
+                // Find products matching name, sku, or valid UUID id
+                const { data: prods } = await supabase.from('products').select('id').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code)
                 const prodIds = prods?.map(p => p.id) || []
 
                 // Find suppliers matching
                 const { data: supps } = await supabase.from('suppliers').select('id').ilike('name', term).eq('system_code', currentSystem.code)
                 const suppIds = supps?.map(s => s.id) || []
+
+                // Find tags matching
+                const { data: tags } = await supabase.from('lot_tags').select('lot_id').ilike('tag', term)
+                const tagLotIds = tags?.map(t => t.lot_id) || []
+
+                // Find QC matching
+                const { data: qcs } = await supabase.from('qc_info').select('id').ilike('name', term).eq('system_code', currentSystem.code)
+                const qcIds = qcs?.map(q => q.id) || []
 
                 // Find lots with these products or suppliers OR code/note match
                 // We'll use an RPC or raw OR query if possible. 
@@ -215,13 +231,23 @@ export function useLotManagement() {
                 let itemLotIds: string[] = []
                 if (prodIds.length > 0) {
                     const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', prodIds)
-                    if (items) itemLotIds = items.map(i => i.lot_id)
+                    if (items) {
+                        itemLotIds = items.map(i => i.lot_id)
+                    }
                 }
 
+                // Combine all lot IDs found from children records
+                const combinedLotIds = Array.from(new Set([...itemLotIds, ...tagLotIds]))
+
                 // Construct OR filter for top-level lots
-                let orConditions = [`code.ilike.${term}`]
-                if (itemLotIds.length > 0) orConditions.push(`id.in.(${itemLotIds.join(',')})`)
+                let orConditions = [
+                    `code.ilike.${term}`,
+                    `notes.ilike.${term}`,
+                    `metadata->>extra_info.ilike.${term}`
+                ]
+                if (combinedLotIds.length > 0) orConditions.push(`id.in.(${combinedLotIds.join(',')})`)
                 if (suppIds.length > 0) orConditions.push(`supplier_id.in.(${suppIds.join(',')})`)
+                if (qcIds.length > 0) orConditions.push(`qc_id.in.(${qcIds.join(',')})`)
 
                 // Note: .or() with large lists can be slow/error prone URL length. 
                 // If lists are huge, this breaks. But for now mostly okay.
