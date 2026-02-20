@@ -271,6 +271,19 @@ export default function FastScanPage() {
             // 3. Pick Destination
             const targetPos = autoQueue[0]
 
+            // Check for duplicate scan
+            if (scannedLots.has(lot.id)) {
+                addHistory('info', `Cảnh báo trùng lặp: ${lot.code}`, `LOT này đã được xếp vào ${targetPos.code}`)
+                const isConfirmed = window.confirm(`Cảnh báo: LOT ${lot.code} đã được quét trong phiên này.\nVị trí hiện tại: ${targetPos.code}\nBạn có chắc chắn muốn gán lại mã này?`)
+                if (!isConfirmed) {
+                    setPaused(false)
+                    setLoading(false)
+                    return
+                }
+            }
+
+            setScannedLots(prev => new Set(prev).add(lot.id))
+
             // [FIX] Clear LOT from any previous positions first to avoid duplicates
             await supabase
                 .from('positions')
