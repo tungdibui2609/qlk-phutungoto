@@ -148,10 +148,11 @@ export function MapSearchStats({
                 {onPositionMenu && (
                     <button
                         onClick={(e) => {
+                            e.preventDefault()
                             e.stopPropagation()
                             onPositionMenu(pos, e)
                         }}
-                        className="absolute top-1 right-1 z-10 p-0.5 rounded bg-white/80 dark:bg-gray-800/80 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
+                        className="absolute top-1 right-1 z-20 p-0.5 rounded bg-white/80 dark:bg-gray-800/80 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
                         title="Thao tác"
                     >
                         <MoreHorizontal size={14} />

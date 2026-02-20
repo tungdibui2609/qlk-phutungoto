@@ -21,6 +21,8 @@ interface MultiSelectActionBarProps {
     onTag: (lotId: string) => void
     onBulkExport: () => void
     onExportOrder: (positionIds: string[], lotIds: string[]) => void
+    onOpenSelectHall?: () => void
+    onOpenMove?: () => void
 }
 
 export default function MultiSelectActionBar({
@@ -30,7 +32,9 @@ export default function MultiSelectActionBar({
     onClear,
     onTag,
     onBulkExport,
-    onExportOrder
+    onExportOrder,
+    onOpenSelectHall,
+    onOpenMove
 }: MultiSelectActionBarProps) {
 
     // Get selected positions data
@@ -138,19 +142,21 @@ export default function MultiSelectActionBar({
                             </button>
 
                             <button
+                                onClick={onOpenSelectHall}
                                 className="flex items-center gap-2 px-2 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all active:scale-95 group whitespace-nowrap"
-                                title="Hạ sành"
+                                title="Hạ sảnh"
                             >
                                 <ArrowDownToLine size={14} className="text-orange-500 group-hover:scale-110 transition-transform" />
-                                <span>Hạ sành</span>
+                                <span>Hạ sảnh</span>
                             </button>
 
                             <button
+                                onClick={onOpenMove}
                                 className="flex items-center gap-2 px-2 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all active:scale-95 group whitespace-nowrap"
-                                title="Chuyển kho"
+                                title="Di chuyển"
                             >
                                 <ArrowRightLeft size={14} className="text-indigo-500 group-hover:scale-110 transition-transform" />
-                                <span>Chuyển kho</span>
+                                <span>Di chuyển</span>
                             </button>
 
                             <button

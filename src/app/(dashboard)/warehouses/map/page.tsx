@@ -21,6 +21,8 @@ import { MapHeader } from './_components/MapHeader'
 import { MapBanners } from './_components/MapBanners'
 import { ZoneCollapseControls } from './_components/ZoneCollapseControls'
 import { MapSearchStats } from './_components/MapSearchStats'
+import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
+import { SelectMoveDestinationModal } from '@/components/warehouse/map/SelectMoveDestinationModal'
 
 type Zone = Database['public']['Tables']['zones']['Row']
 type ZoneLayout = Database['public']['Tables']['zone_layouts']['Row']
@@ -73,6 +75,8 @@ function WarehouseMapContent() {
     // Multi-select & Modals
     const [selectedPositionIds, setSelectedPositionIds] = useState<Set<string>>(new Set())
     const [isBulkExportOpen, setIsBulkExportOpen] = useState(false)
+    const [isSelectHallOpen, setIsSelectHallOpen] = useState(false)
+    const [isMoveModalOpen, setIsMoveModalOpen] = useState(false)
     const [taggingLotId, setTaggingLotId] = useState<string | null>(null)
     const [viewingLot, setViewingLot] = useState<any>(null)
     const [qrLot, setQrLot] = useState<any>(null)
@@ -94,15 +98,56 @@ function WarehouseMapContent() {
         }
     }, [assignLotId])
 
-    // --- Action Handlers ---
-
     function handlePositionSelect(positionId: string) {
         if (assignLot && assignLotId) {
-            // Assignment Logic
+            // Assignment / Move Logic
             const pos = positions.find(p => p.id === positionId)
             if (!pos) return
 
+            const isMoveMode = searchParams.get('mode') === 'move'
             const isAssignedToThisLot = pos.lot_id === assignLotId
+
+            if (isMoveMode) {
+                if (pos.lot_id) {
+                    showToast('Vị trí này đã có hàng, vui lòng chọn một vị trí trống khác.', 'warning')
+                    return
+                }
+
+                // 1. Find the old position(s) of this lot and clear them
+                const oldPositions = positions.filter(p => p.lot_id === assignLotId)
+                const updates: { id: string, lot_id: string | null }[] = []
+
+                oldPositions.forEach(p => updates.push({ id: p.id, lot_id: null }))
+
+                // 2. Assign to the newly selected position
+                updates.push({ id: positionId, lot_id: assignLotId })
+
+                // Optimistic UI update
+                setPositions(prev => prev.map(p => {
+                    const upd = updates.find(u => u.id === p.id)
+                    return upd ? { ...p, lot_id: upd.lot_id } : p
+                }))
+
+                // DB Updates
+                const updatePromises = updates.map(u =>
+                    supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id)
+                )
+
+                Promise.all(updatePromises).then(results => {
+                    const hasError = results.some(r => r.error)
+                    if (hasError) {
+                        showToast('Có lỗi xảy ra khi dời vị trí!', 'error')
+                        fetchData()
+                    } else {
+                        showToast('Đã dời vị trí thành công!', 'success')
+                        router.push('/warehouses/map') // exit move mode
+                    }
+                })
+
+                return
+            }
+
+            // Normal Assignment Mode (Toggle)
             const newLotId = isAssignedToThisLot ? null : assignLotId
 
             // Optimistic update
@@ -121,7 +166,7 @@ function WarehouseMapContent() {
                         const rawMsg = (error as any)?.message || ''
                         let displayMsg = rawMsg || 'Có lỗi xảy ra khi cập nhật vị trí'
                         if (rawMsg.includes('unique_lot_in_positions') || rawMsg.includes('duplicate key')) {
-                            displayMsg = 'LOT này đã được gán ở vị trí khác! Vui lòng gỡ bỏ khỏi vị trí cũ trước.'
+                            displayMsg = 'LOT này đã được gán ở vị trí khác! Vui lòng gỡ bỏ khỏi vị trí cũ trước hoặc dùng tính năng Di chuyển.'
                         }
                         showToast(displayMsg, 'error')
                         fetchData()
@@ -240,6 +285,150 @@ function WarehouseMapContent() {
         })
     }
 
+    async function handleMoveToHall(hallId: string) {
+        setIsSelectHallOpen(false)
+        if (selectedPositionIds.size === 0) return
+
+        // Get lot IDs to move
+        const lotIdsToMove = new Set<string>()
+        selectedPositions.forEach(p => {
+            if (p.lot_id) lotIdsToMove.add(p.lot_id)
+        })
+
+        if (lotIdsToMove.size === 0) return
+
+        // Find all descendant zones of the selected Hall (including the Hall itself)
+        const hallZoneIds = new Set<string>([hallId])
+        let added = true
+        while (added) {
+            added = false
+            for (const z of zones) {
+                if (z.parent_id && hallZoneIds.has(z.parent_id) && !hallZoneIds.has(z.id)) {
+                    hallZoneIds.add(z.id)
+                    added = true
+                }
+            }
+        }
+
+        // Find available positions in the Hall's zones
+        const availablePositions = positions.filter(p => p.zone_id && hallZoneIds.has(p.zone_id) && !p.lot_id)
+
+        if (availablePositions.length < lotIdsToMove.size) {
+            showToast(`Không đủ vị trí trống trong Sảnh này. Cần ${lotIdsToMove.size}, nhưng chỉ còn ${availablePositions.length} vị trí.`, 'error')
+            return
+        }
+
+        const lotsArr = Array.from(lotIdsToMove)
+        const oldPosIdsToClear = selectedPositions.filter(p => p.lot_id).map(p => p.id)
+        const updates: { id: string, lot_id: string | null }[] = []
+
+        // 1. Clear old positions
+        oldPosIdsToClear.forEach(id => updates.push({ id, lot_id: null }))
+
+        // 2. Assign to new positions
+        for (let i = 0; i < lotsArr.length; i++) {
+            updates.push({ id: availablePositions[i].id, lot_id: lotsArr[i] })
+        }
+
+        // Optimistic UI update
+        setPositions(prev => prev.map(p => {
+            const upd = updates.find(u => u.id === p.id)
+            return upd ? { ...p, lot_id: upd.lot_id } : p
+        }))
+
+        // DB Updates
+        try {
+            const updatePromises = updates.map(u =>
+                supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id)
+            )
+            const results = await Promise.all(updatePromises)
+            const hasError = results.some(r => r.error)
+
+            if (hasError) {
+                showToast('Chuyển kho có lỗi xảy ra. Đang làm mới dữ liệu.', 'warning')
+                fetchData()
+            } else {
+                showToast('Đã chuyển hàng xuống Sảnh thành công!', 'success')
+                setSelectedPositionIds(new Set())
+            }
+        } catch (error: any) {
+            showToast('Lỗi khi hạ sảnh: ' + error.message, 'error')
+            fetchData()
+        }
+    }
+
+    async function handleMoveItems(targetZoneId: string) {
+        setIsMoveModalOpen(false)
+        if (selectedPositionIds.size === 0) return
+
+        // Get lot IDs to move
+        const lotIdsToMove = new Set<string>()
+        selectedPositions.forEach(p => {
+            if (p.lot_id) lotIdsToMove.add(p.lot_id)
+        })
+
+        if (lotIdsToMove.size === 0) return
+
+        // Find all descendant zones of the selected target Zone (including the target itself)
+        const targetZoneIds = new Set<string>([targetZoneId])
+        let added = true
+        while (added) {
+            added = false
+            for (const z of zones) {
+                if (z.parent_id && targetZoneIds.has(z.parent_id) && !targetZoneIds.has(z.id)) {
+                    targetZoneIds.add(z.id)
+                    added = true
+                }
+            }
+        }
+
+        // Find available positions in the target Zone's descendant zones
+        const availablePositions = positions.filter(p => p.zone_id && targetZoneIds.has(p.zone_id) && !p.lot_id)
+
+        if (availablePositions.length < lotIdsToMove.size) {
+            showToast(`Không đủ vị trí trống trong Khu vực này. Cần ${lotIdsToMove.size}, nhưng chỉ còn ${availablePositions.length} vị trí.`, 'error')
+            return
+        }
+
+        const lotsArr = Array.from(lotIdsToMove)
+        const oldPosIdsToClear = selectedPositions.filter(p => p.lot_id).map(p => p.id)
+        const updates: { id: string, lot_id: string | null }[] = []
+
+        // 1. Clear old positions
+        oldPosIdsToClear.forEach(id => updates.push({ id, lot_id: null }))
+
+        // 2. Assign to new positions
+        for (let i = 0; i < lotsArr.length; i++) {
+            updates.push({ id: availablePositions[i].id, lot_id: lotsArr[i] })
+        }
+
+        // Optimistic UI update
+        setPositions(prev => prev.map(p => {
+            const upd = updates.find(u => u.id === p.id)
+            return upd ? { ...p, lot_id: upd.lot_id } : p
+        }))
+
+        // DB Updates
+        try {
+            const updatePromises = updates.map(u =>
+                supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id)
+            )
+            const results = await Promise.all(updatePromises)
+            const hasError = results.some(r => r.error)
+
+            if (hasError) {
+                showToast('Di chuyển có lỗi xảy ra. Đang làm mới dữ liệu.', 'warning')
+                fetchData()
+            } else {
+                showToast('Đã di chuyển hàng thành công!', 'success')
+                setSelectedPositionIds(new Set())
+            }
+        } catch (error: any) {
+            showToast('Lỗi khi di chuyển: ' + error.message, 'error')
+            fetchData()
+        }
+    }
+
     // --- Render ---
 
     // Convert layouts array to record for FlexibleZoneGrid
@@ -329,6 +518,7 @@ function WarehouseMapContent() {
                         collapsedZones={collapsedZones}
                         onToggleCollapse={toggleZoneCollapse}
                         onPositionSelect={handlePositionSelect}
+                        onPositionMenu={(pos, e) => handlePositionMenu(pos, e)}
                         onViewDetails={(lotId) => fetchFullLotDetails(lotId)}
                         isDesignMode={isDesignMode}
                         onConfigureZone={setConfiguringZone}
@@ -348,6 +538,22 @@ function WarehouseMapContent() {
                 onExportOrder={handleExportOrder}
                 onBulkExport={() => setIsBulkExportOpen(true)}
                 onTag={(lotId) => setTaggingLotId(lotId)}
+                onOpenSelectHall={() => setIsSelectHallOpen(true)}
+                onOpenMove={() => setIsMoveModalOpen(true)}
+            />
+
+            <SelectHallModal
+                isOpen={isSelectHallOpen}
+                onClose={() => setIsSelectHallOpen(false)}
+                onConfirm={handleMoveToHall}
+                zones={zones}
+            />
+
+            <SelectMoveDestinationModal
+                isOpen={isMoveModalOpen}
+                onClose={() => setIsMoveModalOpen(false)}
+                onConfirm={handleMoveItems}
+                zones={zones}
             />
 
             {isBulkExportOpen && (

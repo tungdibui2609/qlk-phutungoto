@@ -599,10 +599,11 @@ export default function FlexibleZoneGrid({
                     {!isAssignmentMode && (
                         <button
                             onClick={(e) => {
+                                e.preventDefault()
                                 e.stopPropagation()
                                 onPositionMenu?.(pos, e)
                             }}
-                            className="absolute right-0 top-0 text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors z-30 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-bl-lg"
+                            className="absolute right-0 top-0 text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors z-40 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-bl-lg"
                             title="Tùy chọn"
                         >
                             <MoreHorizontal size={14} />

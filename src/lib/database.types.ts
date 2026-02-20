@@ -1723,6 +1723,7 @@ export type Database = {
           company_id: string | null
           created_at: string | null
           id: string
+          is_hall: boolean | null
           level: number | null
           name: string
           parent_id: string | null
@@ -1733,6 +1734,7 @@ export type Database = {
           company_id?: string | null
           created_at?: string | null
           id?: string
+          is_hall?: boolean | null
           level?: number | null
           name: string
           parent_id?: string | null
@@ -1743,6 +1745,7 @@ export type Database = {
           company_id?: string | null
           created_at?: string | null
           id?: string
+          is_hall?: boolean | null
           level?: number | null
           name?: string
           parent_id?: string | null

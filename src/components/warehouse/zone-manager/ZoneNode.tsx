@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Layers, Check, X, Edit2, Plus, Save, Copy, Package, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Layers, Check, X, Edit2, Plus, Save, Copy, Package, Trash2, Flag } from 'lucide-react'
 import Protected from '@/components/auth/Protected'
 import { LocalZone, LocalPosition } from './types'
 import { QuickAddForm } from './QuickAddForm'
@@ -97,6 +97,7 @@ export function ZoneNode({ zone, depth = 0, positions, childrenZones, expandedNo
                             {/* Recursive count would need props or helper, skipping exact count for simplicity or using simple length */}
                             {childCount > 0 && <span className="text-xs text-blue-500">• {childCount} zone con</span>}
                             {posCount > 0 && <span className="text-xs text-green-600 font-medium">• {posCount} vị trí</span>}
+                            {zone.is_hall && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1 rounded flex items-center gap-0.5"><Flag size={10} /> Sảnh</span>}
                             {isNew && <span className="text-[10px] bg-green-100 text-green-700 px-1 rounded">Mới</span>}
                             {isModified && <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1 rounded">Sửa</span>}
                         </div>
@@ -116,6 +117,13 @@ export function ZoneNode({ zone, depth = 0, positions, childrenZones, expandedNo
                                     title="Thêm zone con"
                                 >
                                     <Plus size={14} />
+                                </button>
+                                <button
+                                    onClick={() => handlers.handleToggleHall(zone.id, !zone.is_hall)}
+                                    className={`p-1.5 rounded transition-colors ${zone.is_hall ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100' : 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-50'}`}
+                                    title={zone.is_hall ? "Hủy đánh dấu Sảnh" : "Đánh dấu là Sảnh"}
+                                >
+                                    <Flag size={14} />
                                 </button>
                                 {hasChildren && (
                                     <button

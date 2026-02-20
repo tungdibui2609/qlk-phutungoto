@@ -98,7 +98,10 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
         }
 
         if (action === 'move') {
-            alert('Vui lòng chọn tính năng [Chuyển kho] ở Action Bar phía dưới để di chuyển nhiều LOT cùng lúc. Tính năng kéo thả nhanh sẽ được cập nhật sau.')
+            const lotId = pos.lot_id
+            if (lotId) {
+                window.location.href = `/warehouses/map?assignLotId=${lotId}&mode=move`
+            }
             return
         }
 

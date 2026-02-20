@@ -177,7 +177,8 @@ export function useZoneManager() {
                 created_at: new Date().toISOString(),
                 _status: 'new',
                 system_type: systemType,
-                company_id: null
+                company_id: null,
+                is_hall: false
             })
         }
 
@@ -208,7 +209,8 @@ export function useZoneManager() {
                 created_at: new Date().toISOString(),
                 _status: 'new',
                 system_type: systemType,
-                company_id: null
+                company_id: null,
+                is_hall: false
             })
 
             for (const child of node.children) {
@@ -227,7 +229,8 @@ export function useZoneManager() {
             created_at: new Date().toISOString(),
             _status: 'new',
             system_type: systemType,
-            company_id: null
+            company_id: null,
+            is_hall: false
         })
 
         // Children
@@ -251,6 +254,16 @@ export function useZoneManager() {
         }))
     }
 
+    function handleToggleHall(zoneId: string, isHall: boolean) {
+        setZones(prev => prev.map(z => {
+            if (z.id === zoneId) {
+                const newStatus = z._status === 'new' ? 'new' : 'modified'
+                return { ...z, is_hall: isHall, _status: newStatus }
+            }
+            return z
+        }))
+    }
+
     function handleDuplicate(zone: LocalZone) {
         const newZones: LocalZone[] = []
         function duplicateRecursive(originalZone: LocalZone, newParentId: string | null) {
@@ -264,7 +277,8 @@ export function useZoneManager() {
                 code: isRoot ? originalZone.code + '_COPY' : originalZone.code,
                 name: isRoot ? originalZone.name + ' (copy)' : originalZone.name,
                 created_at: new Date().toISOString(),
-                _status: 'new'
+                _status: 'new',
+                is_hall: originalZone.is_hall
             })
 
             const children = zones.filter(z => z.parent_id === originalZone.id && z._status !== 'deleted')
@@ -434,7 +448,7 @@ export function useZoneManager() {
 
             // Update Zones
             for (const z of zones.filter(z => z._status === 'modified')) {
-                const { error } = await (supabase.from('zones') as any).update({ code: z.code, name: z.name }).eq('id', z.id)
+                const { error } = await (supabase.from('zones') as any).update({ code: z.code, name: z.name, is_hall: z.is_hall }).eq('id', z.id)
                 if (error) throw error
             }
 
@@ -443,7 +457,7 @@ export function useZoneManager() {
             if (newZones.length > 0) {
                 newZones.sort((a, b) => (a.level ?? 0) - (b.level ?? 0))
                 const cleanZones = newZones.map(z => ({
-                    id: z.id, code: z.code, name: z.name, parent_id: z.parent_id, level: z.level, system_type: systemType
+                    id: z.id, code: z.code, name: z.name, parent_id: z.parent_id, level: z.level, system_type: systemType, is_hall: z.is_hall
                 }))
                 const { error } = await (supabase.from('zones') as any).insert(cleanZones)
                 if (error) throw error
@@ -608,6 +622,7 @@ export function useZoneManager() {
         toggleExpand,
         handleQuickAdd,
         handleRename,
+        handleToggleHall,
         handleDuplicate,
         handleDelete,
         handleDeleteAllZones,

@@ -1,7 +1,7 @@
 'use client'
 
 import { MapPin } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 interface MapBannersProps {
     isDesignMode: boolean
@@ -10,6 +10,8 @@ interface MapBannersProps {
 
 export function MapBanners({ isDesignMode, assignLot }: MapBannersProps) {
     const router = useRouter()
+    const searchParams = useSearchParams()
+    const isMoveMode = searchParams.get('mode') === 'move'
 
     return (
         <>
@@ -29,26 +31,34 @@ export function MapBanners({ isDesignMode, assignLot }: MapBannersProps) {
                         </div>
                         <div>
                             <h3 className="font-bold text-purple-900 dark:text-purple-100">
-                                Đang gán: <span className="font-mono text-lg">{assignLot.code}</span>
+                                {isMoveMode ? 'Đang dời vị trí:' : 'Đang gán:'} <span className="font-mono text-lg">{assignLot.code}</span>
                             </h3>
                             <p className="text-sm text-purple-700 dark:text-purple-300">
-                                Chọn vị trí để gán/bỏ gán.
+                                {isMoveMode ? 'Chọn một vị trí trống mới trên sơ đồ để dời đến.' : 'Chọn vị trí để gán/bỏ gán.'}
                             </p>
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
                         <button
-                            onClick={() => router.push('/warehouses/lots')}
+                            onClick={() => {
+                                if (isMoveMode) {
+                                    router.push('/warehouses/map')
+                                } else {
+                                    router.push('/warehouses/lots')
+                                }
+                            }}
                             className="hidden sm:block px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors shadow-sm"
                         >
-                            Quay lại
+                            Hủy
                         </button>
-                        <button
-                            onClick={() => router.push('/warehouses/lots')}
-                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold transition-colors shadow-md shadow-purple-500/20 whitespace-nowrap"
-                        >
-                            Hoàn tất
-                        </button>
+                        {!isMoveMode && (
+                            <button
+                                onClick={() => router.push('/warehouses/lots')}
+                                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold transition-colors shadow-md shadow-purple-500/20 whitespace-nowrap"
+                            >
+                                Hoàn tất
+                            </button>
+                        )}
                     </div>
                 </div>
             )}
