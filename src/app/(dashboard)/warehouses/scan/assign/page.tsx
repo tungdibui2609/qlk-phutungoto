@@ -9,6 +9,7 @@ import { QrCode, RotateCcw, Boxes, MapPin, CheckCircle2, Loader2, Keyboard, Came
 import { Scanner } from '@yudiel/react-qr-scanner'
 
 import { ZoneCascadeSelector } from './_components/ZoneCascadeSelector'
+import { ScanHistory, ScanHistoryItem, ScanHistoryType } from './_components/ScanHistory'
 import { Database } from '@/lib/database.types'
 
 type ScanStep = 0 | 1 | 2
@@ -40,6 +41,9 @@ export default function FastScanPage() {
     const [zonePositions, setZonePositions] = useState<{ zone_id: string, position_id: string }[]>([])
     const [selectedTargetZoneId, setSelectedTargetZoneId] = useState<string | null>(null)
     const [isConfigOpen, setIsConfigOpen] = useState(true)
+
+    const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([])
+    const [scannedLots, setScannedLots] = useState<Set<string>>(new Set()) // Track scanned lots in session
 
     const inputRef = useRef<HTMLInputElement>(null)
 
@@ -126,6 +130,16 @@ export default function FastScanPage() {
     // Normalize utility
     const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
 
+    const addHistory = (type: ScanHistoryType, title: string, subtitle?: string) => {
+        setScanHistory(prev => [{
+            id: Math.random().toString(36).substring(7),
+            timestamp: new Date(),
+            type,
+            title,
+            subtitle
+        }, ...prev])
+    }
+
     // 1. Compute suggestions based on manualCode (Legacy Manual Mode)
     useEffect(() => {
         if (step === 1 && assignMode === 'manual' && manualCode.length >= 1) {
@@ -183,6 +197,9 @@ export default function FastScanPage() {
         setAssignedPos('')
         setManualCode('')
         setPaused(false)
+        // Note: We deliberately do NOT clear scannedLots here, 
+        // as the user wants to know if they scan the same LOT again during their entire session.
+        // It's only cleared if they refresh the page or explicitly clear history context if needed.
     }
 
     // Process a scanned or typed code
@@ -245,6 +262,7 @@ export default function FastScanPage() {
 
             if (error || !lot) {
                 showToast(`Không tìm thấy LOT "${lotCode}"`, 'error')
+                addHistory('error', 'Lỗi gán tự động', `Không tìm thấy LOT "${lotCode}"`)
                 setPaused(false)
                 setLoading(false)
                 return
@@ -292,6 +310,7 @@ export default function FastScanPage() {
             setLotData(lot) // Show brief info
             setStep(2) // Show success screen
             showToast(`Gán ${lot.code} vào ${targetPos.code} thành công!`, 'success')
+            addHistory('success', `Đã gán ${lot.code}`, `Vào vị trí ${targetPos.code}`)
 
             // 7. Auto Continue
             setTimeout(() => {
@@ -332,6 +351,7 @@ export default function FastScanPage() {
 
             if (error || !data) {
                 showToast(`Không tìm thấy LOT "${code}"`, 'error')
+                addHistory('error', 'Lỗi quét LOT', `Không tìm thấy LOT "${code}"`)
                 setPaused(false) // Resume scanning
             } else {
 
@@ -340,10 +360,24 @@ export default function FastScanPage() {
                 // 2. If LOT has NULL company_id -> Allow (Legacy Data Support)
                 if (data.company_id && data.company_id !== profile.company_id) {
                     showToast(`Cảnh báo: LOT này thuộc công ty khác!`, 'error')
+                    addHistory('error', 'Cảnh báo bảo mật', 'LOT này thuộc công ty khác!')
                     setPaused(false)
                     return
                 }
 
+                // Check for duplicate scan
+                if (scannedLots.has(data.id)) {
+                    addHistory('info', `Cảnh báo trùng lặp: ${data.code}`, `LOT này đã được quét trước đó`)
+                    const isConfirmed = window.confirm(`Cảnh báo: LOT ${data.code} đã được quét trong phiên này. Bạn có chắc chắn muốn quét lại?`)
+                    if (!isConfirmed) {
+                        setPaused(false)
+                        return
+                    }
+                }
+
+                setScannedLots(prev => new Set(prev).add(data.id))
+
+                addHistory('info', `Nhận diện LOT: ${data.code}`, `Sản phẩm: ${data.products?.name}`)
                 setLotData(data)
                 setStep(1) // Move to Position Scan
                 setManualCode('')
@@ -394,6 +428,7 @@ export default function FastScanPage() {
 
             if (!targetPos) {
                 showToast(`Không tìm thấy vị trí "${posCode}"`, 'error')
+                addHistory('error', 'Lỗi quét vị trí', `Không tìm thấy vị trí "${posCode}"`)
                 setPaused(false)
                 setLoading(false)
                 return
@@ -403,6 +438,7 @@ export default function FastScanPage() {
             if (targetPos.lot_id && targetPos.lot_id !== lotData.id) {
                 const isConfirmed = window.confirm(`Vị trí ${targetPos.code} đang có chứa LOT khác. Bạn có chắc chắn muốn thay thế?`)
                 if (!isConfirmed) {
+                    addHistory('info', 'Hủy thay thế vị trí', `Tại ${targetPos.code}`)
                     setPaused(false)
                     setLoading(false)
                     return
@@ -427,6 +463,7 @@ export default function FastScanPage() {
             setAssignedPos(targetPos.code)
             setStep(2)
             showToast(`Đã gán LOT vào ${targetPos.code}`, 'success')
+            addHistory('success', `Đã gán ${lotData.code}`, `Vào vị trí ${targetPos.code}`)
 
             // Auto reset after 2.5 seconds
             setTimeout(() => {
@@ -788,6 +825,8 @@ export default function FastScanPage() {
                         </div>
                     </div>
                 )}
+
+                <ScanHistory items={scanHistory} onClear={() => setScanHistory([])} />
 
             </div>
 
