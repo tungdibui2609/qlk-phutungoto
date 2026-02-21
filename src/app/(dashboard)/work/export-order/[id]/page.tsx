@@ -28,6 +28,9 @@ interface ExportOrderItem {
     notes?: string | null
     product_image?: string | null
     lot_inbound_date?: string | null
+    display_status?: 'Pending' | 'Exported' | 'Moved to Hall' | 'Changed Position'
+    current_position_name?: string
+    is_hall?: boolean
 }
 
 interface ExportTask {
@@ -130,8 +133,17 @@ function ExportOrderDetailContent() {
                         quantity,
                         unit,
                         status,
-                        lots (id, code, inbound_date, positions(code)),
+                        position_id,
                         positions (code),
+                        lots (
+                            id, 
+                            code, 
+                            inbound_date, 
+                            positions (
+                                code,
+                                is_hall:zone_positions(zone_id)
+                            )
+                        ),
                         products (name, sku, image_url)
                     )
                 `)
@@ -140,31 +152,74 @@ function ExportOrderDetailContent() {
 
             if (error) throw error
 
+            // Fetch zones if not already fetched to use for recursive is_hall check
+            let currentZones = zones;
+            if (currentZones.length === 0) {
+                const { data: zData } = await supabase.from('zones').select('*');
+                if (zData) {
+                    currentZones = zData;
+                    setZones(zData);
+                }
+            }
+
             const formattedTask: ExportTask = {
                 ...data,
                 status: data.status as ExportTask['status'],
                 created_by_name: 'Admin',
                 items_count: data.items?.length || 0,
                 items: data.items?.map((item: any) => {
-                    let posCode = item.positions?.code
-                    let posId = item.positions?.id
-                    if (!posCode && item.lots?.positions && item.lots?.positions.length > 0) {
-                        posCode = item.lots.positions[0].code
-                        posId = item.lots.positions[0].id
+                    // Original position from export_task_items (when task was created)
+                    const originalPosCode = item.positions?.code || 'N/A'
+                    const originalPosId = item.position_id
+
+                    // Current position of the lot
+                    let currentPosCode = originalPosCode
+                    let isHall = false
+
+                    if (item.lots?.positions && item.lots?.positions.length > 0) {
+                        currentPosCode = item.lots.positions[0].code
+
+                        const isHallRelation = item.lots.positions[0].is_hall
+                        const leafZoneId = Array.isArray(isHallRelation)
+                            ? isHallRelation[0]?.zone_id
+                            : isHallRelation?.zone_id
+
+                        if (leafZoneId) {
+                            let currId = leafZoneId
+                            while (currId) {
+                                const z = currentZones.find((x: any) => x.id === currId)
+                                if (!z) break
+                                if (z.is_hall) {
+                                    isHall = true
+                                    break
+                                }
+                                currId = z.parent_id
+                            }
+                        }
                     }
+
+                    // Determine display status
+                    let displayStatus: ExportOrderItem['display_status'] = item.status === 'Exported' ? 'Exported' : 'Pending'
+                    if (displayStatus === 'Pending' && originalPosCode !== currentPosCode) {
+                        displayStatus = isHall ? 'Moved to Hall' : 'Changed Position'
+                    }
+
                     return {
                         id: item.id,
                         lot_id: item.lots?.id,
                         lot_code: item.lots?.code || 'N/A',
                         lot_inbound_date: item.lots?.inbound_date,
-                        position_name: posCode || 'N/A',
-                        position_id: posId,
+                        position_name: originalPosCode,
+                        position_id: originalPosId,
+                        current_position_name: currentPosCode,
+                        is_hall: isHall,
                         product_name: item.products?.name || 'Sản phẩm không tên',
                         sku: item.products?.sku || 'N/A',
                         product_image: item.products?.image_url,
                         quantity: item.quantity,
                         unit: item.unit,
-                        status: item.status || 'Pending'
+                        status: item.status || 'Pending',
+                        display_status: displayStatus
                     }
                 }).sort((a: any, b: any) => {
                     const posA = a.position_name || ''
@@ -183,11 +238,47 @@ function ExportOrderDetailContent() {
     }
 
     async function handleCompleteTask() {
-        // ...
+        if (!await showConfirm('Bạn có chắc chắn muốn đánh dấu lệnh xuất kho này là đã hoàn thành? (Không thể thay đổi danh sách vật tư sau khi đã xuất)')) {
+            return
+        }
+
+        setLoading(true)
+        try {
+            const { error } = await supabase
+                .from('export_tasks')
+                .update({ status: 'Completed', updated_at: new Date().toISOString() })
+                .eq('id', taskId)
+
+            if (error) throw error
+
+            showToast('Lệnh xuất kho đã hoàn thành', 'success')
+            fetchTaskDetails()
+        } catch (error: any) {
+            showToast('Lỗi khi hoàn thành: ' + error.message, 'error')
+            setLoading(false)
+        }
     }
 
     async function handleUndoCompleteTask() {
-        // ...
+        if (!await showConfirm('Bạn có chắc chắn muốn hủy trạng thái hoàn thành của lệnh xuất kho này? (Lệnh sẽ quay về trạng thái Đang xử lý)')) {
+            return
+        }
+
+        setLoading(true)
+        try {
+            const { error } = await supabase
+                .from('export_tasks')
+                .update({ status: 'Pending', updated_at: new Date().toISOString() })
+                .eq('id', taskId)
+
+            if (error) throw error
+
+            showToast('Đã hủy hoàn thành lệnh xuất kho', 'success')
+            fetchTaskDetails()
+        } catch (error: any) {
+            showToast('Lỗi khi hủy: ' + error.message, 'error')
+            setLoading(false)
+        }
     }
 
     async function handleMoveToHall(hallId: string) {
@@ -462,9 +553,19 @@ function ExportOrderDetailContent() {
                                         )}
                                     </td>
                                     <td className="px-6 py-4">
-                                        <span className="bg-stone-100 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 px-2 py-1 rounded text-xs font-bold text-stone-700 dark:text-zinc-300 font-mono">
-                                            {item.position_name}
-                                        </span>
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="bg-stone-100 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 px-2 py-1 rounded text-xs font-bold text-stone-700 dark:text-zinc-300 font-mono">
+                                                {item.position_name}
+                                            </span>
+                                            {item.position_name !== item.current_position_name && (
+                                                <>
+                                                    <span className="text-stone-400">➔</span>
+                                                    <span className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 px-2 py-1 rounded text-xs font-bold text-blue-700 dark:text-blue-300 font-mono">
+                                                        {item.current_position_name}
+                                                    </span>
+                                                </>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="flex flex-col">
@@ -481,12 +582,18 @@ function ExportOrderDetailContent() {
                                     <td className="px-6 py-4 text-right">
                                         <button
                                             onClick={() => item.id && toggleItemStatus(item.id, item.status)}
-                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all active:scale-95 ${item.status === 'Exported'
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all active:scale-95 whitespace-nowrap ${item.display_status === 'Exported'
                                                 ? 'bg-purple-100 text-purple-700 border-purple-200 hover:bg-purple-200'
-                                                : 'bg-stone-100 text-stone-500 border-stone-200 hover:bg-stone-200 hover:text-stone-700'
+                                                : item.display_status === 'Moved to Hall'
+                                                    ? 'bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-200'
+                                                    : item.display_status === 'Changed Position'
+                                                        ? 'bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200'
+                                                        : 'bg-stone-100 text-stone-500 border-stone-200 hover:bg-stone-200 hover:text-stone-700'
                                                 }`}
                                         >
-                                            {item.status === 'Exported' ? 'Đã xuất' : 'Chưa hạ'}
+                                            {item.display_status === 'Exported' ? 'Đã xuất' :
+                                                item.display_status === 'Moved to Hall' ? 'Hạ sảnh' :
+                                                    item.display_status === 'Changed Position' ? 'Đổi vị trí' : 'Chưa hạ'}
                                         </button>
                                     </td>
                                 </tr>
@@ -511,6 +618,8 @@ function ExportOrderDetailContent() {
                                 lot_code: item.lot_code,
                                 lot_inbound_date: item.lot_inbound_date,
                                 position_name: item.position_name,
+                                current_position_name: item.current_position_name,
+                                display_status: item.display_status,
                                 product_name: item.product_name,
                                 sku: item.sku
                             }))}
@@ -518,6 +627,7 @@ function ExportOrderDetailContent() {
                             selectedIds={selectedPositionIds}
                             onBulkSelect={handleBulkSelect}
                             onViewLotDetails={fetchFullLotDetails}
+                            readOnly={task.status === 'Completed' || task.status === 'Cancelled'}
                         />
                     </div>
                 </div>

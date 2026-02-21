@@ -11,9 +11,10 @@ interface ExportItemProps {
     quantity: number
     unit: string
     status: string
+    display_status?: string
+    current_position_name?: string
     onPositionSelect?: (id: string) => void
     isSelected?: boolean
-    onViewDetails?: (lotCode: string) => void
 }
 
 interface ExportMapListProps {
@@ -22,6 +23,7 @@ interface ExportMapListProps {
     selectedIds?: Set<string>
     onBulkSelect?: (ids: string[], shouldSelect: boolean) => void
     onViewLotDetails?: (lotCode: string) => void
+    readOnly?: boolean
 }
 
 export function parsePositionPrefix(prefix: string): string {
@@ -43,7 +45,7 @@ export function parsePositionPrefix(prefix: string): string {
         const nMatch = details.match(/N(\d+)/)
         if (nMatch) result.push(`NGĂN ${nMatch[1]}`)
 
-        const kMatch = details.match(/K([A-Z]+)/)
+        const kMatch = details.match(/K([A-Z]+?)(?=(?:D\d|T\d|VT\d|$))/)
         if (kMatch) result.push(`KHU ${kMatch[1]}`)
 
         const dMatch = details.match(/D(\d+)/)
@@ -60,7 +62,7 @@ export function parsePositionPrefix(prefix: string): string {
     return prefix
 }
 
-export function ExportMapList({ items, onPositionSelect, selectedIds = new Set(), onBulkSelect, onViewLotDetails }: ExportMapListProps) {
+export function ExportMapList({ items, onPositionSelect, selectedIds = new Set(), onBulkSelect, onViewLotDetails, readOnly = false }: ExportMapListProps) {
     // Group items by zone prefix (e.g. "NK1.N1KAD1T1" from "NK1.N1KAD1T1.VT1")
     const groupedItems = useMemo(() => {
         const groups: Record<string, ExportItemProps[]> = {}
@@ -245,7 +247,7 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
                                                     onClick={() => toggleGroup(group.prefix)}
                                                 >
                                                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                                                        {onBulkSelect && (
+                                                        {onBulkSelect && !readOnly && (
                                                             <button
                                                                 onClick={(e) => {
                                                                     e.stopPropagation()
@@ -286,7 +288,7 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
                                                 {/* Group Items Grid */}
                                                 {isExpanded && (
                                                     <div className="p-2 border-t border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
-                                                        <div className="grid grid-cols-[repeat(auto-fit,minmax(95px,1fr))] gap-2">
+                                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10 gap-2">
                                                             {group.items.map((item, idx) => {
                                                                 const isExported = item.status === 'Exported'
                                                                 const isSelected = item.id ? selectedIds.has(item.id) : false
@@ -312,9 +314,9 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
                                                                 return (
                                                                     <div
                                                                         key={item.id || idx}
-                                                                        className={`relative group flex flex-col p-1 rounded border ${bgClass} ${borderClass} aspect-square text-[10px] transition-all hover:shadow-md ${!isExported && hasLot ? 'hover:border-blue-300' : ''}`}
+                                                                        className={`relative group flex flex-col p-1 rounded border ${bgClass} ${borderClass} aspect-square text-[10px] transition-all ${readOnly ? 'opacity-80' : 'hover:shadow-md'} ${!isExported && hasLot && !readOnly ? 'hover:border-blue-300' : ''}`}
                                                                     >
-                                                                        {onPositionSelect && item.id && !isExported && (
+                                                                        {onPositionSelect && item.id && !isExported && !readOnly && (
                                                                             <button
                                                                                 onClick={(e) => {
                                                                                     e.stopPropagation()
@@ -338,6 +340,14 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
                                                                             >
                                                                                 <Eye size={12} />
                                                                             </button>
+                                                                        )}
+
+                                                                        {item.display_status && ['Moved to Hall', 'Changed Position'].includes(item.display_status) && (
+                                                                            <div className="absolute left-5 top-1 flex items-center z-20 max-w-[calc(100%-24px)]">
+                                                                                <span className={`text-[8px] leading-[12px] font-bold px-1.5 py-[0.5px] rounded truncate ${item.display_status === 'Moved to Hall' ? 'text-orange-700 bg-orange-100 dark:text-orange-400 dark:bg-orange-900/30' : 'text-blue-700 bg-blue-100 dark:text-blue-400 dark:bg-blue-900/30'}`} title={item.current_position_name}>
+                                                                                    ➔ {item.current_position_name}
+                                                                                </span>
+                                                                            </div>
                                                                         )}
 
                                                                         <div className="font-bold text-center text-slate-700 dark:text-slate-200 mb-0.5 border-b border-slate-100 dark:border-slate-700/50 pb-0.5 truncate text-[10px] pt-4">
@@ -364,10 +374,11 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
                                     })}
                                 </div>
                             </div>
-                        )}
-                    </div>
+                        )
+                        }
+                    </div >
                 )
             })}
-        </div>
+        </div >
     )
 }

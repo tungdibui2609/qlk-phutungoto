@@ -28,6 +28,8 @@ interface ExportOrderItem {
         name: string
         sku: string
     } | null
+    computed_status?: 'Pending' | 'Exported' | 'Moved to Hall' | 'Changed Position'
+    current_position_code?: string
 }
 
 interface ExportTask {
@@ -138,6 +140,10 @@ function ExportOrderPrintContent() {
                     setTask(taskData)
                 }
 
+                // Fetch Zones for recursive is_hall calculation
+                const { data: zonesData } = await supabase.from('zones').select('*')
+                const currentZones = zonesData || []
+
                 // Fetch Items
                 const { data: itemsDataRaw, error: itemsError } = await supabase
                     .from('export_task_items')
@@ -146,7 +152,16 @@ function ExportOrderPrintContent() {
                         quantity,
                         unit,
                         status,
-                        lots (code, inbound_date, notes, positions(code)),
+                        position_id,
+                        lots (
+                            code, 
+                            inbound_date, 
+                            notes, 
+                            positions (
+                                code,
+                                is_hall:zone_positions(zone_id)
+                            )
+                        ),
                         positions (code),
                         products (name, sku)
                     `)
@@ -154,15 +169,49 @@ function ExportOrderPrintContent() {
 
                 if (itemsError) throw itemsError
 
-                // Map the data to include fallback position
+                // Map the data to include fallback position and computed_status
                 const itemsData = (itemsDataRaw || []).map((item: any) => {
-                    let posCode = item.positions?.code
-                    if (!posCode && item.lots?.positions && item.lots?.positions.length > 0) {
-                        posCode = item.lots.positions[0].code
+                    let originalPosCode = item.positions?.code || 'N/A'
+                    let currentPosCode = 'N/A'
+                    let isHall = false
+
+                    if (item.lots?.positions && item.lots.positions.length > 0) {
+                        currentPosCode = item.lots.positions[0].code
+
+                        // Recursive is_hall check
+                        const isHallRelation = item.lots.positions[0].is_hall
+                        const leafZoneId = Array.isArray(isHallRelation)
+                            ? isHallRelation[0]?.zone_id
+                            : isHallRelation?.zone_id
+
+                        if (leafZoneId) {
+                            let currId = leafZoneId
+                            while (currId) {
+                                const z = currentZones.find((x: any) => x.id === currId)
+                                if (!z) break
+                                if (z.is_hall) {
+                                    isHall = true
+                                    break
+                                }
+                                currId = z.parent_id
+                            }
+                        }
                     }
+
+                    if (originalPosCode === 'N/A' && currentPosCode !== 'N/A') {
+                        originalPosCode = currentPosCode
+                    }
+
+                    let displayStatus = item.status === 'Exported' ? 'Exported' : 'Pending'
+                    if (displayStatus === 'Pending' && originalPosCode !== currentPosCode) {
+                        displayStatus = isHall ? 'Moved to Hall' : 'Changed Position'
+                    }
+
                     return {
                         ...item,
-                        positions: posCode ? { code: posCode } : null
+                        positions: { code: originalPosCode },
+                        current_position_code: currentPosCode,
+                        computed_status: displayStatus
                     }
                 })
 
@@ -348,15 +397,19 @@ function ExportOrderPrintContent() {
                                 <td className="border border-black p-2 text-center">{item.unit}</td>
                                 {task.status === 'Completed' ? (
                                     <>
-                                        <td className="border border-black p-2 text-center text-lg">◻</td>
-                                        <td className="border border-black p-2 text-center text-lg">◻</td>
+                                        <td className="border border-black p-2 text-center text-lg">{['Exported', 'Moved to Hall'].includes(item.computed_status as string) ? '☑' : '◻'}</td>
+                                        <td className="border border-black p-2 text-center text-lg">{['Pending', 'Changed Position'].includes(item.computed_status as string) ? '☑' : '◻'}</td>
                                     </>
                                 ) : (
                                     <td className="border border-black p-2 text-center font-medium">
                                         {item.lots?.inbound_date ? format(new Date(item.lots.inbound_date), 'dd/MM/yyyy') : ''}
                                     </td>
                                 )}
-                                <td className="border border-black p-2"></td>
+                                <td className="border border-black p-2 text-xs">
+                                    {item.computed_status === 'Moved to Hall' && 'Hạ sảnh'}
+                                    {item.computed_status === 'Exported' && 'Đã xuất'}
+                                    {item.computed_status === 'Changed Position' && `Đổi vị trí: ${item.current_position_code || ''}`}
+                                </td>
                             </tr>
                         ))}
                         {items.length === 0 && (
