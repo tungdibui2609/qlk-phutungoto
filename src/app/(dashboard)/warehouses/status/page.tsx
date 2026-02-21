@@ -9,6 +9,8 @@ import StatusLayoutConfigPanel from '@/components/warehouse/status/StatusLayoutC
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { useSystem } from '@/contexts/SystemContext'
 import Protected from '@/components/auth/Protected'
+import { useToast } from '@/components/ui/ToastProvider'
+import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -18,6 +20,7 @@ interface PositionWithZone extends Position {
 }
 
 function WarehouseStatusContent() {
+    const { showToast } = useToast()
     const { systemType, currentSystem } = useSystem()
     const [positions, setPositions] = useState<PositionWithZone[]>([])
     const [zones, setZones] = useState<Zone[]>([])
@@ -41,6 +44,9 @@ function WarehouseStatusContent() {
 
     // Auth Session State
     const [session, setSession] = useState<any>(null)
+
+    const [viewingLot, setViewingLot] = useState<any>(null)
+    const [qrLot, setQrLot] = useState<any>(null)
 
     useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
@@ -101,15 +107,40 @@ function WarehouseStatusContent() {
         }
 
         try {
-            const [posData, zoneData, zpData, layoutRes, lotsData] = await Promise.all([
+            const [posData, zoneData, zpData, layoutRes] = await Promise.all([
                 fetchAll('positions', q => q.eq('system_type', systemType).order('code')),
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code')),
                 fetchAllZonesPos(),
-                supabase.from('zone_status_layouts' as any).select('*').limit(1000),
-                fetchAll('lots', q => q.order('created_at', { ascending: false }), 'id, code, quantity, lot_items(id, product_id, quantity, products(name, sku, unit))')
+                supabase.from('zone_status_layouts' as any).select('*').limit(1000)
             ])
 
-            console.log(`[DataSummary] Zones: ${zoneData.length}, Positions: ${posData.length}, Links: ${zpData.length}, Lots: ${lotsData.length}`)
+            // Extract unique lot_ids currently in use on the map
+            const uniqueLotIds = new Set<string>()
+            posData.forEach((p: any) => {
+                if (p.lot_id) uniqueLotIds.add(p.lot_id)
+            })
+            const lotIdsArray = Array.from(uniqueLotIds)
+
+            console.log(`[DataSummary] Zones: ${zoneData.length}, Positions: ${posData.length}, Links: ${zpData.length}, Active Lots to fetch: ${lotIdsArray.length}`)
+
+            // Fetch lots in chunks to prevent URI Too Long errors
+            let lotsData: any[] = []
+            if (lotIdsArray.length > 0) {
+                const chunkSize = 150
+                for (let i = 0; i < lotIdsArray.length; i += chunkSize) {
+                    const chunk = lotIdsArray.slice(i, i + chunkSize)
+                    const { data, error } = await supabase
+                        .from('lots')
+                        .select('id, code, quantity, lot_items(id, product_id, quantity, products(name, sku, unit))')
+                        .in('id', chunk)
+
+                    if (error) {
+                        console.error(`[FetchLots] Error fetching chunk:`, error)
+                        throw error
+                    }
+                    if (data) lotsData = [...lotsData, ...data]
+                }
+            }
 
             let layoutData: any[] = []
             if (layoutRes.error) {
@@ -205,6 +236,51 @@ function WarehouseStatusContent() {
         positions.forEach(p => { if (p.lot_id) set.add(p.id) })
         return set
     }, [positions])
+
+    const isModuleEnabled = useMemo(() => {
+        return (moduleId: string) => {
+            if (!currentSystem) return true
+
+            // Simple check based on loaded system modules
+            const allModules = new Set<string>()
+            if (currentSystem.modules) {
+                if (Array.isArray(currentSystem.modules)) {
+                    currentSystem.modules.forEach(m => allModules.add(m))
+                } else if (typeof currentSystem.modules === 'string') {
+                    currentSystem.modules.split(',').forEach(m => allModules.add(m.trim().replace(/"/g, '').replace(/\[/g, '').replace(/\]/g, '')))
+                }
+            }
+            if (Array.isArray(currentSystem.inbound_modules)) currentSystem.inbound_modules.forEach(m => allModules.add(m))
+            if (Array.isArray(currentSystem.outbound_modules)) currentSystem.outbound_modules.forEach(m => allModules.add(m))
+
+            // Fallback for current viewing lot data existence
+            if (viewingLot) {
+                if (moduleId === 'inbound_date' && viewingLot.inbound_date) return true
+                if (moduleId === 'packaging_date' && viewingLot.packaging_date) return true
+                if (moduleId === 'peeling_date' && viewingLot.peeling_date) return true
+                if (moduleId === 'batch_code' && viewingLot.batch_code) return true
+                if (moduleId === 'supplier_info' && viewingLot.suppliers) return true
+                if (moduleId === 'qc_info' && viewingLot.qc_info) return true
+                if (moduleId === 'extra_info' && viewingLot.metadata?.extra_info) return true
+            }
+            return allModules.has(moduleId)
+        }
+    }, [currentSystem, viewingLot])
+
+    async function fetchFullLotDetails(lotId: string) {
+        try {
+            const { data, error } = await supabase
+                .from('lots')
+                .select(`*, created_at, suppliers(name), qc_info(name), lot_items(id, quantity, unit, products(name, sku, unit)), positions(code), lot_tags(tag, lot_item_id)`)
+                .eq('id', lotId)
+                .single()
+            if (error) throw error
+            setViewingLot(data)
+        } catch (error: any) {
+            console.error('Error fetching lot details:', error)
+            showToast('Không thể tải chi tiết LOT: ' + error.message, 'error')
+        }
+    }
 
     return (
         <div className="space-y-6 pb-20">
@@ -302,6 +378,7 @@ function WarehouseStatusContent() {
                     isDesignMode={isDesignMode}
                     onToggleCollapse={toggleZoneCollapse}
                     onConfigureZone={setConfiguringZone}
+                    onViewDetails={fetchFullLotDetails}
                 />
             )}
 
@@ -325,6 +402,15 @@ function WarehouseStatusContent() {
                         onClose={() => setConfiguringZone(null)}
                     />
                 </div>
+            )}
+
+            {viewingLot && (
+                <LotDetailsModal
+                    lot={viewingLot}
+                    onClose={() => setViewingLot(null)}
+                    onOpenQr={(lot) => setQrLot(lot)}
+                    isModuleEnabled={isModuleEnabled}
+                />
             )}
         </div>
     )

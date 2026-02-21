@@ -71,6 +71,9 @@ export function useLotManagement() {
         }
         fetchCommonData()
 
+        // Debounce timer for realtime events
+        let realtimeDebounceTimer: NodeJS.Timeout | null = null
+
         // 🟢 Real-time Subscription: Listen for changes in positions
         const channel = supabase
             .channel('lot-management-positions')
@@ -82,13 +85,17 @@ export function useLotManagement() {
                     table: 'positions'
                 },
                 (payload) => {
-                    // Use Ref to get LATEST fetchLots with current state (filters)
-                    fetchLotsRef.current(false)
+                    // Use Debounce to avoid 100 API calls for 100 rapid position updates
+                    if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer)
+                    realtimeDebounceTimer = setTimeout(() => {
+                        fetchLotsRef.current(false)
+                    }, 500)
                 }
             )
             .subscribe()
 
         return () => {
+            if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer)
             supabase.removeChannel(channel)
         }
     }, [currentSystem?.code])
@@ -237,7 +244,9 @@ export function useLotManagement() {
                 }
 
                 // Combine all lot IDs found from children records
-                const combinedLotIds = Array.from(new Set([...itemLotIds, ...tagLotIds]))
+                const combinedLotIds = Array.from(new Set([...itemLotIds, ...tagLotIds])).slice(0, 300) // Limit to 300 to avoid 414 URI Too Long errors
+                const safeSuppIds = suppIds.slice(0, 50)
+                const safeQcIds = qcIds.slice(0, 50)
 
                 // Construct OR filter for top-level lots
                 let orConditions = [
@@ -246,11 +255,11 @@ export function useLotManagement() {
                     `metadata->>extra_info.ilike.${term}`
                 ]
                 if (combinedLotIds.length > 0) orConditions.push(`id.in.(${combinedLotIds.join(',')})`)
-                if (suppIds.length > 0) orConditions.push(`supplier_id.in.(${suppIds.join(',')})`)
-                if (qcIds.length > 0) orConditions.push(`qc_id.in.(${qcIds.join(',')})`)
+                if (safeSuppIds.length > 0) orConditions.push(`supplier_id.in.(${safeSuppIds.join(',')})`)
+                if (safeQcIds.length > 0) orConditions.push(`qc_id.in.(${safeQcIds.join(',')})`)
 
                 // Note: .or() with large lists can be slow/error prone URL length. 
-                // If lists are huge, this breaks. But for now mostly okay.
+                // We sliced it to prevent server crashes on extremely generic searches.
                 query = query.or(orConditions.join(','))
             }
 

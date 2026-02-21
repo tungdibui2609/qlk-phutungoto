@@ -247,6 +247,56 @@ export function useWarehouseData() {
     // Realtime Subscription
     useEffect(() => {
         if (systemType && accessToken) {
+            let updateBatch: Position[] = []
+            let batchTimeout: NodeJS.Timeout | null = null
+
+            const applyBatch = () => {
+                if (updateBatch.length === 0) return
+
+                const batchIds = new Set(updateBatch.map(p => p.id))
+                const updatedLots = new Map(updateBatch.map(p => [p.id, p]))
+
+                // Batch positions state update
+                setPositions(prev => prev.map(p => {
+                    const latest = updatedLots.get(p.id)
+                    return latest ? { ...p, lot_id: latest.lot_id } : p
+                }))
+
+                // Batch occupied logic
+                setOccupiedIds(prev => {
+                    const next = new Set(prev)
+                    updateBatch.forEach(pos => {
+                        if (pos.lot_id) next.add(pos.id)
+                        else next.delete(pos.id)
+                    })
+                    return next
+                })
+
+                // Batch recent updates UI effect
+                setRecentlyUpdatedPositionIds(prev => {
+                    const next = new Set(prev)
+                    batchIds.forEach(id => next.add(id))
+                    return next
+                })
+
+                // Fetch info for new lots concurrently
+                const newLotIds = new Set(updateBatch.map(p => p.lot_id).filter(Boolean))
+                newLotIds.forEach(lotId => {
+                    if (lotId) refreshLotInfo(lotId)
+                })
+
+                setTimeout(() => {
+                    setRecentlyUpdatedPositionIds(prev => {
+                        const next = new Set(prev)
+                        batchIds.forEach(id => next.delete(id))
+                        return next
+                    })
+                }, 1500)
+
+                updateBatch = []
+                batchTimeout = null
+            }
+
             const channel = supabase
                 .channel(`warehouse-map-${systemType}`)
                 .on(
@@ -259,45 +309,20 @@ export function useWarehouseData() {
                     },
                     (payload) => {
                         const updatedPos = payload.new as Position
-
                         if (!updatedPos || !updatedPos.id) return
 
-                        setPositions(prev => prev.map(p =>
-                            p.id === updatedPos.id ? { ...p, lot_id: updatedPos.lot_id } : p
-                        ))
+                        updateBatch.push(updatedPos)
 
-                        if (updatedPos.lot_id) {
-                            refreshLotInfo(updatedPos.lot_id)
-                            setOccupiedIds(prev => {
-                                const next = new Set(prev)
-                                next.add(updatedPos.id)
-                                return next
-                            })
-                        } else {
-                            setOccupiedIds(prev => {
-                                const next = new Set(prev)
-                                next.delete(updatedPos.id)
-                                return next
-                            })
+                        // Buffer updates within a 200ms window to batch them
+                        if (!batchTimeout) {
+                            batchTimeout = setTimeout(applyBatch, 300)
                         }
-
-                        setRecentlyUpdatedPositionIds(prev => {
-                            const next = new Set(prev)
-                            next.add(updatedPos.id)
-                            return next
-                        })
-                        setTimeout(() => {
-                            setRecentlyUpdatedPositionIds(prev => {
-                                const next = new Set(prev)
-                                next.delete(updatedPos.id)
-                                return next
-                            })
-                        }, 1500)
                     }
                 )
                 .subscribe()
 
             return () => {
+                if (batchTimeout) clearTimeout(batchTimeout)
                 supabase.removeChannel(channel)
             }
         }

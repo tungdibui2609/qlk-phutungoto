@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { ChevronDown, MoreHorizontal, Eye, CheckSquare, Square } from 'lucide-react'
+import React, { useMemo, useState } from 'react'
+import { ChevronDown, MoreHorizontal, CheckSquare, Square, Eye } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { PositionWithZone } from '../_hooks/useWarehouseData'
 
@@ -17,6 +17,118 @@ interface MapSearchStatsProps {
     selectedPositionIds?: Set<string>
     onBulkSelect?: (ids: string[], shouldSelect: boolean) => void
 }
+
+interface PositionCardProps {
+    pos: PositionWithZone
+    lot: any
+    isSelected: boolean
+    onPositionSelect?: (positionId: string) => void
+    onPositionMenu?: (pos: Position, e: React.MouseEvent) => void
+    onViewDetails?: (lotId: string) => void
+}
+
+const MemoizedPositionCard = React.memo(function PositionCard({
+    pos,
+    lot,
+    isSelected,
+    onPositionSelect,
+    onPositionMenu,
+    onViewDetails
+}: PositionCardProps) {
+    const hasLot = !!pos.lot_id
+    let bgClass = "bg-white dark:bg-slate-800"
+    let borderClass = "border-slate-200 dark:border-slate-700"
+
+    if (isSelected) {
+        bgClass = "bg-blue-50 dark:bg-blue-900/30"
+        borderClass = "border-blue-500"
+    } else if (hasLot) {
+        bgClass = "bg-amber-50 dark:bg-amber-900/10"
+        borderClass = "border-amber-200 dark:border-amber-800"
+    }
+
+    return (
+        <div
+            className={`relative group flex flex-col p-1 rounded border ${bgClass} ${borderClass} aspect-square text-[10px] transition-all hover:shadow-md ${hasLot ? 'hover:border-blue-300' : ''}`}
+        >
+            {onPositionSelect && (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation()
+                        onPositionSelect(pos.id)
+                    }}
+                    className={`absolute bottom-1 left-1 z-10 p-0.5 rounded bg-white/80 dark:bg-gray-800/80 hover:bg-blue-50 dark:hover:bg-blue-900/50 transition-colors ${isSelected ? 'text-blue-600' : 'text-gray-400'}`}
+                    title={isSelected ? "Bỏ chọn" : "Chọn vị trí"}
+                >
+                    {isSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+                </button>
+            )}
+
+            {onPositionMenu && (
+                <button
+                    onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        onPositionMenu(pos, e)
+                    }}
+                    className="absolute top-1 right-1 z-20 p-0.5 rounded bg-white/80 dark:bg-gray-800/80 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
+                    title="Thao tác"
+                >
+                    <MoreHorizontal size={14} />
+                </button>
+            )}
+
+            {hasLot && lot && (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation()
+                        onViewDetails?.(pos.lot_id!)
+                    }}
+                    className="absolute left-1 top-1 text-slate-400 hover:text-blue-600 dark:text-slate-500 dark:hover:text-blue-400 transition-colors z-20"
+                    title="Xem chi tiết LOT"
+                >
+                    <Eye size={12} />
+                </button>
+            )}
+
+            <div className="font-bold text-center text-slate-700 dark:text-slate-200 mb-0.5 border-b border-slate-100 dark:border-slate-700/50 pb-0.5 truncate text-[10px] pt-4">
+                {pos.code}
+            </div>
+            {lot ? (
+                <div className="flex flex-col gap-0.5 flex-1 justify-center overflow-hidden">
+                    <div className="font-medium text-center text-purple-600 dark:text-purple-400 truncate text-[9px]">{lot.code}</div>
+                    {lot.items?.[0] && (
+                        <>
+                            <div className="text-[9px] text-slate-500 line-clamp-2 text-center">
+                                {lot.items[0].product_name}
+                            </div>
+                            <div className="font-mono text-[9px] text-blue-600 dark:text-blue-400 mt-auto font-bold text-center">
+                                {lot.items[0].quantity} {lot.items[0].unit}
+                            </div>
+                        </>
+                    )}
+                    {!lot.items?.[0] && lot.products && (
+                        <>
+                            <div className="text-[9px] text-slate-500 line-clamp-2 text-center">
+                                {lot.products.name}
+                            </div>
+                            <div className="font-mono text-[9px] text-blue-600 dark:text-blue-400 mt-auto font-bold text-center">
+                                {lot.quantity} {lot.products.unit}
+                            </div>
+                        </>
+                    )}
+                </div>
+            ) : (
+                <div className="text-slate-400 italic mt-auto text-[10px] text-center mb-auto pt-2">Trống</div>
+            )}
+        </div>
+    )
+}, (prev, next) => {
+    return prev.pos.id === next.pos.id &&
+        prev.pos.lot_id === next.pos.lot_id &&
+        prev.isSelected === next.isSelected &&
+        prev.lot === next.lot
+})
 
 export function MapSearchStats({
     filteredPositions,
@@ -100,96 +212,16 @@ export function MapSearchStats({
         const lot = hasLot ? lotInfo[pos.lot_id!] : null
         const isSelected = selectedPositionIds.has(pos.id)
 
-        let bgClass = "bg-white dark:bg-slate-800"
-        let borderClass = "border-slate-200 dark:border-slate-700"
-
-        if (isSelected) {
-            bgClass = "bg-blue-50 dark:bg-blue-900/30"
-            borderClass = "border-blue-500"
-        } else if (hasLot) {
-            bgClass = "bg-amber-50 dark:bg-amber-900/10"
-            borderClass = "border-amber-200 dark:border-amber-800"
-        }
-
         return (
-            <div
+            <MemoizedPositionCard
                 key={pos.id}
-                className={`relative group flex flex-col p-1 rounded border ${bgClass} ${borderClass} aspect-square text-[10px] transition-all hover:shadow-md`}
-            >
-                {/* Selection Checkbox */}
-                {onPositionSelect && (
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation()
-                            onPositionSelect(pos.id)
-                        }}
-                        className={`absolute bottom-1 left-1 z-10 p-0.5 rounded bg-white/80 dark:bg-gray-800/80 hover:bg-blue-50 dark:hover:bg-blue-900/50 transition-colors ${isSelected ? 'text-blue-600' : 'text-gray-400'}`}
-                        title={isSelected ? "Bỏ chọn" : "Chọn vị trí"}
-                    >
-                        {isSelected ? <CheckSquare size={14} /> : <Square size={14} />}
-                    </button>
-                )}
-
-                {/* View Details Eye Icon */}
-                {hasLot && onViewDetails && (
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation()
-                            onViewDetails(pos.lot_id!)
-                        }}
-                        className="absolute top-1 left-1 z-10 p-0.5 rounded bg-white/80 dark:bg-gray-800/80 text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/50 transition-all"
-                        title="Xem chi tiết"
-                    >
-                        <Eye size={14} />
-                    </button>
-                )}
-
-                {/* Context Menu Icon */}
-                {onPositionMenu && (
-                    <button
-                        onClick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            onPositionMenu(pos, e)
-                        }}
-                        className="absolute top-1 right-1 z-20 p-0.5 rounded bg-white/80 dark:bg-gray-800/80 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
-                        title="Thao tác"
-                    >
-                        <MoreHorizontal size={14} />
-                    </button>
-                )}
-
-                <div className="font-bold text-center text-slate-700 dark:text-slate-200 mb-0.5 border-b border-slate-100 dark:border-slate-700/50 pb-0.5 truncate text-[10px] pt-4" title={pos.code}>
-                    {pos.code}
-                </div>
-                {lot ? (
-                    <div className="flex flex-col gap-0.5 flex-1 justify-center overflow-hidden">
-                        <div className="font-medium text-center text-purple-600 dark:text-purple-400 truncate text-[9px]" title={lot.code}>{lot.code}</div>
-                        {lot.items?.[0] && (
-                            <>
-                                <div className="text-[9px] text-slate-500 line-clamp-2 text-center" title={lot.items[0].product_name}>
-                                    {lot.items[0].product_name}
-                                </div>
-                                <div className="font-mono text-[9px] text-blue-600 dark:text-blue-400 mt-auto font-bold text-center">
-                                    {lot.items[0].quantity} {lot.items[0].unit}
-                                </div>
-                            </>
-                        )}
-                        {!lot.items?.[0] && lot.products && (
-                            <>
-                                <div className="text-[9px] text-slate-500 line-clamp-2 text-center" title={lot.products.name}>
-                                    {lot.products.name}
-                                </div>
-                                <div className="font-mono text-[9px] text-blue-600 dark:text-blue-400 mt-auto font-bold text-center">
-                                    {lot.quantity} {lot.products.unit}
-                                </div>
-                            </>
-                        )}
-                    </div>
-                ) : (
-                    <div className="text-slate-400 italic mt-auto text-[10px] text-center mb-auto pt-2">Trống</div>
-                )}
-            </div>
+                pos={pos}
+                lot={lot}
+                isSelected={isSelected}
+                onPositionSelect={onPositionSelect}
+                onPositionMenu={onPositionMenu}
+                onViewDetails={onViewDetails}
+            />
         )
     }
 

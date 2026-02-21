@@ -2,6 +2,7 @@
 import React, { useMemo } from 'react'
 import { ChevronDown, ChevronRight, Package, Settings, Eye, Info, BarChart3, Layout } from 'lucide-react'
 import { Database } from '@/lib/database.types'
+import { GroupedZoneDetailModal } from './GroupedZoneDetailModal'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -19,6 +20,7 @@ interface WarehouseStatusMapProps {
     isDesignMode?: boolean
     onToggleCollapse: (zoneId: string) => void
     onConfigureZone?: (zone: Zone) => void
+    onViewDetails?: (lotId: string) => void
     lotInfo?: Record<string, {
         code: string,
         items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>,
@@ -27,6 +29,81 @@ interface WarehouseStatusMapProps {
         tags?: string[]
     }>
 }
+
+interface StatusCellProps {
+    pos: PositionWithZone
+    cellHeight: number
+    cellWidth: number
+    isOccupied: boolean
+    lotDetail: any
+    onViewDetails?: (lotId: string) => void
+}
+
+const MemoizedStatusCell = React.memo(function StatusCell({
+    pos,
+    cellHeight,
+    cellWidth,
+    isOccupied,
+    lotDetail,
+    onViewDetails
+}: StatusCellProps) {
+    // Heatmap style colors
+    let bgClass = 'bg-slate-50 dark:bg-slate-800'
+    let borderClass = 'border-slate-100 dark:border-slate-700'
+    let iconColor = 'text-slate-300'
+
+    if (isOccupied) {
+        const itemCount = lotDetail?.items?.length || 1
+        if (itemCount > 1) {
+            // Multi-product lot
+            bgClass = 'bg-indigo-50 dark:bg-indigo-900/30'
+            borderClass = 'border-indigo-300 dark:border-indigo-800'
+            iconColor = 'text-indigo-500'
+        } else {
+            // Single product lot
+            bgClass = 'bg-emerald-50 dark:bg-emerald-900/30'
+            borderClass = 'border-emerald-300 dark:border-emerald-800'
+            iconColor = 'text-emerald-500'
+        }
+    }
+
+    return (
+        <div
+            style={{ height: cellHeight > 0 ? `${cellHeight}px` : '42px' }}
+            className={`
+                relative border text-center transition-all p-1 group
+                flex flex-col items-center justify-center
+                ${bgClass} ${borderClass}
+                hover:scale-105 hover:z-10 hover:shadow-lg ${lotDetail ? 'cursor-pointer' : 'cursor-default'}
+            `}
+            onClick={(e) => {
+                if (lotDetail && onViewDetails) {
+                    e.stopPropagation()
+                    onViewDetails(pos.lot_id!)
+                }
+            }}
+        >
+            <span className={`text-[8px] font-bold leading-none ${isOccupied ? 'text-slate-900 dark:text-white' : 'text-slate-400'} ${cellWidth === 0 ? 'whitespace-nowrap px-0.5' : ''}`}>
+                {pos.code.split('-').pop()}
+            </span>
+
+            {isOccupied ? (
+                <div className="mt-0.5 flex items-center justify-center">
+                    <div className={`w-1.5 h-1.5 rounded-full ${lotDetail?.items && lotDetail.items.length > 1 ? 'bg-indigo-500' : 'bg-emerald-500'}`}></div>
+                </div>
+            ) : (
+                <div className="mt-0.5 w-1.5 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700"></div>
+            )}
+        </div>
+    )
+}, (prev, next) => {
+    return prev.pos.id === next.pos.id &&
+        prev.pos.lot_id === next.pos.lot_id &&
+        prev.isOccupied === next.isOccupied &&
+        prev.cellHeight === next.cellHeight &&
+        prev.cellWidth === next.cellWidth &&
+        prev.lotDetail === next.lotDetail
+})
 
 export default function WarehouseStatusMap({
     zones,
@@ -37,8 +114,10 @@ export default function WarehouseStatusMap({
     isDesignMode = false,
     onToggleCollapse,
     onConfigureZone,
+    onViewDetails,
     lotInfo = {}
 }: WarehouseStatusMapProps) {
+    const [viewingZone, setViewingZone] = React.useState<{ zone: Zone, allPositions: PositionWithZone[] } | null>(null)
 
     // Build zone tree (copied structure logic from FlexibleZoneGrid)
     const zoneTree = useMemo(() => {
@@ -263,8 +342,8 @@ export default function WarehouseStatusMap({
             >
                 {/* Header Info */}
                 <div
-                    className="flex items-center justify-between mb-2 cursor-pointer select-none"
-                    onClick={() => collapsible && onToggleCollapse(zone.id)}
+                    className="flex items-center justify-between mb-2 cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-sm -mx-1 px-1 transition-colors"
+                    onClick={() => setViewingZone({ zone, allPositions })}
                 >
                     <div className="flex items-center gap-2">
                         <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">
@@ -284,9 +363,6 @@ export default function WarehouseStatusMap({
                         <span className="text-[10px] font-mono font-bold text-slate-500 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 px-1.5 py-0.5 shadow-sm">
                             {occupiedCount}/{totalCount}
                         </span>
-                        {collapsible && (
-                            <ChevronDown size={14} className={`text-slate-400 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
-                        )}
                     </div>
                 </div>
 
@@ -311,19 +387,14 @@ export default function WarehouseStatusMap({
                             return (
                                 <div
                                     key={pos.id}
-                                    className={`flex-1 h-full relative group/seg ${segmentColor} transition-colors hover:brightness-110 cursor-help`}
-                                    title={`${pos.code}${lotDetail ? `\nLOT: ${lotDetail.code}` : '\n(Trống)'}`}
+                                    className={`flex-1 h-full relative group/seg ${segmentColor} transition-colors hover:brightness-110 ${lotDetail ? 'cursor-pointer' : 'cursor-default'}`}
+                                    onClick={(e) => {
+                                        if (lotDetail && onViewDetails) {
+                                            e.stopPropagation()
+                                            onViewDetails(pos.lot_id!)
+                                        }
+                                    }}
                                 >
-                                    {/* Tooltip for segments */}
-                                    <div className="absolute opacity-0 group-hover/seg:opacity-100 pointer-events-none bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-[200px] bg-slate-900 text-white text-[9px] px-3 py-1.5 shadow-2xl z-[60] transition-opacity">
-                                        <div className="font-bold border-b border-white/10 mb-1 pb-1">{pos.code}</div>
-                                        {lotDetail ? (
-                                            <div className="text-indigo-300">{lotDetail.code}</div>
-                                        ) : (
-                                            <div className="text-slate-400 italic">Vị trí trống</div>
-                                        )}
-                                        <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] border-t-slate-900"></div>
-                                    </div>
                                 </div>
                             )
                         })}
@@ -345,68 +416,16 @@ export default function WarehouseStatusMap({
         const isOccupied = occupiedIds.has(pos.id)
         const lotDetail = pos.lot_id ? lotInfo[pos.lot_id] : null
 
-        // Heatmap style colors
-        let bgClass = 'bg-slate-50 dark:bg-slate-800'
-        let borderClass = 'border-slate-100 dark:border-slate-700'
-        let iconColor = 'text-slate-300'
-
-        if (isOccupied) {
-            const itemCount = lotDetail?.items?.length || 1
-            if (itemCount > 1) {
-                // Multi-product lot
-                bgClass = 'bg-indigo-50 dark:bg-indigo-900/30'
-                borderClass = 'border-indigo-300 dark:border-indigo-800'
-                iconColor = 'text-indigo-500'
-            } else {
-                // Single product lot
-                bgClass = 'bg-emerald-50 dark:bg-emerald-900/30'
-                borderClass = 'border-emerald-300 dark:border-emerald-800'
-                iconColor = 'text-emerald-500'
-            }
-        }
-
         return (
-            <div
+            <MemoizedStatusCell
                 key={pos.id}
-                style={{ height: cellHeight > 0 ? `${cellHeight}px` : '42px' }}
-                className={`
-                    relative border text-center transition-all p-1 group
-                    flex flex-col items-center justify-center
-                    ${bgClass} ${borderClass}
-                    hover:scale-105 hover:z-10 hover:shadow-lg cursor-help
-                `}
-                title={`${pos.code}${lotDetail ? `\nLOT: ${lotDetail.code}\n${lotDetail.items.map(i => `${i.sku}: ${i.quantity}`).join(', ')}` : '\n(Trống)'}`}
-            >
-                {/* Minimalist content for "Status" view */}
-                <span className={`text-[8px] font-bold leading-none ${isOccupied ? 'text-slate-900 dark:text-white' : 'text-slate-400'} ${layout?.cell_width === 0 ? 'whitespace-nowrap px-0.5' : ''}`}>
-                    {pos.code.split('-').pop()}
-                </span>
-
-                {isOccupied ? (
-                    <div className="mt-0.5 flex items-center justify-center">
-                        <div className={`w-1.5 h-1.5 rounded-full ${lotDetail?.items && lotDetail.items.length > 1 ? 'bg-indigo-500' : 'bg-emerald-500'}`}></div>
-                    </div>
-                ) : (
-                    <div className="mt-0.5 w-1.5 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700"></div>
-                )}
-
-                {/* Hover Details Popover (Simplified) */}
-                <div className="absolute opacity-0 group-hover:opacity-100 pointer-events-none bottom-full left-1/2 -translate-x-1/2 mb-2 w-32 bg-slate-800 text-white text-[9px] p-2 rounded shadow-xl z-50 transition-opacity whitespace-pre-wrap text-center">
-                    <div className="font-bold border-b border-white/10 pb-1 mb-1">{pos.code}</div>
-                    {lotDetail ? (
-                        <>
-                            <div className="text-indigo-300 mb-1">{lotDetail.code}</div>
-                            {lotDetail.items.slice(0, 2).map((it, i) => (
-                                <div key={i} className="truncate">{it.product_name}</div>
-                            ))}
-                            {lotDetail.items.length > 2 && <div>+{lotDetail.items.length - 2} sản phẩm khác</div>}
-                        </>
-                    ) : (
-                        <div className="text-slate-400">Trống</div>
-                    )}
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] border-t-slate-800"></div>
-                </div>
-            </div>
+                pos={pos}
+                cellHeight={cellHeight}
+                cellWidth={layout?.cell_width ?? 0}
+                isOccupied={isOccupied}
+                lotDetail={lotDetail}
+                onViewDetails={onViewDetails}
+            />
         )
     }
 
@@ -429,6 +448,16 @@ export default function WarehouseStatusMap({
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
             {zoneTree.map(zone => renderZone(zone))}
+
+            {viewingZone && (
+                <GroupedZoneDetailModal
+                    zone={viewingZone.zone}
+                    allPositions={viewingZone.allPositions}
+                    occupiedIds={occupiedIds}
+                    lotInfo={lotInfo}
+                    onClose={() => setViewingZone(null)}
+                />
+            )}
         </div>
     )
 }

@@ -33,6 +33,206 @@ interface FlexibleZoneGridProps {
     onTogglePageBreak?: (zoneId: string) => void
 }
 
+interface PositionCellProps {
+    pos: PositionWithZone
+    cellHeight: number
+    cellWidth: number
+    isMobile: boolean
+    isOccupied: boolean
+    isSelected: boolean
+    isTargetLot: boolean
+    lotDetail: any
+    isAssignmentMode: boolean
+    isHighlightBlinking: boolean
+    onPositionSelect: (positionId: string) => void
+    onViewDetails?: (lotId: string) => void
+    onPositionMenu?: (pos: Position, e: React.MouseEvent) => void
+}
+
+const MemoizedPositionCell = React.memo(function PositionCell({
+    pos,
+    cellHeight,
+    cellWidth,
+    isMobile,
+    isOccupied,
+    isSelected,
+    isTargetLot,
+    lotDetail,
+    isAssignmentMode,
+    isHighlightBlinking,
+    onPositionSelect,
+    onViewDetails,
+    onPositionMenu
+}: PositionCellProps) {
+    const hasLot = !!pos.lot_id
+    let bgClass = 'bg-white dark:bg-gray-700'
+    let borderClass = 'border-gray-200 dark:border-gray-600'
+    let ringClass = ''
+
+    if (isSelected) {
+        bgClass = 'bg-blue-50 dark:bg-blue-900/30'
+        borderClass = 'border-blue-500'
+        ringClass = 'ring-2 ring-blue-300'
+    } else if (isTargetLot) {
+        bgClass = 'bg-purple-100 dark:bg-purple-900/40'
+        borderClass = 'border-purple-500'
+        ringClass = 'ring-2 ring-purple-300'
+    } else if (hasLot || isOccupied) {
+        bgClass = 'bg-amber-50 dark:bg-amber-900/10'
+        borderClass = 'border-amber-200 dark:border-amber-800'
+    }
+
+    return (
+        <div
+            onClick={isAssignmentMode ? () => onPositionSelect(pos.id) : undefined}
+            style={cellHeight > 0 ? { height: `${cellHeight}px` } : { minHeight: isMobile ? '60px' : '80px' }}
+            className={`
+                relative ${isAssignmentMode ? 'cursor-pointer' : ''} ${isMobile ? 'p-1' : 'p-1.5'} rounded-lg border-2 transition-all
+                flex flex-col justify-between overflow-hidden
+                ${bgClass} ${borderClass} ${ringClass}
+                ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.02] hover:z-10' : ''}
+                ${isHighlightBlinking ? 'animate-highlight-blink' : ''}
+            `}
+        >
+            {!isAssignmentMode && (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation()
+                        onPositionSelect(pos.id)
+                    }}
+                    className={`
+                        absolute bottom-1 left-1 z-20 w-4 h-4 rounded 
+                        border-2 transition-all duration-150
+                        flex items-center justify-center
+                        ${isSelected
+                            ? 'bg-blue-500 border-blue-500 text-white shadow-md'
+                            : 'bg-white/90 dark:bg-gray-800/90 border-gray-300 dark:border-gray-500 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30'
+                        }
+                    `}
+                    title={isSelected ? "Bỏ chọn vị trí" : "Chọn vị trí"}
+                >
+                    {isSelected && (
+                        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                    )}
+                </button>
+            )}
+            <div className="flex justify-center items-start w-full relative mb-1 shrink-0">
+                {!isAssignmentMode && hasLot && lotDetail && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            onViewDetails?.(pos.lot_id!)
+                        }}
+                        className="absolute left-0 top-0 text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors z-20"
+                        title="Xem chi tiết LOT"
+                    >
+                        <Eye size={12} />
+                    </button>
+                )}
+
+                <span className={`font-mono text-[10px] items-center text-black dark:text-white font-bold leading-none ${cellWidth === 0 ? 'whitespace-nowrap px-1' : ''}`}>
+                    {pos.code}
+                </span>
+
+                {!isAssignmentMode && (
+                    <button
+                        onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            onPositionMenu?.(pos, e)
+                        }}
+                        className="absolute right-0 top-0 text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors z-40 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-bl-lg"
+                        title="Tùy chọn"
+                    >
+                        <MoreHorizontal size={14} />
+                    </button>
+                )}
+
+                <div className={`flex gap-0.5 absolute ${!isAssignmentMode ? 'right-5' : 'right-0'} top-0`}>
+                    {isTargetLot && (
+                        <div title="Đang chọn" className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
+                    )}
+                    {(hasLot || isOccupied) && !isTargetLot && (
+                        <div title="Có hàng">
+                            <Package size={10} className="text-amber-500 dark:text-amber-400" />
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {lotDetail ? (
+                <div className="flex flex-col items-center w-full flex-1 min-h-0 gap-1">
+                    <div className={`text-xs font-bold leading-tight w-full text-center truncate shrink-0 ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'}`}>
+                        {lotDetail.code}
+                    </div>
+
+                    <div className="w-full flex-col gap-1.5 overflow-y-auto custom-scrollbar flex-1 min-h-0">
+                        {lotDetail.items?.map((item: any, idx: number) => (
+                            <div key={idx} className="flex flex-col gap-0.5 w-full text-center border-b border-black/5 dark:border-white/5 last:border-0 pb-1 last:pb-0 shrink-0">
+                                {item.product_name && (
+                                    <div className="text-[9px] text-gray-600 dark:text-gray-300 leading-tight line-clamp-2" title={item.product_name}>
+                                        {item.product_name}
+                                    </div>
+                                )}
+                                <div className="text-[9px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap">
+                                    {item.sku || '-'} : {item.quantity} {item.unit || '-'}
+                                </div>
+                                {item.tags && item.tags.length > 0 && (
+                                    <TagDisplay
+                                        tags={item.tags}
+                                        variant="compact"
+                                        placeholderMap={{ '@': item.sku || '' }}
+                                        className="mt-0.5"
+                                    />
+                                )}
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="flex justify-center items-center gap-1 w-full px-1 pt-1 opacity-70 text-[8px] text-gray-500 dark:text-gray-400 shrink-0 mt-auto">
+                        {(() => {
+                            const dates = []
+
+                            if (lotDetail.peeling_date) {
+                                dates.push(`B: ${new Date(lotDetail.peeling_date).toLocaleDateString('vi-VN')}`)
+                            }
+                            if (lotDetail.packaging_date) {
+                                dates.push(`Đ: ${new Date(lotDetail.packaging_date).toLocaleDateString('vi-VN')}`)
+                            }
+                            if (lotDetail.inbound_date && !lotDetail.peeling_date && !lotDetail.packaging_date) {
+                                dates.push(`N: ${new Date(lotDetail.inbound_date).toLocaleDateString('vi-VN')}`)
+                            }
+
+                            return dates.map((d, i) => (
+                                <React.Fragment key={i}>
+                                    {i > 0 && <span className="text-gray-300 dark:text-gray-600">|</span>}
+                                    <span>{d}</span>
+                                </React.Fragment>
+                            ))
+                        })()}
+                    </div>
+                </div>
+            ) : (
+                <div className="flex-1"></div>
+            )}
+        </div>
+    )
+}, (prev, next) => {
+    return prev.pos.id === next.pos.id &&
+        prev.pos.lot_id === next.pos.lot_id &&
+        prev.cellHeight === next.cellHeight &&
+        prev.cellWidth === next.cellWidth &&
+        prev.isMobile === next.isMobile &&
+        prev.isOccupied === next.isOccupied &&
+        prev.isSelected === next.isSelected &&
+        prev.isTargetLot === next.isTargetLot &&
+        prev.lotDetail === next.lotDetail &&
+        prev.isAssignmentMode === next.isAssignmentMode &&
+        prev.isHighlightBlinking === next.isHighlightBlinking
+})
+
 export default function FlexibleZoneGrid({
     zones,
     positions,
@@ -507,193 +707,28 @@ export default function FlexibleZoneGrid({
     function renderPositionCell(pos: PositionWithZone, cellHeight: number, cellWidth: number): React.ReactNode {
         const isOccupied = occupiedIds.has(pos.id)
         const isSelected = selectedPositionIds.has(pos.id)
-
-        // LOT Visualization Logic
-        const hasLot = !!pos.lot_id
-        const isTargetLot = highlightLotId && pos.lot_id === highlightLotId
-
-        // Get Lot Details
-        const lotDetail = hasLot ? lotInfo[pos.lot_id!] : null
-
-        let bgClass = 'bg-white dark:bg-gray-700'
-        let borderClass = 'border-gray-200 dark:border-gray-600'
-        let ringClass = ''
-
-        if (isSelected) {
-            bgClass = 'bg-blue-50 dark:bg-blue-900/30'
-            borderClass = 'border-blue-500'
-            ringClass = 'ring-2 ring-blue-300'
-        } else if (isTargetLot) {
-            // Highlight for current LOT (Assignment Mode)
-            bgClass = 'bg-purple-100 dark:bg-purple-900/40'
-            borderClass = 'border-purple-500'
-            ringClass = 'ring-2 ring-purple-300' // Stronger ring
-        } else if (hasLot || isOccupied) {
-            // Has LOT assigned or marked as occupied - Match with "Có hàng" Legend (Amber theme)
-            bgClass = 'bg-amber-50 dark:bg-amber-900/10'
-            borderClass = 'border-amber-200 dark:border-amber-800'
-        }
-
-        // Determine if we are in LOT assignment mode
+        const isTargetLot = highlightLotId ? pos.lot_id === highlightLotId : false
+        const lotDetail = pos.lot_id ? lotInfo[pos.lot_id] : null
         const isAssignmentMode = !!highlightLotId
+        const isHighlightBlinking = highlightingPositionIds.has(pos.id)
 
         return (
-            <div
+            <MemoizedPositionCell
                 key={pos.id}
-                onClick={isAssignmentMode ? () => onPositionSelect(pos.id) : undefined}
-                style={cellHeight > 0 ? { height: `${cellHeight}px` } : { minHeight: isMobile ? '60px' : '80px' }} // Increased min-height for content
-                className={`
-                    relative ${isAssignmentMode ? 'cursor-pointer' : ''} ${isMobile ? 'p-1' : 'p-1.5'} rounded-lg border-2 transition-all
-                    flex flex-col justify-between overflow-hidden
-                    ${bgClass} ${borderClass} ${ringClass}
-                    ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.02] hover:z-10' : ''}
-                    ${highlightingPositionIds.has(pos.id) ? 'animate-highlight-blink' : ''}
-                `}
-            >
-                {/* Selection checkbox - Bottom left corner (only in non-assignment mode) */}
-                {!isAssignmentMode && (
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation()
-                            onPositionSelect(pos.id)
-                        }}
-                        className={`
-                            absolute bottom-1 left-1 z-20 w-4 h-4 rounded 
-                            border-2 transition-all duration-150
-                            flex items-center justify-center
-                            ${isSelected
-                                ? 'bg-blue-500 border-blue-500 text-white shadow-md'
-                                : 'bg-white/90 dark:bg-gray-800/90 border-gray-300 dark:border-gray-500 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30'
-                            }
-                        `}
-                        title={isSelected ? "Bỏ chọn vị trí" : "Chọn vị trí"}
-                    >
-                        {isSelected && (
-                            <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                            </svg>
-                        )}
-                    </button>
-                )}
-                {/* Header: Pos Code */}
-                <div className="flex justify-center items-start w-full relative mb-1 shrink-0">
-                    {/* View Details Eye Icon - Top Left */}
-                    {!isAssignmentMode && hasLot && lotDetail && (
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation()
-                                onViewDetails?.(pos.lot_id!)
-                            }}
-                            className="absolute left-0 top-0 text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors z-20"
-                            title="Xem chi tiết LOT"
-                        >
-                            <Eye size={12} />
-                        </button>
-                    )}
-
-                    <span className={`font-mono text-[10px] items-center text-black dark:text-white font-bold leading-none ${cellWidth === 0 ? 'whitespace-nowrap px-1' : ''}`}>
-                        {pos.code}
-                    </span>
-
-                    {/* Menu Trigger - Top Right */}
-                    {!isAssignmentMode && (
-                        <button
-                            onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                onPositionMenu?.(pos, e)
-                            }}
-                            className="absolute right-0 top-0 text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors z-40 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-bl-lg"
-                            title="Tùy chọn"
-                        >
-                            <MoreHorizontal size={14} />
-                        </button>
-                    )}
-
-                    {/* Status Icons */}
-                    <div className={`flex gap-0.5 absolute ${!isAssignmentMode ? 'right-5' : 'right-0'} top-0`}>
-                        {isTargetLot && (
-                            <div title="Đang chọn" className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
-                        )}
-                        {(hasLot || isOccupied) && !isTargetLot && (
-                            <div title="Có hàng">
-                                <Package size={10} className="text-amber-500 dark:text-amber-400" />
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Content: LOT Code & Product */}
-                {lotDetail ? (
-                    <div className="flex flex-col items-center w-full flex-1 min-h-0 gap-1">
-                        {/* 1. Mã LOT */}
-                        <div className={`text-xs font-bold leading-tight w-full text-center truncate shrink-0 ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'}`}>
-                            {lotDetail.code}
-                        </div>
-
-                        {/* List items - Flexible Scrollable Area */}
-                        <div className="w-full flex-col gap-1.5 overflow-y-auto custom-scrollbar flex-1 min-h-0">
-                            {lotDetail.items?.map((item, idx) => (
-                                <div key={idx} className="flex flex-col gap-0.5 w-full text-center border-b border-black/5 dark:border-white/5 last:border-0 pb-1 last:pb-0 shrink-0">
-                                    {/* 2. Tên sản phẩm */}
-                                    {item.product_name && (
-                                        <div className="text-[9px] text-gray-600 dark:text-gray-300 leading-tight line-clamp-2" title={item.product_name}>
-                                            {item.product_name}
-                                        </div>
-                                    )}
-                                    {/* 3. Mã SP : Số lượng Đơn vị */}
-                                    <div className="text-[9px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap">
-                                        {item.sku || '-'} : {item.quantity} {item.unit || '-'}
-                                    </div>
-                                    {/* 4. Tags (Inline for this item) */}
-                                    {item.tags && item.tags.length > 0 && (
-                                        <TagDisplay
-                                            tags={item.tags}
-                                            variant="compact"
-                                            placeholderMap={{ '@': item.sku || '' }}
-                                            className="mt-0.5"
-                                        />
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Removed global tags section since they are now inline */}
-
-                        {/* Dates Footer - Priority: Peeling (B), Packaging (Đ), Inbound (N) */}
-                        <div className="flex justify-center items-center gap-1 w-full px-1 pt-1 opacity-70 text-[8px] text-gray-500 dark:text-gray-400 shrink-0 mt-auto">
-                            {(() => {
-                                const dates = []
-
-                                // Logic: If peeling/packaging exists, show them. Else show inbound. Or show all available?
-                                // User said: "It only has peeling date and packaging date".
-
-                                if (lotDetail.peeling_date) {
-                                    dates.push(`B: ${new Date(lotDetail.peeling_date).toLocaleDateString('vi-VN')}`)
-                                }
-                                if (lotDetail.packaging_date) {
-                                    dates.push(`Đ: ${new Date(lotDetail.packaging_date).toLocaleDateString('vi-VN')}`)
-                                }
-                                // Fallback: If no special dates, show inbound if available
-                                if (lotDetail.inbound_date && !lotDetail.peeling_date && !lotDetail.packaging_date) {
-                                    dates.push(`N: ${new Date(lotDetail.inbound_date).toLocaleDateString('vi-VN')}`)
-                                }
-                                // Fallback 2: Show created_at but label it properly if needed, or just hide if user doesn't want irrelevant dates.
-                                // Default "Đ:" was created_at before. Now "Đ:" is Packaging.
-
-                                return dates.map((d, i) => (
-                                    <React.Fragment key={i}>
-                                        {i > 0 && <span className="text-gray-300 dark:text-gray-600">|</span>}
-                                        <span>{d}</span>
-                                    </React.Fragment>
-                                ))
-                            })()}
-                        </div>
-                    </div>
-                ) : (
-                    <div className="flex-1"></div>
-                )}
-            </div>
+                pos={pos}
+                cellHeight={cellHeight}
+                cellWidth={cellWidth}
+                isMobile={isMobile}
+                isOccupied={isOccupied}
+                isSelected={isSelected}
+                isTargetLot={isTargetLot}
+                lotDetail={lotDetail}
+                isAssignmentMode={isAssignmentMode}
+                isHighlightBlinking={isHighlightBlinking}
+                onPositionSelect={onPositionSelect}
+                onViewDetails={onViewDetails}
+                onPositionMenu={onPositionMenu}
+            />
         )
     }
 
