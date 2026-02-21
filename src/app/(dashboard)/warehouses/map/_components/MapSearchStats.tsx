@@ -96,9 +96,11 @@ const MemoizedPositionCard = React.memo(function PositionCard({
             </div>
             {lot ? (
                 <div className="flex flex-col gap-0.5 flex-1 justify-center overflow-hidden">
-                    <div className="font-medium text-center text-purple-600 dark:text-purple-400 truncate text-[9px]">{lot.code}</div>
-                    {lot.items?.[0] && (
+                    {lot.items?.[0] ? (
                         <>
+                            <div className="font-bold text-center text-teal-700 dark:text-teal-400 truncate text-[9px]">
+                                {lot.items[0].sku}
+                            </div>
                             <div className="text-[9px] text-slate-500 line-clamp-2 text-center">
                                 {lot.items[0].product_name}
                             </div>
@@ -106,9 +108,11 @@ const MemoizedPositionCard = React.memo(function PositionCard({
                                 {lot.items[0].quantity} {lot.items[0].unit}
                             </div>
                         </>
-                    )}
-                    {!lot.items?.[0] && lot.products && (
+                    ) : lot.products ? (
                         <>
+                            <div className="font-bold text-center text-teal-700 dark:text-teal-400 truncate text-[9px]">
+                                {lot.products.sku}
+                            </div>
                             <div className="text-[9px] text-slate-500 line-clamp-2 text-center">
                                 {lot.products.name}
                             </div>
@@ -116,7 +120,7 @@ const MemoizedPositionCard = React.memo(function PositionCard({
                                 {lot.quantity} {lot.products.unit}
                             </div>
                         </>
-                    )}
+                    ) : null}
                 </div>
             ) : (
                 <div className="text-slate-400 italic mt-auto text-[10px] text-center mb-auto pt-2">Trống</div>

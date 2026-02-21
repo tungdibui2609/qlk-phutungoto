@@ -1,7 +1,7 @@
 'use client'
 
 import React, { Suspense, useState, useEffect, useMemo } from 'react'
-import { FileText, LayoutList, Loader2, Trash2, Printer } from 'lucide-react'
+import { FileText, LayoutList, Loader2, Trash2, Printer, CheckCircle, RotateCcw } from 'lucide-react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { format } from 'date-fns'
@@ -254,9 +254,54 @@ function ExportOrderContent() {
         }
     }
 
+    const handleCompleteTask = async (id: string, e: React.MouseEvent) => {
+        e.stopPropagation()
+
+        const confirmed = await showConfirm('Xác nhận hoàn thành lệnh xuất kho này?')
+
+        if (confirmed) {
+            try {
+                const { error } = await supabase
+                    .from('export_tasks')
+                    .update({ status: 'Completed' })
+                    .eq('id', id)
+
+                if (error) throw error
+
+                showToast('Đã cập nhật trạng thái hoàn thành', 'success')
+                fetchTasks()
+            } catch (error) {
+                console.error('Error completing task:', error)
+                showToast('Lỗi cập nhật trạng thái', 'error')
+            }
+        }
+    }
+
+    const handleUndoCompleteTask = async (id: string, e: React.MouseEvent) => {
+        e.stopPropagation()
+
+        const confirmed = await showConfirm('Xác nhận hủy hoàn thành lệnh xuất kho này?')
+
+        if (confirmed) {
+            try {
+                const { error } = await supabase
+                    .from('export_tasks')
+                    .update({ status: 'Pending' })
+                    .eq('id', id)
+
+                if (error) throw error
+
+                showToast('Đã đưa lệnh xuất về trạng thái chờ xử lý', 'success')
+                fetchTasks()
+            } catch (error) {
+                console.error('Error undoing task completion:', error)
+                showToast('Lỗi cập nhật trạng thái', 'error')
+            }
+        }
+    }
 
     return (
-        <div className="p-6 max-w-7xl mx-auto space-y-6 pb-24 h-full">
+        <div className="p-2 md:p-4 w-full mx-auto space-y-6 pb-24 h-full">
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
@@ -323,6 +368,24 @@ function ExportOrderContent() {
                                     </div>
 
                                     <div className="flex items-center gap-2">
+                                        {task.status !== 'Completed' && task.status !== 'Cancelled' && (
+                                            <button
+                                                onClick={(e) => handleCompleteTask(task.id, e)}
+                                                className="p-2 text-stone-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                                title="Hoàn thành lệnh xuất"
+                                            >
+                                                <CheckCircle size={18} />
+                                            </button>
+                                        )}
+                                        {task.status === 'Completed' && (
+                                            <button
+                                                onClick={(e) => handleUndoCompleteTask(task.id, e)}
+                                                className="p-2 text-stone-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
+                                                title="Hủy hoàn thành lệnh xuất"
+                                            >
+                                                <RotateCcw size={18} />
+                                            </button>
+                                        )}
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();

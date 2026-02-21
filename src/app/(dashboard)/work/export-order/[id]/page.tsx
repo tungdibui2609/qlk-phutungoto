@@ -1,12 +1,17 @@
 'use client'
 
-import React, { Suspense, useState, useEffect } from 'react'
-import { FileText, ArrowLeft, Loader2, Printer, Trash2, CheckCircle2 } from 'lucide-react'
+import React, { Suspense, useState, useEffect, useMemo } from 'react'
+import { FileText, ArrowLeft, Loader2, Printer, Trash2, CheckCircle2, RotateCcw, X, ArrowDownToLine, PackageMinus } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/ToastProvider'
-import { ExportMapDiagram } from '@/components/export/ExportMapDiagram'
+import { ExportMapList } from '@/components/export/ExportMapList'
+import { useSystem } from '@/contexts/SystemContext'
+import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
+import { QrCodeModal } from '@/app/(dashboard)/warehouses/lots/_components/QrCodeModal'
+import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
+import { QuickBulkExportModal } from '@/components/warehouse/map/QuickBulkExportModal'
 
 interface ExportOrderItem {
     id?: string
@@ -40,16 +45,78 @@ function ExportOrderDetailContent() {
     const params = useParams()
     const router = useRouter()
     const { showToast, showConfirm } = useToast()
+    const { currentSystem } = useSystem()
     const [task, setTask] = useState<ExportTask | null>(null)
     const [loading, setLoading] = useState(true)
+
+    // UI states for Map Interaction
+    const [selectedPositionIds, setSelectedPositionIds] = useState<Set<string>>(new Set())
+    const [viewingLot, setViewingLot] = useState<any>(null)
+    const [isSelectHallOpen, setIsSelectHallOpen] = useState(false)
+    const [isBulkExportOpen, setIsBulkExportOpen] = useState(false)
+    const [zones, setZones] = useState<any[]>([])
+    const [qrLot, setQrLot] = useState<any>(null)
 
     const taskId = params.id as string
 
     useEffect(() => {
         if (taskId) {
             fetchTaskDetails()
+            fetchZones()
         }
     }, [taskId])
+
+    async function fetchZones() {
+        const { data } = await supabase.from('zones').select('*')
+        if (data) setZones(data)
+    }
+
+    const aggregatedItems = useMemo(() => {
+        const groups: Record<string, {
+            sku: string,
+            productName: string,
+            unit: string,
+            totalQuantity: number,
+            positionCount: number,
+            lotCodes: Set<string>,
+        }> = {}
+
+        const selectedItems = task?.items?.filter(item => item.id && selectedPositionIds.has(item.id)) || []
+
+        selectedItems.forEach(item => {
+            const sku = item.sku || ''
+            const productName = item.product_name || item.lot_code
+            const unit = item.unit || ''
+            const qty = item.quantity || 0
+
+            const key = `${sku}|${productName}|${unit}`
+
+            if (!groups[key]) {
+                groups[key] = {
+                    sku,
+                    productName,
+                    unit,
+                    totalQuantity: 0,
+                    positionCount: 0,
+                    lotCodes: new Set(),
+                }
+            }
+
+            groups[key].totalQuantity += qty
+            groups[key].positionCount += 1
+            if (item.lot_code) groups[key].lotCodes.add(item.lot_code)
+        })
+
+        return Object.values(groups)
+    }, [task, selectedPositionIds])
+
+    const totalByUnit = useMemo(() => {
+        const units: Record<string, number> = {}
+        aggregatedItems.forEach(item => {
+            units[item.unit] = (units[item.unit] || 0) + item.totalQuantity
+        })
+        return units
+    }, [aggregatedItems])
 
     async function fetchTaskDetails() {
         setLoading(true)
@@ -63,7 +130,7 @@ function ExportOrderDetailContent() {
                         quantity,
                         unit,
                         status,
-                        lots (code, inbound_date, positions(code)),
+                        lots (id, code, inbound_date, positions(code)),
                         positions (code),
                         products (name, sku, image_url)
                     )
@@ -80,14 +147,18 @@ function ExportOrderDetailContent() {
                 items_count: data.items?.length || 0,
                 items: data.items?.map((item: any) => {
                     let posCode = item.positions?.code
+                    let posId = item.positions?.id
                     if (!posCode && item.lots?.positions && item.lots?.positions.length > 0) {
                         posCode = item.lots.positions[0].code
+                        posId = item.lots.positions[0].id
                     }
                     return {
                         id: item.id,
+                        lot_id: item.lots?.id,
                         lot_code: item.lots?.code || 'N/A',
                         lot_inbound_date: item.lots?.inbound_date,
                         position_name: posCode || 'N/A',
+                        position_id: posId,
                         product_name: item.products?.name || 'Sản phẩm không tên',
                         sku: item.products?.sku || 'N/A',
                         product_image: item.products?.image_url,
@@ -95,6 +166,10 @@ function ExportOrderDetailContent() {
                         unit: item.unit,
                         status: item.status || 'Pending'
                     }
+                }).sort((a: any, b: any) => {
+                    const posA = a.position_name || ''
+                    const posB = b.position_name || ''
+                    return posA.localeCompare(posB)
                 })
             }
 
@@ -104,6 +179,87 @@ function ExportOrderDetailContent() {
             router.push('/work/export-order')
         } finally {
             setLoading(false)
+        }
+    }
+
+    async function handleCompleteTask() {
+        // ...
+    }
+
+    async function handleUndoCompleteTask() {
+        // ...
+    }
+
+    async function handleMoveToHall(hallId: string) {
+        setIsSelectHallOpen(false)
+        if (selectedPositionIds.size === 0) return
+
+        // Lấy tất cả các lot IDs cần di chuyển
+        const lotIdsToMove = new Set<string>()
+        const selectedItems = task?.items?.filter(item => selectedPositionIds.has(item.id || '')) || []
+        selectedItems.forEach(item => {
+            if (item.lot_id) lotIdsToMove.add(item.lot_id)
+        })
+
+        if (lotIdsToMove.size === 0) return
+
+        setLoading(true)
+        try {
+            // Tìm các zone con của Sảnh
+            const targetZoneIds = new Set<string>([hallId])
+            let added = true
+            while (added) {
+                added = false
+                for (const z of zones) {
+                    if (z.parent_id && targetZoneIds.has(z.parent_id) && !targetZoneIds.has(z.id)) {
+                        targetZoneIds.add(z.id)
+                        added = true
+                    }
+                }
+            }
+
+            // Tìm các vị trí trống
+            const { data: availablePositions, error: availError } = await (supabase
+                .from('zone_positions')
+                .select('position_id, zone_id, positions!inner(id, lot_id)')
+                .is('positions.lot_id', null)
+                .in('zone_id', Array.from(targetZoneIds))
+                .limit(lotIdsToMove.size) as any)
+
+            if (availError || !availablePositions || availablePositions.length < lotIdsToMove.size) {
+                showToast(`Không đủ vị trí trống trong Sảnh này. Cần ${lotIdsToMove.size}, nhưng chỉ còn ${availablePositions?.length || 0} vị trí.`, 'error')
+                setLoading(false)
+                return
+            }
+
+            const lotsArr = Array.from(lotIdsToMove)
+            // Lấy position_id hiện tại của các lot (để xóa lot_id ở đó)
+            const oldPosIdsToClear = selectedItems.filter(i => i.lot_id && i.position_id).map(i => i.position_id!)
+
+            const updates: { id: string, lot_id: string | null }[] = []
+            oldPosIdsToClear.forEach(id => updates.push({ id, lot_id: null }))
+
+            for (let i = 0; i < lotsArr.length; i++) {
+                updates.push({ id: availablePositions[i].position_id as string, lot_id: lotsArr[i] })
+            }
+
+            // DB Updates for move
+            const updatePromises = updates.map(u =>
+                supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id)
+            )
+            const results = await Promise.all(updatePromises)
+            const hasError = results.some(r => r.error)
+
+            if (hasError) {
+                showToast('Hạ sảnh có lỗi xảy ra. Đang làm mới dữ liệu.', 'warning')
+            } else {
+                showToast('Đã hạ sảnh thành công!', 'success')
+                setSelectedPositionIds(new Set())
+            }
+            fetchTaskDetails()
+        } catch (error: any) {
+            showToast('Lỗi khi hạ sảnh: ' + error.message, 'error')
+            fetchTaskDetails()
         }
     }
 
@@ -147,6 +303,68 @@ function ExportOrderDetailContent() {
         }
     }
 
+    async function fetchFullLotDetails(lotCode: string) {
+        try {
+            const { data, error } = await supabase
+                .from('lots')
+                .select(`*, created_at, suppliers(name), qc_info(name), lot_items(id, quantity, unit, products(name, sku, unit)), positions(code), lot_tags(tag, lot_item_id)`)
+                .eq('code', lotCode)
+                .single()
+            if (error) throw error
+            setViewingLot(data)
+        } catch (error: any) {
+            console.error('Error fetching lot details:', error)
+            showToast('Không thể tải chi tiết LOT: ' + error.message, 'error')
+        }
+    }
+
+    const handlePositionSelect = (itemId: string) => {
+        setSelectedPositionIds(prev => {
+            const next = new Set(prev)
+            if (next.has(itemId)) next.delete(itemId)
+            else next.add(itemId)
+            return next
+        })
+    }
+
+    const handleBulkSelect = (ids: string[], shouldSelect: boolean) => {
+        setSelectedPositionIds(prev => {
+            const next = new Set(prev)
+            ids.forEach(id => {
+                if (shouldSelect) next.add(id)
+                else next.delete(id)
+            })
+            return next
+        })
+    }
+
+    const isModuleEnabled = useMemo(() => {
+        return (moduleId: string) => {
+            if (!currentSystem) return true
+            const allModules = new Set<string>()
+            if (currentSystem.modules) {
+                if (Array.isArray(currentSystem.modules)) {
+                    currentSystem.modules.forEach(m => allModules.add(m))
+                } else if (typeof currentSystem.modules === 'string') {
+                    currentSystem.modules.split(',').forEach(m => allModules.add(m.trim().replace(/"/g, '').replace(/\[/g, '').replace(/\]/g, '')))
+                }
+            }
+            if (Array.isArray(currentSystem.inbound_modules)) currentSystem.inbound_modules.forEach(m => allModules.add(m))
+            if (Array.isArray(currentSystem.outbound_modules)) currentSystem.outbound_modules.forEach(m => allModules.add(m))
+
+            if (viewingLot) {
+                if (moduleId === 'inbound_date' && viewingLot.inbound_date) return true
+                if (moduleId === 'packaging_date' && viewingLot.packaging_date) return true
+                if (moduleId === 'peeling_date' && viewingLot.peeling_date) return true
+                if (moduleId === 'batch_code' && viewingLot.batch_code) return true
+                if (moduleId === 'supplier_info' && viewingLot.suppliers) return true
+                if (moduleId === 'qc_info' && viewingLot.qc_info) return true
+                if (moduleId === 'extra_info' && viewingLot.metadata?.extra_info) return true
+            }
+            return allModules.has(moduleId)
+        }
+    }, [currentSystem, viewingLot])
+
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-screen">
@@ -158,7 +376,7 @@ function ExportOrderDetailContent() {
     if (!task) return null
 
     return (
-        <div className="min-h-screen bg-stone-50 dark:bg-zinc-900/50 p-6 space-y-6">
+        <div className="min-h-screen bg-stone-50 dark:bg-zinc-900/50 p-2 md:p-4 space-y-6 w-full">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -189,10 +407,24 @@ function ExportOrderDetailContent() {
                         <Printer size={16} />
                         In phiếu
                     </button>
-                    {/* <button className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-emerald-700 transition-colors">
-                        <CheckCircle2 size={16} />
-                        Hoàn thành
-                    </button> */}
+                    {task.status !== 'Completed' && task.status !== 'Cancelled' && (
+                        <button
+                            onClick={handleCompleteTask}
+                            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-emerald-700 transition-colors"
+                        >
+                            <CheckCircle2 size={16} />
+                            Hoàn thành
+                        </button>
+                    )}
+                    {task.status === 'Completed' && (
+                        <button
+                            onClick={handleUndoCompleteTask}
+                            className="flex items-center gap-2 px-4 py-2 bg-yellow-600 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-yellow-700 transition-colors"
+                        >
+                            <RotateCcw size={16} />
+                            Hủy hoàn thành
+                        </button>
+                    )}
                     <button
                         onClick={handleDeleteTask}
                         className="p-2 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
@@ -266,31 +498,216 @@ function ExportOrderDetailContent() {
 
             {/* Warehouse Diagram */}
             {task.items && task.items.length > 0 && (
-                <div className="bg-white dark:bg-zinc-800 rounded-3xl border border-stone-200 dark:border-zinc-700 shadow-sm p-6 overflow-hidden">
+                <div className="bg-white dark:bg-zinc-800 rounded-3xl border border-stone-200 dark:border-zinc-700 shadow-sm p-4 md:p-6 overflow-hidden">
                     <h2 className="text-lg font-bold mb-4 border-b border-stone-100 dark:border-zinc-700 pb-2">Sơ đồ vị trí xuất kho</h2>
-                    <div className="overflow-x-auto print:-mx-0 mx-[-1rem] px-[1rem] print:px-0">
-                        <ExportMapDiagram
+                    <div className="print:-mx-0 mx-[-0.5rem] md:mx-0 px-[0.5rem] md:px-0 print:px-0">
+                        <ExportMapList
                             items={task.items.map(item => ({
                                 id: item.id,
+                                lot_id: item.lot_id,
                                 quantity: item.quantity,
                                 unit: item.unit,
                                 status: item.status,
-                                lots: {
-                                    code: item.lot_code,
-                                    inbound_date: item.lot_inbound_date,
-                                    notes: null // Missing in detail currently but satisfies TS
-                                },
-                                positions: {
-                                    code: item.position_name
-                                },
-                                products: {
-                                    name: item.product_name,
-                                    sku: item.sku
-                                }
+                                lot_code: item.lot_code,
+                                lot_inbound_date: item.lot_inbound_date,
+                                position_name: item.position_name,
+                                product_name: item.product_name,
+                                sku: item.sku
                             }))}
+                            onPositionSelect={handlePositionSelect}
+                            selectedIds={selectedPositionIds}
+                            onBulkSelect={handleBulkSelect}
+                            onViewLotDetails={fetchFullLotDetails}
                         />
                     </div>
                 </div>
+            )}
+
+            {/* Floating Action Bar */}
+            {selectedPositionIds.size > 0 && (
+                <div className="fixed bottom-0 left-0 right-0 z-50 animate-in slide-in-from-bottom-5">
+                    <div className="mx-auto w-fit min-w-[320px] max-w-[95vw] px-4 pb-4">
+                        <div className="bg-white dark:bg-zinc-800 rounded-xl shadow-2xl border border-stone-200 dark:border-zinc-700 overflow-hidden">
+                            {/* Action buttons and Selection Info */}
+                            <div className="flex items-center gap-2 px-3 py-2 border-b border-stone-100 dark:border-zinc-700">
+                                {/* Selection count */}
+                                <div className="flex items-center gap-2 px-2.5 py-1.5 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
+                                    <span className="text-xs font-bold text-blue-700 dark:text-blue-300 whitespace-nowrap">
+                                        Đã chọn {selectedPositionIds.size}
+                                    </span>
+                                </div>
+
+                                <div className="w-px h-5 bg-stone-200 dark:bg-zinc-700 mx-1" />
+
+                                {/* Action buttons group */}
+                                <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar">
+                                    <button
+                                        onClick={() => setIsSelectHallOpen(true)}
+                                        className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-bold text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30 rounded-lg transition-all active:scale-95 group whitespace-nowrap"
+                                        title="Hạ sảnh"
+                                    >
+                                        <ArrowDownToLine size={16} className="group-hover:scale-110 transition-transform" />
+                                        <span>Hạ sảnh</span>
+                                    </button>
+
+                                    <button
+                                        onClick={() => setIsBulkExportOpen(true)}
+                                        className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-all active:scale-95 group whitespace-nowrap"
+                                        title="Xuất khỏi kho"
+                                    >
+                                        <PackageMinus size={16} className="group-hover:scale-110 transition-transform" />
+                                        <span>Xuất khỏi kho</span>
+                                    </button>
+                                </div>
+
+                                {/* Close button */}
+                                <div className="w-px h-5 bg-stone-200 dark:bg-zinc-700 mx-1 shrink-0" />
+                                <button
+                                    onClick={() => setSelectedPositionIds(new Set())}
+                                    className="p-1.5 text-stone-400 hover:text-stone-600 dark:hover:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+                                    title="Bỏ chọn tất cả"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            {/* Selected items list */}
+                            <div className="px-4 py-2 bg-stone-50 dark:bg-zinc-900/50 max-h-40 overflow-y-auto">
+                                {/* Summary Header */}
+                                <div className="flex items-center gap-2 mb-2 pb-2 border-b border-stone-100 dark:border-zinc-800">
+                                    <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Tổng hợp số lượng:</span>
+                                    <div className="flex flex-wrap gap-3">
+                                        {Object.entries(totalByUnit).map(([unit, qty], i) => (
+                                            <div key={i} className="flex items-center gap-1.5">
+                                                <span className="text-sm font-black text-blue-600 dark:text-blue-400 tabular-nums">
+                                                    {qty}
+                                                </span>
+                                                <span className="text-[10px] font-bold text-stone-500 uppercase">
+                                                    {unit}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-[minmax(180px,auto)_110px_90px_minmax(120px,1fr)] gap-y-1">
+                                    {aggregatedItems.map((item, idx) => {
+                                        const codesArray = Array.from(item.lotCodes)
+
+                                        return (
+                                            <div key={`${item.sku}-${idx}`} className="contents group">
+                                                {/* Column 1: SKU & Product Name */}
+                                                <div className="flex items-center gap-1.5 min-w-0 py-1.5 pl-3 bg-white dark:bg-zinc-800 rounded-l-lg border-y border-l border-stone-200 dark:border-zinc-700 group-hover:border-blue-300 dark:group-hover:border-blue-700 transition-colors">
+                                                    {item.sku && (
+                                                        <span className="shrink-0 px-1 py-0.5 bg-stone-100 dark:bg-zinc-700 text-[10px] text-stone-500 dark:text-zinc-400 rounded font-mono font-bold">
+                                                            {item.sku.slice(0, 2)}
+                                                        </span>
+                                                    )}
+                                                    <span className="font-bold text-stone-900 dark:text-white truncate" title={item.productName}>
+                                                        {item.productName}
+                                                    </span>
+                                                </div>
+
+                                                {/* Column 2: Quantity */}
+                                                <div className="flex items-center justify-end py-1.5 bg-white dark:bg-zinc-800 border-y border-stone-200 dark:border-zinc-700 group-hover:border-blue-300 dark:group-hover:border-blue-700 transition-colors">
+                                                    <span className="text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap">
+                                                        {item.totalQuantity} {item.unit}
+                                                    </span>
+                                                </div>
+
+                                                {/* Column 3: Position Count */}
+                                                <div className="flex items-center justify-end py-1.5 bg-white dark:bg-zinc-800 border-y border-stone-200 dark:border-zinc-700 group-hover:border-blue-300 dark:group-hover:border-blue-700 transition-colors">
+                                                    <span className="text-stone-400 whitespace-nowrap">
+                                                        ({item.positionCount} vị trí)
+                                                    </span>
+                                                </div>
+
+                                                {/* Column 4: Lot Code */}
+                                                <div className="flex items-center justify-end py-1.5 pr-3 bg-white dark:bg-zinc-800 rounded-r-lg border-y border-r border-stone-200 dark:border-zinc-700 group-hover:border-blue-300 dark:group-hover:border-blue-700 transition-colors">
+                                                    <div className="flex items-center gap-1 min-w-0">
+                                                        {codesArray.length === 1 ? (
+                                                            <span className="text-stone-400 font-mono truncate text-[11px]">
+                                                                {codesArray[0]}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-stone-400 italic truncate text-[11px]">
+                                                                {codesArray.length} lô
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modals */}
+            <SelectHallModal
+                isOpen={isSelectHallOpen}
+                onClose={() => setIsSelectHallOpen(false)}
+                onConfirm={handleMoveToHall}
+                zones={zones}
+            />
+
+            {isBulkExportOpen && (
+                <QuickBulkExportModal
+                    lotIds={Array.from(new Set((task?.items?.filter(item => selectedPositionIds.has(item.id || '')) || []).map(i => i.lot_id).filter(Boolean) as string[]))}
+                    lotInfo={(() => {
+                        const info: Record<string, any> = {}
+                        task?.items?.forEach(item => {
+                            if (!item.lot_id) return
+                            if (!info[item.lot_id]) {
+                                info[item.lot_id] = {
+                                    code: item.lot_code,
+                                    items: [],
+                                    positions: [{ code: item.position_name }]
+                                }
+                            }
+                            info[item.lot_id].items.push({
+                                product_name: item.product_name,
+                                sku: item.sku,
+                                unit: item.unit,
+                                quantity: item.quantity
+                            })
+                        })
+                        return info
+                    })()}
+                    onClose={() => setIsBulkExportOpen(false)}
+                    onSuccess={async () => {
+                        setIsBulkExportOpen(false)
+                        // Wait for completion, then mark task items as Exported
+                        const idsToUpdate = Array.from(selectedPositionIds).filter(id => task?.items?.find(i => i.id === id)?.status !== 'Exported')
+                        if (idsToUpdate.length > 0) {
+                            await supabase.from('export_task_items').update({ status: 'Exported' }).in('id', idsToUpdate)
+                        }
+                        setSelectedPositionIds(new Set())
+                        fetchTaskDetails()
+                    }}
+                />
+            )}
+
+            {viewingLot && (
+                <LotDetailsModal
+                    lot={viewingLot}
+                    onClose={() => setViewingLot(null)}
+                    onOpenQr={(lot) => {
+                        setQrLot(lot);
+                        setViewingLot(null); // Optional: close detail modal when opening QR
+                    }}
+                    isModuleEnabled={isModuleEnabled}
+                />
+            )}
+
+            {qrLot && (
+                <QrCodeModal
+                    lot={qrLot}
+                    onClose={() => setQrLot(null)}
+                />
             )}
         </div>
     )

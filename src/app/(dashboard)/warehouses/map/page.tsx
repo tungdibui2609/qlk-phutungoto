@@ -12,6 +12,7 @@ import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { useSystem } from '@/contexts/SystemContext'
 import { LotTagModal } from '@/components/lots/LotTagModal'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
+import { QrCodeModal } from '@/app/(dashboard)/warehouses/lots/_components/QrCodeModal'
 import { QuickBulkExportModal } from '@/components/warehouse/map/QuickBulkExportModal'
 import { usePositionActionManager } from '@/components/warehouse/map/PositionActionManager'
 import { MapFilterBar } from '@/components/warehouse/map/MapFilterBar'
@@ -593,8 +594,18 @@ function WarehouseMapContent() {
                 <LotDetailsModal
                     lot={viewingLot}
                     onClose={() => setViewingLot(null)}
-                    onOpenQr={(lot) => setQrLot(lot)}
+                    onOpenQr={(lot) => {
+                        setQrLot(lot);
+                        setViewingLot(null);
+                    }}
                     isModuleEnabled={isModuleEnabled}
+                />
+            )}
+
+            {qrLot && (
+                <QrCodeModal
+                    lot={qrLot as any}
+                    onClose={() => setQrLot(null)}
                 />
             )}
 

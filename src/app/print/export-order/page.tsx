@@ -9,6 +9,7 @@ import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { EditableText } from '@/components/print/PrintHelpers'
+import { format } from 'date-fns'
 
 interface ExportOrderItem {
     id: string
@@ -164,6 +165,14 @@ function ExportOrderPrintContent() {
                         positions: posCode ? { code: posCode } : null
                     }
                 })
+
+                // Sắp xếp theo mã vị trí (A-Z) để gom nhóm các khu vực gần nhau
+                itemsData.sort((a: any, b: any) => {
+                    const posA = a.positions?.code || ''
+                    const posB = b.positions?.code || ''
+                    return posA.localeCompare(posB)
+                })
+
                 // Explicitly cast or handle potential nulls if needed, though interface update should handle it
                 setItems(itemsData as unknown as ExportOrderItem[] || [])
 
@@ -314,8 +323,14 @@ function ExportOrderPrintContent() {
                             <th className="border border-black p-2 text-center">Sản phẩm</th>
                             <th className="border border-black p-2 w-16 text-center">Số lượng</th>
                             <th className="border border-black p-2 w-16 text-center">ĐVT</th>
-                            <th className="border border-black p-2 w-14 text-center">Đã hạ</th>
-                            <th className="border border-black p-2 w-14 text-center">Chưa hạ</th>
+                            {task.status === 'Completed' ? (
+                                <>
+                                    <th className="border border-black p-2 w-14 text-center">Đã hạ</th>
+                                    <th className="border border-black p-2 w-14 text-center">Chưa hạ</th>
+                                </>
+                            ) : (
+                                <th className="border border-black p-2 w-24 text-center">Ngày nhập kho</th>
+                            )}
                             <th className="border border-black p-2 w-24 text-center">Ghi chú</th>
                         </tr>
                     </thead>
@@ -331,14 +346,22 @@ function ExportOrderPrintContent() {
                                 </td>
                                 <td className="border border-black p-2 text-center font-bold">{formatQuantityFull(item.quantity)}</td>
                                 <td className="border border-black p-2 text-center">{item.unit}</td>
-                                <td className="border border-black p-2 text-center text-lg">◻</td>
-                                <td className="border border-black p-2 text-center text-lg">◻</td>
+                                {task.status === 'Completed' ? (
+                                    <>
+                                        <td className="border border-black p-2 text-center text-lg">◻</td>
+                                        <td className="border border-black p-2 text-center text-lg">◻</td>
+                                    </>
+                                ) : (
+                                    <td className="border border-black p-2 text-center font-medium">
+                                        {item.lots?.inbound_date ? format(new Date(item.lots.inbound_date), 'dd/MM/yyyy') : ''}
+                                    </td>
+                                )}
                                 <td className="border border-black p-2"></td>
                             </tr>
                         ))}
                         {items.length === 0 && (
                             <tr>
-                                <td className="border border-black p-4 text-center" colSpan={9}>Không có dữ liệu</td>
+                                <td className="border border-black p-4 text-center" colSpan={task.status === 'Completed' ? 9 : 8}>Không có dữ liệu</td>
                             </tr>
                         )}
                     </tbody>

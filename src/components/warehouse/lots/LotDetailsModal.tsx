@@ -252,6 +252,39 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                                         <span className="text-xs font-bold">{item.quantity}</span>
                                                         <span className="text-[10px] font-medium opacity-80">{(item as any).unit || item.products?.unit}</span>
                                                     </div>
+
+                                                    {/* QR Button for Product */}
+                                                    <button
+                                                        onClick={() => {
+                                                            const itemLot = {
+                                                                ...lot,
+                                                                lot_items: [item]
+                                                            }
+                                                            onOpenQr(itemLot as any)
+                                                        }}
+                                                        className="w-8 h-8 flex items-center justify-center rounded-full text-zinc-400 hover:text-zinc-800 hover:bg-white dark:hover:bg-zinc-800 shadow-sm transition-all border border-transparent hover:border-zinc-200 shrink-0 ml-auto"
+                                                        title="In mã QR sản phẩm này"
+                                                    >
+                                                        <QrIcon size={14} />
+                                                    </button>
+                                                </div>
+                                                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight" title={item.products?.name}>{item.products?.name}</h4>
+
+                                                {/* Tags & History */}
+                                                <div className="flex flex-wrap items-center gap-2 mt-1">
+                                                    {lot.lot_tags && (
+                                                        <TagDisplay
+                                                            tags={lot.lot_tags
+                                                                .filter(t =>
+                                                                    t.lot_item_id === item.id &&
+                                                                    !t.tag.startsWith('MERGED_FROM:') &&
+                                                                    !t.tag.startsWith('MERGED_DATA:')
+                                                                )
+                                                                .map(t => t.tag)}
+                                                            placeholderMap={{ '@': item.products?.sku || '' }}
+                                                        />
+                                                    )}
+
                                                     {(() => {
                                                         const mergedTag = lot.lot_tags?.find(t => t.lot_item_id === item.id && (t.tag.startsWith('MERGED_FROM:') || t.tag.startsWith('MERGED_DATA:')));
                                                         if (!mergedTag) return null;
@@ -270,28 +303,11 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                                                 className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded border border-purple-200 dark:border-purple-800 text-[10px] font-bold hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors"
                                                             >
                                                                 <History size={10} />
-                                                                <span>{isMergedData ? history?.code : mergedTag.tag.replace('MERGED_FROM:', '')}</span>
+                                                                <span>Gộp từ: {isMergedData ? history?.code : mergedTag.tag.replace('MERGED_FROM:', '')}</span>
                                                             </button>
                                                         )
                                                     })()}
                                                 </div>
-                                                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight" title={item.products?.name}>{item.products?.name}</h4>
-
-                                                {/* Tags */}
-                                                {lot.lot_tags && (
-                                                    <div className="flex flex-wrap gap-1 mt-1">
-                                                        <TagDisplay
-                                                            tags={lot.lot_tags
-                                                                .filter(t =>
-                                                                    t.lot_item_id === item.id &&
-                                                                    !t.tag.startsWith('MERGED_FROM:') &&
-                                                                    !t.tag.startsWith('MERGED_DATA:')
-                                                                )
-                                                                .map(t => t.tag)}
-                                                            placeholderMap={{ '@': item.products?.sku || '' }}
-                                                        />
-                                                    </div>
-                                                )}
                                             </div>
                                         </div>
                                     ))}
@@ -313,13 +329,6 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                         className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
                     >
                         Đóng
-                    </button>
-                    <button
-                        onClick={() => onOpenQr(lot)}
-                        className="flex items-center gap-2 px-6 py-2.5 bg-orange-600 dark:bg-orange-500 text-white rounded-xl text-sm font-bold hover:opacity-90 transition-opacity shadow-lg shadow-orange-600/20"
-                    >
-                        <QrIcon size={18} />
-                        Mã QR
                     </button>
                 </div>
             </div>
