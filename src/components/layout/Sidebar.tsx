@@ -67,6 +67,7 @@ const menuItems: MenuItem[] = [
         children: [
             { id: 'qr_assign', name: 'Gán vị trí', href: '/warehouses/scan/assign', icon: MapPin, requiredPermission: 'utility.view' },
             { id: 'qr_export', name: 'Xuất kho', href: '/warehouses/scan/export', icon: ArrowUpFromLine, requiredPermission: 'utility.view' },
+            { id: 'qr_export_order', name: 'Lệnh xuất', href: '/warehouses/scan/export-order', icon: FileText, requiredPermission: 'utility.view' },
         ]
     },
     {

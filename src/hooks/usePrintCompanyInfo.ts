@@ -77,29 +77,36 @@ export function usePrintCompanyInfo(options: UsePrintCompanyInfoOptions = {}) {
                     await supabase.auth.setSession({ access_token: token, refresh_token: '' })
                 }
 
-                const { data: profileData, error: profileError } = await supabase
-                    .from('user_profiles')
-                    .select('company_id')
-                    .maybeSingle()
+                const { data: { user } } = await supabase.auth.getUser()
 
-                if (profileError) {
-                    // Use warn instead of error to avoid blocking Next.js dev overlay
-                    console.warn('Warning fetching user profile:', profileError)
-                }
+                if (user) {
+                    const { data: profileData, error: profileError } = await supabase
+                        .from('user_profiles')
+                        .select('company_id')
+                        .eq('id', user.id)
+                        .maybeSingle()
 
-                if (!profileData) {
-                    console.warn('No profile data found for current user.')
-                }
+                    if (profileError) {
+                        // Use warn instead of error to avoid blocking Next.js dev overlay
+                        console.warn('Warning fetching user profile:', profileError)
+                    }
 
-                if ((profileData as any)?.company_id) {
-                    const { data } = await supabase
-                        .from('company_settings')
-                        .select('*')
-                        .eq('id', (profileData as any).company_id)
-                        .single()
-                    companyData = data
+                    if (!profileData) {
+                        console.warn('No profile data found for current user.')
+                    }
+
+                    if ((profileData as any)?.company_id) {
+                        const { data } = await supabase
+                            .from('company_settings')
+                            .select('*')
+                            .eq('id', (profileData as any).company_id)
+                            .single()
+                        companyData = data
+                    }
                 }
             }
+
+
 
             if (companyData) {
                 setCompanyInfo(companyData as CompanyInfo)

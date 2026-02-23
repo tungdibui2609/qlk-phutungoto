@@ -8,6 +8,7 @@ import { ExportMapDiagram } from '@/components/export/ExportMapDiagram'
 import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
+import { PrintHeader } from '@/components/print/PrintHeader'
 import { EditableText } from '@/components/print/PrintHelpers'
 import { format } from 'date-fns'
 
@@ -117,7 +118,7 @@ function ExportOrderPrintContent() {
 
             try {
                 // Fetch Task
-                const { data: taskData, error: taskError } = await supabase
+                let { data: taskData, error: taskError } = await supabase
                     .from('export_tasks')
                     .select(`
                         *,
@@ -134,7 +135,8 @@ function ExportOrderPrintContent() {
                         .single()
 
                     if (fallbackError) throw fallbackError
-                    setTask({ ...taskDataFallback, created_by_profile: { full_name: 'Admin' } })
+                    taskData = { ...(taskDataFallback as any), created_by_profile: { full_name: 'Admin' } }
+                    setTask(taskData as any)
                 } else {
                     // @ts-expect-error: Joined type mismatch
                     setTask(taskData)
@@ -324,32 +326,50 @@ function ExportOrderPrintContent() {
 
             {/* PAGE 1: EXPORT ORDER DETAIL */}
             <div className={`pt-8 px-8 pb-8 print:p-0 w-full max-w-[210mm] print:max-w-none bg-white shadow-md print:shadow-none ${isCapturing ? 'w-[210mm]' : ''}`}>
-                {/* Header */}
-                <div className="flex justify-between items-start mb-6">
-                    <div className="flex gap-4 items-start">
-                        {logoSrc && (
-                            /* eslint-disable-next-line @next/next/no-img-element */
-                            <img
-                                src={logoSrc}
-                                alt="Logo"
-                                className="h-16 w-auto object-contain grayscale opacity-80"
-                            />
-                        )}
-                        <div>
-                            <h2 className="font-bold text-sm uppercase text-green-800">{companyInfo?.name || 'CÔNG TY CP ...'}</h2>
-                            <p className="text-xs">{companyInfo?.address || 'Địa chỉ: ...'}</p>
-                            <p className="text-xs">Email: {companyInfo?.email} | Điện thoại: {companyInfo?.phone}</p>
-                        </div>
-                    </div>
+                {/* Header with Shared Component */}
+                <div className="mb-6">
+                    <PrintHeader
+                        companyInfo={companyInfo}
+                        logoSrc={logoSrc}
+                        size="large"
+                        rightContent={null}
+                    />
                 </div>
 
                 {/* Title */}
-                <div className="text-center mb-6">
-                    <h1 className="text-2xl font-bold uppercase mb-1">LỆNH XUẤT KHO</h1>
-                    <div className="text-sm font-bold mb-1">
-                        Ngày {editDay} Tháng {editMonth} Năm {editYear}
+                <div className="relative text-center mt-4 mb-4">
+                    <h1 className="text-xl font-bold tracking-wide" style={{ fontFamily: "'Times New Roman', Times, serif" }}>
+                        LỆNH XUẤT KHO
+                    </h1>
+                    <div className="text-sm italic text-gray-600 mt-2">
+                        <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
+                            Ngày{' '}
+                            <input
+                                type="text"
+                                value={editDay}
+                                onChange={(e) => setEditDay(e.target.value)}
+                                className="w-8 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
+                            />{' '}
+                            tháng{' '}
+                            <input
+                                type="text"
+                                value={editMonth}
+                                onChange={(e) => setEditMonth(e.target.value)}
+                                className="w-8 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
+                            />{' '}
+                            năm{' '}
+                            <input
+                                type="text"
+                                value={editYear}
+                                onChange={(e) => setEditYear(e.target.value)}
+                                className="w-12 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
+                            />
+                        </span>
+                        <span className={`hidden print:inline-block ${isSnapshotMode ? '!inline-block' : ''}`}>
+                            Ngày {editDay} tháng {editMonth} năm {editYear}
+                        </span>
                     </div>
-                    <div className="text-sm font-bold">Số: {task.code}</div>
+                    <div className="text-sm font-bold mt-1">Số: <span className="text-red-600">{task.code}</span></div>
                 </div>
 
                 {/* Info Fields */}

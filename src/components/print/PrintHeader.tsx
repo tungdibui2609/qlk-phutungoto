@@ -28,7 +28,7 @@ export function PrintHeader({
     const isLarge = size === 'large'
 
     return (
-        <div className={`relative mb-4 ${className}`}>
+        <div className={`relative mb-4 ${className}`} style={{ fontFamily: "'Times New Roman', Times, serif" }}>
             {/* Right content (e.g., legal template info) */}
             {rightContent && (
                 <div className="absolute top-0 right-0">

@@ -377,7 +377,7 @@ export default function InventoryPrintPage() {
                 <PrintHeader
                     companyInfo={companyInfo}
                     logoSrc={logoSrc}
-                    size="compact"  // Using compact to fit the inventory report style
+                    size="large"
                     rightContent={null}
                 />
             </div>

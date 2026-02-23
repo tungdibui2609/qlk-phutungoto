@@ -80,7 +80,6 @@ function InboundPrintContent() {
     // Use shared hook for company info
     const { companyInfo, logoSrc } = usePrintCompanyInfo({
         token: searchParams.get('token'),
-        orderCompanyId: order?.company_id,
         initialCompanyInfo
     })
 
