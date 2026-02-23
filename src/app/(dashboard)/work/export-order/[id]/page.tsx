@@ -69,6 +69,27 @@ function ExportOrderDetailContent() {
         }
     }, [taskId])
 
+    // Live updates: subscribe to positions & export_task_items changes
+    useEffect(() => {
+        if (!taskId) return
+
+        const channel = supabase
+            .channel(`export_order_live_${taskId}`)
+            .on('postgres_changes',
+                { event: '*', schema: 'public', table: 'positions' },
+                () => { fetchTaskDetails() }
+            )
+            .on('postgres_changes',
+                { event: '*', schema: 'public', table: 'export_task_items', filter: `task_id=eq.${taskId}` },
+                () => { fetchTaskDetails() }
+            )
+            .subscribe()
+
+        return () => {
+            supabase.removeChannel(channel)
+        }
+    }, [taskId])
+
     async function fetchZones() {
         const { data } = await supabase.from('zones').select('*')
         if (data) setZones(data)
