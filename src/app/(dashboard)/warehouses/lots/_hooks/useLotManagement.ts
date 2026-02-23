@@ -51,6 +51,11 @@ export function useLotManagement() {
     const [startDate, setStartDate] = useState<string>('')
     const [endDate, setEndDate] = useState<string>('')
 
+    // FIFO Toggle (local, defaults to ON when module is enabled)
+    const [fifoActive, setFifoActive] = useState(true)
+    const isFifoAvailable = hasModule('fifo_priority')
+    const isFifoActive = isFifoAvailable && fifoActive
+
     // Data for Selection
     const [products, setProducts] = useState<Product[]>([])
     const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -112,7 +117,7 @@ export function useLotManagement() {
         }, 500)
 
         return () => clearTimeout(timer)
-    }, [searchTerm, positionFilter, selectedZoneId, dateFilterField, startDate, endDate])
+    }, [searchTerm, positionFilter, selectedZoneId, dateFilterField, startDate, endDate, fifoActive])
 
     // Effect for page change ONLY
     useEffect(() => {
@@ -285,8 +290,17 @@ export function useLotManagement() {
             const from = page * pageSize
             const to = from + pageSize - 1
 
+            // Ordering: FIFO-aware when toggle is active
+            if (isFifoActive) {
+                // FIFO: oldest inbound_date first (nulls last), then created_at ascending
+                query = query
+                    .order('inbound_date', { ascending: true, nullsFirst: false })
+                    .order('created_at', { ascending: true })
+            } else {
+                query = query.order('created_at', { ascending: false })
+            }
+
             const { data, error, count } = await query
-                .order('created_at', { ascending: false })
                 .range(from, to)
 
             if (error) {
@@ -381,6 +395,11 @@ export function useLotManagement() {
         handleToggleStar,
         isModuleEnabled: hasModule,
         isUtilityEnabled: hasModule,
-        fetchCommonData
+        fetchCommonData,
+
+        // FIFO
+        isFifoAvailable,
+        isFifoActive,
+        toggleFifo: () => setFifoActive(prev => !prev)
     }
 }

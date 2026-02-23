@@ -1,4 +1,4 @@
-import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText } from 'lucide-react'
+import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown } from 'lucide-react'
 
 export type ModuleCategory = 'core' | 'automation' | 'specialized' | 'info'
 
@@ -77,6 +77,14 @@ export const UTILITY_MODULES: UtilityModule[] = [
         icon: FileText,
         category: 'core',
         default_enabled: true
+    },
+    {
+        id: 'fifo_priority',
+        name: 'FIFO - Nhập trước Xuất trước',
+        description: 'Ưu tiên hiển thị vị trí/LOT có ngày nhập kho sớm nhất khi tìm kiếm trên Sơ đồ kho và Quản lý LOT.',
+        icon: ArrowUpDown,
+        category: 'automation',
+        default_enabled: false
     }
 ]
 

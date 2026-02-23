@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, MapPin, X } from 'lucide-react'
+import { Plus, MapPin, X, ArrowUpDown } from 'lucide-react'
 import Link from 'next/link'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { LotTagModal } from '@/components/lots/LotTagModal'
@@ -53,7 +53,11 @@ export function LotPageManager() {
         page,
         setPage,
         pageSize,
-        totalLots
+        totalLots,
+        // FIFO
+        isFifoAvailable,
+        isFifoActive,
+        toggleFifo
     } = useLotManagement()
 
     const { currentSystem } = useSystem()
@@ -178,8 +182,32 @@ export function LotPageManager() {
                 toggleMobileFilters={() => setShowMobileFilters(!showMobileFilters)}
             />
 
-            {/* Main Grid */}
+            {/* FIFO Toggle + Main Grid */}
             <div className="space-y-4">
+                {isFifoAvailable && (
+                    <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                        <button
+                            role="switch"
+                            aria-checked={isFifoActive}
+                            onClick={toggleFifo}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none ${isFifoActive
+                                    ? 'bg-orange-500'
+                                    : 'bg-slate-300 dark:bg-slate-600'
+                                }`}
+                        >
+                            <span
+                                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200 ${isFifoActive ? 'translate-x-[22px]' : 'translate-x-[2px]'
+                                    }`}
+                            />
+                        </button>
+                        <span className={`text-sm font-semibold ${isFifoActive
+                                ? 'text-slate-800 dark:text-slate-200'
+                                : 'text-slate-400 dark:text-slate-500'
+                            }`}>
+                            Ưu tiên FIFO
+                        </span>
+                    </label>
+                )}
                 <LotList
                     loading={loading}
                     lots={lots}

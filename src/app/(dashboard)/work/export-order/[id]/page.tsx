@@ -1,7 +1,7 @@
 'use client'
 
-import React, { Suspense, useState, useEffect, useMemo } from 'react'
-import { FileText, ArrowLeft, Loader2, Printer, Trash2, CheckCircle2, RotateCcw, X, ArrowDownToLine, PackageMinus } from 'lucide-react'
+import React, { Suspense, useState, useEffect, useMemo, useRef } from 'react'
+import { FileText, ArrowLeft, Loader2, Printer, Trash2, CheckCircle2, RotateCcw, X, ArrowDownToLine, PackageMinus, BarChart3 } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { format } from 'date-fns'
@@ -12,6 +12,7 @@ import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { QrCodeModal } from '@/app/(dashboard)/warehouses/lots/_components/QrCodeModal'
 import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
 import { QuickBulkExportModal } from '@/components/warehouse/map/QuickBulkExportModal'
+import { ExportOrderStatsModal } from '@/components/export/ExportOrderStatsModal'
 
 interface ExportOrderItem {
     id?: string
@@ -31,6 +32,7 @@ interface ExportOrderItem {
     display_status?: 'Pending' | 'Exported' | 'Moved to Hall' | 'Changed Position'
     current_position_name?: string
     is_hall?: boolean
+    priority?: number | null
 }
 
 interface ExportTask {
@@ -59,8 +61,12 @@ function ExportOrderDetailContent() {
     const [isBulkExportOpen, setIsBulkExportOpen] = useState(false)
     const [zones, setZones] = useState<any[]>([])
     const [qrLot, setQrLot] = useState<any>(null)
+    const [isStatsOpen, setIsStatsOpen] = useState(false)
 
     const taskId = params.id as string
+
+    // Ref to always call the latest fetchTaskDetails from realtime callbacks
+    const fetchRef = useRef<() => void>(() => { })
 
     useEffect(() => {
         if (taskId) {
@@ -71,17 +77,21 @@ function ExportOrderDetailContent() {
 
     // Live updates: subscribe to positions & export_task_items changes
     useEffect(() => {
+        fetchRef.current = () => fetchTaskDetails(true) // silent refresh
+    })
+
+    useEffect(() => {
         if (!taskId) return
 
         const channel = supabase
             .channel(`export_order_live_${taskId}`)
             .on('postgres_changes',
-                { event: '*', schema: 'public', table: 'positions' },
-                () => { fetchTaskDetails() }
+                { event: 'UPDATE', schema: 'public', table: 'positions' },
+                () => { fetchRef.current() }
             )
             .on('postgres_changes',
                 { event: '*', schema: 'public', table: 'export_task_items', filter: `task_id=eq.${taskId}` },
-                () => { fetchTaskDetails() }
+                () => { fetchRef.current() }
             )
             .subscribe()
 
@@ -142,8 +152,8 @@ function ExportOrderDetailContent() {
         return units
     }, [aggregatedItems])
 
-    async function fetchTaskDetails() {
-        setLoading(true)
+    async function fetchTaskDetails(silent = false) {
+        if (!silent) setLoading(true)
         try {
             const { data, error } = await supabase
                 .from('export_tasks')
@@ -154,6 +164,7 @@ function ExportOrderDetailContent() {
                         quantity,
                         unit,
                         status,
+                        priority,
                         position_id,
                         positions (code),
                         lots (
@@ -240,7 +251,8 @@ function ExportOrderDetailContent() {
                         quantity: item.quantity,
                         unit: item.unit,
                         status: item.status || 'Pending',
-                        display_status: displayStatus
+                        display_status: displayStatus,
+                        priority: item.priority || null
                     }
                 }).sort((a: any, b: any) => {
                     const posA = a.position_name || ''
@@ -512,6 +524,13 @@ function ExportOrderDetailContent() {
                 </div>
 
                 <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => setIsStatsOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-indigo-700 transition-colors"
+                    >
+                        <BarChart3 size={16} />
+                        Thống kê
+                    </button>
                     <button
                         onClick={() => window.open(`/print/export-order?id=${task.id}`, '_blank')}
                         className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-blue-700 transition-colors"
@@ -840,6 +859,41 @@ function ExportOrderDetailContent() {
                     onClose={() => setQrLot(null)}
                 />
             )}
+
+            <ExportOrderStatsModal
+                isOpen={isStatsOpen}
+                taskCode={task.code}
+                exportPositionIds={new Set(task.items?.map(i => i.position_id).filter(Boolean) as string[])}
+                exportItemStatuses={(() => {
+                    const map: Record<string, string> = {}
+                    task.items?.forEach(item => {
+                        if (item.position_id && item.display_status) {
+                            map[item.position_id] = item.display_status
+                        }
+                    })
+                    return map
+                })()}
+                exportItemInfoMap={(() => {
+                    const map: Record<string, any> = {}
+                    task.items?.forEach(item => {
+                        if (item.position_id) {
+                            map[item.position_id] = {
+                                item_id: item.id,
+                                lot_code: item.lot_code,
+                                product_name: item.product_name,
+                                sku: item.sku,
+                                quantity: item.quantity,
+                                unit: item.unit,
+                                display_status: item.display_status,
+                                priority: item.priority || undefined
+                            }
+                        }
+                    })
+                    return map
+                })()}
+                onClose={() => setIsStatsOpen(false)}
+                onPrioritiesChanged={() => fetchTaskDetails(true)}
+            />
         </div>
     )
 }

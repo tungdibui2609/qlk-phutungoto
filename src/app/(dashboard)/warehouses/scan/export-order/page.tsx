@@ -28,11 +28,13 @@ interface TaskItem {
     lot_code: string
     position_id: string | null
     position_name: string
+    current_position_name: string
     product_name: string
     sku: string
     quantity: number
     unit: string
     status: string
+    display_status: 'Pending' | 'Moved to Hall' | 'Changed Position' | 'Exported'
     scanned?: boolean // Local state for tracking
 }
 
@@ -122,43 +124,92 @@ export default function ExportOrderScanPage() {
         }
     }
 
-    async function selectTask(task: ExportTask) {
-        setSelectedTask(task)
-        setLoading(true)
+    async function fetchTaskItems(taskId: string, silent = false) {
+        if (!silent) setLoading(true)
         try {
             const { data, error } = await supabase
                 .from('export_task_items')
                 .select(`
                     id, quantity, unit, status, lot_id, position_id,
-                    lots (id, code),
+                    lots (id, code, positions (code, is_hall:zone_positions(zone_id))),
                     positions (code),
                     products (name, sku)
                 `)
-                .eq('task_id', task.id)
+                .eq('task_id', taskId)
 
             if (error) throw error
 
-            const items: TaskItem[] = (data || []).map((item: any) => ({
-                id: item.id,
-                lot_id: item.lots?.id || item.lot_id,
-                lot_code: item.lots?.code || 'N/A',
-                position_id: item.position_id,
-                position_name: item.positions?.code || 'N/A',
-                product_name: item.products?.name || 'N/A',
-                sku: item.products?.sku || 'N/A',
-                quantity: item.quantity,
-                unit: item.unit || '',
-                status: item.status || 'Pending',
-                scanned: false
-            }))
+            // Ensure zones are loaded
+            let currentZones = zones
+            if (currentZones.length === 0) {
+                const { data: zData } = await supabase.from('zones').select('*')
+                if (zData) {
+                    currentZones = zData
+                    setZones(zData)
+                }
+            }
+
+            const items: TaskItem[] = (data || []).map((item: any) => {
+                const originalPosCode = item.positions?.code || 'N/A'
+                let currentPosCode = originalPosCode
+                let isHall = false
+
+                if (item.lots?.positions && item.lots.positions.length > 0) {
+                    currentPosCode = item.lots.positions[0].code
+
+                    const isHallRelation = item.lots.positions[0].is_hall
+                    const leafZoneId = Array.isArray(isHallRelation)
+                        ? isHallRelation[0]?.zone_id
+                        : isHallRelation?.zone_id
+
+                    if (leafZoneId) {
+                        let currId = leafZoneId
+                        while (currId) {
+                            const z = currentZones.find((x: any) => x.id === currId)
+                            if (!z) break
+                            if (z.is_hall) {
+                                isHall = true
+                                break
+                            }
+                            currId = z.parent_id
+                        }
+                    }
+                }
+
+                let displayStatus: TaskItem['display_status'] = item.status === 'Exported' ? 'Exported' : 'Pending'
+                if (displayStatus === 'Pending' && originalPosCode !== currentPosCode) {
+                    displayStatus = isHall ? 'Moved to Hall' : 'Changed Position'
+                }
+
+                return {
+                    id: item.id,
+                    lot_id: item.lots?.id || item.lot_id,
+                    lot_code: item.lots?.code || 'N/A',
+                    position_id: item.position_id,
+                    position_name: originalPosCode,
+                    current_position_name: currentPosCode,
+                    product_name: item.products?.name || 'N/A',
+                    sku: item.products?.sku || 'N/A',
+                    quantity: item.quantity,
+                    unit: item.unit || '',
+                    status: item.status || 'Pending',
+                    display_status: displayStatus,
+                    scanned: displayStatus === 'Moved to Hall' || displayStatus === 'Changed Position' || displayStatus === 'Exported'
+                }
+            }).sort((a, b) => a.position_name.localeCompare(b.position_name))
 
             setTaskItems(items)
-            setStep('scan')
         } catch (error: any) {
             showToast('Lỗi tải chi tiết lệnh: ' + error.message, 'error')
         } finally {
-            setLoading(false)
+            if (!silent) setLoading(false)
         }
+    }
+
+    async function selectTask(task: ExportTask) {
+        setSelectedTask(task)
+        await fetchTaskItems(task.id)
+        setStep('scan')
     }
 
     function handleReset() {
@@ -292,15 +343,11 @@ export default function ExportOrderScanPage() {
 
             if (updateError) throw updateError
 
-            // Mark item as scanned locally
-            setTaskItems(prev => prev.map(item =>
-                item.id === pendingItemId
-                    ? { ...item, scanned: true }
-                    : item
-            ))
-
             const matchingItem = taskItems.find(i => i.id === pendingItemId)
             showToast(`Đã hạ sảnh LOT "${matchingItem?.lot_code}" thành công!`, 'success')
+
+            // Re-fetch items to get updated status
+            if (selectedTask) await fetchTaskItems(selectedTask.id, true)
 
         } catch (error: any) {
             showToast('Lỗi khi hạ sảnh: ' + error.message, 'error')
@@ -507,47 +554,60 @@ export default function ExportOrderScanPage() {
                                 Danh sách LOT trong lệnh ({totalCount})
                             </h3>
                             <div className="space-y-1.5">
-                                {taskItems.map(item => (
-                                    <div
-                                        key={item.id}
-                                        className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all ${item.scanned
-                                                ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800'
-                                                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
-                                            }`}
-                                    >
-                                        {/* Status */}
-                                        <div className={`p-1.5 rounded-lg shrink-0 ${item.scanned
-                                                ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600'
-                                                : 'bg-slate-100 dark:bg-slate-700 text-slate-400'
-                                            }`}>
-                                            {item.scanned
-                                                ? <CheckCircle2 size={18} />
-                                                : <ArrowDownToLine size={18} />
-                                            }
-                                        </div>
-
-                                        {/* Info */}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <span className={`font-mono text-sm font-black ${item.scanned ? 'text-emerald-600' : 'text-blue-600'
-                                                    }`}>
-                                                    {item.lot_code}
-                                                </span>
-                                                <span className="text-stone-300">•</span>
-                                                <span className="text-xs text-stone-500 font-mono">{item.position_name}</span>
+                                {taskItems.map(item => {
+                                    const isPending = item.display_status === 'Pending'
+                                    const isExported = item.display_status === 'Exported'
+                                    const isHall = item.display_status === 'Moved to Hall'
+                                    const isChanged = item.display_status === 'Changed Position'
+                                    const statusLabel = isHall ? 'Hạ sảnh' : isChanged ? 'Đổi vị trí' : isExported ? 'Đã xuất' : ''
+                                    return (
+                                        <div
+                                            key={item.id}
+                                            className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all ${isExported ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800'
+                                                    : isHall ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+                                                        : isChanged ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+                                                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
+                                                }`}
+                                        >
+                                            {/* Status Icon */}
+                                            <div className={`p-1.5 rounded-lg shrink-0 ${isPending ? 'bg-slate-100 dark:bg-slate-700 text-slate-400'
+                                                    : isExported ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600'
+                                                        : 'bg-amber-100 dark:bg-amber-900/50 text-amber-600'
+                                                }`}>
+                                                {isPending ? <ArrowDownToLine size={18} /> : <CheckCircle2 size={18} />}
                                             </div>
-                                            <div className="text-xs text-stone-500 truncate">
-                                                <span className="font-bold">{item.sku}</span> – {item.product_name}
+
+                                            {/* Info */}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className={`font-mono text-sm font-black ${isPending ? 'text-blue-600' : isExported ? 'text-emerald-600' : isHall ? 'text-amber-600' : 'text-blue-600'
+                                                        }`}>
+                                                        {item.lot_code}
+                                                    </span>
+                                                    <span className="text-stone-300">•</span>
+                                                    <span className="text-xs text-stone-500 font-mono">{item.position_name}</span>
+                                                    {!isPending && (
+                                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${isExported ? 'bg-emerald-100 text-emerald-600'
+                                                                : isHall ? 'bg-amber-100 text-amber-600'
+                                                                    : 'bg-blue-100 text-blue-600'
+                                                            }`}>
+                                                            {statusLabel}{(isHall || isChanged) ? ` → ${item.current_position_name}` : ''}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="text-xs text-stone-500 truncate">
+                                                    <span className="font-bold">{item.sku}</span> – {item.product_name}
+                                                </div>
+                                            </div>
+
+                                            {/* Quantity */}
+                                            <div className="text-right shrink-0">
+                                                <span className="text-sm font-bold text-slate-900 dark:text-white">{item.quantity}</span>
+                                                <span className="text-[10px] text-slate-400 ml-1">{item.unit}</span>
                                             </div>
                                         </div>
-
-                                        {/* Quantity */}
-                                        <div className="text-right shrink-0">
-                                            <span className="text-sm font-bold text-slate-900 dark:text-white">{item.quantity}</span>
-                                            <span className="text-[10px] text-slate-400 ml-1">{item.unit}</span>
-                                        </div>
-                                    </div>
-                                ))}
+                                    )
+                                })}
                             </div>
                         </div>
                     </div>

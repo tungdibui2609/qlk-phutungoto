@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { ChevronDown, MoreHorizontal, CheckSquare, Square, Eye } from 'lucide-react'
+import { ChevronDown, MoreHorizontal, CheckSquare, Square, Eye, ArrowUpDown } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { PositionWithZone } from '../_hooks/useWarehouseData'
 
@@ -16,6 +16,9 @@ interface MapSearchStatsProps {
     onViewDetails?: (lotId: string) => void
     selectedPositionIds?: Set<string>
     onBulkSelect?: (ids: string[], shouldSelect: boolean) => void
+    isFifoEnabled?: boolean
+    isFifoAvailable?: boolean
+    onToggleFifo?: () => void
 }
 
 interface PositionCardProps {
@@ -125,6 +128,25 @@ const MemoizedPositionCard = React.memo(function PositionCard({
             ) : (
                 <div className="text-slate-400 italic mt-auto text-[10px] text-center mb-auto pt-2">Trống</div>
             )}
+            {/* Date info - same logic as FlexibleZoneGrid */}
+            {lot && (() => {
+                const dates: string[] = []
+                if (lot.peeling_date) {
+                    dates.push(`B: ${new Date(lot.peeling_date).toLocaleDateString('vi-VN')}`)
+                }
+                if (lot.packaging_date) {
+                    dates.push(`Đ: ${new Date(lot.packaging_date).toLocaleDateString('vi-VN')}`)
+                }
+                if (lot.inbound_date && !lot.peeling_date && !lot.packaging_date) {
+                    dates.push(`N: ${new Date(lot.inbound_date).toLocaleDateString('vi-VN')}`)
+                }
+                if (dates.length === 0) return null
+                return (
+                    <div className="text-[8px] text-orange-600 dark:text-orange-400 font-bold text-center border-t border-slate-100 dark:border-slate-700/50 pt-0.5 mt-auto leading-tight">
+                        {dates.join(' | ')}
+                    </div>
+                )
+            })()}
         </div>
     )
 }, (prev, next) => {
@@ -143,7 +165,10 @@ export function MapSearchStats({
     onPositionMenu,
     onViewDetails,
     selectedPositionIds = new Set(),
-    onBulkSelect
+    onBulkSelect,
+    isFifoEnabled,
+    isFifoAvailable,
+    onToggleFifo
 }: MapSearchStatsProps) {
     // Helper to build full zone path
     const getZonePath = (zoneId: string) => {
@@ -164,18 +189,28 @@ export function MapSearchStats({
     const stats = useMemo(() => {
         if (!searchTerm) return null
 
-        const zoneStats: Record<string, { id: string; count: number; quantity: number; name: string }> = {}
+        const zoneStats: Record<string, { id: string; count: number; quantity: number; name: string; oldestDate: string | null; newestDate: string | null }> = {}
         let totalQty = 0
+        let globalOldest: string | null = null
+        let globalNewest: string | null = null
 
         filteredPositions.forEach(pos => {
             // Calculate Quantity
             let qty = 0
+            let posDate: string | null = null
             if (pos.lot_id && lotInfo[pos.lot_id]) {
                 const lot = lotInfo[pos.lot_id]
                 const items = lot.items || []
                 qty = items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
+                posDate = lot.inbound_date || lot.created_at || null
             }
             totalQty += qty
+
+            // Track global oldest/newest
+            if (posDate) {
+                if (!globalOldest || posDate < globalOldest) globalOldest = posDate
+                if (!globalNewest || posDate > globalNewest) globalNewest = posDate
+            }
 
             // Group by Zone
             if (pos.zone_id) {
@@ -184,11 +219,18 @@ export function MapSearchStats({
                         id: pos.zone_id,
                         count: 0,
                         quantity: 0,
-                        name: getZonePath(pos.zone_id)
+                        name: getZonePath(pos.zone_id),
+                        oldestDate: null,
+                        newestDate: null
                     }
                 }
                 zoneStats[pos.zone_id].count++
                 zoneStats[pos.zone_id].quantity += qty
+                if (posDate) {
+                    const z = zoneStats[pos.zone_id]
+                    if (!z.oldestDate || posDate < z.oldestDate) z.oldestDate = posDate
+                    if (!z.newestDate || posDate > z.newestDate) z.newestDate = posDate
+                }
             }
         })
 
@@ -198,7 +240,9 @@ export function MapSearchStats({
         return {
             totalPositions: filteredPositions.length,
             totalQuantity: totalQty,
-            zoneBreakdown: sortedZones
+            zoneBreakdown: sortedZones,
+            oldestDate: globalOldest,
+            newestDate: globalNewest
         }
     }, [filteredPositions, zones, lotInfo, searchTerm])
 
@@ -236,6 +280,30 @@ export function MapSearchStats({
             <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
                 <span>Kết quả tìm kiếm:</span>
                 <span className="text-orange-600 dark:text-orange-400">"{searchTerm}"</span>
+                {isFifoAvailable && (
+                    <label className="inline-flex items-center gap-2 cursor-pointer select-none ml-auto">
+                        <button
+                            role="switch"
+                            aria-checked={isFifoEnabled}
+                            onClick={onToggleFifo}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none ${isFifoEnabled
+                                ? 'bg-orange-500'
+                                : 'bg-slate-300 dark:bg-slate-600'
+                                }`}
+                        >
+                            <span
+                                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200 ${isFifoEnabled ? 'translate-x-[22px]' : 'translate-x-[2px]'
+                                    }`}
+                            />
+                        </button>
+                        <span className={`text-sm font-semibold ${isFifoEnabled
+                            ? 'text-slate-800 dark:text-slate-200'
+                            : 'text-slate-400 dark:text-slate-500'
+                            }`}>
+                            Ưu tiên FIFO
+                        </span>
+                    </label>
+                )}
             </h3>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
@@ -252,6 +320,18 @@ export function MapSearchStats({
                     </div>
                 </div>
             </div>
+
+            {/* FIFO Date Range Info */}
+            {isFifoEnabled && (stats.oldestDate || stats.newestDate) && (
+                <div className="mb-4 px-3 py-2 bg-orange-50 dark:bg-orange-900/10 rounded-lg border border-orange-100 dark:border-orange-900/20">
+                    <div className="text-xs font-bold text-orange-700 dark:text-orange-400">
+                        Ngày cũ nhất: {stats.oldestDate ? new Date(stats.oldestDate).toLocaleDateString('vi-VN') : '--'}
+                    </div>
+                    <div className="text-xs font-bold text-orange-700 dark:text-orange-400">
+                        Ngày mới nhất: {stats.newestDate ? new Date(stats.newestDate).toLocaleDateString('vi-VN') : '--'}
+                    </div>
+                </div>
+            )}
 
             <div className="space-y-2">
                 <div className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Phân bố theo khu vực</div>
@@ -301,12 +381,41 @@ export function MapSearchStats({
                                         )}
                                     </div>
                                 </div>
+                                {/* Per-zone FIFO date info */}
+                                {isFifoEnabled && (zone.oldestDate || zone.newestDate) && (
+                                    <div className="px-3 pb-1.5 -mt-0.5">
+                                        <div className="text-[11px] font-bold text-orange-600 dark:text-orange-400">
+                                            Ngày cũ nhất: {zone.oldestDate ? new Date(zone.oldestDate).toLocaleDateString('vi-VN') : '--'}
+                                        </div>
+                                        <div className="text-[11px] font-bold text-orange-600 dark:text-orange-400">
+                                            Ngày mới nhất: {zone.newestDate ? new Date(zone.newestDate).toLocaleDateString('vi-VN') : '--'}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Expanded Position Grid */}
                                 {isExpanded && (
                                     <div className="p-2 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50">
+                                        {isFifoEnabled && (
+                                            <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mb-1.5 flex items-center gap-1">
+                                                <ArrowUpDown size={10} />
+                                                Sắp xếp theo ngày nhập kho (cũ nhất trước)
+                                            </div>
+                                        )}
                                         <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2">
-                                            {zonePositions.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })).map(pos => renderPositionCard(pos))}
+                                            {[...zonePositions].sort((a, b) => {
+                                                if (isFifoEnabled) {
+                                                    const lotA = a.lot_id ? lotInfo[a.lot_id] : null
+                                                    const lotB = b.lot_id ? lotInfo[b.lot_id] : null
+                                                    if (!lotA && !lotB) return 0
+                                                    if (!lotA) return 1
+                                                    if (!lotB) return -1
+                                                    const dateA = lotA.inbound_date || lotA.created_at || ''
+                                                    const dateB = lotB.inbound_date || lotB.created_at || ''
+                                                    return dateA.localeCompare(dateB)
+                                                }
+                                                return (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
+                                            }).map(pos => renderPositionCard(pos))}
                                         </div>
                                     </div>
                                 )}

@@ -7,9 +7,10 @@ interface UseMapFiltersProps {
     positions: PositionWithZone[]
     zones: any[] // Should be Zone type
     lotInfo: Record<string, any>
+    isFifoEnabled?: boolean
 }
 
-export function useMapFilters({ positions, zones, lotInfo }: UseMapFiltersProps) {
+export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseMapFiltersProps) {
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [searchTerm, setSearchTerm] = useState('')
 
@@ -17,6 +18,10 @@ export function useMapFilters({ positions, zones, lotInfo }: UseMapFiltersProps)
     const [dateFilterField, setDateFilterField] = useState<DateFilterField>('created_at')
     const [startDate, setStartDate] = useState('')
     const [endDate, setEndDate] = useState('')
+
+    // FIFO Toggle (local, defaults to ON when module is enabled)
+    const [fifoActive, setFifoActive] = useState(true)
+    const isFifoActive = !!isFifoEnabled && fifoActive
 
     // Filter positions by all filters
     const filteredPositions = useMemo(() => {
@@ -87,8 +92,26 @@ export function useMapFilters({ positions, zones, lotInfo }: UseMapFiltersProps)
             result = result.filter(p => p.zone_id && validZoneIds.has(p.zone_id))
         }
 
+        // FIFO Sorting: When active and searching, sort by inbound_date ascending (oldest first)
+        if (isFifoActive && searchTerm) {
+            result = [...result].sort((a, b) => {
+                const lotA = a.lot_id ? lotInfo[a.lot_id] : null
+                const lotB = b.lot_id ? lotInfo[b.lot_id] : null
+
+                // Positions without lots go to the end
+                if (!lotA && !lotB) return 0
+                if (!lotA) return 1
+                if (!lotB) return -1
+
+                const dateA = lotA.inbound_date || lotA.created_at || ''
+                const dateB = lotB.inbound_date || lotB.created_at || ''
+
+                return dateA.localeCompare(dateB) // ascending = oldest first
+            })
+        }
+
         return result
-    }, [positions, selectedZoneId, searchTerm, zones, lotInfo, startDate, endDate, dateFilterField])
+    }, [positions, selectedZoneId, searchTerm, zones, lotInfo, startDate, endDate, dateFilterField, isFifoActive])
 
     // Filter zones to pass to grid based on selection
     const filteredZones = useMemo(() => {
@@ -121,6 +144,10 @@ export function useMapFilters({ positions, zones, lotInfo }: UseMapFiltersProps)
         startDate, setStartDate,
         endDate, setEndDate,
         filteredPositions,
-        filteredZones
+        filteredZones,
+        // FIFO
+        isFifoAvailable: !!isFifoEnabled,
+        isFifoActive,
+        toggleFifo: () => setFifoActive(prev => !prev)
     }
 }

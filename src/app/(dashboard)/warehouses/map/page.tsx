@@ -30,7 +30,7 @@ type ZoneLayout = Database['public']['Tables']['zone_layouts']['Row']
 
 function WarehouseMapContent() {
     const { showToast } = useToast()
-    const { systemType, currentSystem } = useSystem()
+    const { systemType, currentSystem, hasModule } = useSystem()
     const searchParams = useSearchParams()
     const router = useRouter()
     const assignLotId = searchParams.get('assignLotId')
@@ -62,8 +62,11 @@ function WarehouseMapContent() {
         startDate, setStartDate,
         endDate, setEndDate,
         filteredPositions,
-        filteredZones
-    } = useMapFilters({ positions, zones, lotInfo })
+        filteredZones,
+        isFifoAvailable,
+        isFifoActive,
+        toggleFifo
+    } = useMapFilters({ positions, zones, lotInfo, isFifoEnabled: hasModule('fifo_priority') })
 
     // 3. UI State
     const [isMobile, setIsMobile] = useState(false)
@@ -497,6 +500,9 @@ function WarehouseMapContent() {
                 onViewDetails={fetchFullLotDetails}
                 selectedPositionIds={selectedPositionIds}
                 onBulkSelect={handleBulkSelect}
+                isFifoEnabled={isFifoActive}
+                isFifoAvailable={isFifoAvailable}
+                onToggleFifo={toggleFifo}
             />
 
             {/* Map Grid Area */}
