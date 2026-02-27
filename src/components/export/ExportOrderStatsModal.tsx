@@ -155,12 +155,11 @@ function ZoneDetailSubModal({
 
                 {/* Table Header */}
                 <div className="px-5 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 grid grid-cols-12 gap-3 text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                    <div className="col-span-1">Vị trí</div>
+                    <div className="col-span-3">Vị trí</div>
                     <div className="col-span-2">Mã LOT</div>
                     <div className="col-span-3">Mã SP</div>
                     <div className="col-span-2 text-center">SL</div>
-                    <div className="col-span-1 text-center">Ghi chú</div>
-                    <div className="col-span-3 text-center">Ưu tiên</div>
+                    <div className="col-span-2 text-center">Ưu tiên</div>
                 </div>
 
                 {/* Table Content */}
@@ -182,10 +181,26 @@ function ZoneDetailSubModal({
                                         className="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
                                     >
                                         {/* Position Code */}
-                                        <div className="col-span-1">
-                                            <span className="font-black text-sm text-slate-800 dark:text-white">
-                                                {pos.code.split('-').pop()}
-                                            </span>
+                                        <div className="col-span-3 flex flex-col justify-center min-w-0 pr-1">
+                                            {(() => {
+                                                const sep = pos.code.includes('-') ? '-' : pos.code.includes('.') ? '.' : null;
+                                                const hasParent = sep && pos.code.lastIndexOf(sep) > 0;
+                                                const parentPath = hasParent ? pos.code.substring(0, pos.code.lastIndexOf(sep)) : '';
+                                                const leaf = sep ? pos.code.split(sep).pop() : pos.code;
+
+                                                return (
+                                                    <>
+                                                        {hasParent && (
+                                                            <span className="font-bold text-[9px] text-slate-500 dark:text-slate-400 truncate" title={parentPath}>
+                                                                {parentPath}
+                                                            </span>
+                                                        )}
+                                                        <span className="font-black text-sm text-slate-800 dark:text-white truncate" title={pos.code}>
+                                                            {leaf}
+                                                        </span>
+                                                    </>
+                                                )
+                                            })()}
                                         </div>
 
                                         {/* Lot Code */}
@@ -218,13 +233,8 @@ function ZoneDetailSubModal({
                                             )}
                                         </div>
 
-                                        {/* Notes */}
-                                        <div className="col-span-1 text-center">
-                                            <span className="text-xs text-slate-400">-</span>
-                                        </div>
-
                                         {/* Priority Dots */}
-                                        <div className="col-span-3 flex items-center justify-center gap-2">
+                                        <div className="col-span-2 flex items-center justify-center gap-2">
                                             {PRIORITY_COLORS.map(pc => {
                                                 const isActive = currentPriority === pc.level
                                                 return (
@@ -517,6 +527,20 @@ export function ExportOrderStatsModal({
         }
     }
 
+    const getZoneFullName = (zoneId: string) => {
+        const parts: string[] = []
+        let curr: string | null | undefined = zoneId
+        const seen = new Set()
+        while (curr && !seen.has(curr)) {
+            seen.add(curr)
+            const z = zones.find(x => x.id === curr)
+            if (!z) break
+            parts.unshift(z.name)
+            curr = z.parent_id
+        }
+        return parts.join(' - ') || 'N/A'
+    }
+
     function renderZone(
         zone: Zone & { children: Zone[], positions: PositionWithZone[] },
         depth: number = 0,
@@ -576,8 +600,8 @@ export function ExportOrderStatsModal({
                 {depth === 0 && zoneStats ? (
                     <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
                         <div className="flex items-center justify-between">
-                            <h3 className="text-lg font-black text-slate-800 dark:text-white">
-                                {zone.name}
+                            <h3 className="text-lg font-black text-slate-800 dark:text-white uppercase tracking-tight">
+                                {getZoneFullName(zone.id)}
                             </h3>
                             <div className="flex items-center gap-3 text-xs text-slate-500">
                                 <div className="flex items-center gap-1.5">
@@ -691,7 +715,7 @@ export function ExportOrderStatsModal({
                 onClick={() => openZoneDetail(fullTitle, allPositions)}
             >
                 <div className="flex items-center justify-between mb-2 px-1">
-                    <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">
+                    <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight truncate mr-2" title={compactTitle}>
                         {compactTitle}
                     </span>
                     <span className="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 px-1.5 py-0.5 shadow-sm rounded">

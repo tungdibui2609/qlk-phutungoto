@@ -33,6 +33,8 @@ interface ExportOrderItem {
     current_position_name?: string
     is_hall?: boolean
     priority?: number | null
+    zone_path?: string[]
+    full_position_path?: string | null
 }
 
 interface ExportTask {
@@ -166,14 +168,17 @@ function ExportOrderDetailContent() {
                         status,
                         priority,
                         position_id,
-                        positions (code),
+                        positions (
+                            code,
+                            zone_positions(zone_id)
+                        ),
                         lots (
                             id, 
                             code, 
                             inbound_date, 
                             positions (
                                 code,
-                                is_hall:zone_positions(zone_id)
+                                zone_positions(zone_id)
                             )
                         ),
                         products (name, sku, image_url)
@@ -204,6 +209,11 @@ function ExportOrderDetailContent() {
                     const originalPosCode = item.positions?.code || 'N/A'
                     const originalPosId = item.position_id
 
+                    let originalZoneId = null
+                    if (item.positions?.zone_positions && item.positions.zone_positions.length > 0) {
+                        originalZoneId = item.positions.zone_positions[0].zone_id
+                    }
+
                     // Current position of the lot
                     let currentPosCode = originalPosCode
                     let isHall = false
@@ -211,10 +221,10 @@ function ExportOrderDetailContent() {
                     if (item.lots?.positions && item.lots?.positions.length > 0) {
                         currentPosCode = item.lots.positions[0].code
 
-                        const isHallRelation = item.lots.positions[0].is_hall
-                        const leafZoneId = Array.isArray(isHallRelation)
-                            ? isHallRelation[0]?.zone_id
-                            : isHallRelation?.zone_id
+                        const zps = item.lots.positions[0].zone_positions
+                        const leafZoneId = Array.isArray(zps)
+                            ? zps[0]?.zone_id
+                            : zps?.zone_id
 
                         if (leafZoneId) {
                             let currId = leafZoneId
@@ -229,6 +239,24 @@ function ExportOrderDetailContent() {
                             }
                         }
                     }
+
+                    function getZonePath(zoneId: string | null): string[] {
+                        if (!zoneId) return []
+                        const parts: string[] = []
+                        let currId = zoneId
+                        const seen = new Set()
+                        while (currId && !seen.has(currId)) {
+                            seen.add(currId)
+                            const z = currentZones.find((x: any) => x.id === currId)
+                            if (!z) break
+                            parts.unshift(z.name)
+                            currId = z.parent_id
+                        }
+                        return parts
+                    }
+
+                    const zonePath = getZonePath(originalZoneId)
+                    const fullPosPath = zonePath.length > 0 ? `${zonePath.join(' - ')} - ${originalPosCode.includes('-') ? originalPosCode.split('-').pop() : originalPosCode}` : null
 
                     // Determine display status
                     let displayStatus: ExportOrderItem['display_status'] = item.status === 'Exported' ? 'Exported' : 'Pending'
@@ -252,7 +280,9 @@ function ExportOrderDetailContent() {
                         unit: item.unit,
                         status: item.status || 'Pending',
                         display_status: displayStatus,
-                        priority: item.priority || null
+                        priority: item.priority || null,
+                        zone_path: zonePath,
+                        full_position_path: fullPosPath
                     }
                 }).sort((a: any, b: any) => {
                     const posA = a.position_name || ''
@@ -593,18 +623,25 @@ function ExportOrderDetailContent() {
                                         )}
                                     </td>
                                     <td className="px-6 py-4">
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                            <span className="bg-stone-100 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 px-2 py-1 rounded text-xs font-bold text-stone-700 dark:text-zinc-300 font-mono">
-                                                {item.position_name}
-                                            </span>
-                                            {item.position_name !== item.current_position_name && (
-                                                <>
-                                                    <span className="text-stone-400">➔</span>
-                                                    <span className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 px-2 py-1 rounded text-xs font-bold text-blue-700 dark:text-blue-300 font-mono">
-                                                        {item.current_position_name}
-                                                    </span>
-                                                </>
+                                        <div className="flex flex-col gap-1.5">
+                                            {item.full_position_path && (
+                                                <span className="text-[10px] text-stone-500 font-bold truncate max-w-[200px]" title={item.full_position_path}>
+                                                    {item.zone_path?.join(' - ')}
+                                                </span>
                                             )}
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className="bg-stone-100 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 px-2 py-1 rounded text-xs font-bold text-stone-700 dark:text-zinc-300 font-mono">
+                                                    {item.full_position_path ? item.position_name.split('-').pop() : item.position_name}
+                                                </span>
+                                                {item.position_name !== item.current_position_name && (
+                                                    <>
+                                                        <span className="text-stone-400">➔</span>
+                                                        <span className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 px-2 py-1 rounded text-xs font-bold text-blue-700 dark:text-blue-300 font-mono">
+                                                            {item.full_position_path ? item.current_position_name?.split('-').pop() : item.current_position_name}
+                                                        </span>
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
                                     </td>
                                     <td className="px-6 py-4">
@@ -661,7 +698,8 @@ function ExportOrderDetailContent() {
                                 current_position_name: item.current_position_name,
                                 display_status: item.display_status,
                                 product_name: item.product_name,
-                                sku: item.sku
+                                sku: item.sku,
+                                zone_path: item.zone_path
                             }))}
                             onPositionSelect={handlePositionSelect}
                             selectedIds={selectedPositionIds}

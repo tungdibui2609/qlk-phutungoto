@@ -13,6 +13,7 @@ interface ExportItemProps {
     status: string
     display_status?: string
     current_position_name?: string
+    zone_path?: string[]
     onPositionSelect?: (id: string) => void
     isSelected?: boolean
 }
@@ -63,18 +64,29 @@ export function parsePositionPrefix(prefix: string): string {
 }
 
 export function ExportMapList({ items, onPositionSelect, selectedIds = new Set(), onBulkSelect, onViewLotDetails, readOnly = false }: ExportMapListProps) {
-    // Group items by zone prefix (e.g. "NK1.N1KAD1T1" from "NK1.N1KAD1T1.VT1")
+    // Group items by zone prefix or dynamic zone_path
     const groupedItems = useMemo(() => {
         const groups: Record<string, ExportItemProps[]> = {}
+        const groupNames: Record<string, string> = {}
         items.forEach(item => {
             let prefix = item.position_name
-            const lastDotIdx = item.position_name.lastIndexOf('.')
-            // Typically VT is the last dot part
-            if (lastDotIdx > 0 && item.position_name.toUpperCase().includes('VT')) {
-                prefix = item.position_name.substring(0, lastDotIdx)
+            let name = ""
+
+            if (item.zone_path && item.zone_path.length > 0) {
+                prefix = item.zone_path.join('|')
+                name = item.zone_path.slice(1).join(' - ') || item.zone_path[0]
+            } else {
+                const lastDotIdx = item.position_name.lastIndexOf('.')
+                // Typically VT is the last dot part
+                if (lastDotIdx > 0 && item.position_name.toUpperCase().includes('VT')) {
+                    prefix = item.position_name.substring(0, lastDotIdx)
+                }
+                name = parsePositionPrefix(prefix)
             }
+
             if (!groups[prefix]) {
                 groups[prefix] = []
+                groupNames[prefix] = name
             }
             groups[prefix].push(item)
         })
@@ -86,7 +98,7 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
 
             return {
                 prefix,
-                name: parsePositionPrefix(prefix),
+                name: groupNames[prefix],
                 items: currentItems
             }
         }).sort((a, b) => a.prefix.localeCompare(b.prefix)) // Sort alphabetically so NK1 comes before NK2, etc.
@@ -115,14 +127,23 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
         }> = {}
 
         groupedItems.forEach(group => {
-            const parts = group.prefix.split('.')
-            const parentPrefix = parts[0]
+            let parentPrefix = ""
+            let formattedParentZone = ""
 
-            let formattedParentZone = parentPrefix
-            if (parentPrefix.startsWith('NK')) {
-                formattedParentZone = `NHÀ KHO ${parentPrefix.replace('NK', '')}`
+            const firstItem = group.items[0]
+            if (firstItem && firstItem.zone_path && firstItem.zone_path.length > 0) {
+                const parentPathArray = firstItem.zone_path.length > 1 ? firstItem.zone_path.slice(0, -1) : firstItem.zone_path
+                parentPrefix = parentPathArray.join('|')
+                formattedParentZone = parentPathArray.join(' - ')
             } else {
-                formattedParentZone = parentPrefix.toUpperCase()
+                const parts = group.prefix.split('.')
+                parentPrefix = parts[0]
+                formattedParentZone = parentPrefix
+                if (parentPrefix.startsWith('NK')) {
+                    formattedParentZone = `NHÀ KHO ${parentPrefix.replace('NK', '')}`
+                } else {
+                    formattedParentZone = parentPrefix.toUpperCase()
+                }
             }
 
             if (!pGroups[parentPrefix]) {

@@ -1,0 +1,434 @@
+/* ========================================
+   MOBILE HUB - Premium Dark Theme
+   Inspired by qlk-mobile native app
+   ======================================== */
+
+/* Safe area / viewport helpers */
+.mobile-app {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --tab-height: 64px;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: #18181b;
+  color: #fafafa;
+  overflow: hidden;
+  position: fixed;
+  inset: 0;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Main content area */
+.mobile-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(var(--tab-height) + var(--safe-bottom) + 8px);
+}
+
+/* ========== BOTTOM TAB BAR ========== */
+.mobile-tab-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  height: calc(var(--tab-height) + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+  background: #ffffff;
+  border-top: 1px solid #e4e4e7;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.mobile-tab-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  border: none;
+  background: none;
+  outline: none;
+  min-width: 56px;
+}
+
+.mobile-tab-item:active {
+  transform: scale(0.9);
+}
+
+.mobile-tab-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-tab-label {
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.mobile-tab-item--active .mobile-tab-icon {
+  color: #2563eb;
+}
+
+.mobile-tab-item--active .mobile-tab-label {
+  color: #2563eb;
+}
+
+.mobile-tab-item--inactive .mobile-tab-icon {
+  color: #a1a1aa;
+}
+
+.mobile-tab-item--inactive .mobile-tab-label {
+  color: #a1a1aa;
+}
+
+/* ========== HEADER ========== */
+.mobile-header {
+  padding: calc(var(--safe-top) + 12px) 20px 12px;
+  background: #ffffff;
+  border-bottom: 1px solid #e4e4e7;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.mobile-header-brand {
+  font-size: 10px;
+  font-weight: 800;
+  color: #2563eb;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.mobile-header-title {
+  font-size: 28px;
+  font-weight: 900;
+  color: #18181b;
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+}
+
+.mobile-header-subtitle {
+  font-size: 10px;
+  color: #a1a1aa;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+.mobile-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ========== CARDS ========== */
+.mobile-card {
+  background: #ffffff;
+  border-radius: 24px;
+  border: 1px solid #f4f4f5;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  transition: transform 0.15s ease;
+}
+
+.mobile-card:active {
+  transform: scale(0.98);
+}
+
+.mobile-card-premium {
+  background: #ffffff;
+  border-radius: 32px;
+  border: 1px solid #f4f4f5;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+/* ========== SCANNER ========== */
+.mobile-scanner {
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: 320px;
+  background: #000;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 4px solid #ffffff;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+  position: relative;
+  margin: 0 auto;
+}
+
+.mobile-scanner video {
+  object-fit: cover !important;
+}
+
+/* ========== BUTTONS ========== */
+.mobile-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  font-weight: 800;
+  font-size: 12px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.mobile-btn:active {
+  transform: scale(0.95);
+}
+
+.mobile-btn--primary {
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.mobile-btn--success {
+  background: #059669;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+}
+
+.mobile-btn--danger {
+  background: #e11d48;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(225, 29, 72, 0.3);
+}
+
+.mobile-btn--amber {
+  background: #f59e0b;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+}
+
+.mobile-btn--ghost {
+  background: #f4f4f5;
+  color: #71717a;
+  box-shadow: none;
+}
+
+.mobile-btn--lg {
+  padding: 18px 32px;
+  font-size: 18px;
+  border-radius: 28px;
+  width: 100%;
+}
+
+/* ========== BADGE ========== */
+.mobile-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* ========== SECTION LABEL ========== */
+.mobile-section-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: #a1a1aa;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  padding: 0 4px;
+  margin-bottom: 12px;
+}
+
+/* ========== EMPTY STATE ========== */
+.mobile-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.mobile-empty-icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #f4f4f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  color: #a1a1aa;
+}
+
+/* ========== LOADING ========== */
+.mobile-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  gap: 12px;
+}
+
+/* ========== LOT ITEM ========== */
+.mobile-lot-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-radius: 20px;
+  border: 1px solid #f4f4f5;
+  background: #ffffff;
+  margin-bottom: 8px;
+  transition: all 0.15s ease;
+}
+
+.mobile-lot-item--scanned {
+  background: #ecfdf5;
+  border-color: #d1fae5;
+}
+
+.mobile-lot-item--pending {
+  background: #fffbeb;
+  border-color: #fef3c7;
+}
+
+.mobile-lot-item--exported {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+/* ========== STAT CHIP ========== */
+.mobile-stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #f4f4f5;
+  color: #71717a;
+}
+
+/* ========== ANIMATIONS ========== */
+@keyframes mobile-slide-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes mobile-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.mobile-animate-slide-up {
+  animation: mobile-slide-up 0.3s ease-out;
+}
+
+.mobile-animate-fade-in {
+  animation: mobile-fade-in 0.2s ease-out;
+}
+
+/* ========== PILL SELECTOR ========== */
+.mobile-pill-group {
+  display: flex;
+  background: #f4f4f5;
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.mobile-pill {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: transparent;
+  color: #71717a;
+}
+
+.mobile-pill--active {
+  background: #ffffff;
+  color: #18181b;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* ========== PROGRESS BAR ========== */
+.mobile-progress {
+  height: 6px;
+  background: #e4e4e7;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.mobile-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.5s ease;
+}
+
+/* ========== SCANNER CORNERS ========== */
+.mobile-scanner-corner {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-color: #2563eb;
+}
+
+.mobile-scanner-corner--tl { top: 8px; left: 8px; border-top: 4px solid; border-left: 4px solid; border-radius: 12px 0 0 0; }
+.mobile-scanner-corner--tr { top: 8px; right: 8px; border-top: 4px solid; border-right: 4px solid; border-radius: 0 12px 0 0; }
+.mobile-scanner-corner--bl { bottom: 8px; left: 8px; border-bottom: 4px solid; border-left: 4px solid; border-radius: 0 0 0 12px; }
+.mobile-scanner-corner--br { bottom: 8px; right: 8px; border-bottom: 4px solid; border-right: 4px solid; border-radius: 0 0 12px 0; }
+
+/* ========== INPUT ========== */
+.mobile-input {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: #f4f4f5;
+  border: 2px solid transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: #18181b;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.mobile-input:focus {
+  border-color: #2563eb;
+  background: #ffffff;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+}
+
+.mobile-input::placeholder {
+  color: #a1a1aa;
+  font-weight: 500;
+}
