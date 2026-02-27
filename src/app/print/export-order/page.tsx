@@ -11,6 +11,7 @@ import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { PrintHeader } from '@/components/print/PrintHeader'
 import { EditableText } from '@/components/print/PrintHelpers'
 import { format } from 'date-fns'
+import { TagDisplay } from '@/components/lots/TagDisplay'
 
 interface ExportOrderItem {
     id: string
@@ -19,6 +20,7 @@ interface ExportOrderItem {
     status: string | null
     lots: {
         code: string
+        lot_tags?: { tag: string; lot_item_id: string | null }[] | null
         inbound_date: string | null
         notes: string | null
     } | null
@@ -156,9 +158,10 @@ function ExportOrderPrintContent() {
                         status,
                         position_id,
                         lots (
-                            code, 
+                            code,
                             inbound_date, 
                             notes, 
+                            lot_tags (tag, lot_item_id),
                             positions (
                                 code,
                                 is_hall:zone_positions(zone_id)
@@ -407,7 +410,22 @@ function ExportOrderPrintContent() {
                         {items.map((item, idx) => (
                             <tr key={item.id} className="break-inside-avoid">
                                 <td className="border border-black p-2 text-center">{idx + 1}</td>
-                                <td className="border border-black p-2 text-center">{item.lots?.code}</td>
+                                <td className="border border-black p-2 text-center">
+                                    <div className="font-bold">{item.lots?.code}</div>
+                                    {item.lots?.lot_tags && item.lots.lot_tags.length > 0 && (
+                                        <div className="mt-1 flex justify-center">
+                                            <TagDisplay
+                                                tags={item.lots.lot_tags
+                                                    .filter(t => !t.tag.startsWith('SPLIT_TO:') && !t.tag.startsWith('MERGED_TO:'))
+                                                    .map(t => t.tag)}
+                                                variant="compact"
+                                                placeholderMap={{
+                                                    '@': item.products?.sku || 'SẢN PHẨM'
+                                                }}
+                                            />
+                                        </div>
+                                    )}
+                                </td>
                                 <td className="border border-black p-2 text-center">{item.positions?.code}</td>
                                 <td className="border border-black p-2">
                                     <div className="font-bold">{item.products?.sku} - {item.products?.name}</div>

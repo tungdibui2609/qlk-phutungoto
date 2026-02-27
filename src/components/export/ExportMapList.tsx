@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { ChevronDown, CheckSquare, Square, Eye } from 'lucide-react'
+import { TagDisplay } from '@/components/lots/TagDisplay'
 
 interface ExportItemProps {
     id?: string
@@ -14,6 +15,7 @@ interface ExportItemProps {
     display_status?: string
     current_position_name?: string
     zone_path?: string[]
+    lot_tags?: { tag: string; lot_item_id: string | null }[] | null
     onPositionSelect?: (id: string) => void
     isSelected?: boolean
 }
@@ -380,6 +382,17 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
                                                                             <div className="text-[9px] text-slate-500 line-clamp-2 text-center">
                                                                                 {item.product_name}
                                                                             </div>
+                                                                            {item.lot_tags && item.lot_tags.length > 0 && (
+                                                                                <div className="w-full flex justify-center scale-90 -my-0.5 mt-0.5 shrink-0">
+                                                                                    <TagDisplay
+                                                                                        tags={item.lot_tags
+                                                                                            .filter(t => !t.tag.startsWith('SPLIT_TO:') && !t.tag.startsWith('MERGED_TO:'))
+                                                                                            .map(t => t.tag)}
+                                                                                        variant="compact"
+                                                                                        placeholderMap={{ '@': item.sku || 'SẢN PHẨM' }}
+                                                                                    />
+                                                                                </div>
+                                                                            )}
                                                                             <div className={`font-mono text-[9px] mt-auto font-bold text-center ${isExported ? 'text-slate-500 dark:text-slate-400' : 'text-blue-600 dark:text-blue-400'}`}>
                                                                                 {item.quantity} {item.unit}
                                                                             </div>

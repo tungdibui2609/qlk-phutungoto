@@ -13,6 +13,7 @@ import { QrCodeModal } from '@/app/(dashboard)/warehouses/lots/_components/QrCod
 import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
 import { QuickBulkExportModal } from '@/components/warehouse/map/QuickBulkExportModal'
 import { ExportOrderStatsModal } from '@/components/export/ExportOrderStatsModal'
+import { TagDisplay } from '@/components/lots/TagDisplay'
 
 interface ExportOrderItem {
     id?: string
@@ -35,6 +36,7 @@ interface ExportOrderItem {
     priority?: number | null
     zone_path?: string[]
     full_position_path?: string | null
+    lot_tags?: { tag: string; lot_item_id: string | null }[] | null
 }
 
 interface ExportTask {
@@ -176,6 +178,7 @@ function ExportOrderDetailContent() {
                             id, 
                             code, 
                             inbound_date, 
+                            lot_tags (tag, lot_item_id),
                             positions (
                                 code,
                                 zone_positions(zone_id)
@@ -282,7 +285,8 @@ function ExportOrderDetailContent() {
                         display_status: displayStatus,
                         priority: item.priority || null,
                         zone_path: zonePath,
-                        full_position_path: fullPosPath
+                        full_position_path: fullPosPath,
+                        lot_tags: item.lots?.lot_tags
                     }
                 }).sort((a: any, b: any) => {
                     const posA = a.position_name || ''
@@ -651,6 +655,17 @@ function ExportOrderDetailContent() {
                                                 <span className="text-stone-400">-</span>
                                                 <span className="text-stone-600 dark:text-stone-400 text-sm">{item.product_name}</span>
                                             </div>
+                                            {item.lot_tags && item.lot_tags.length > 0 && (
+                                                <div className="mt-1 flex items-start">
+                                                    <TagDisplay
+                                                        tags={item.lot_tags
+                                                            .filter(t => !t.tag.startsWith('SPLIT_TO:') && !t.tag.startsWith('MERGED_TO:'))
+                                                            .map(t => t.tag)}
+                                                        variant="compact"
+                                                        placeholderMap={{ '@': item.sku || 'SẢN PHẨM' }}
+                                                    />
+                                                </div>
+                                            )}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right">
@@ -699,7 +714,8 @@ function ExportOrderDetailContent() {
                                 display_status: item.display_status,
                                 product_name: item.product_name,
                                 sku: item.sku,
-                                zone_path: item.zone_path
+                                zone_path: item.zone_path,
+                                lot_tags: item.lot_tags
                             }))}
                             onPositionSelect={handlePositionSelect}
                             selectedIds={selectedPositionIds}
