@@ -62,7 +62,13 @@ export async function middleware(request: NextRequest) {
     const path = url.pathname
 
     // CUSTOM DOMAIN LOGIC
-    const hostname = request.headers.get('host')!
+    let hostname = request.headers.get('host')!
+
+    // Normalize hostname by removing www. prefix if present
+    if (hostname.startsWith('www.')) {
+        hostname = hostname.replace('www.', '')
+    }
+
     // Simple check: assume 'localhost' and 'vercel.app' are NOT custom domains
     const isCustomDomain = !hostname.includes('localhost') && !hostname.includes('vercel.app') && !hostname.includes('toanthang.vn')
 
