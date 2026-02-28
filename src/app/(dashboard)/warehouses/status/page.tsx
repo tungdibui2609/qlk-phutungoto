@@ -197,8 +197,29 @@ function WarehouseStatusContent() {
     const filteredPositions = useMemo(() => {
         let result = positions
         if (searchTerm) {
-            const term = searchTerm.toLowerCase()
-            result = result.filter(p => p.code.toLowerCase().includes(term))
+            const normalize = (str?: string | null) => {
+                if (!str) return '';
+                return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/đ/g, 'd').replace(/Đ/g, 'd');
+            }
+            const term = normalize(searchTerm)
+
+            result = result.filter(p => {
+                if (normalize(p.code).includes(term)) return true
+
+                if (p.lot_id && lotInfo[p.lot_id]) {
+                    const lot = lotInfo[p.lot_id]
+                    if (normalize(lot.code).includes(term)) return true
+
+                    if (lot.items && Array.isArray(lot.items)) {
+                        for (const item of lot.items) {
+                            if (normalize(item.sku).includes(term)) return true
+                            if (normalize(item.product_name).includes(term)) return true
+                        }
+                    }
+                }
+
+                return false
+            })
         }
         if (selectedZoneId) {
             const getDescendantIds = (parentId: string): string[] => {
@@ -236,9 +257,9 @@ function WarehouseStatusContent() {
 
     const occupiedIds = useMemo(() => {
         const set = new Set<string>()
-        positions.forEach(p => { if (p.lot_id) set.add(p.id) })
+        filteredPositions.forEach(p => { if (p.lot_id) set.add(p.id) })
         return set
-    }, [positions])
+    }, [filteredPositions])
 
     const isModuleEnabled = useMemo(() => {
         return (moduleId: string) => {
@@ -375,10 +396,10 @@ function WarehouseStatusContent() {
             {/* Stats Overview */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
-                    { label: 'TỔNG VỊ TRÍ', val: positions.length, color: 'indigo' },
+                    { label: 'TỔNG VỊ TRÍ', val: filteredPositions.length, color: 'indigo' },
                     { label: 'ĐÃ LẤP ĐẦY', val: occupiedIds.size, color: 'emerald' },
-                    { label: 'CÒN TRỐNG', val: positions.length - occupiedIds.size, color: 'slate' },
-                    { label: 'TỶ LỆ LẤP ĐẦY', val: `${((occupiedIds.size / (positions.length || 1)) * 100).toFixed(1)}%`, color: 'amber' },
+                    { label: 'CÒN TRỐNG', val: filteredPositions.length - occupiedIds.size, color: 'slate' },
+                    { label: 'TỶ LỆ LẤP ĐẦY', val: `${((occupiedIds.size / (filteredPositions.length || 1)) * 100).toFixed(1)}%`, color: 'amber' },
                 ].map((stat, i) => (
                     <div key={i} className="bg-white dark:bg-slate-900 p-4 border border-slate-100 dark:border-slate-800 shadow-sm">
                         <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{stat.label}</div>

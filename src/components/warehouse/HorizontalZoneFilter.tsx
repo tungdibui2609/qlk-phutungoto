@@ -178,6 +178,18 @@ export default function HorizontalZoneFilter({
         <div className={containerStyles}>
             {/* Level 0: Warehouses (Tabs) */}
             <div className="flex flex-wrap gap-2">
+                <button
+                    onClick={() => onZoneSelect(null)}
+                    className={`
+                        ${compact ? 'px-3 py-1.5' : 'px-4 py-2'} rounded-lg text-sm font-bold uppercase transition-all
+                        ${!activeLevel0
+                            ? 'bg-blue-600 text-white shadow-md'
+                            : 'bg-white dark:bg-gray-800 text-gray-500 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        }
+                    `}
+                >
+                    Tất Cả
+                </button>
                 {level0Zones.map(zone => {
                     const isActive = activeLevel0?.id === zone.id
                     return (
