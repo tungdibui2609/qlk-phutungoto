@@ -135,7 +135,7 @@ export default function CompanyInfoSection() {
             let code = (info?.code || '').trim()
 
             // Auto-generate code if missing (should be handled by input but safe fallback)
-            if (!code || code.length !== 4) {
+            if (!code || code.length < 2 || code.length > 4) {
                 // If missing or invalid length, generate random 4 chars (uppercase for random)
                 const randomCode = Math.random().toString(36).substring(2, 6).toUpperCase()
                 code = randomCode
@@ -292,11 +292,12 @@ export default function CompanyInfoSection() {
                                     const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4)
                                     setInfo(prev => (prev ? { ...prev, code: val } : { code: val } as any))
                                 }}
-                                placeholder="VD: Abcd (4 ký tự)"
+                                minLength={2}
+                                placeholder="VD: Abcd (2-4 ký tự)"
                                 className="w-full px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-mono tracking-widest uppercase"
                             />
                             <p className="text-xs text-stone-500 mt-1">
-                                Mã định danh duy nhất (4 ký tự), dùng làm tiền tố tài khoản (VD: <span className="font-medium text-stone-700">{info?.code || 'ABCD'}-USER01</span>).
+                                Mã định danh duy nhất (2-4 ký tự), dùng làm tiền tố tài khoản (VD: <span className="font-medium text-stone-700">{info?.code || 'ABCD'}-USER01</span>).
                             </p>
                         </div>
 
