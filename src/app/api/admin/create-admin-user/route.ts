@@ -44,7 +44,8 @@ export async function POST(request: Request) {
                     company_id: companyId,
                     permissions: ['system.full_access'],
                     is_active: true,
-                    allowed_systems: ['FROZEN', 'OFFICE', 'DRY']
+                    account_level: 2,
+                    allowed_systems: ['ALL']
                 })
 
             if (profileError) {
