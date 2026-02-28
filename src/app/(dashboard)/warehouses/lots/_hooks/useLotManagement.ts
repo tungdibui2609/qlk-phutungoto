@@ -190,7 +190,9 @@ export function useLotManagement() {
                 // RPC handles system_code and status check internally
             } else {
                 // Standard Logic
-                if (positionFilter === 'assigned' || selectedZoneId) {
+                if (selectedZoneId) {
+                    selectQuery += `, positions!inner(id, code, zone_positions!inner(zone_id))`
+                } else if (positionFilter === 'assigned') {
                     selectQuery += `, positions!inner(id, code, zone_positions!left(zone_id))`
                 } else {
                     selectQuery += `, positions(id, code, zone_positions!left(zone_id))`
