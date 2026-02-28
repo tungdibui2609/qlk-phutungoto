@@ -18,6 +18,7 @@ interface LotDetailsModalProps {
 export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, onOpenQr, isModuleEnabled }) => {
     const [historyData, setHistoryData] = React.useState<any>(null)
     const [isHighlighting, setIsHighlighting] = React.useState(false)
+    const [selectedImage, setSelectedImage] = React.useState<string | null>(null)
 
     // Trigger highlight when positions change
     const positionsHash = JSON.stringify(lot?.positions || [])
@@ -189,19 +190,19 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                         )}
 
                         {/* Image Gallery Section */}
-                        {lot.metadata?.images && (lot.metadata.images as string[]).length > 0 && (
+                        {((lot.images && lot.images.length > 0) || (lot.metadata?.images && (lot.metadata.images as string[]).length > 0)) && (
                             <div className="space-y-3">
                                 <div className="flex items-center gap-2 text-zinc-400">
                                     <Package size={16} />
-                                    <span className="text-xs font-bold uppercase tracking-wider">Hình ảnh ({lot.metadata.images.length})</span>
+                                    <span className="text-xs font-bold uppercase tracking-wider">Hình ảnh ({lot.images ? lot.images.length : (lot.metadata?.images as string[]).length})</span>
                                 </div>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                    {(lot.metadata.images as string[]).map((img, idx) => (
+                                    {(lot.images || lot.metadata?.images as string[]).map((img: string, idx: number) => (
                                         <div key={idx} className="aspect-square rounded-2xl overflow-hidden border border-zinc-100 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800 group relative">
                                             <img src={img} alt={`Lot image ${idx + 1}`} className="w-full h-full object-cover transition-transform group-hover:scale-110" />
                                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                                 <button
-                                                    onClick={() => window.open(img, '_blank')}
+                                                    onClick={() => setSelectedImage(img)}
                                                     className="p-2 rounded-full bg-white/20 backdrop-blur-md text-white hover:bg-white/40"
                                                 >
                                                     <Maximize2 size={20} />
@@ -337,6 +338,27 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                     data={historyData}
                     onClose={() => setHistoryData(null)}
                 />
+            )}
+
+            {/* Fullscreen Image Viewer Modal */}
+            {selectedImage && (
+                <div
+                    className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-in fade-in duration-200"
+                    onClick={() => setSelectedImage(null)}
+                >
+                    <button
+                        className="absolute top-4 right-4 p-2 text-white/70 hover:text-white bg-black/50 hover:bg-black/80 rounded-full transition-all"
+                        onClick={() => setSelectedImage(null)}
+                    >
+                        <X size={24} />
+                    </button>
+                    <img
+                        src={selectedImage}
+                        alt="Zoomed"
+                        className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    />
+                </div>
             )}
         </div>
     )

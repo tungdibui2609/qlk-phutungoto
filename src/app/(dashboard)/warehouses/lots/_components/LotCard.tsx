@@ -120,12 +120,6 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                         <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap shadow-sm border border-black/5 dark:border-white/5">
                             LOT: {lot.code}
                         </span>
-                        {isUtilityEnabled('fifo_priority') && (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800/50">
-                                <ArrowUpDown size={10} />
-                                FIFO {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : ''}
-                            </span>
-                        )}
                     </div>
                     {lot.positions && lot.positions.length > 0 ? (
                         <button

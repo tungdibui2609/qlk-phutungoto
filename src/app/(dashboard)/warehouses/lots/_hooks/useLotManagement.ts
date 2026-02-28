@@ -51,8 +51,8 @@ export function useLotManagement() {
     const [startDate, setStartDate] = useState<string>('')
     const [endDate, setEndDate] = useState<string>('')
 
-    // FIFO Toggle (local, defaults to ON when module is enabled)
-    const [fifoActive, setFifoActive] = useState(true)
+    // FIFO Toggle (local, defaults to OFF)
+    const [fifoActive, setFifoActive] = useState(false)
     const isFifoAvailable = hasModule('fifo_priority')
     const isFifoActive = isFifoAvailable && fifoActive
 

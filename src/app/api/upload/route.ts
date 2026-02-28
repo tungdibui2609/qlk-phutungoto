@@ -1,101 +1,124 @@
 import { NextRequest, NextResponse } from "next/server";
-import { v2 as cloudinary } from "cloudinary";
+import { google, drive_v3 } from "googleapis";
+import { Readable } from "stream";
 
 export const runtime = 'nodejs';
 
-function ensureCloudinaryConfigured() {
-    try {
-        const url = (process.env.CLOUDINARY_URL || "").trim();
-        if (url) {
-            try {
-                const u = new URL(url);
-                const cloud_name = u.hostname;
-                const api_key = decodeURIComponent(u.username);
-                const api_secret = decodeURIComponent(u.password);
-                if (cloud_name && api_key && api_secret) {
-                    cloudinary.config({ cloud_name, api_key, api_secret, secure: true });
-                    return true;
-                }
-            } catch (err) {
-                console.log("Failed to parse CLOUDINARY_URL, trying env-based config:", err);
-                process.env.CLOUDINARY_URL = url;
-                cloudinary.config({ secure: true });
-                return true;
-            }
-        }
-        const cloud_name = (process.env.CLOUDINARY_CLOUD_NAME || "").trim();
-        const api_key = (process.env.CLOUDINARY_API_KEY || "").trim();
-        const api_secret = (process.env.CLOUDINARY_API_SECRET || "").trim();
-        if (cloud_name && api_key && api_secret) {
-            cloudinary.config({ cloud_name, api_key, api_secret, secure: true });
-            return true;
-        }
-        console.error("Cloudinary not configured - missing env vars");
-        return false;
-    } catch (err) {
-        console.error("Error in ensureCloudinaryConfigured:", err);
-        return false;
-    }
-}
+/**
+ * Tìm hoặc tạo thư mục theo tên trong thư mục cha
+ */
+async function getOrCreateFolder(drive: drive_v3.Drive, folderName: string, parentId: string): Promise<string> {
+    const q = `name = '${folderName.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and '${parentId}' in parents and trashed = false`;
+    const res = await drive.files.list({ q, fields: 'files(id, name)' });
 
-function toPublicId(name?: string) {
-    const base = ((name || '').toString()).replace(/\.[^.]+$/, '');
-    return base.replace(/[^a-zA-Z0-9_\-/]+/g, '_').slice(0, 200) || `upload-${Date.now()}`;
+    if (res.data.files && res.data.files.length > 0) {
+        return res.data.files[0].id!;
+    }
+
+    // Tạo mới nếu không thấy
+    const newFolder = await drive.files.create({
+        requestBody: {
+            name: folderName,
+            mimeType: 'application/vnd.google-apps.folder',
+            parents: [parentId]
+        },
+        fields: 'id'
+    });
+    return newFolder.data.id!;
 }
 
 export async function POST(req: NextRequest) {
     try {
-        if (!ensureCloudinaryConfigured()) {
-            return NextResponse.json({
-                error: "MISSING_CLOUDINARY_CONFIG",
-                message: "Cloudinary configuration missing."
-            }, { status: 400 });
-        }
+        const formData = await req.formData();
+        const file = formData.get("file") as File;
+        const customFolder = (formData.get("folder") || "uploads").toString();
 
-        const form = await req.formData();
-        const file = form.get("file");
-        const preferredName = (form.get("filename") || "").toString();
-        const customFolder = (form.get("folder") || "").toString();
+        // Lấy cấu hình Drive từ biến môi trường (Giống cách api/google-drive-upload đang dùng)
+        const rootFolderId = process.env.FOLDER_ID || process.env.GOOGLE_DRIVE_FOLDER_ID;
+        const clientId = process.env.CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
+        const clientSecret = process.env.CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+        const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+
+        if (!file) {
+            return NextResponse.json({ error: "FILE_REQUIRED" }, { status: 400 });
+        }
 
         if (!(file instanceof File)) {
             return NextResponse.json({ error: "FILE_REQUIRED" }, { status: 400 });
         }
 
-        const buf = Buffer.from(await file.arrayBuffer());
-        const folder = customFolder || (process.env.CLOUDINARY_NOTE_FOLDER || 'uploads').toString();
-        const opts: any = { folder, resource_type: 'image' };
-        if (preferredName) {
-            opts.public_id = toPublicId(preferredName);
-            opts.unique_filename = true;
+        if (!clientId || !clientSecret || !refreshToken || !rootFolderId) {
+            return NextResponse.json({
+                error: "MISSING_DRIVE_CONFIG",
+                message: "Cấu hình Google Drive chưa đầy đủ. Yêu cầu CLIENT_ID, CLIENT_SECRET, GOOGLE_REFRESH_TOKEN, FOLDER_ID"
+            }, { status: 500 });
         }
 
-        const result = await new Promise<any>((resolve, reject) => {
-            const stream = cloudinary.uploader.upload_stream(opts, (err: any, res: any) => {
-                if (err) return reject(err);
-                resolve(res);
+        // 1. Authenticate with Google Drive OAuth2
+        const auth = new google.auth.OAuth2(clientId, clientSecret);
+        auth.setCredentials({ refresh_token: refreshToken });
+        const drive = google.drive({ version: 'v3', auth });
+
+        // 2. Xác định thư mục upload
+        let finalFolderId = rootFolderId;
+
+        // Nếu client có truyền lên biến folder (VD: "img-lot"), tạo thư mục đó bên trong thư mục gốc
+        if (customFolder) {
+            finalFolderId = await getOrCreateFolder(drive, customFolder, finalFolderId);
+        }
+
+        // 3. Chuyển nội dung File thành Stream để pipe lên Drive
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const stream = new Readable();
+        stream.push(buffer);
+        stream.push(null);
+
+        // 4. Gọi API Upload File của Google Drive
+        const response = await drive.files.create({
+            requestBody: {
+                name: file.name,
+                parents: [finalFolderId],
+            },
+            media: {
+                mimeType: file.type,
+                body: stream,
+            },
+            fields: 'id, name, webViewLink',
+            supportsAllDrives: true,
+        });
+
+        const fileId = response.data.id;
+
+        // 5. Cấp quyền xem công khai (bắt buộc để hiển thị ảnh trên Web với thẻ <img>)
+        if (fileId) {
+            await drive.permissions.create({
+                fileId: fileId,
+                requestBody: {
+                    role: 'reader',
+                    type: 'anyone',
+                },
             });
-            stream.end(buf);
-        });
-
-        const secureUrl = (result?.secure_url || result?.url || '').toString();
-        if (!secureUrl) {
-            return NextResponse.json({ error: 'UPLOAD_FAILED' }, { status: 500 });
         }
 
+        // Tạo thumbnail link để hiển thị trực tiếp (hack để dùng được thẻ img)
+        const secureUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+
+        // 6. Trả kết quả chuẩn (Giữ nguyên định dạng cũ của Cloudinary để UI không bị hỏng)
         return NextResponse.json({
-            viewUrl: secureUrl,
-            secureUrl,
-            publicId: result.public_id,
-            width: result.width,
-            height: result.height,
-            bytes: result.bytes,
-            format: result.format
+            viewUrl: response.data.webViewLink,
+            secureUrl: secureUrl,
+            publicId: fileId,
+            width: 0,
+            height: 0,
+            bytes: file.size,
+            format: file.type
         });
-    } catch (err: any) {
-        console.error("Upload error:", err);
+
+    } catch (error: any) {
+        console.error("Google Drive Upload Error:", error);
         return NextResponse.json({
-            error: err?.message || 'UPLOAD_ERROR',
-            details: err?.toString?.() || "Unknown error"
+            error: error.message || 'UPLOAD_ERROR',
+            details: error?.response?.data || error?.toString?.() || "Unknown error"
         }, { status: 500 });
     }
 }
