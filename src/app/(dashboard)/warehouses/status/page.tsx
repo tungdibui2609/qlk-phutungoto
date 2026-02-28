@@ -3,9 +3,10 @@ import { useState, useEffect, useMemo, Suspense, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { BarChart3, Settings, Package, Map as MapIcon, Info, Layout } from 'lucide-react'
+import { BarChart3, Settings, Package, Map as MapIcon, Info, Layout, Palette } from 'lucide-react'
 import WarehouseStatusMap from '@/components/warehouse/status/WarehouseStatusMap'
 import StatusLayoutConfigPanel from '@/components/warehouse/status/StatusLayoutConfigPanel'
+import { ProductColorConfigModal } from '@/components/warehouse/status/ProductColorConfigModal'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { useSystem } from '@/contexts/SystemContext'
 import Protected from '@/components/auth/Protected'
@@ -47,6 +48,7 @@ function WarehouseStatusContent() {
 
     const [viewingLot, setViewingLot] = useState<any>(null)
     const [qrLot, setQrLot] = useState<any>(null)
+    const [isColorModalOpen, setIsColorModalOpen] = useState(false)
 
     useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
@@ -131,7 +133,7 @@ function WarehouseStatusContent() {
                     const chunk = lotIdsArray.slice(i, i + chunkSize)
                     const { data, error } = await supabase
                         .from('lots')
-                        .select('id, code, quantity, lot_items(id, product_id, quantity, products(name, sku, unit))')
+                        .select('id, code, quantity, lot_items(id, product_id, quantity, products(name, sku, unit, color))')
                         .in('id', chunk)
 
                     if (error) {
@@ -170,6 +172,7 @@ function WarehouseStatusContent() {
                         product_name: it.products?.name,
                         sku: it.products?.sku,
                         unit: it.products?.unit,
+                        product_color: it.products?.color,
                         quantity: it.quantity
                     })) || []
                 }
@@ -282,6 +285,28 @@ function WarehouseStatusContent() {
         }
     }
 
+    // Generate Legend Data
+    const legendItems = useMemo(() => {
+        const colorMap = new Map<string, string>() // color -> name
+
+        Object.values(lotInfo).forEach(lot => {
+            lot.items?.forEach((item: any) => {
+                const pColor = item.product_color?.toLowerCase();
+                if (pColor && item.product_name) {
+                    if (!colorMap.has(pColor)) {
+                        const displayName = item.sku || item.product_name || 'Không rõ';
+                        colorMap.set(pColor, displayName)
+                    }
+                }
+            })
+        })
+
+        // Add defaults
+        colorMap.set('#5c4033', 'Chưa cài đặt màu')
+
+        return Array.from(colorMap.entries()).map(([color, name]) => ({ color, name }))
+    }, [lotInfo])
+
     return (
         <div className="space-y-6 pb-20">
             {/* Header Area */}
@@ -300,6 +325,13 @@ function WarehouseStatusContent() {
 
                 <div className="flex items-center gap-2">
                     <Protected permission="warehousemap.manage">
+                        <button
+                            onClick={() => setIsColorModalOpen(true)}
+                            className="flex items-center gap-2 px-6 py-2.5 font-bold transition-all shadow-sm bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
+                        >
+                            <Palette size={18} />
+                            MÀU SẮC
+                        </button>
                         <button
                             onClick={() => setIsDesignMode(!isDesignMode)}
                             className={`flex items-center gap-2 px-6 py-2.5 font-bold transition-all shadow-sm ${isDesignMode
@@ -356,6 +388,23 @@ function WarehouseStatusContent() {
             </div>
 
             {/* Main Status Diagram */}
+            {legendItems.length > 0 && !loading && !errorMsg && (
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-3 px-1 py-2">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap">
+                        <Palette size={14} /> Chú thích màu:
+                    </span>
+                    {legendItems.map((item, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                            <div
+                                className="w-3.5 h-3.5 rounded-full shadow-sm border border-black/10 dark:border-white/10 flex-shrink-0"
+                                style={{ backgroundColor: item.color }}
+                            />
+                            <span className="truncate max-w-[150px]" title={item.name}>{item.name}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+
             {loading ? (
                 <div className="flex flex-col items-center justify-center py-32 space-y-4">
                     <div className="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-600 rounded-full animate-spin"></div>
@@ -410,6 +459,13 @@ function WarehouseStatusContent() {
                     onClose={() => setViewingLot(null)}
                     onOpenQr={(lot) => setQrLot(lot)}
                     isModuleEnabled={isModuleEnabled}
+                />
+            )}
+
+            {isColorModalOpen && (
+                <ProductColorConfigModal
+                    onClose={() => setIsColorModalOpen(false)}
+                    onSaved={fetchData}
                 />
             )}
         </div>

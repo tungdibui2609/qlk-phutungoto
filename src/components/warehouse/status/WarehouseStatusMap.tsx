@@ -23,7 +23,7 @@ interface WarehouseStatusMapProps {
     onViewDetails?: (lotId: string) => void
     lotInfo?: Record<string, {
         code: string,
-        items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>,
+        items: Array<{ product_name: string, sku: string, unit: string, quantity: number, product_color?: string | null, tags?: string[] }>,
         inbound_date?: string,
         created_at?: string,
         tags?: string[]
@@ -52,24 +52,38 @@ const MemoizedStatusCell = React.memo(function StatusCell({
     let borderClass = 'border-slate-100 dark:border-slate-700'
     let iconColor = 'text-slate-300'
 
+    let customBgStyle = {}
+    let dotStyle = {}
+
     if (isOccupied) {
-        const itemCount = lotDetail?.items?.length || 1
-        if (itemCount > 1) {
-            // Multi-product lot
-            bgClass = 'bg-indigo-50 dark:bg-indigo-900/30'
-            borderClass = 'border-indigo-300 dark:border-indigo-800'
-            iconColor = 'text-indigo-500'
+        // Find if there's any valid configured product color
+        const pColor = lotDetail?.items?.find((item: any) => item.product_color)?.product_color;
+
+        if (pColor) {
+            // Apply dynamic color with some transparency for background and full color for dot/border
+            customBgStyle = {
+                backgroundColor: `${pColor}20`, // 20 hex = 12% opacity approx
+                borderColor: `${pColor}80`
+            }
+            dotStyle = { backgroundColor: pColor }
+            bgClass = ''
+            borderClass = ''
+            iconColor = ''
         } else {
-            // Single product lot
-            bgClass = 'bg-emerald-50 dark:bg-emerald-900/30'
-            borderClass = 'border-emerald-300 dark:border-emerald-800'
-            iconColor = 'text-emerald-500'
+            // Default Dark Brown
+            bgClass = 'bg-stone-50 dark:bg-stone-900/30'
+            borderClass = 'border-stone-400 dark:border-stone-600'
+            iconColor = 'text-stone-600'
+            dotStyle = { backgroundColor: '#5c4033' } // Dark brown
         }
     }
 
     return (
         <div
-            style={{ height: cellHeight > 0 ? `${cellHeight}px` : '42px' }}
+            style={{
+                height: cellHeight > 0 ? `${cellHeight}px` : '42px',
+                ...customBgStyle
+            }}
             className={`
                 relative border text-center transition-all p-1 group
                 flex flex-col items-center justify-center
@@ -89,7 +103,7 @@ const MemoizedStatusCell = React.memo(function StatusCell({
 
             {isOccupied ? (
                 <div className="mt-0.5 flex items-center justify-center">
-                    <div className={`w-1.5 h-1.5 rounded-full ${lotDetail?.items && lotDetail.items.length > 1 ? 'bg-indigo-500' : 'bg-emerald-500'}`}></div>
+                    <div className="w-1.5 h-1.5 rounded-full" style={dotStyle}></div>
                 </div>
             ) : (
                 <div className="mt-0.5 w-1.5 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700"></div>
@@ -380,13 +394,22 @@ export default function WarehouseStatusMap({
                             const lotDetail = pos.lot_id ? lotInfo[pos.lot_id] : null
 
                             let segmentColor = 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600'
+                            let customDynamicColor = {}
                             if (isOccupied) {
-                                segmentColor = (lotDetail?.items?.length || 1) > 1 ? 'bg-indigo-500' : 'bg-emerald-500'
+                                const pColor = lotDetail?.items?.find((item: any) => item.product_color)?.product_color;
+                                if (pColor) {
+                                    segmentColor = '';
+                                    customDynamicColor = { backgroundColor: pColor };
+                                } else {
+                                    segmentColor = '';
+                                    customDynamicColor = { backgroundColor: '#5c4033' }; // Dark brown
+                                }
                             }
 
                             return (
                                 <div
                                     key={pos.id}
+                                    style={customDynamicColor}
                                     className={`flex-1 h-full relative group/seg ${segmentColor} transition-colors hover:brightness-110 ${lotDetail ? 'cursor-pointer' : 'cursor-default'}`}
                                     onClick={(e) => {
                                         if (lotDetail && onViewDetails) {
