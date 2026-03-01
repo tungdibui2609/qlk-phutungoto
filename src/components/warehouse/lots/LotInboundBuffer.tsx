@@ -276,8 +276,7 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
             const allOrderItems = Array.from(aggregatedItemsMap.values()).map(item => {
                 const { lots, ...rest } = item
                 return {
-                    ...rest,
-                    note: `Nhập từ các LOT: ${lots.join(', ')}`
+                    ...rest
                 }
             })
 

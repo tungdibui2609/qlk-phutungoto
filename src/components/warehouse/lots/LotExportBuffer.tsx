@@ -398,8 +398,7 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             const allOrderItems = Array.from(aggregatedItemsMap.values()).map(item => {
                 const { lots, ...rest } = item
                 return {
-                    ...rest,
-                    note: `Xuất từ các LOT: ${lots.join(', ')}`
+                    ...rest
                 }
             })
 
