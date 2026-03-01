@@ -174,5 +174,80 @@ export const unbundleService = {
         })
 
         return baseToBreak
+    },
+
+    /**
+     * Synchronizes physical LOT items with the accounting conversion.
+     * Subtracts base units and adds requested units to the LOTs physically.
+     */
+    async syncPhysicalUnbundle(params: {
+        supabase: SupabaseClient
+        lotIds: string[]
+        productId: string
+        baseUnit: string
+        reqUnit: string
+        baseToBreak: number
+        rate: number
+    }) {
+        const { supabase, lotIds, productId, baseUnit, reqUnit, baseToBreak, rate } = params
+        if (baseToBreak <= 0) return
+
+        // 1. Fetch relevant lot_items in those LOTs that have the base unit
+        const { data: items, error: fetchErr } = await supabase
+            .from('lot_items')
+            .select('id, lot_id, quantity, unit')
+            .in('lot_id', lotIds)
+            .eq('product_id', productId)
+            .eq('unit', baseUnit)
+
+        if (fetchErr || !items || items.length === 0) {
+            console.warn('[Physical Unbundle] No physical items found in base unit to break', { lotIds, productId, baseUnit })
+            return
+        }
+
+        let remainingToBreak = baseToBreak
+
+        for (const item of items) {
+            if (remainingToBreak <= 0) break
+
+            const canTake = Math.min(item.quantity, remainingToBreak)
+            const newQty = item.quantity - canTake
+
+            // Subtract from current item
+            if (newQty <= 0.000001) {
+                await supabase.from('lot_items').delete().eq('id', item.id)
+            } else {
+                await supabase.from('lot_items').update({ quantity: newQty } as any).eq('id', item.id)
+            }
+
+            // Add converted units to the SAME LOT
+            const addedQty = canTake * rate
+            // check if there's already an item with reqUnit in this LOT
+            const { data: existing } = await supabase
+                .from('lot_items')
+                .select('id, quantity')
+                .eq('lot_id', item.lot_id)
+                .eq('product_id', productId)
+                .eq('unit', reqUnit)
+                .maybeSingle()
+
+            if (existing) {
+                await supabase.from('lot_items').update({ quantity: (existing.quantity || 0) + addedQty } as any).eq('id', existing.id)
+            } else {
+                await supabase.from('lot_items').insert({
+                    lot_id: item.lot_id,
+                    product_id: productId,
+                    quantity: addedQty,
+                    unit: reqUnit
+                } as any)
+            }
+
+            // Update LOT total quantity (for consistency in summary list)
+            const { data: allItems } = await supabase.from('lot_items').select('quantity').eq('lot_id', item.lot_id)
+            const total = allItems?.reduce((sum, i) => sum + (i.quantity || 0), 0) || 0
+            await supabase.from('lots').update({ quantity: total } as any).eq('id', item.lot_id)
+
+            remainingToBreak -= canTake
+        }
     }
 }

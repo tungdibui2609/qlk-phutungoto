@@ -224,8 +224,20 @@ export function useLotManagement() {
                 }
 
                 // Find products matching name, sku, or valid UUID id
-                const { data: prods } = await supabase.from('products').select('id').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code)
-                const prodIds = prods?.map(p => p.id) || []
+                const { data: prods } = await supabase.from('products').select('id, name, sku').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code)
+                let prodIds = prods?.map(p => p.id) || []
+
+                // Prioritize exact matches
+                if (prods && prods.length > 0) {
+                    const sLower = searchTerm.toLowerCase();
+                    const exactMatches = prods.filter(p =>
+                        (p.sku && p.sku.toLowerCase() === sLower) ||
+                        (p.name && p.name.toLowerCase() === sLower)
+                    );
+                    if (exactMatches.length > 0) {
+                        prodIds = exactMatches.map(p => p.id);
+                    }
+                }
 
                 // Find suppliers matching
                 const { data: supps } = await supabase.from('suppliers').select('id').ilike('name', term).eq('system_code', currentSystem.code)
@@ -309,7 +321,23 @@ export function useLotManagement() {
                 console.error('Error fetching lots:', error)
                 showToast('Lỗi tải dữ liệu: ' + error.message, 'error')
             } else if (data) {
-                setLots(data as unknown as Lot[])
+                let sortedLots = data as unknown as Lot[];
+
+                if (searchTerm) {
+                    const sLower = searchTerm.toLowerCase();
+                    sortedLots.sort((a, b) => {
+                        const aExact = (a.code && a.code.toLowerCase() === sLower) ||
+                            a.lot_items?.some(i => (i.products?.sku && i.products.sku.toLowerCase() === sLower) || (i.products?.name && i.products.name.toLowerCase() === sLower));
+                        const bExact = (b.code && b.code.toLowerCase() === sLower) ||
+                            b.lot_items?.some(i => (i.products?.sku && i.products.sku.toLowerCase() === sLower) || (i.products?.name && i.products.name.toLowerCase() === sLower));
+
+                        if (aExact && !bExact) return -1;
+                        if (!aExact && bExact) return 1;
+                        return 0;
+                    });
+                }
+
+                setLots(sortedLots)
                 setTotalLots(count || 0)
             }
         } catch (err: any) {

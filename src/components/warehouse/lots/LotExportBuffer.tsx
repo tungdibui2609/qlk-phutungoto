@@ -277,57 +277,93 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             const orderCode = await generateInternalCode('PXK')
 
             // --- C. PROCESS UNBUNDLE FOR EACH ITEM ---
+            interface AggregateItem {
+                product_id: string;
+                product_name: string;
+                unit: string;
+                total_qty: number;
+                cost_price: number;
+            }
+            const aggregatedReqs = new Map<string, AggregateItem>()
+
             for (const p of toSync) {
                 const itemsList = Object.values(p.items)
                 for (const item of itemsList) {
+                    const key = `${item.product_id}_${item.unit.toLowerCase().trim()}`
                     const qtyNum = Number(item.exported_quantity) || 0
-                    console.log(`[Unbundle Trace] Verifying item: ${item.product_name}`, {
-                        reqQty: qtyNum,
-                        reqUnit: item.unit,
-                        currentInStock: localUnitStockMap.get(`${item.product_id}_${item.unit.toLowerCase().trim()}`) || 0
-                    })
+                    if (aggregatedReqs.has(key)) {
+                        aggregatedReqs.get(key)!.total_qty += qtyNum
+                    } else {
+                        aggregatedReqs.set(key, {
+                            product_id: item.product_id,
+                            product_name: item.product_name,
+                            unit: item.unit,
+                            total_qty: qtyNum,
+                            cost_price: item.cost_price || 0
+                        })
+                    }
+                }
+            }
 
-                    const check = unbundleService.checkUnbundle({
+            for (const item of aggregatedReqs.values()) {
+                const qtyNum = item.total_qty
+                console.log(`[Unbundle Trace] Verifying aggregated item: ${item.product_name}`, {
+                    reqQty: qtyNum,
+                    reqUnit: item.unit,
+                    currentInStock: localUnitStockMap.get(`${item.product_id}_${item.unit.toLowerCase().trim()}`) || 0
+                })
+
+                const check = unbundleService.checkUnbundle({
+                    productId: item.product_id,
+                    unit: item.unit,
+                    qty: qtyNum,
+                    products: productsData || [],
+                    units: unitsData || [],
+                    unitNameMap: localUnitNameMap,
+                    conversionMap: localConversionMap,
+                    unitStockMap: localUnitStockMap
+                })
+
+                console.log(`[Unbundle Trace] Unbundle Check for ${item.product_name}:`, check)
+
+                if (check.needsUnbundle && check.sourceUnit && check.rate) {
+                    showToast(`Thiếu ${item.unit} cho ${item.product_name}. Đang tự bẻ gói từ ${check.sourceUnit}...`, 'info')
+
+                    // Sync physical LOT items to match accounting conversion
+                    const baseToBreak = await unbundleService.executeAutoUnbundle({
+                        supabase,
                         productId: item.product_id,
-                        unit: item.unit,
-                        qty: qtyNum,
-                        products: productsData || [],
-                        units: unitsData || [],
-                        unitNameMap: localUnitNameMap,
-                        conversionMap: localConversionMap,
-                        unitStockMap: localUnitStockMap
+                        productName: item.product_name,
+                        baseUnit: check.sourceUnit,
+                        reqUnit: item.unit,
+                        reqQty: qtyNum,
+                        currentLiquid: localUnitStockMap.get(`${item.product_id}_${item.unit.toLowerCase().trim()}`) || 0,
+                        costPrice: item.cost_price || 0,
+                        rate: check.rate,
+                        warehouseName: quickBranchName || currentSystem?.name || 'Kho chính',
+                        systemCode: systemType,
+                        mainOrderCode: orderCode,
+                        convTypeId: convType?.id,
+                        generateOrderCode: generateInternalCode
                     })
 
-                    console.log(`[Unbundle Trace] Unbundle Check for ${item.product_name}:`, check)
+                    console.log(`[Unbundle Trace] Executed Unbundle for ${item.product_name}`, { baseToBreak })
 
-                    if (check.needsUnbundle && check.sourceUnit && check.rate) {
-                        showToast(`Thiếu ${item.unit} cho ${item.product_name}. Đang tự bẻ gói từ ${check.sourceUnit}...`, 'info')
-
-                        await unbundleService.executeAutoUnbundle({
+                    if (baseToBreak && baseToBreak > 0) {
+                        // NEW: Synchronize physical LOT items to match accounting conversion
+                        await unbundleService.syncPhysicalUnbundle({
                             supabase,
+                            lotIds: toSync.map(p => p.lot_id),
                             productId: item.product_id,
-                            productName: item.product_name,
                             baseUnit: check.sourceUnit,
                             reqUnit: item.unit,
-                            reqQty: qtyNum,
-                            currentLiquid: localUnitStockMap.get(`${item.product_id}_${item.unit.toLowerCase().trim()}`) || 0,
-                            costPrice: item.cost_price || 0,
-                            rate: check.rate,
-                            warehouseName: quickBranchName || currentSystem?.name || 'Kho chính',
-                            systemCode: systemType,
-                            mainOrderCode: orderCode,
-                            convTypeId: convType?.id,
-                            generateOrderCode: generateInternalCode
+                            baseToBreak: baseToBreak,
+                            rate: check.rate
                         })
-
-                        console.log(`[Unbundle Trace] Executed Unbundle for ${item.product_name}`)
 
                         // Update local stock map for subsequent items in the same batch
                         const sourceKey = `${item.product_id}_${check.sourceUnit.toLowerCase().trim()}`
                         const reqKey = `${item.product_id}_${item.unit.toLowerCase().trim()}`
-
-                        const deficit = qtyNum - (localUnitStockMap.get(reqKey) || 0)
-                        const baseToBreak = Math.ceil(deficit / check.rate - 0.000001)
 
                         localUnitStockMap.set(sourceKey, (localUnitStockMap.get(sourceKey) || 0) - baseToBreak)
                         localUnitStockMap.set(reqKey, (localUnitStockMap.get(reqKey) || 0) + (baseToBreak * check.rate))
