@@ -1,0 +1,50 @@
+[
+  {
+    "id": "07ecd3b2-9aca-4f2c-ac21-03e892195f11",
+    "code": "DL-LOT-280226-010",
+    "notes": "",
+    "status": "active",
+    "product_id": null,
+    "supplier_id": null,
+    "inbound_date": "2026-02-16",
+    "batch_code": null,
+    "quantity": 25,
+    "created_at": "2026-02-28T08:11:22.990279+00:00",
+    "peeling_date": "2026-02-26T00:00:00+00:00",
+    "qc_id": "b7ad77b9-4ab8-420a-8fe5-80d390d6f172",
+    "system_code": "KHO_DONG_LANH",
+    "packaging_date": "2026-02-28",
+    "warehouse_name": "CN Cư M'gar",
+    "images": [
+      "https://drive.google.com/thumbnail?id=1cR_Pf_1Qse2Fmq3U_trgE3T_YIBVE26T&sz=w1000"
+    ],
+    "metadata": {
+      "extra_info": "KD/BB8",
+      "system_history": {
+        "exports": [],
+        "inbound": [
+          {
+            "id": "b5bf1b18-7cfd-4968-aa59-f9e608a14cf4",
+            "date": "2026-02-28T08:11:22.809Z",
+            "draft": false,
+            "items": {
+              "0": {
+                "unit": "Thùng",
+                "price": 0,
+                "quantity": 25,
+                "product_id": "132433d9-814d-4ac2-b217-4a191ec39889",
+                "product_sku": "TAO",
+                "product_name": "Sầu Riêng Không Hạt Loại A"
+              }
+            },
+            "order_id": "79c758bc-4f52-42be-9e8b-014f5f40ef17",
+            "order_code": "DL-PNK-010326-001",
+            "supplier_id": null,
+            "supplier_name": "N/A"
+          }
+        ]
+      }
+    },
+    "company_id": "fafad42a-6e4c-43a4-acc1-39b614ab9cd0"
+  }
+]

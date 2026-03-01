@@ -133,7 +133,7 @@ function WarehouseStatusContent() {
                     const chunk = lotIdsArray.slice(i, i + chunkSize)
                     const { data, error } = await supabase
                         .from('lots')
-                        .select('id, code, quantity, lot_items(id, product_id, quantity, products(name, sku, unit, color))')
+                        .select('id, code, quantity, lot_items(id, product_id, quantity, unit, products(name, sku, unit, color)), lot_tags(tag, lot_item_id)')
                         .in('id', chunk)
 
                     if (error) {
@@ -169,11 +169,13 @@ function WarehouseStatusContent() {
                 lotInfoMap[l.id] = {
                     code: l.code,
                     items: l.lot_items?.map((it: any) => ({
+                        id: it.id,
                         product_name: it.products?.name,
                         sku: it.products?.sku,
-                        unit: it.products?.unit,
+                        unit: it.unit || it.products?.unit,
                         product_color: it.products?.color,
-                        quantity: it.quantity
+                        quantity: it.quantity,
+                        tags: l.lot_tags?.filter((t: any) => t.lot_item_id === it.id && !t.tag.startsWith('MERGED_')).map((t: any) => t.tag) || []
                     })) || []
                 }
             })

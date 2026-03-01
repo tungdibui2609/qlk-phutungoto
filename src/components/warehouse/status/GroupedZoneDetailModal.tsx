@@ -62,10 +62,10 @@ export function GroupedZoneDetailModal({
 
                 {/* Table Header */}
                 <div className="px-6 py-3 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 grid grid-cols-12 gap-4 text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    <div className="col-span-3">VỊ TRÍ</div>
-                    <div className="col-span-3">MÃ LÔ (LOT)</div>
+                    <div className="col-span-2">VỊ TRÍ</div>
+                    <div className="col-span-4">MÃ LÔ (LOT)</div>
                     <div className="col-span-4">SẢN PHẨM</div>
-                    <div className="col-span-2 text-right">TỒN KHO</div>
+                    <div className="col-span-2 text-right">SỐ LƯỢNG</div>
                 </div>
 
                 {/* Content Container (Scrollable) */}
@@ -97,20 +97,20 @@ export function GroupedZoneDetailModal({
                                         ${isOccupied ? 'border-indigo-100 dark:border-indigo-900/50 shadow-sm' : 'border-slate-100 dark:border-slate-800 opacity-60'}
                                     `}
                                 >
-                                    <div className="col-span-3 flex items-center gap-3">
+                                    <div className="col-span-2 flex items-center gap-3">
                                         <div className={`p-1.5 rounded-md ${isOccupied ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
                                             <Package size={14} />
                                         </div>
                                         <span className="font-bold text-sm text-slate-700 dark:text-slate-200 truncate" title={pos.code}>
-                                            {pos.code}
+                                            {pos.code?.split('.').pop() || pos.code}
                                         </span>
                                     </div>
 
-                                    <div className="col-span-3 min-w-0">
+                                    <div className="col-span-4 min-w-0">
                                         {isOccupied && lot ? (
                                             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-bold bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 truncate max-w-full" title={lot.code}>
                                                 <Hash size={10} className="text-slate-400" />
-                                                <span className="truncate">{lot.code.substring(0, 12)}{lot.code.length > 12 ? '...' : ''}</span>
+                                                <span className="truncate">{lot.code}</span>
                                             </span>
                                         ) : (
                                             <span className="text-xs text-slate-400 italic">Trống</span>
@@ -119,8 +119,20 @@ export function GroupedZoneDetailModal({
 
                                     <div className="col-span-4">
                                         {isOccupied && lot ? (
-                                            <div className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2" title={displayProduct}>
-                                                {displayProduct}
+                                            <div className="space-y-0.5">
+                                                {lot.items.length === 1 ? (
+                                                    <>
+                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                            <span className="text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-800">{lot.items[0].sku}</span>
+                                                            {lot.items[0].tags?.map((tag: string, ti: number) => (
+                                                                <span key={ti} className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded border border-amber-100 dark:border-amber-800">{tag}</span>
+                                                            ))}
+                                                        </div>
+                                                        <div className="text-xs text-slate-600 dark:text-slate-300 truncate" title={lot.items[0].product_name}>{lot.items[0].product_name}</div>
+                                                    </>
+                                                ) : (
+                                                    <div className="text-xs text-slate-600 dark:text-slate-300">{`Nhiều sản phẩm (${lot.items.length})`}</div>
+                                                )}
                                             </div>
                                         ) : (
                                             <div className="text-xs text-slate-400">-</div>
