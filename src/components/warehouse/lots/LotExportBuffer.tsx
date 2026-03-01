@@ -210,11 +210,16 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             const invRes = await fetch(`/api/inventory?systemType=${systemType}`).then(res => res.json())
             const stockData = (invRes.ok && Array.isArray(invRes.items)) ? invRes.items : []
 
-            // 4. Fetch Conversion Type
-            const { data: convType } = await (supabase as any).from('order_types')
-                .select('id')
-                .eq('code', 'CONV')
-                .single()
+            // 4. Fetch Conversion Type - Robust matching
+            const { data: convTypes } = await (supabase as any).from('order_types')
+                .select('id, name, code')
+                .eq('is_active', true)
+
+            const convType = convTypes?.find((t: any) => {
+                const normName = t.name.toLowerCase().replace(/\s+/g, ' ').trim()
+                const noAccents = normName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d")
+                return normName.includes('chuyển đổi') || noAccents.includes('chuyen doi') || t.code === 'CONV' || t.code === 'ĐL-ML04'
+            })
 
             // 5. Build necessary maps
             const localUnitNameMap: UnitNameMap = new Map()
@@ -350,17 +355,6 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                     console.log(`[Unbundle Trace] Executed Unbundle for ${item.product_name}`, { baseToBreak })
 
                     if (baseToBreak && baseToBreak > 0) {
-                        // NEW: Synchronize physical LOT items to match accounting conversion
-                        await unbundleService.syncPhysicalUnbundle({
-                            supabase,
-                            lotIds: toSync.map(p => p.lot_id),
-                            productId: item.product_id,
-                            baseUnit: check.sourceUnit,
-                            reqUnit: item.unit,
-                            baseToBreak: baseToBreak,
-                            rate: check.rate
-                        })
-
                         // Update local stock map for subsequent items in the same batch
                         const sourceKey = `${item.product_id}_${check.sourceUnit.toLowerCase().trim()}`
                         const reqKey = `${item.product_id}_${item.unit.toLowerCase().trim()}`
