@@ -25,6 +25,7 @@ interface AuditItem {
 interface AuditSession {
     id: string
     code: string
+    status: string
     warehouse_name: string | null
     created_at: string
     participants: any[]
@@ -65,6 +66,11 @@ export default function AuditPrintPage() {
         initialCompanyInfo,
         fallbackToProfile: !initialCompanyInfo
     })
+
+    // Determine if audit has been completed (checked)
+    // Before check: DRAFT, IN_PROGRESS, REJECTED → hide difference column (blank form)
+    // After check: WAITING_FOR_APPROVAL, COMPLETED → show all columns with results
+    const isChecked = session ? ['WAITING_FOR_APPROVAL', 'COMPLETED'].includes(session.status) : false
 
     // Editable States
     const [editReportTitle, setEditReportTitle] = useState('PHIẾU KIỂM KÊ KHO')
@@ -220,8 +226,10 @@ export default function AuditPrintPage() {
                             <th className="border border-black p-1 w-16">ĐVT</th>
                             <th className="border border-black p-1 text-right w-24">Số Hệ Thống</th>
                             <th className="border border-black p-1 text-right w-24">Số Thực Tế</th>
-                            <th className="border border-black p-1 text-right w-24">Chênh Lệch</th>
-                            <th className="border border-black p-1">Ghi Chú</th>
+                            {isChecked && (
+                                <th className="border border-black p-1 text-right w-24">Chênh Lệch</th>
+                            )}
+                            <th className="border border-black p-1 min-w-[120px]">Ghi Chú</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -233,11 +241,16 @@ export default function AuditPrintPage() {
                                 <td className="border border-black p-1 text-center">{item.unit}</td>
                                 <td className="border border-black p-1 text-right">{formatQuantityFull(item.system_quantity)}</td>
                                 <td className="border border-black p-1 text-right font-bold">
-                                    {item.actual_quantity !== null ? formatQuantityFull(item.actual_quantity) : '-'}
+                                    {isChecked
+                                        ? (item.actual_quantity !== null ? formatQuantityFull(item.actual_quantity) : '-')
+                                        : ''
+                                    }
                                 </td>
-                                <td className={`border border-black p-1 text-right font-bold ${item.difference !== 0 ? 'text-red-600 print:text-black' : ''}`}>
-                                    {item.difference > 0 ? '+' : ''}{formatQuantityFull(item.difference)}
-                                </td>
+                                {isChecked && (
+                                    <td className={`border border-black p-1 text-right font-bold ${item.difference !== 0 ? 'text-red-600 print:text-black' : ''}`}>
+                                        {item.difference > 0 ? '+' : ''}{formatQuantityFull(item.difference)}
+                                    </td>
+                                )}
                                 <td className="border border-black p-1 text-xs">{item.note}</td>
                             </tr>
                         ))}

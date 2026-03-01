@@ -80,10 +80,10 @@ export default function OperationHistoryPage() {
     }, [isRealtime])
 
     const groups = {
-        importExport: logs.filter(l => ['inbound_orders', 'outbound_orders'].includes(l.table_name)),
+        importExport: logs.filter(l => ['inbound_orders'].includes(l.table_name)),
         lots: logs.filter(l => ['lots', 'lot_items'].includes(l.table_name)),
-        warehouse: logs.filter(l => ['positions', 'locations', 'warehouses'].includes(l.table_name)),
-        others: logs.filter(l => !['inbound_orders', 'outbound_orders', 'lots', 'lot_items', 'positions', 'locations', 'warehouses'].includes(l.table_name))
+        warehouse: logs.filter(l => ['positions', 'locations', 'warehouses', 'export_tasks', 'outbound_orders'].includes(l.table_name)),
+        others: logs.filter(l => !['inbound_orders', 'outbound_orders', 'lots', 'lot_items', 'positions', 'locations', 'warehouses', 'export_tasks'].includes(l.table_name))
     }
 
     return (

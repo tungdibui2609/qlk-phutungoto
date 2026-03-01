@@ -8,6 +8,7 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { lotService } from '@/services/warehouse/lotService'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { logActivity } from '@/lib/audit'
 
 interface QuickBulkExportModalProps {
     lotIds: string[]
@@ -127,6 +128,17 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({ lotI
                 // Clear positions
                 const { error: posUpdError } = await supabase.from('positions').update({ lot_id: null }).eq('lot_id', lot.id)
                 if (posUpdError) throw posUpdError
+
+                // Audit log export action on lot
+                await logActivity({
+                    supabase,
+                    tableName: 'lots',
+                    recordId: lot.id,
+                    action: 'UPDATE',
+                    oldData: { quantity: lot.quantity, status: lot.status },
+                    newData: { quantity: 0, status: 'exported' },
+                    systemCode: lot.system_code
+                })
             }
 
             showToast(`Đã xuất thành công ${lotIds.length} lô hàng`, 'success')

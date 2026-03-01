@@ -1,7 +1,7 @@
 'use client'
 
 import { InventoryCheck } from '../_hooks/useAudit'
-import { ArrowLeft, CheckCircle, Zap, ShieldCheck, XCircle, PlusCircle, MinusCircle, FileText } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Zap, ShieldCheck, XCircle, PlusCircle, MinusCircle, FileText, Printer } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useUser } from '@/contexts/UserContext'
 
@@ -107,7 +107,7 @@ export function AuditSessionHeader({
                         className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
                         title="In phiếu kiểm kê"
                     >
-                        <FileText size={20} />
+                        <Printer size={20} />
                     </button>
 
                     {canEdit && (

@@ -11,6 +11,7 @@ import { Scanner } from '@yudiel/react-qr-scanner'
 import { ZoneCascadeSelector } from './_components/ZoneCascadeSelector'
 import { ScanHistory, ScanHistoryItem, ScanHistoryType } from './_components/ScanHistory'
 import { Database } from '@/lib/database.types'
+import { logActivity } from '@/lib/audit'
 
 type ScanStep = 0 | 1 | 2
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -324,6 +325,16 @@ export default function FastScanPage() {
 
             if (updateError) throw updateError
 
+            await logActivity({
+                supabase,
+                tableName: 'positions',
+                recordId: targetPos.id,
+                action: 'UPDATE',
+                oldData: { lot_id: null },
+                newData: { lot_id: lot.id },
+                systemCode: currentSystem?.code
+            })
+
             // 5. Update Local State (Optimistic)
             // Using functional update to ensure we have latest state
             setAllPositions(prev => {
@@ -506,6 +517,16 @@ export default function FastScanPage() {
                 .eq('id', targetPos.id)
 
             if (updateError) throw updateError
+
+            await logActivity({
+                supabase,
+                tableName: 'positions',
+                recordId: targetPos.id,
+                action: 'UPDATE',
+                oldData: { lot_id: targetPos.lot_id },
+                newData: { lot_id: lotData.id },
+                systemCode: currentSystem?.code
+            })
 
             // Success
             setAssignedPos(targetPos.code)

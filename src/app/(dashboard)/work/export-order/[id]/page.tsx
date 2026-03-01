@@ -14,6 +14,7 @@ import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
 import { QuickBulkExportModal } from '@/components/warehouse/map/QuickBulkExportModal'
 import { ExportOrderStatsModal } from '@/components/export/ExportOrderStatsModal'
 import { TagDisplay } from '@/components/lots/TagDisplay'
+import { logActivity } from '@/lib/audit'
 
 interface ExportOrderItem {
     id?: string
@@ -401,12 +402,26 @@ function ExportOrderDetailContent() {
                 updates.push({ id: availablePositions[i].position_id as string, lot_id: lotsArr[i] })
             }
 
-            // DB Updates for move
             const updatePromises = updates.map(u =>
                 supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id)
             )
             const results = await Promise.all(updatePromises)
             const hasError = results.some(r => r.error)
+
+            if (!hasError) {
+                // Log all movements
+                for (const u of updates) {
+                    await logActivity({
+                        supabase,
+                        tableName: 'positions',
+                        recordId: u.id,
+                        action: 'UPDATE',
+                        oldData: { lot_id: u.lot_id ? null : oldPosIdsToClear.includes(u.id) ? 'some_lot' : null }, // approximation for old data in bulk
+                        newData: { lot_id: u.lot_id },
+                        systemCode: currentSystem?.code
+                    })
+                }
+            }
 
             if (hasError) {
                 showToast('Hạ sảnh có lỗi xảy ra. Đang làm mới dữ liệu.', 'warning')
