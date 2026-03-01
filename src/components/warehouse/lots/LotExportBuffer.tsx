@@ -210,6 +210,19 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             const invRes = await fetch(`/api/inventory?systemType=${systemType}`).then(res => res.json())
             const stockData = (invRes.ok && Array.isArray(invRes.items)) ? invRes.items : []
 
+            // 3.5. Fetch Physical Lot Items to get balance per lot (Crucial for multi-lot unbundle accuracy)
+            const uniqueLotIds = Array.from(new Set(toSync.map(p => p.lot_id)))
+            const { data: lotItemsData } = await supabase.from('lot_items')
+                .select('lot_id, product_id, quantity, unit')
+                .in('lot_id', uniqueLotIds)
+
+            const localLotUnitStockMap: Map<string, number> = new Map()
+            lotItemsData?.forEach((li: any) => {
+                const normUnit = (li.unit || '').toLowerCase().trim()
+                const key = `${li.lot_id}_${li.product_id}_${normUnit}`
+                localLotUnitStockMap.set(key, (localLotUnitStockMap.get(key) || 0) + (li.quantity || 0))
+            })
+
             // 4. Fetch Conversion Type - Robust matching
             const { data: convTypes } = await (supabase as any).from('order_types')
                 .select('id, name, code')
@@ -230,21 +243,6 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                 const pMap = new Map<string, number>()
                 p.product_units?.forEach((pu: any) => pMap.set(pu.unit_id, pu.conversion_rate))
                 localConversionMap.set(p.id, pMap)
-            })
-
-            const localUnitStockMap: Map<string, number> = new Map()
-            stockData.forEach((s: any) => {
-                const normUnit = (s.unit || '').toLowerCase().trim().replace(/\s+/g, ' ')
-                const key = `${s.productId}_${normUnit}`
-                const current = localUnitStockMap.get(key) || 0
-                localUnitStockMap.set(key, current + (s.balance || 0))
-            })
-
-            console.log('[Unbundle Trace] Data Ready:', {
-                toSyncCount: toSync.length,
-                stockEntries: stockData.length,
-                stockMapSize: localUnitStockMap.size,
-                sampleStockKey: Array.from(localUnitStockMap.keys())[0]
             })
 
             // Generate Order Code Helper (Matches useOutboundOrder logic)
@@ -281,8 +279,10 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             // --- B. GENERATE MAIN ORDER CODE ---
             const orderCode = await generateInternalCode('PXK')
 
-            // --- C. PROCESS UNBUNDLE FOR EACH ITEM ---
+            // --- C. PROCESS UNBUNDLE FOR EACH ITEM (Per LOT) ---
             interface AggregateItem {
+                lot_id: string;
+                lot_code: string;
                 product_id: string;
                 product_name: string;
                 unit: string;
@@ -294,12 +294,15 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             for (const p of toSync) {
                 const itemsList = Object.values(p.items)
                 for (const item of itemsList) {
-                    const key = `${item.product_id}_${item.unit.toLowerCase().trim()}`
+                    // Group by LOT + Product + Unit to match physical unbundle reality
+                    const key = `${p.lot_id}_${item.product_id}_${item.unit.toLowerCase().trim()}`
                     const qtyNum = Number(item.exported_quantity) || 0
                     if (aggregatedReqs.has(key)) {
                         aggregatedReqs.get(key)!.total_qty += qtyNum
                     } else {
                         aggregatedReqs.set(key, {
+                            lot_id: p.lot_id,
+                            lot_code: p.lot_code,
                             product_id: item.product_id,
                             product_name: item.product_name,
                             unit: item.unit,
@@ -312,11 +315,19 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
 
             for (const item of aggregatedReqs.values()) {
                 const qtyNum = item.total_qty
-                console.log(`[Unbundle Trace] Verifying aggregated item: ${item.product_name}`, {
+                const normUnit = item.unit.toLowerCase().trim()
+                const lotStockKey = `${item.lot_id}_${item.product_id}_${normUnit}`
+                const currentInLot = localLotUnitStockMap.get(lotStockKey) || 0
+
+                console.log(`[Unbundle Trace] Verifying item in Lot ${item.lot_code}: ${item.product_name}`, {
                     reqQty: qtyNum,
                     reqUnit: item.unit,
-                    currentInStock: localUnitStockMap.get(`${item.product_id}_${item.unit.toLowerCase().trim()}`) || 0
+                    currentInLot: currentInLot
                 })
+
+                // Construct a temporary proxy stock map for checkUnbundle (it expects productId_unit)
+                const proxyStockMap = new Map<string, number>()
+                proxyStockMap.set(`${item.product_id}_${normUnit}`, currentInLot)
 
                 const check = unbundleService.checkUnbundle({
                     productId: item.product_id,
@@ -326,13 +337,13 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                     units: unitsData || [],
                     unitNameMap: localUnitNameMap,
                     conversionMap: localConversionMap,
-                    unitStockMap: localUnitStockMap
+                    unitStockMap: proxyStockMap // Pass the proxy map for this lot
                 })
 
-                console.log(`[Unbundle Trace] Unbundle Check for ${item.product_name}:`, check)
+                console.log(`[Unbundle Trace] Unbundle Check for ${item.product_name} in Lot ${item.lot_code}:`, check)
 
                 if (check.needsUnbundle && check.sourceUnit && check.rate) {
-                    showToast(`Thiếu ${item.unit} cho ${item.product_name}. Đang tự bẻ gói từ ${check.sourceUnit}...`, 'info')
+                    showToast(`Thiếu ${item.unit} tại lô ${item.lot_code}. Đang tự bẻ gói...`, 'info')
 
                     // Sync physical LOT items to match accounting conversion
                     const baseToBreak = await unbundleService.executeAutoUnbundle({
@@ -342,7 +353,7 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                         baseUnit: check.sourceUnit,
                         reqUnit: item.unit,
                         reqQty: qtyNum,
-                        currentLiquid: localUnitStockMap.get(`${item.product_id}_${item.unit.toLowerCase().trim()}`) || 0,
+                        currentLiquid: currentInLot, // Use Lot-specific liquid
                         costPrice: item.cost_price || 0,
                         rate: check.rate,
                         warehouseName: quickBranchName || currentSystem?.name || 'Kho chính',
@@ -352,15 +363,13 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                         generateOrderCode: generateInternalCode
                     })
 
-                    console.log(`[Unbundle Trace] Executed Unbundle for ${item.product_name}`, { baseToBreak })
-
                     if (baseToBreak && baseToBreak > 0) {
-                        // Update local stock map for subsequent items in the same batch
-                        const sourceKey = `${item.product_id}_${check.sourceUnit.toLowerCase().trim()}`
-                        const reqKey = `${item.product_id}_${item.unit.toLowerCase().trim()}`
+                        // Update the lot-specific map for subsequent items from the same LOT in this batch
+                        const sourceKey = `${item.lot_id}_${item.product_id}_${check.sourceUnit.toLowerCase().trim()}`
+                        const reqKey = `${item.lot_id}_${item.product_id}_${normUnit}`
 
-                        localUnitStockMap.set(sourceKey, (localUnitStockMap.get(sourceKey) || 0) - baseToBreak)
-                        localUnitStockMap.set(reqKey, (localUnitStockMap.get(reqKey) || 0) + (baseToBreak * check.rate))
+                        localLotUnitStockMap.set(sourceKey, (localLotUnitStockMap.get(sourceKey) || 0) - baseToBreak)
+                        localLotUnitStockMap.set(reqKey, (localLotUnitStockMap.get(reqKey) || 0) + (baseToBreak * check.rate))
                     }
                 }
             }
