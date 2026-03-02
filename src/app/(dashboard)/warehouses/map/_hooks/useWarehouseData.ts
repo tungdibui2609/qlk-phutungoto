@@ -233,14 +233,18 @@ export function useWarehouseData() {
     }, [accessToken, systemType])
 
     // Load Data Effect
+    const hasFetchedRef = useRef(false)
     useEffect(() => {
         const currentUserId = session?.user?.id
         if (systemType && (lastUserIdRef.current !== currentUserId)) {
             lastUserIdRef.current = currentUserId
-            if (currentUserId) fetchData()
+            if (currentUserId) {
+                hasFetchedRef.current = false
+                fetchData().then(() => { hasFetchedRef.current = true })
+            }
         }
-        if (systemType && accessToken && positions.length === 0 && !loading) {
-            fetchData()
+        if (systemType && accessToken && positions.length === 0 && !loading && !hasFetchedRef.current) {
+            fetchData().then(() => { hasFetchedRef.current = true })
         }
     }, [systemType, session?.user?.id, accessToken, fetchData, positions.length, loading])
 
