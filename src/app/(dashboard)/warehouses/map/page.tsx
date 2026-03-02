@@ -268,7 +268,21 @@ function WarehouseMapContent() {
             if (existing) return prev.map(l => l.zone_id === updatedLayout.zone_id ? updatedLayout : l)
             return [...prev, updatedLayout]
         })
-        setConfiguringZone(null)
+    }
+
+    function handleBatchLayoutSave(updatedLayouts: ZoneLayout[]) {
+        setLayouts(prev => {
+            let next = [...prev]
+            updatedLayouts.forEach(updatedLayout => {
+                const existing = next.find(l => l.zone_id === updatedLayout.zone_id)
+                if (existing) {
+                    next = next.map(l => l.zone_id === updatedLayout.zone_id ? updatedLayout : l)
+                } else {
+                    next = [...next, updatedLayout]
+                }
+            })
+            return next
+        })
     }
 
     function handleExportOrder(positionIds: string[], lotIds: string[]) {
@@ -583,7 +597,10 @@ function WarehouseMapContent() {
                     siblingZones={zones.filter(z => z.parent_id === configuringZone.parent_id)}
                     allZones={zones}
                     allLayouts={layoutRecord}
-                    onSave={handleLayoutSave}
+                    onSave={(layout) => {
+                        handleLayoutSave(layout)
+                    }}
+                    onBatchSave={handleBatchLayoutSave}
                     onClose={() => setConfiguringZone(null)}
                 />
             )}

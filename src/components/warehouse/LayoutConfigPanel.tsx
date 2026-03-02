@@ -160,7 +160,7 @@ export default function LayoutConfigPanel({
     function handlePaste() {
         if (!layoutDeepClipboard) return;
 
-        // 1. Apply root settings to local state
+        // 1. Apply root settings to local state (immediate UI feedback)
         const rootSettings = layoutDeepClipboard.settings;
         setPositionColumns(rootSettings.position_columns);
         setCellWidth(rootSettings.cell_width);
@@ -171,9 +171,18 @@ export default function LayoutConfigPanel({
         setCollapsible(rootSettings.collapsible);
         setDisplayType(rootSettings.display_type || 'auto');
 
-        // 2. Recursively collect and apply settings for descendants
+        // 2. Collect all zones to save (root + descendants)
         const batchToSave: any[] = [];
+        const now = new Date().toISOString();
 
+        // Always include root zone
+        batchToSave.push({
+            zone_id: zone.id,
+            ...rootSettings,
+            updated_at: now
+        });
+
+        // Recursively collect descendants
         const applyRecursive = (targetZone: Zone, template: DeepLayoutTemplate) => {
             const targetChildren = allZones
                 .filter(z => z.parent_id === targetZone.id)
@@ -185,7 +194,7 @@ export default function LayoutConfigPanel({
                     batchToSave.push({
                         zone_id: child.id,
                         ...childTemplate.settings,
-                        updated_at: new Date().toISOString()
+                        updated_at: now
                     });
                     applyRecursive(child, childTemplate);
                 }
@@ -193,12 +202,7 @@ export default function LayoutConfigPanel({
         };
 
         applyRecursive(zone, layoutDeepClipboard);
-
-        if (batchToSave.length > 0) {
-            handleApplyBatchToPersistence(batchToSave);
-        } else {
-            showToast('Đã paste cấu hình cho Zone hiện tại!', 'info');
-        }
+        handleApplyBatchToPersistence(batchToSave);
     }
 
     async function handleApplyBatchToPersistence(batch: any[]) {
@@ -299,6 +303,7 @@ export default function LayoutConfigPanel({
             if (error) throw error;
             showToast('Đã lưu cấu hình!', 'success');
             onSave(data);
+            onClose();
         } catch (err: any) {
             console.error('Save error:', err);
             showToast('Lỗi lưu: ' + (err.message || 'Không thể lưu'), 'error');
@@ -334,10 +339,6 @@ export default function LayoutConfigPanel({
 
             const savedLayouts = data || [];
             showToast(`Đã đồng bộ ${savedLayouts.length} vị trí!`, 'success');
-
-            // Find current zone's result to update local panel if it stays open
-            const currentSaved = savedLayouts.find((l: ZoneLayout) => l.zone_id === zone.id);
-            if (currentSaved) onSave(currentSaved);
 
             onBatchSave?.(savedLayouts);
         } catch (err: any) {
