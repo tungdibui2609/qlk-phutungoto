@@ -5,6 +5,7 @@ import { ZoneToolbar } from './ZoneToolbar'
 import { ZoneTemplateList } from './ZoneTemplateList'
 import { ZoneTree } from './ZoneTree'
 import { PositionCreatorModal } from './PositionCreatorModal'
+import { BulkCloneModal } from './BulkCloneModal'
 
 interface ZoneManagerProps {
     onZonesChanged?: () => void
@@ -55,6 +56,14 @@ export default function ZoneManager({ onZonesChanged }: ZoneManagerProps) {
                     positionsMap={manager.positionsMap}
                     generateId={manager.generateId}
                     buildDefaultPrefix={manager.buildDefaultPrefix}
+                />
+            )}
+
+            {ui.bulkCloningZone && (
+                <BulkCloneModal
+                    zone={ui.bulkCloningZone}
+                    onClose={() => ui.setBulkCloningZone(null)}
+                    onConfirm={manager.handleBulkClone}
                 />
             )}
         </div>

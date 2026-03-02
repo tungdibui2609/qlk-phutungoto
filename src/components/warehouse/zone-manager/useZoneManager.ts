@@ -32,6 +32,7 @@ export function useZoneManager() {
 
     const [addingPositionsTo, setAddingPositionsTo] = useState<string | null>(null)
     const [editingPosition, setEditingPosition] = useState<{ id: string, code: string } | null>(null)
+    const [bulkCloningZone, setBulkCloningZone] = useState<LocalZone | null>(null)
 
 
     // Computed dirty state
@@ -178,7 +179,8 @@ export function useZoneManager() {
                 _status: 'new',
                 system_type: systemType,
                 company_id: null,
-                is_hall: false
+                is_hall: false,
+                display_order: 0
             })
         }
 
@@ -210,7 +212,8 @@ export function useZoneManager() {
                 _status: 'new',
                 system_type: systemType,
                 company_id: null,
-                is_hall: false
+                is_hall: false,
+                display_order: 0
             })
 
             for (const child of node.children) {
@@ -230,7 +233,8 @@ export function useZoneManager() {
             _status: 'new',
             system_type: systemType,
             company_id: null,
-            is_hall: false
+            is_hall: false,
+            display_order: 0
         })
 
         // Children
@@ -249,6 +253,16 @@ export function useZoneManager() {
             if (z.id === zoneId) {
                 const newStatus = z._status === 'new' ? 'new' : 'modified'
                 return { ...z, code: code.toUpperCase().trim(), name: name.trim(), _status: newStatus }
+            }
+            return z
+        }))
+    }
+
+    function handleSetDisplayOrder(zoneId: string, order: number) {
+        setZones(prev => prev.map(z => {
+            if (z.id === zoneId) {
+                const newStatus = z._status === 'new' ? 'new' : 'modified'
+                return { ...z, display_order: order, _status: newStatus }
             }
             return z
         }))
@@ -288,6 +302,45 @@ export function useZoneManager() {
         }
         duplicateRecursive(zone, zone.parent_id)
         setZones(prev => [...prev, ...newZones])
+    }
+
+    function handleBulkClone(zone: LocalZone, fromN: number, toN: number, padLength: number) {
+        // Parse the prefix from the zone code/name (e.g. "B01" → prefix "B")
+        const codeMatch = zone.code.match(/^(.*?)(\d+)$/)
+        const nameMatch = zone.name.match(/^(.*?)(\d+)$/)
+        const codePrefix = codeMatch ? codeMatch[1] : zone.code + '_'
+        const namePrefix = nameMatch ? nameMatch[1] : zone.name + ' '
+
+        const allNewZones: LocalZone[] = []
+
+        for (let i = fromN; i <= toN; i++) {
+            const numStr = String(i).padStart(padLength, '0')
+            const newCode = codePrefix + numStr
+            const newName = namePrefix + numStr
+
+            function cloneRecursive(originalZone: LocalZone, newParentId: string | null, isRoot: boolean) {
+                const newId = generateId()
+                allNewZones.push({
+                    ...originalZone,
+                    id: newId,
+                    parent_id: newParentId,
+                    code: isRoot ? newCode.toUpperCase() : originalZone.code,
+                    name: isRoot ? newName : originalZone.name,
+                    created_at: new Date().toISOString(),
+                    _status: 'new',
+                })
+                const children = zones.filter(z => z.parent_id === originalZone.id && z._status !== 'deleted')
+                for (const child of children) {
+                    cloneRecursive(child, newId, false)
+                }
+            }
+
+            cloneRecursive(zone, zone.parent_id, true)
+        }
+
+        setZones(prev => [...prev, ...allNewZones])
+        setBulkCloningZone(null)
+        showToast(`Đã tạo ${toN - fromN + 1} zone! Nhớ nhấn Lưu thay đổi.`, 'success')
     }
 
     function handleDelete(id: string) {
@@ -448,7 +501,7 @@ export function useZoneManager() {
 
             // Update Zones
             for (const z of zones.filter(z => z._status === 'modified')) {
-                const { error } = await (supabase.from('zones') as any).update({ code: z.code, name: z.name, is_hall: z.is_hall }).eq('id', z.id)
+                const { error } = await (supabase.from('zones') as any).update({ code: z.code, name: z.name, is_hall: z.is_hall, display_order: z.display_order ?? 0 }).eq('id', z.id)
                 if (error) throw error
             }
 
@@ -457,7 +510,7 @@ export function useZoneManager() {
             if (newZones.length > 0) {
                 newZones.sort((a, b) => (a.level ?? 0) - (b.level ?? 0))
                 const cleanZones = newZones.map(z => ({
-                    id: z.id, code: z.code, name: z.name, parent_id: z.parent_id, level: z.level, system_type: systemType, is_hall: z.is_hall
+                    id: z.id, code: z.code, name: z.name, parent_id: z.parent_id, level: z.level, system_type: systemType, is_hall: z.is_hall, display_order: z.display_order ?? 0
                 }))
                 const { error } = await (supabase.from('zones') as any).insert(cleanZones)
                 if (error) throw error
@@ -615,7 +668,8 @@ export function useZoneManager() {
             savingTemplate, setSavingTemplate,
             templateName, setTemplateName,
             addingPositionsTo, setAddingPositionsTo,
-            editingPosition, setEditingPosition
+            editingPosition, setEditingPosition,
+            bulkCloningZone, setBulkCloningZone
         },
 
         // Actions
@@ -624,12 +678,14 @@ export function useZoneManager() {
         handleRename,
         handleToggleHall,
         handleDuplicate,
+        handleBulkClone,
         handleDelete,
         handleDeleteAllZones,
         handleSaveAsTemplate,
         deleteTemplate,
         handleSaveChanges,
         handleDiscardChanges,
+        handleSetDisplayOrder,
 
         // Positions
         setPositionsMap,
@@ -640,7 +696,14 @@ export function useZoneManager() {
         generateId,
 
         // Helpers
-        buildTree: (parentId: string | null) => zones.filter(z => z.parent_id === parentId && z._status !== 'deleted').sort((a, b) => (a.code || '').localeCompare(b.code || '')),
+        buildTree: (parentId: string | null) => zones
+            .filter(z => z.parent_id === parentId && z._status !== 'deleted')
+            .sort((a, b) => {
+                const oa = a.display_order ?? 0
+                const ob = b.display_order ?? 0
+                if (oa !== ob) return oa - ob
+                return (a.code || '').localeCompare(b.code || '')
+            }),
         countChildren: (zoneId: string) => {
             const countR = (zId: string): number => {
                 const children = zones.filter(z => z.parent_id === zId && z._status !== 'deleted')

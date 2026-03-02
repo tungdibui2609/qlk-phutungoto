@@ -1,4 +1,5 @@
-import { ChevronDown, ChevronRight, Layers, Check, X, Edit2, Plus, Save, Copy, Package, Trash2, Flag } from 'lucide-react'
+import React, { useState } from 'react'
+import { ChevronDown, ChevronRight, Layers, Check, X, Edit2, Plus, Save, Copy, CopyPlus, Package, Trash2, Flag } from 'lucide-react'
 import Protected from '@/components/auth/Protected'
 import { LocalZone, LocalPosition } from './types'
 import { QuickAddForm } from './QuickAddForm'
@@ -20,10 +21,22 @@ export function ZoneNode({ zone, depth = 0, positions, childrenZones, expandedNo
     const isExpanded = expandedNodes.has(zone.id)
     const isEditing = ui.editingZone === zone.id
     const isSavingTemplate = ui.savingTemplate === zone.id
-    // Count recursively logic needed? passing simple count is better but here we have childrenZones.
-    // Let's use count from props if needed, or simple length here.
-    const childCount = childrenZones.length // Note: this is direct children only, not recursive count.
+    const childCount = childrenZones.length
     const posCount = positions.length
+
+    const [editingOrder, setEditingOrder] = useState(false)
+    const [orderInput, setOrderInput] = useState('')
+
+    function startEditOrder() {
+        setOrderInput(String(zone.display_order ?? 0))
+        setEditingOrder(true)
+    }
+
+    function commitOrder() {
+        const n = parseInt(orderInput)
+        if (!isNaN(n)) handlers.handleSetDisplayOrder(zone.id, n)
+        setEditingOrder(false)
+    }
 
     // Visual diffs
     const isNew = zone._status === 'new'
@@ -91,10 +104,30 @@ export function ZoneNode({ zone, depth = 0, positions, childrenZones, expandedNo
                 ) : (
                     <>
                         <div className="flex-1 min-w-0 flex items-center gap-2">
+                            {/* Display order badge */}
+                            {editingOrder ? (
+                                <input
+                                    autoFocus
+                                    type="number"
+                                    value={orderInput}
+                                    onChange={e => setOrderInput(e.target.value)}
+                                    onBlur={commitOrder}
+                                    onKeyDown={e => { if (e.key === 'Enter') commitOrder(); if (e.key === 'Escape') setEditingOrder(false) }}
+                                    className="w-14 px-1.5 py-0.5 text-xs text-center border border-blue-400 rounded-full font-mono bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                    onClick={e => e.stopPropagation()}
+                                />
+                            ) : (
+                                <button
+                                    onClick={e => { e.stopPropagation(); startEditOrder() }}
+                                    title="Click để đặt thứ tự hiển thị"
+                                    className="min-w-[24px] px-1.5 py-0.5 text-[10px] font-mono rounded-full border transition-colors bg-gray-100 border-gray-200 text-gray-500 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400"
+                                >
+                                    #{zone.display_order ?? 0}
+                                </button>
+                            )}
                             <span className="font-mono text-xs text-gray-500 dark:text-gray-400">{zone.code}</span>
                             <span className="text-sm text-gray-900 dark:text-white font-medium">{zone.name}</span>
                             <span className="text-xs text-gray-400">(L{zone.level})</span>
-                            {/* Recursive count would need props or helper, skipping exact count for simplicity or using simple length */}
                             {childCount > 0 && <span className="text-xs text-blue-500">• {childCount} zone con</span>}
                             {posCount > 0 && <span className="text-xs text-green-600 font-medium">• {posCount} vị trí</span>}
                             {zone.is_hall && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1 rounded flex items-center gap-0.5"><Flag size={10} /> Sảnh</span>}
@@ -137,9 +170,16 @@ export function ZoneNode({ zone, depth = 0, positions, childrenZones, expandedNo
                                 <button
                                     onClick={() => handlers.handleDuplicate(zone)}
                                     className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-                                    title="Nhân bản"
+                                    title="Nhân bản (1 bản)"
                                 >
                                     <Copy size={14} />
+                                </button>
+                                <button
+                                    onClick={() => ui.setBulkCloningZone(zone)}
+                                    className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded"
+                                    title="Nhân bản hàng loạt (tăng số thứ tự)"
+                                >
+                                    <CopyPlus size={14} />
                                 </button>
                                 <button
                                     onClick={() => { ui.setAddingPositionsTo(zone.id) }} // Missing default prefix logic here, handled in Modal or effect?

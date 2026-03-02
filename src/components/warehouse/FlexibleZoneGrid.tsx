@@ -284,9 +284,14 @@ export default function FlexibleZoneGrid({
             }
         })
 
-        // Sort children by code
+        // Sort children by display_order first, then code
         map.forEach(node => {
-            node.children.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+            node.children.sort((a, b) => {
+                const oa = (a as any).display_order ?? 0
+                const ob = (b as any).display_order ?? 0
+                if (oa !== ob) return oa - ob
+                return (a.code || '').localeCompare(b.code || '')
+            })
             node.positions.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }))
         })
 
@@ -294,14 +299,20 @@ export default function FlexibleZoneGrid({
         return zones
             .filter(z => !z.parent_id || !map.has(z.parent_id))
             .map(z => map.get(z.id)!)
-            .sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+            .sort((a, b) => {
+                const oa = (a as any).display_order ?? 0
+                const ob = (b as any).display_order ?? 0
+                if (oa !== ob) return oa - ob
+                return (a.code || '').localeCompare(b.code || '')
+            })
     }, [zones, positions])
 
     // Recursive render function
     function renderZone(
         zone: Zone & { children: Zone[], positions: PositionWithZone[] },
         depth: number = 0,
-        breadcrumb: string[] = []
+        breadcrumb: string[] = [],
+        overrideBgStyle?: React.CSSProperties
     ): React.ReactNode {
         const layout = layouts[zone.id] as any
         const isCollapsed = collapsedZones.has(zone.id)
@@ -321,6 +332,10 @@ export default function FlexibleZoneGrid({
         const childWidth = layout?.child_width ?? 0
         const collapsible = layout?.collapsible ?? true
         const displayType = layout?.display_type ?? 'auto'
+        const alternatingRows = layout?.alternating_rows ?? false
+        const headerColor = layout?.header_color ?? null
+        const headerTextColor = layout?.header_text_color ?? null
+        const effectiveChildCols = childColumns > 0 ? childColumns : 3
 
         // Build breadcrumb path (needed for all display types including hidden)
         const currentBreadcrumb = [...breadcrumb, zone.name]
@@ -429,15 +444,30 @@ export default function FlexibleZoneGrid({
                             </div>
                         )}
                         {/* QLK-style header with breadcrumb */}
-                        <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-emerald-50 to-white dark:from-emerald-900/20 dark:to-gray-800 border-b border-emerald-100 dark:border-emerald-900/50">
+                        <div
+                            className="flex items-center justify-between px-4 py-3 border-b"
+                            style={headerColor
+                                ? { backgroundColor: headerColor, borderColor: headerColor }
+                                : { background: 'linear-gradient(to right, rgb(236 253 245), white)' }
+                            }
+                        >
                             <div className="flex items-center gap-3">
-                                <div className="w-1 h-8 bg-emerald-500 rounded-full shrink-0"></div>
+                                <div
+                                    className="w-1 h-8 rounded-full shrink-0"
+                                    style={{ backgroundColor: headerTextColor || (headerColor ? 'rgba(255,255,255,0.8)' : '#22c55e') }}
+                                />
                                 <div>
-                                    <h2 className={`font-bold text-emerald-900 dark:text-emerald-100 tracking-tight ${isMobile ? 'text-sm' : 'text-lg'}`}>
+                                    <h2
+                                        className={`font-bold tracking-tight ${isMobile ? 'text-sm' : 'text-lg'}`}
+                                        style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
+                                    >
                                         {isMobile ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • ')}
                                     </h2>
                                     {totalPositions > 0 && (
-                                        <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                                        <p
+                                            className="text-xs"
+                                            style={{ color: headerTextColor ? `${headerTextColor}cc` : (headerColor ? 'rgba(255,255,255,0.8)' : undefined) }}
+                                        >
                                             {totalPositions} vị trí
                                         </p>
                                     )}
@@ -509,6 +539,7 @@ export default function FlexibleZoneGrid({
                     <div
                         key={zone.id}
                         className={`rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800 ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
+                        style={overrideBgStyle}
                     >
                         {pageBreakIds.has(zone.id) && (
                             <div className="hidden print:block text-center border-b border-dashed border-gray-300 mb-4 pb-2 text-[10px] text-gray-400 italic">
@@ -517,22 +548,35 @@ export default function FlexibleZoneGrid({
                         )}
                         {/* QLK-style header with breadcrumb - same as Grid mode */}
                         <div
-                            className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-emerald-50 to-white dark:from-emerald-900/20 dark:to-gray-800 border-b border-emerald-100 dark:border-emerald-900/50 cursor-pointer"
+                            className="flex items-center justify-between px-4 py-3 border-b cursor-pointer"
+                            style={headerColor
+                                ? { backgroundColor: headerColor, borderColor: headerColor }
+                                : { background: 'linear-gradient(to right, rgb(236 253 245), white)' }
+                            }
                             onClick={() => collapsible && onToggleCollapse(zone.id)}
                         >
                             <div className="flex items-center gap-3">
                                 {collapsible && (
                                     isCollapsed
-                                        ? <ChevronRight size={16} className="text-emerald-500" />
-                                        : <ChevronDown size={16} className="text-emerald-500" />
+                                        ? <ChevronRight size={16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
+                                        : <ChevronDown size={16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
                                 )}
-                                <div className="w-1 h-8 bg-emerald-500 rounded-full shrink-0"></div>
+                                <div
+                                    className="w-1 h-8 rounded-full shrink-0"
+                                    style={{ backgroundColor: headerTextColor || (headerColor ? 'rgba(255,255,255,0.8)' : '#22c55e') }}
+                                />
                                 <div>
-                                    <h2 className={`font-bold text-emerald-900 dark:text-emerald-100 tracking-tight ${isMobile ? 'text-sm' : 'text-lg'}`}>
+                                    <h2
+                                        className={`font-bold tracking-tight ${isMobile ? 'text-sm' : 'text-lg'}`}
+                                        style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
+                                    >
                                         {isMobile ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • ')}
                                     </h2>
                                     {totalPositions > 0 && (
-                                        <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                                        <p
+                                            className="text-xs"
+                                            style={{ color: headerTextColor ? `${headerTextColor}cc` : (headerColor ? 'rgba(255,255,255,0.8)' : undefined) }}
+                                        >
                                             {totalPositions} vị trí
                                         </p>
                                     )}
@@ -591,8 +635,37 @@ export default function FlexibleZoneGrid({
                                     </div>
                                 )}
                                 {hasChildren && (
-                                    <div className={childLayout === 'horizontal' ? 'flex gap-3 overflow-x-auto pb-2' : 'space-y-3'}>
-                                        {zone.children.map(child => renderZone(child as any, depth + 1, currentBreadcrumb))}
+                                    <div
+                                        className={
+                                            childLayout === 'horizontal'
+                                                ? 'flex gap-3 overflow-x-auto pb-2'
+                                                : childLayout === 'grid'
+                                                    ? `grid gap-3`
+                                                    : 'space-y-3'
+                                        }
+                                        style={
+                                            childLayout === 'grid' && childColumns > 0
+                                                ? { gridTemplateColumns: `repeat(${childColumns}, minmax(0, 1fr))` }
+                                                : childLayout === 'grid'
+                                                    ? { gridTemplateColumns: `repeat(auto-fill, minmax(300px, 1fr))` }
+                                                    : undefined
+                                        }
+                                    >
+                                        {zone.children.map((child, idx) => {
+                                            const rowIdx = childLayout === 'grid' ? Math.floor(idx / effectiveChildCols) : 0
+                                            const rowStyle: React.CSSProperties | undefined = alternatingRows && childLayout === 'grid' && rowIdx % 2 !== 0
+                                                ? { backgroundColor: 'rgba(219, 234, 254, 0.55)', borderColor: 'rgba(147, 197, 253, 0.4)' }
+                                                : undefined
+                                            return (
+                                                <div
+                                                    key={child.id}
+                                                    className={childLayout === 'horizontal' ? 'shrink-0 grow' : ''}
+                                                    style={childLayout === 'horizontal' && childWidth > 0 ? { width: `${childWidth}px` } : undefined}
+                                                >
+                                                    {renderZone(child as any, depth + 1, currentBreadcrumb, rowStyle)}
+                                                </div>
+                                            )
+                                        })}
                                     </div>
                                 )}
                             </div>
@@ -606,26 +679,38 @@ export default function FlexibleZoneGrid({
                 return (
                     <div
                         key={zone.id}
-                        className={`rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden ${depth === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50'
-                            }`}
+                        className={`rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden ${depth === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50'}`}
+                        style={overrideBgStyle}
                     >
                         {/* Zone Header */}
                         <div
-                            className={`flex items-center justify-between px-4 py-2 border-b border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors ${depth === 0 ? 'bg-gray-50 dark:bg-gray-900/50' : ''
-                                }`}
+                            className={`flex items-center justify-between px-4 py-2 border-b cursor-pointer transition-colors ${headerColor ? '' : `border-gray-100 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/50 ${depth === 0 ? 'bg-gray-50 dark:bg-gray-900/50' : ''}`}`}
+                            style={headerColor
+                                ? { backgroundColor: headerColor, borderColor: headerColor }
+                                : undefined
+                            }
                             onClick={() => collapsible && onToggleCollapse(zone.id)}
                         >
                             <div className="flex items-center gap-2">
                                 {collapsible && (hasChildren || hasPositions) && (
                                     isCollapsed
-                                        ? <ChevronRight size={16} className="text-gray-400" />
-                                        : <ChevronDown size={16} className="text-gray-400" />
+                                        ? <ChevronRight size={16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-gray-400'} />
+                                        : <ChevronDown size={16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-gray-400'} />
                                 )}
-                                <span className={`font-medium ${depth === 0 ? 'text-base' : 'text-sm'} text-gray-900 dark:text-white`}>
+                                <span
+                                    className={`font-medium ${depth === 0 ? 'text-base' : 'text-sm'}`}
+                                    style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
+                                >
                                     {zone.name}
                                 </span>
                                 {totalPositions > 0 && (
-                                    <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 px-1.5 py-0.5 rounded-full">
+                                    <span
+                                        className={`text-xs px-1.5 py-0.5 rounded-full ${headerColor || headerTextColor ? '' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300'}`}
+                                        style={{
+                                            backgroundColor: headerTextColor ? `${headerTextColor}33` : (headerColor ? 'rgba(255,255,255,0.2)' : undefined),
+                                            color: headerTextColor || (headerColor ? 'white' : undefined)
+                                        }}
+                                    >
                                         {totalPositions} vị trí
                                     </span>
                                 )}
@@ -681,19 +766,21 @@ export default function FlexibleZoneGrid({
                                                     : undefined
                                         }
                                     >
-                                        {zone.children.map(child => (
-                                            <div
-                                                key={child.id}
-                                                className={childLayout === 'horizontal' ? 'shrink-0 grow' : ''}
-                                                style={
-                                                    childLayout === 'horizontal' && childWidth > 0
-                                                        ? { width: `${childWidth}px` }
-                                                        : undefined
-                                                }
-                                            >
-                                                {renderZone(child as any, depth + 1, currentBreadcrumb)}
-                                            </div>
-                                        ))}
+                                        {zone.children.map((child, idx) => {
+                                            const rowIdx = childLayout === 'grid' ? Math.floor(idx / effectiveChildCols) : 0
+                                            const rowStyle: React.CSSProperties | undefined = alternatingRows && childLayout === 'grid' && rowIdx % 2 !== 0
+                                                ? { backgroundColor: 'rgba(219, 234, 254, 0.55)', borderColor: 'rgba(147, 197, 253, 0.4)' }
+                                                : undefined
+                                            return (
+                                                <div
+                                                    key={child.id}
+                                                    className={childLayout === 'horizontal' ? 'shrink-0 grow' : ''}
+                                                    style={childLayout === 'horizontal' && childWidth > 0 ? { width: `${childWidth}px` } : undefined}
+                                                >
+                                                    {renderZone(child as any, depth + 1, currentBreadcrumb, rowStyle)}
+                                                </div>
+                                            )
+                                        })}
                                     </div>
                                 )}
                             </div>

@@ -1611,6 +1611,7 @@ export type Database = {
       }
       zone_layouts: {
         Row: {
+          alternating_rows: boolean | null
           cell_height: number | null
           cell_width: number | null
           child_columns: number | null
@@ -1620,12 +1621,15 @@ export type Database = {
           company_id: string | null
           created_at: string | null
           display_type: string | null
+          header_color: string | null
+          header_text_color: string | null
           id: string
           position_columns: number | null
           updated_at: string | null
           zone_id: string | null
         }
         Insert: {
+          alternating_rows?: boolean | null
           cell_height?: number | null
           cell_width?: number | null
           child_columns?: number | null
@@ -1634,12 +1638,15 @@ export type Database = {
           collapsible?: boolean | null
           created_at?: string | null
           display_type?: string | null
+          header_color?: string | null
+          header_text_color?: string | null
           id?: string
           position_columns?: number | null
           updated_at?: string | null
           zone_id?: string | null
         }
         Update: {
+          alternating_rows?: boolean | null
           cell_height?: number | null
           cell_width?: number | null
           child_columns?: number | null
@@ -1648,6 +1655,8 @@ export type Database = {
           collapsible?: boolean | null
           created_at?: string | null
           display_type?: string | null
+          header_color?: string | null
+          header_text_color?: string | null
           id?: string
           position_columns?: number | null
           updated_at?: string | null
@@ -1725,6 +1734,7 @@ export type Database = {
           code: string
           company_id: string | null
           created_at: string | null
+          display_order: number | null
           id: string
           is_hall: boolean | null
           level: number | null
@@ -1736,6 +1746,7 @@ export type Database = {
           code: string
           company_id?: string | null
           created_at?: string | null
+          display_order?: number | null
           id?: string
           is_hall?: boolean | null
           level?: number | null
@@ -1747,6 +1758,7 @@ export type Database = {
           code?: string
           company_id?: string | null
           created_at?: string | null
+          display_order?: number | null
           id?: string
           is_hall?: boolean | null
           level?: number | null

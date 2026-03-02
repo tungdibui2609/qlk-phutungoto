@@ -591,18 +591,20 @@ function WarehouseMapContent() {
             )}
 
             {configuringZone && (
-                <LayoutConfigPanel
-                    zone={configuringZone}
-                    layout={layouts.find(l => l.zone_id === configuringZone.id) || null}
-                    siblingZones={zones.filter(z => z.parent_id === configuringZone.parent_id)}
-                    allZones={zones}
-                    allLayouts={layoutRecord}
-                    onSave={(layout) => {
-                        handleLayoutSave(layout)
-                    }}
-                    onBatchSave={handleBatchLayoutSave}
-                    onClose={() => setConfiguringZone(null)}
-                />
+                <div className="fixed bottom-6 right-6 z-[100] animate-in slide-in-from-right-8">
+                    <LayoutConfigPanel
+                        zone={configuringZone}
+                        layout={layouts.find(l => l.zone_id === configuringZone.id) || null}
+                        siblingZones={zones.filter(z => z.parent_id === configuringZone.parent_id)}
+                        allZones={zones}
+                        allLayouts={layoutRecord}
+                        onSave={(layout) => {
+                            handleLayoutSave(layout)
+                        }}
+                        onBatchSave={handleBatchLayoutSave}
+                        onClose={() => setConfiguringZone(null)}
+                    />
+                </div>
             )}
 
             {taggingLotId && (

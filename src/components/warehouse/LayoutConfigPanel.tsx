@@ -17,6 +17,9 @@ interface LayoutSettings {
     child_width: number
     collapsible: boolean
     display_type: string
+    alternating_rows: boolean
+    header_color: string | null
+    header_text_color: string | null
 }
 
 interface DeepLayoutTemplate {
@@ -75,6 +78,9 @@ export default function LayoutConfigPanel({
     const [childWidth, setChildWidth] = useState(layout?.child_width ?? 0)
     const [collapsible, setCollapsible] = useState(layout?.collapsible ?? true)
     const [displayType, setDisplayType] = useState(layout?.display_type ?? 'auto')
+    const [alternatingRows, setAlternatingRows] = useState(layout?.alternating_rows ?? false)
+    const [headerColor, setHeaderColor] = useState<string | null>(layout?.header_color ?? null)
+    const [headerTextColor, setHeaderTextColor] = useState<string | null>(layout?.header_text_color ?? null)
     const [isSaving, setIsSaving] = useState(false)
     const [hasClipboard, setHasClipboard] = useState(!!layoutDeepClipboard)
 
@@ -88,6 +94,9 @@ export default function LayoutConfigPanel({
         setChildWidth(layout?.child_width ?? 0)
         setCollapsible(layout?.collapsible ?? true)
         setDisplayType(layout?.display_type ?? 'auto')
+        setAlternatingRows(layout?.alternating_rows ?? false)
+        setHeaderColor(layout?.header_color ?? null)
+        setHeaderTextColor(layout?.header_text_color ?? null)
     }, [layout, zone.id])
 
     // Count siblings (excluding current zone)
@@ -108,7 +117,7 @@ export default function LayoutConfigPanel({
                 ...getCurrentSettings()
             } as any);
         }
-    }, [positionColumns, cellWidth, cellHeight, childLayout, childColumns, childWidth, collapsible, displayType]);
+    }, [positionColumns, cellWidth, cellHeight, childLayout, childColumns, childWidth, collapsible, displayType, alternatingRows, headerColor, headerTextColor]);
 
     function getCurrentSettings(): LayoutSettings {
         return {
@@ -119,7 +128,10 @@ export default function LayoutConfigPanel({
             child_columns: childColumns,
             child_width: childWidth,
             collapsible,
-            display_type: displayType
+            display_type: displayType,
+            alternating_rows: alternatingRows,
+            header_color: headerColor,
+            header_text_color: headerTextColor
         }
     }
 
@@ -137,7 +149,10 @@ export default function LayoutConfigPanel({
                 child_columns: s.child_columns ?? 0,
                 child_width: s.child_width ?? 0,
                 collapsible: s.collapsible ?? true,
-                display_type: s.display_type ?? 'auto'
+                display_type: s.display_type ?? 'auto',
+                alternating_rows: s.alternating_rows ?? false,
+                header_color: s.header_color ?? null,
+                header_text_color: s.header_text_color ?? null
             });
 
             const actualSettings = targetZone.id === zone.id ? getCurrentSettings() : sanitize(rawSettings);
@@ -301,8 +316,11 @@ export default function LayoutConfigPanel({
                 .single();
 
             if (error) throw error;
+            // Merge local settings into returned data to bypass Supabase schema cache issues
+            // (new columns like alternating_rows may not appear in response if schema cache hasn't refreshed)
+            const mergedLayout = { ...data, ...getCurrentSettings(), zone_id: zone.id };
             showToast('Đã lưu cấu hình!', 'success');
-            onSave(data);
+            onSave(mergedLayout as any);
             onClose();
         } catch (err: any) {
             console.error('Save error:', err);
@@ -505,9 +523,21 @@ export default function LayoutConfigPanel({
                         />
                     </div>
                 )}
+
+                {childLayout === 'grid' && (
+                    <label className="flex items-center gap-2 cursor-pointer mt-1">
+                        <input
+                            type="checkbox" checked={alternatingRows}
+                            onChange={(e) => setAlternatingRows(e.target.checked)}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                            Tô màu xẻn kẽ dòng
+                        </span>
+                    </label>
+                )}
             </div>
 
-            {/* Collapsible */}
             <label className="flex items-center gap-2 cursor-pointer border-t pt-3">
                 <input
                     type="checkbox" checked={collapsible}
@@ -516,6 +546,89 @@ export default function LayoutConfigPanel({
                 />
                 <span className="text-sm text-gray-700 dark:text-gray-300">Thu gọn được</span>
             </label>
+
+            {/* Header Color */}
+            <div className="border-t pt-3">
+                <div className="text-xs font-semibold text-gray-500 mb-2">MÀU NỀN TIÊU ĐỀ</div>
+                <div className="flex flex-wrap gap-2 items-center">
+                    {[
+                        { color: '#ef4444', label: 'Đỏ' },
+                        { color: '#f97316', label: 'Cam' },
+                        { color: '#eab308', label: 'Vàng' },
+                        { color: '#22c55e', label: 'Xanh lá' },
+                        { color: '#14b8a6', label: 'Ngọc' },
+                        { color: '#3b82f6', label: 'Xanh dương' },
+                        { color: '#6366f1', label: 'Tím lam' },
+                        { color: '#a855f7', label: 'Tím' },
+                        { color: '#ec4899', label: 'Hồng' },
+                        { color: '#6b7280', label: 'Xám' },
+                    ].map(({ color, label }) => (
+                        <button
+                            key={color}
+                            title={label}
+                            onClick={() => setHeaderColor(headerColor === color ? null : color)}
+                            style={{ backgroundColor: color }}
+                            className={`w-7 h-7 rounded-full transition-all border-2 ${headerColor === color ? 'border-gray-900 scale-110 shadow-md' : 'border-transparent hover:scale-105'}`}
+                        />
+                    ))}
+                    {headerColor && (
+                        <button
+                            onClick={() => setHeaderColor(null)}
+                            className="text-xs text-gray-500 hover:text-red-500 px-2 py-1 rounded border border-gray-200 hover:border-red-300 transition-colors"
+                        >
+                            Xóa
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* Header Text Color */}
+            <div className="border-t pt-3">
+                <div className="text-xs font-semibold text-gray-500 mb-2">MÀU CHỮ TIÊU ĐỀ</div>
+                <div className="flex flex-wrap gap-2 items-center">
+                    {[
+                        { color: '#ffffff', label: 'Trắng' },
+                        { color: '#1f2937', label: 'Đen' },
+                        { color: '#ef4444', label: 'Đỏ' },
+                        { color: '#f97316', label: 'Cam' },
+                        { color: '#eab308', label: 'Vàng' },
+                        { color: '#22c55e', label: 'Xanh lá' },
+                        { color: '#14b8a6', label: 'Ngọc' },
+                        { color: '#3b82f6', label: 'Xanh dương' },
+                        { color: '#a855f7', label: 'Tím' },
+                        { color: '#6b7280', label: 'Xám' },
+                    ].map(({ color, label }) => (
+                        <button
+                            key={color}
+                            title={label}
+                            onClick={() => setHeaderTextColor(headerTextColor === color ? null : color)}
+                            style={{ backgroundColor: color, border: color === '#ffffff' ? '1px solid #e5e7eb' : undefined }}
+                            className={`w-7 h-7 rounded-full transition-all border-2 ${headerTextColor === color ? 'border-gray-900 scale-110 shadow-md' : 'border-transparent hover:scale-105'}`}
+                        />
+                    ))}
+                    {headerTextColor && (
+                        <button
+                            onClick={() => setHeaderTextColor(null)}
+                            className="text-xs text-gray-500 hover:text-red-500 px-2 py-1 rounded border border-gray-200 hover:border-red-300 transition-colors"
+                        >
+                            Xóa
+                        </button>
+                    )}
+                </div>
+                {/* Preview */}
+                {(headerColor || headerTextColor) && (
+                    <div
+                        className="mt-2 px-3 py-1.5 rounded text-sm font-medium"
+                        style={{
+                            backgroundColor: headerColor || '#f3f4f6',
+                            color: headerTextColor || (headerColor ? 'white' : '#1f2937')
+                        }}
+                    >
+                        Xem trước: {zone.name}
+                    </div>
+                )}
+            </div>
+
 
             {/* Action buttons */}
             <div className="space-y-2 border-t pt-3">
