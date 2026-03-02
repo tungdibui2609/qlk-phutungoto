@@ -580,6 +580,9 @@ function WarehouseMapContent() {
                 <LayoutConfigPanel
                     zone={configuringZone}
                     layout={layouts.find(l => l.zone_id === configuringZone.id) || null}
+                    siblingZones={zones.filter(z => z.parent_id === configuringZone.parent_id)}
+                    allZones={zones}
+                    allLayouts={layoutRecord}
                     onSave={handleLayoutSave}
                     onClose={() => setConfiguringZone(null)}
                 />
