@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import { Package, X, Zap, Copy, Check } from 'lucide-react'
+import { useState, useMemo, useEffect } from 'react'
+import { Package, X, Zap, Copy, Check, Star } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { LocalZone, LocalPosition } from './types'
 import { useSystem } from '@/contexts/SystemContext'
@@ -37,6 +37,20 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
     // Clone mode state
     const [sourceId, setSourceId] = useState('')
     const [searchSource, setSearchSource] = useState('')
+    const [pinnedIds, setPinnedIds] = useState<string[]>(() => {
+        if (typeof window === 'undefined') return []
+        const saved = localStorage.getItem('warehouse_clone_pins')
+        return saved ? JSON.parse(saved) : []
+    })
+
+    const togglePin = (e: React.MouseEvent, id: string) => {
+        e.stopPropagation()
+        setPinnedIds(prev => {
+            const next = prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+            localStorage.setItem('warehouse_clone_pins', JSON.stringify(next))
+            return next
+        })
+    }
 
     const availableTags = useMemo(() => {
         // Use one of the leaf zones to get the full hierarchy depth (e.g. down to {T})
@@ -323,14 +337,32 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
             return result
         }
 
-        return zones.filter(z => {
+        const filtered = zones.filter(z => {
             if (z.id === zoneId || z._status === 'deleted') return false
             return checkTree(z.id)
         }).filter(z =>
             z.name.toLowerCase().includes(searchSource.toLowerCase()) ||
             z.code.toLowerCase().includes(searchSource.toLowerCase())
-        ).slice(0, 10)
-    }, [zones, positionsMap, zoneId, searchSource])
+        )
+
+        // Sort: Pinned first, then by name
+        return [...filtered].sort((a, b) => {
+            const aPinned = pinnedIds.includes(a.id)
+            const bPinned = pinnedIds.includes(b.id)
+            if (aPinned && !bPinned) return -1
+            if (!aPinned && bPinned) return 1
+            return a.name.localeCompare(b.name)
+        }).slice(0, 50).map(z => {
+            const pathParts: string[] = []
+            let curr: LocalZone | undefined = z
+            while (curr) {
+                const parent = zones.find(p => p.id === curr?.parent_id)
+                if (parent) pathParts.unshift(parent.name)
+                curr = parent
+            }
+            return { ...z, path: pathParts.length > 0 ? pathParts.join(' > ') : '' }
+        })
+    }, [zones, positionsMap, zoneId, searchSource, pinnedIds])
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -462,19 +494,32 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
 
                                 <div className="grid grid-cols-1 gap-2 max-h-[160px] overflow-y-auto">
                                     {cloneableZones.map(z => (
-                                        <button
+                                        <div
                                             key={z.id}
                                             onClick={() => setSourceId(z.id)}
-                                            className={`flex items-center justify-between p-2 rounded-lg border text-sm transition-all ${sourceId === z.id
+                                            className={`group relative flex items-center justify-between p-2 rounded-lg border text-sm transition-all cursor-pointer ${sourceId === z.id
                                                 ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
-                                                : 'border-gray-100 hover:border-emerald-200 hover:bg-emerald-50/50'}`}
+                                                : 'border-gray-100 dark:border-gray-700 hover:border-emerald-200 hover:bg-emerald-50/50'}`}
                                         >
-                                            <div className="flex flex-col items-start">
-                                                <span className="font-bold text-gray-800 dark:text-gray-200">{z.name}</span>
+                                            <div className="flex flex-col items-start overflow-hidden pr-8 text-left">
+                                                <div className="flex items-center gap-1.5 w-full">
+                                                    <span className="font-bold text-gray-800 dark:text-gray-200 truncate">{z.name}</span>
+                                                    {pinnedIds.includes(z.id) && <Star size={10} className="fill-yellow-400 text-yellow-400" />}
+                                                </div>
+                                                {(z as any).path && <span className="text-[10px] text-gray-400 truncate w-full">{(z as any).path}</span>}
                                                 <span className="text-[10px] font-mono text-gray-400">{z.code}</span>
                                             </div>
-                                            {sourceId === z.id && <Check size={16} className="text-emerald-500" />}
-                                        </button>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={(e) => togglePin(e, z.id)}
+                                                    className={`p-1.5 rounded-full transition-all ${pinnedIds.includes(z.id) ? 'bg-yellow-50 text-yellow-500' : 'text-gray-300 hover:text-yellow-500 hover:bg-yellow-50 opacity-0 group-hover:opacity-100'}`}
+                                                    title={pinnedIds.includes(z.id) ? "Bỏ ghim" : "Ghim lên đầu"}
+                                                >
+                                                    <Star size={14} className={pinnedIds.includes(z.id) ? 'fill-yellow-400' : ''} />
+                                                </button>
+                                                {sourceId === z.id && <Check size={16} className="text-emerald-500" />}
+                                            </div>
+                                        </div>
                                     ))}
                                     {cloneableZones.length === 0 && (
                                         <div className="py-4 text-center text-xs text-gray-400 italic">Không tìm thấy zone nào có vị trí</div>
