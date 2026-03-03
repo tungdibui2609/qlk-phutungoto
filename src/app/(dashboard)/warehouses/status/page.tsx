@@ -92,8 +92,10 @@ function WarehouseStatusContent() {
             while (true) {
                 const { data, error } = await supabase
                     .from('zone_positions')
-                    .select('zone_id, positions!inner(*)')
+                    .select('zone_id, position_id, positions!inner(*)')
                     .eq('positions.system_type', systemType)
+                    .order('zone_id', { ascending: true })
+                    .order('position_id', { ascending: true })
                     .range(from, from + limit - 1)
                 if (error) {
                     console.error(`[FetchAllZonesPos] Error:`, error)
@@ -110,8 +112,8 @@ function WarehouseStatusContent() {
 
         try {
             const [posData, zoneData, zpData, layoutRes] = await Promise.all([
-                fetchAll('positions', q => q.eq('system_type', systemType).order('code')),
-                fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code')),
+                fetchAll('positions', q => q.eq('system_type', systemType).order('code').order('id')),
+                fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
                 fetchAllZonesPos(),
                 supabase.from('zone_status_layouts' as any).select('*').limit(1000)
             ])

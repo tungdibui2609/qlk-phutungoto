@@ -138,18 +138,32 @@ export default function WarehouseStatusMap({
         const map = new Map<string, Zone & { children: Zone[], positions: PositionWithZone[] }>()
         zones.forEach(z => map.set(z.id, { ...z, children: [], positions: [] }))
         positions.forEach(p => {
-            if (p.zone_id && map.has(p.zone_id)) map.get(p.zone_id)!.positions.push(p)
+            if (p.zone_id && map.has(p.zone_id)) {
+                const parentZone = map.get(p.zone_id)!
+                if (!parentZone.positions.some(existing => existing.id === p.id)) {
+                    parentZone.positions.push(p)
+                }
+            }
         })
         zones.forEach(z => {
-            if (z.parent_id && map.has(z.parent_id)) map.get(z.parent_id)!.children.push(map.get(z.id)!)
+            if (z.parent_id && map.has(z.parent_id)) {
+                const parentZone = map.get(z.parent_id)!
+                if (!parentZone.children.some(existing => existing.id === z.id)) {
+                    parentZone.children.push(map.get(z.id)!)
+                }
+            }
         })
         map.forEach(node => {
             node.children.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }))
             node.positions.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }))
         })
-        return zones
+
+        const rootsMap = new Map()
+        zones
             .filter(z => !z.parent_id || !map.has(z.parent_id))
-            .map(z => map.get(z.id)!)
+            .forEach(z => rootsMap.set(z.id, map.get(z.id)!))
+
+        return Array.from(rootsMap.values())
             .sort((a, b) => (a.code || '').localeCompare(b.code || ''))
     }, [zones, positions])
 
@@ -329,7 +343,8 @@ export default function WarehouseStatusMap({
         breadcrumb: string[]
     ): React.ReactNode {
         const allPositions = getAllPositions(zone)
-        if (allPositions.length === 0) return null
+        // Removed early return allowing empty grouped zones to render
+        // if (allPositions.length === 0) return null
 
         const occupiedCount = allPositions.filter(p => occupiedIds.has(p.id)).length
         const totalCount = allPositions.length
@@ -356,8 +371,10 @@ export default function WarehouseStatusMap({
             >
                 {/* Header Info */}
                 <div
-                    className="flex items-center justify-between mb-2 cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-sm -mx-1 px-1 transition-colors"
-                    onClick={() => setViewingZone({ zone, allPositions })}
+                    className={`flex items-center justify-between mb-2 ${totalCount > 0 ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50' : ''} select-none -mx-1 px-1 transition-colors`}
+                    onClick={() => {
+                        if (totalCount > 0) setViewingZone({ zone, allPositions })
+                    }}
                 >
                     <div className="flex items-center gap-2">
                         <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">
