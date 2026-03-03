@@ -77,8 +77,10 @@ export function useZoneManager() {
                     .order('level', { ascending: true })
                     .order('code', { ascending: true })
                     .range(from, from + limit - 1)
+
                 if (error) throw error
                 if (!data || data.length === 0) break
+
                 all = [...all, ...data]
                 if (data.length < limit) break
                 from += limit
@@ -96,8 +98,10 @@ export function useZoneManager() {
                     .select('zone_id, positions!inner(*)')
                     .eq('positions.system_type', systemType)
                     .range(from, from + limit - 1)
+
                 if (error) throw error
                 if (!data || data.length === 0) break
+
                 all = [...all, ...data]
                 if (data.length < limit) break
                 from += limit

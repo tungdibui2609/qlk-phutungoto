@@ -113,8 +113,10 @@ export function useWarehouseData() {
                 let query = supabase.from(table as any).select(customSelect).range(from, from + limit - 1)
                 if (filter) query = filter(query)
                 const { data, error } = await query
+
                 if (error) throw error
                 if (!data || data.length === 0) break
+
                 allRecs = [...allRecs, ...data]
                 if (data.length < limit) break
                 from += limit
@@ -131,8 +133,10 @@ export function useWarehouseData() {
                     .select('zone_id, position_id, positions!inner(system_type)')
                     .eq('positions.system_type', systemType)
                     .range(from, from + limit - 1)
+
                 if (error) throw error
                 if (!data || data.length === 0) break
+
                 allRecs = [...allRecs, ...data]
                 if (data.length < limit) break
                 from += limit

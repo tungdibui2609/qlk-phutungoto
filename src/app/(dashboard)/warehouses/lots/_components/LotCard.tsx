@@ -1,4 +1,4 @@
-import { MapPin, Layers, Truck, ShieldCheck, Info, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown } from 'lucide-react'
+import { MapPin, Layers, Truck, ShieldCheck, Info, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy } from 'lucide-react'
 import { useState } from 'react'
 import { Lot } from '../_hooks/useLotManagement'
 import { useRouter } from 'next/navigation'
@@ -19,9 +19,10 @@ interface LotCardProps {
     onMerge?: (lot: Lot) => void
     onSplit?: (lot: Lot) => void
     onExport?: (lot: Lot) => void
+    onBulkClone?: (lot: Lot) => void
 }
 
-export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport }: LotCardProps) {
+export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone }: LotCardProps) {
     const router = useRouter()
     const [isExpanded, setIsExpanded] = useState(false)
     const [historyData, setHistoryData] = useState<any>(null)
@@ -432,6 +433,13 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                             title="Xuất Lot"
                         >
                             <ArrowUpRight size={16} />
+                        </button>
+                        <button
+                            onClick={() => onBulkClone?.(lot)}
+                            className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all border border-transparent"
+                            title="Nhân bản Lot"
+                        >
+                            <Copy size={16} />
                         </button>
                     </Protected>
                 </div>

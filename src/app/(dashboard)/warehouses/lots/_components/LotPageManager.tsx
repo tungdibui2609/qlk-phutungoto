@@ -9,6 +9,7 @@ import { LotMergeModal } from '@/components/warehouse/lots/LotMergeModal'
 import { LotSplitModal } from '@/components/warehouse/lots/LotSplitModal'
 import { LotExportModal } from '@/components/warehouse/lots/LotExportModal'
 import { LotExportBuffer } from '@/components/warehouse/lots/LotExportBuffer'
+import { LotBulkCloneModal } from '@/components/warehouse/lots/LotBulkCloneModal'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
 import Protected from '@/components/auth/Protected'
@@ -72,6 +73,7 @@ export function LotPageManager() {
     const [mergingLot, setMergingLot] = useState<Lot | null>(null)
     const [splittingLot, setSplittingLot] = useState<Lot | null>(null)
     const [exportingLot, setExportingLot] = useState<Lot | null>(null)
+    const [bulkCloningLot, setBulkCloningLot] = useState<Lot | null>(null)
 
     useEffect(() => {
         if (currentSystem?.code) {
@@ -108,6 +110,10 @@ export function LotPageManager() {
 
     const handleExport = (lot: Lot) => {
         setExportingLot(lot)
+    }
+
+    const handleBulkClone = (lot: Lot) => {
+        setBulkCloningLot(lot)
     }
 
     const totalPages = Math.ceil(totalLots / pageSize)
@@ -191,8 +197,8 @@ export function LotPageManager() {
                             aria-checked={isFifoActive}
                             onClick={toggleFifo}
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none ${isFifoActive
-                                    ? 'bg-orange-500'
-                                    : 'bg-slate-300 dark:bg-slate-600'
+                                ? 'bg-orange-500'
+                                : 'bg-slate-300 dark:bg-slate-600'
                                 }`}
                         >
                             <span
@@ -201,8 +207,8 @@ export function LotPageManager() {
                             />
                         </button>
                         <span className={`text-sm font-semibold ${isFifoActive
-                                ? 'text-slate-800 dark:text-slate-200'
-                                : 'text-slate-400 dark:text-slate-500'
+                            ? 'text-slate-800 dark:text-slate-200'
+                            : 'text-slate-400 dark:text-slate-500'
                             }`}>
                             Ưu tiên FIFO
                         </span>
@@ -222,6 +228,7 @@ export function LotPageManager() {
                     onMerge={handleMerge}
                     onSplit={handleSplit}
                     onExport={handleExport}
+                    onBulkClone={handleBulkClone}
                 />
 
                 {/* Pagination Controls */}
@@ -331,6 +338,17 @@ export function LotPageManager() {
                     units={units}
                     productUnits={productUnits}
                     isUtilityEnabled={isUtilityEnabled}
+                />
+            )}
+
+            {bulkCloningLot && (
+                <LotBulkCloneModal
+                    lot={bulkCloningLot}
+                    onClose={() => setBulkCloningLot(null)}
+                    onSuccess={() => {
+                        setBulkCloningLot(null);
+                        fetchLots();
+                    }}
                 />
             )}
         </section>
