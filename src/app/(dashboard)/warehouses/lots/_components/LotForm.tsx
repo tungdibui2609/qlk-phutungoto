@@ -368,7 +368,7 @@ export function LotForm({
 
             if (syncEnabled) {
                 // Edit Mode: Update existing draft or create adjustment
-                const freshCreationDraftIdx = systemHistory.inbound.findIndex((inb: any) => inb.draft === true && !inb.is_adjustment)
+                const freshCreationDraftIdx = systemHistory.inbound ? systemHistory.inbound.findIndex((inb: any) => inb.draft === true && !inb.is_adjustment) : -1
 
                 if (freshCreationDraftIdx >= 0) {
                     // Scenario A: Lot is still in "Pending Sync (Full Receive)" state.
