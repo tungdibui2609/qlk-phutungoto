@@ -1,6 +1,5 @@
-'use client'
-import React, { useMemo } from 'react'
-import { ChevronDown, ChevronRight, Package, Settings, Eye, Info, BarChart3, Layout } from 'lucide-react'
+import React, { useMemo, useState } from 'react'
+import { ChevronDown, ChevronRight, Package, Settings, Eye, Info, BarChart3, Layout, Warehouse } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { GroupedZoneDetailModal } from './GroupedZoneDetailModal'
 
@@ -18,6 +17,7 @@ interface WarehouseStatusMapProps {
     occupiedIds: Set<string>
     collapsedZones: Set<string>
     isDesignMode?: boolean
+    isCompactMode?: boolean
     onToggleCollapse: (zoneId: string) => void
     onConfigureZone?: (zone: Zone) => void
     onViewDetails?: (lotId: string) => void
@@ -126,12 +126,14 @@ export default function WarehouseStatusMap({
     occupiedIds,
     collapsedZones,
     isDesignMode = false,
+    isCompactMode = false,
     onToggleCollapse,
     onConfigureZone,
     onViewDetails,
     lotInfo = {}
 }: WarehouseStatusMapProps) {
     const [viewingZone, setViewingZone] = React.useState<{ zone: Zone, allPositions: PositionWithZone[] } | null>(null)
+    const [collapsedWarehouses, setCollapsedWarehouses] = useState<Set<string>>(new Set())
 
     // Build zone tree (copied structure logic from FlexibleZoneGrid)
     const zoneTree = useMemo(() => {
@@ -500,6 +502,240 @@ export default function WarehouseStatusMap({
                 <Layout size={64} strokeWidth={1} className="mb-4 opacity-20" />
                 <p className="text-lg font-medium">Chưa có dữ liệu sơ đồ kho</p>
                 <p className="text-sm opacity-60 mt-1">Vui lòng thiết lập Zone và Vị trí trước.</p>
+            </div>
+        )
+    }
+
+    // Compact mode: group by parent zones (Dãy/Sảnh), children shown horizontally
+    // Collect groups: { parentZone, breadcrumb, children: [{ zone, positions }] }
+    interface CompactGroup {
+        parent: Zone & { children: any[], positions: PositionWithZone[] }
+        breadcrumb: string[]
+        leafChildren: Array<{ zone: any, positions: PositionWithZone[] }>
+    }
+
+    function collectCompactGroups(node: any, breadcrumb: string[] = []): CompactGroup[] {
+        const childrenWithPositions = node.children.filter((c: any) => countAllPositions(c) > 0)
+
+        if (childrenWithPositions.length === 0) {
+            // No children with positions - check if this node has direct positions
+            if (node.positions.length > 0) {
+                return [{ parent: node, breadcrumb, leafChildren: [{ zone: node, positions: node.positions }] }]
+            }
+            return []
+        }
+
+        // Check if children's grandchildren have THEIR OWN children with positions
+        // If yes → need to recurse deeper (we're too high in the tree)
+        // If no → THIS node is the group parent, children become columns
+        const childrenHaveDeepDescendants = childrenWithPositions.some((c: any) =>
+            c.children.some((gc: any) =>
+                gc.children.length > 0 && gc.children.some((ggc: any) => countAllPositions(ggc) > 0)
+            )
+        )
+
+        const currentBreadcrumb = [...breadcrumb, node.name]
+
+        if (childrenHaveDeepDescendants) {
+            // Recurse: we're too high (e.g. at Kho level, need to go to Dãy level)
+            let groups: CompactGroup[] = []
+            for (const child of node.children) {
+                // When recursing, pass the name of this node as part of breadcrumb
+                groups.push(...collectCompactGroups(child, currentBreadcrumb))
+            }
+            return groups
+        }
+
+        // This node is the group parent (Dãy/Sảnh), children (Ô) become columns
+        return [{
+            parent: node,
+            breadcrumb, // The breadcrumb up to THIS node
+            leafChildren: childrenWithPositions.map((c: any) => ({
+                zone: c,
+                positions: getAllPositions(c)
+            }))
+        }]
+    }
+
+    if (isCompactMode) {
+        // Collect grouped structure from all roots
+        let allGroups: CompactGroup[] = []
+        for (const root of zoneTree) {
+            allGroups = [...allGroups, ...collectCompactGroups(root)]
+        }
+
+        // Group the groups by Warehouse (the first element of breadcrumb, or parent.name if breadcrumb empty)
+        const groupsByWarehouse = new Map<string, CompactGroup[]>()
+        allGroups.forEach(g => {
+            const whName = g.breadcrumb.length > 0 ? g.breadcrumb[0] : g.parent.name
+            if (!groupsByWarehouse.has(whName)) groupsByWarehouse.set(whName, [])
+            groupsByWarehouse.get(whName)!.push(g)
+        })
+
+        const toggleWarehouse = (whName: string) => {
+            const next = new Set(collapsedWarehouses)
+            if (next.has(whName)) next.delete(whName)
+            else next.add(whName)
+            setCollapsedWarehouses(next)
+        }
+
+        return (
+            <div className="animate-in fade-in duration-500 space-y-6 pb-10">
+                {Array.from(groupsByWarehouse.entries()).map(([whName, groups]) => {
+                    const isCollapsed = collapsedWarehouses.has(whName)
+
+                    return (
+                        <div key={whName} className="space-y-3">
+                            {/* Warehouse Header Wrapper */}
+                            <div
+                                className="flex items-center justify-between px-3 py-2 bg-slate-100/80 dark:bg-slate-800/80 backdrop-blur-sm border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors group"
+                                onClick={() => toggleWarehouse(whName)}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1 bg-indigo-500 rounded text-white">
+                                        <Warehouse className="w-4 h-4" />
+                                    </div>
+                                    <span className="text-sm font-black text-slate-800 dark:text-slate-100 uppercase tracking-wide">
+                                        {whName}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <span className="text-[10px] font-bold text-slate-400 group-hover:text-slate-600 transition-colors">
+                                        {groups.length} khu vực
+                                    </span>
+                                    {isCollapsed ? <ChevronRight className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                                </div>
+                            </div>
+
+                            {!isCollapsed && (
+                                <div className="space-y-3 pl-2 border-l-2 border-slate-100 dark:border-slate-800 ml-5">
+                                    {groups.map(group => {
+                                        const groupTotalPos = group.leafChildren.reduce((sum, c) => sum + c.positions.length, 0)
+                                        const groupOccupied = group.leafChildren.reduce((sum, c) => sum + c.positions.filter(p => occupiedIds.has(p.id)).length, 0)
+                                        const groupPercent = groupTotalPos > 0 ? (groupOccupied / groupTotalPos) * 100 : 0
+
+                                        const isHall = !!(group.parent as any).is_hall
+
+                                        // Path minus the warehouse name
+                                        const relativePath = group.breadcrumb.length > 1
+                                            ? group.breadcrumb.slice(1).join(' / ')
+                                            : ''
+
+                                        const displayTitle = relativePath
+                                            ? `${relativePath} / ${group.parent.name}`
+                                            : group.parent.name
+
+                                        return (
+                                            <div key={group.parent.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden rounded-md">
+                                                {/* Group Header (Dãy/Sảnh) */}
+                                                <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={`w-1 h-3 rounded-full ${isHall ? 'bg-amber-400' : 'bg-indigo-400'}`}></div>
+                                                        <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-tight">
+                                                            {displayTitle}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[9px] font-mono font-bold text-slate-400 bg-white dark:bg-slate-900 px-1.5 py-0.5 border border-slate-100 dark:border-slate-700 rounded-sm">
+                                                            {groupOccupied}/{groupTotalPos}
+                                                        </span>
+                                                        <span className="text-[9px] font-bold" style={{ color: groupPercent > 80 ? '#ef4444' : groupPercent > 50 ? '#f59e0b' : '#22c55e' }}>
+                                                            {groupPercent.toFixed(0)}%
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Children as columns - each Ô is a column, layout depends on is_hall */}
+                                                <div className="flex items-start w-full overflow-hidden">
+                                                    {group.leafChildren.map(({ zone: childZone, positions: childPositions }) => {
+                                                        const childOccupied = childPositions.filter(p => occupiedIds.has(p.id)).length
+                                                        const childTotal = childPositions.length
+
+                                                        return (
+                                                            <div
+                                                                key={childZone.id}
+                                                                className="flex-1 min-w-0 border-r last:border-r-0 border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors cursor-pointer"
+                                                                onClick={() => {
+                                                                    if (childTotal > 0) setViewingZone({ zone: childZone, allPositions: childPositions })
+                                                                }}
+                                                            >
+                                                                {/* Column Header - zone name */}
+                                                                <div className="text-center px-0.5 py-1 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40">
+                                                                    <span className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase leading-none block truncate" title={childZone.name}>
+                                                                        {(childZone.code || childZone.name).replace(/^Ô\s*/i, '')}
+                                                                    </span>
+                                                                </div>
+
+                                                                {/* Positions: vertical grid for Dãy, horizontal bar for Sảnh */}
+                                                                {isHall ? (
+                                                                    /* Sảnh: horizontal bar filling full width */
+                                                                    <div className="flex h-[8px] gap-[1px] mx-1 my-1.5">
+                                                                        {childPositions.map(pos => {
+                                                                            const isOccupied = occupiedIds.has(pos.id)
+                                                                            const lotDetail = pos.lot_id ? lotInfo[pos.lot_id] : null
+                                                                            let dotColor = {}
+
+                                                                            if (isOccupied) {
+                                                                                const pColor = lotDetail?.items?.find((item: any) => item.product_color)?.product_color
+                                                                                dotColor = { backgroundColor: pColor || '#5c4033' }
+                                                                            }
+
+                                                                            return (
+                                                                                <div
+                                                                                    key={pos.id}
+                                                                                    className={`flex-1 h-full rounded-[1px] ${isOccupied ? '' : 'bg-slate-200 dark:bg-slate-700'}`}
+                                                                                    style={dotColor}
+                                                                                    title={`${pos.code}${isOccupied && lotDetail ? ` • ${lotDetail.code}` : ''}`}
+                                                                                />
+                                                                            )
+                                                                        })}
+                                                                    </div>
+                                                                ) : (
+                                                                    /* Dãy: columns of positions using grid (2 per row for visual equivalence to tiers) */
+                                                                    <div className="grid grid-cols-2 gap-[1px] py-1 px-[2px] justify-items-center">
+                                                                        {childPositions.map(pos => {
+                                                                            const isOccupied = occupiedIds.has(pos.id)
+                                                                            const lotDetail = pos.lot_id ? lotInfo[pos.lot_id] : null
+                                                                            let dotColor = {}
+
+                                                                            if (isOccupied) {
+                                                                                const pColor = lotDetail?.items?.find((item: any) => item.product_color)?.product_color
+                                                                                dotColor = { backgroundColor: pColor || '#5c4033' }
+                                                                            }
+
+                                                                            return (
+                                                                                <div
+                                                                                    key={pos.id}
+                                                                                    className={`w-[6px] h-[6px] rounded-[1px] ${isOccupied ? '' : 'bg-slate-200 dark:bg-slate-700'}`}
+                                                                                    style={dotColor}
+                                                                                    title={`${pos.code}${isOccupied && lotDetail ? ` • ${lotDetail.code}` : ''}`}
+                                                                                />
+                                                                            )
+                                                                        })}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )
+                })}
+
+                {viewingZone && (
+                    <GroupedZoneDetailModal
+                        zone={viewingZone.zone}
+                        allPositions={viewingZone.allPositions}
+                        occupiedIds={occupiedIds}
+                        lotInfo={lotInfo}
+                        onClose={() => setViewingZone(null)}
+                    />
+                )}
             </div>
         )
     }

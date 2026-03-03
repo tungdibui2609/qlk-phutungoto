@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, Suspense, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { BarChart3, Settings, Package, Map as MapIcon, Info, Layout, Palette } from 'lucide-react'
+import { BarChart3, Settings, Package, Map as MapIcon, Info, Layout, Palette, Eye } from 'lucide-react'
 import WarehouseStatusMap from '@/components/warehouse/status/WarehouseStatusMap'
 import StatusLayoutConfigPanel from '@/components/warehouse/status/StatusLayoutConfigPanel'
 import { ProductColorConfigModal } from '@/components/warehouse/status/ProductColorConfigModal'
@@ -36,6 +36,7 @@ function WarehouseStatusContent() {
 
     // Design mode state
     const [isDesignMode, setIsDesignMode] = useState(false)
+    const [isCompactMode, setIsCompactMode] = useState(false)
     const [configuringZone, setConfiguringZone] = useState<Zone | null>(null)
 
     // Collapsed zones
@@ -349,6 +350,16 @@ function WarehouseStatusContent() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setIsCompactMode(!isCompactMode)}
+                        className={`flex items-center gap-2 px-6 py-2.5 font-bold transition-all shadow-sm ${isCompactMode
+                                ? 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                            }`}
+                    >
+                        <Eye size={18} />
+                        {isCompactMode ? 'TỔNG QUAN' : 'TỔNG QUAN'}
+                    </button>
                     <Protected permission="warehousemap.manage">
                         <button
                             onClick={() => setIsColorModalOpen(true)}
@@ -450,6 +461,7 @@ function WarehouseStatusContent() {
                     lotInfo={lotInfo}
                     collapsedZones={collapsedZones}
                     isDesignMode={isDesignMode}
+                    isCompactMode={isCompactMode}
                     onToggleCollapse={toggleZoneCollapse}
                     onConfigureZone={setConfiguringZone}
                     onViewDetails={fetchFullLotDetails}
