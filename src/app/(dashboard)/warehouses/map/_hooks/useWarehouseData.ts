@@ -132,6 +132,8 @@ export function useWarehouseData() {
                     .from('zone_positions')
                     .select('zone_id, position_id, positions!inner(system_type)')
                     .eq('positions.system_type', systemType)
+                    .order('zone_id', { ascending: true })
+                    .order('position_id', { ascending: true })
                     .range(from, from + limit - 1)
 
                 if (error) throw error
@@ -146,10 +148,10 @@ export function useWarehouseData() {
 
         try {
             const [posData, zoneData, zpData, layoutData, lotsData] = await Promise.all([
-                fetchAll('positions', q => q.eq('system_type', systemType).order('code')),
-                fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code')),
+                fetchAll('positions', q => q.eq('system_type', systemType).order('code').order('id')),
+                fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
                 fetchAllZonesPos(),
-                fetchAll('zone_layouts'),
+                fetchAll('zone_layouts', q => q.order('id')),
                 fetchAll('lots', undefined, '*, suppliers(name), qc_info(name), products(name, unit, sku), lot_items(id, product_id, quantity, unit, products(name, unit, sku)), lot_tags(tag, lot_item_id)')
             ])
 

@@ -76,6 +76,7 @@ export function useZoneManager() {
                     .eq('system_type', systemType)
                     .order('level', { ascending: true })
                     .order('code', { ascending: true })
+                    .order('id', { ascending: true })
                     .range(from, from + limit - 1)
 
                 if (error) throw error
@@ -97,6 +98,8 @@ export function useZoneManager() {
                     .from('zone_positions')
                     .select('zone_id, positions!inner(*)')
                     .eq('positions.system_type', systemType)
+                    .order('zone_id', { ascending: true })
+                    .order('position_id', { ascending: true })
                     .range(from, from + limit - 1)
 
                 if (error) throw error
