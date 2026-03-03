@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { X, Save, MapPin } from 'lucide-react'
+import { Combobox, ComboboxOption } from '@/components/ui/Combobox'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
@@ -18,12 +19,41 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
     const { currentSystem } = useSystem()
     const [loading, setLoading] = useState(false)
     const [code, setCode] = useState('')
+    const [positions, setPositions] = useState<ComboboxOption[]>([])
+    const [loadingPositions, setLoadingPositions] = useState(false)
 
-    // Auto-focus input
-    const inputRef = useRef<HTMLInputElement>(null)
+    // Fetch positions for suggestions
     useEffect(() => {
-        if (inputRef.current) inputRef.current.focus()
-    }, [])
+        if (!currentSystem?.code) return
+
+        async function fetchPositions() {
+            setLoadingPositions(true)
+            try {
+                const { data, error } = await supabase
+                    .from('positions')
+                    .select('code')
+                    .eq('system_type', currentSystem!.code)
+                    .order('code')
+
+                if (error) throw error
+                if (data) {
+                    const options = data.map(p => ({
+                        value: p.code,
+                        label: p.code
+                    }))
+                    setPositions(options)
+                }
+            } catch (err) {
+                console.error('Error fetching positions:', err)
+            } finally {
+                setLoadingPositions(false)
+            }
+        }
+
+        fetchPositions()
+    }, [currentSystem?.code])
+
+
 
     const handleAssign = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -120,14 +150,15 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
 
                     <div>
                         <label className="text-xs text-slate-500 font-medium mb-1 uppercase tracking-wider block">Mã vị trí (Ô/Kệ)</label>
-                        <input
-                            ref={inputRef}
-                            type="text"
+                        <Combobox
+                            options={positions}
                             value={code}
-                            onChange={(e) => setCode(e.target.value)}
+                            onChange={(val) => setCode(val || '')}
+                            onSearchChange={(val) => setCode(val)}
                             placeholder="Nhập mã vị trí (VD: A-1-1)"
-                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 font-mono"
-                            required
+                            className="w-full"
+                            isLoading={loadingPositions}
+                            allowCustom={true}
                         />
                     </div>
 
