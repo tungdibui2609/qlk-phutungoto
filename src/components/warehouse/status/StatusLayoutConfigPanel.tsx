@@ -413,7 +413,7 @@ export default function StatusLayoutConfigPanel({
                         <span className="text-xs font-mono bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5">{positionColumns}</span>
                     </div>
                     <input
-                        type="range" min="1" max="30" value={positionColumns}
+                        type="range" min="1" max="100" value={positionColumns}
                         onChange={(e) => setPositionColumns(parseInt(e.target.value))}
                         className="w-full h-1.5 bg-indigo-200 dark:bg-indigo-900 cursor-pointer accent-indigo-600"
                     />
@@ -422,10 +422,17 @@ export default function StatusLayoutConfigPanel({
                 <div className="bg-slate-50 dark:bg-slate-900/40 p-3 border border-slate-100 dark:border-slate-800">
                     <div className="flex items-center justify-between mb-2">
                         <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Khoảng cách (Gap)</label>
-                        <span className="text-xs font-mono bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5">{layoutGap}px</span>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="number" min="0" max="64" value={layoutGap}
+                                onChange={(e) => setLayoutGap(Math.max(0, Math.min(64, parseInt(e.target.value) || 0)))}
+                                className="w-12 px-1 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-center"
+                            />
+                            <span className="text-xs font-mono bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5">px</span>
+                        </div>
                     </div>
                     <input
-                        type="range" min="0" max="64" step="4" value={layoutGap}
+                        type="range" min="0" max="64" step="1" value={layoutGap}
                         onChange={(e) => setLayoutGap(parseInt(e.target.value))}
                         className="w-full h-1.5 bg-indigo-200 dark:bg-indigo-900 cursor-pointer accent-indigo-600"
                     />
@@ -489,8 +496,8 @@ export default function StatusLayoutConfigPanel({
                     <div className="flex items-center justify-between gap-3 bg-slate-50 dark:bg-slate-900/40 p-2 border border-slate-100 dark:border-slate-800">
                         <label className="text-xs text-slate-600 dark:text-slate-400">Số cột Zone</label>
                         <input
-                            type="number" min="0" max="10" value={childColumns}
-                            onChange={(e) => setChildColumns(Math.max(0, Math.min(10, parseInt(e.target.value) || 0)))}
+                            type="number" min="0" max="100" value={childColumns}
+                            onChange={(e) => setChildColumns(Math.max(0, Math.min(100, parseInt(e.target.value) || 0)))}
                             className="w-16 px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-center"
                         />
                     </div>

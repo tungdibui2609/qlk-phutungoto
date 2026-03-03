@@ -95,7 +95,12 @@ export default function HorizontalZoneFilter({
 
     // Helper to get children of a parent
     function getChildren(parentId: string | null) {
-        return zones.filter(z => z.parent_id === parentId).sort((a, b) => a.code.localeCompare(b.code))
+        return zones.filter(z => z.parent_id === parentId).sort((a, b) => {
+            const oa = a.display_order ?? 0
+            const ob = b.display_order ?? 0
+            if (oa !== ob) return oa - ob
+            return (a.code || '').localeCompare(b.code || '')
+        })
     }
 
     const level0Zones = getChildren(null)

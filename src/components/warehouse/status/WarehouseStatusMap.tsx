@@ -154,8 +154,18 @@ export default function WarehouseStatusMap({
             }
         })
         map.forEach(node => {
-            node.children.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }))
-            node.positions.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }))
+            node.children.sort((a, b) => {
+                const oa = a.display_order ?? 0
+                const ob = b.display_order ?? 0
+                if (oa !== ob) return oa - ob
+                return (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
+            })
+            node.positions.sort((a, b) => {
+                const oa = a.display_order ?? 0
+                const ob = b.display_order ?? 0
+                if (oa !== ob) return oa - ob
+                return (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
+            })
         })
 
         const rootsMap = new Map()
@@ -164,7 +174,12 @@ export default function WarehouseStatusMap({
             .forEach(z => rootsMap.set(z.id, map.get(z.id)!))
 
         return Array.from(rootsMap.values())
-            .sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+            .sort((a, b) => {
+                const oa = a.display_order ?? 0
+                const ob = b.display_order ?? 0
+                if (oa !== ob) return oa - ob
+                return (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
+            })
     }, [zones, positions])
 
     function renderZone(
@@ -196,7 +211,7 @@ export default function WarehouseStatusMap({
                             <div className="grid mb-4" style={{
                                 gridTemplateColumns: cellWidth > 0
                                     ? `repeat(${positionColumns}, ${cellWidth}px)`
-                                    : `repeat(${positionColumns}, minmax(auto, 1fr))`,
+                                    : `repeat(${positionColumns}, minmax(0, 1fr))`,
                                 gap: `${layout?.layout_gap ?? 16}px`
                             }}>
                                 {zone.positions.map(pos => renderStatusCell(pos, cellHeight, layout))}
@@ -219,7 +234,7 @@ export default function WarehouseStatusMap({
                         <div className="grid mb-2" style={{
                             gridTemplateColumns: cellWidth > 0
                                 ? `repeat(${positionColumns}, ${cellWidth}px)`
-                                : `repeat(${positionColumns}, minmax(auto, 1fr))`,
+                                : `repeat(${positionColumns}, minmax(0, 1fr))`,
                             gap: `${layout?.layout_gap ?? 4}px`
                         }}>
                             {zone.positions.map(pos => renderStatusCell(pos, cellHeight, layout))}
@@ -291,7 +306,7 @@ export default function WarehouseStatusMap({
                                 style={{
                                     gridTemplateColumns: cellWidth > 0
                                         ? `repeat(${positionColumns}, ${cellWidth}px)`
-                                        : `repeat(${positionColumns}, minmax(auto, 1fr))`,
+                                        : `repeat(${positionColumns}, minmax(0, 1fr))`,
                                     gap: `${layout?.layout_gap ?? 4}px`
                                 }}
                             >
@@ -302,7 +317,7 @@ export default function WarehouseStatusMap({
                             <div
                                 className={
                                     childLayout === 'horizontal'
-                                        ? 'flex overflow-x-auto pb-4 custom-scrollbar'
+                                        ? 'flex flex-wrap custom-scrollbar'
                                         : childLayout === 'grid'
                                             ? `grid`
                                             : 'flex flex-col'
@@ -310,7 +325,7 @@ export default function WarehouseStatusMap({
                                 style={{
                                     gap: `${layout?.layout_gap ?? 16}px`,
                                     ...(childLayout === 'grid' && childColumns > 0
-                                        ? { gridTemplateColumns: `repeat(${childColumns}, minmax(auto, 1fr))` }
+                                        ? { gridTemplateColumns: `repeat(${childColumns}, minmax(0, 1fr))` }
                                         : childLayout === 'grid'
                                             ? { gridTemplateColumns: `repeat(auto-fill, minmax(280px, 1fr))` }
                                             : {})
@@ -319,10 +334,14 @@ export default function WarehouseStatusMap({
                                 {zone.children.map(child => (
                                     <div
                                         key={child.id}
-                                        className={childLayout === 'horizontal' ? 'shrink-0 grow' : ''}
+                                        className={childLayout === 'horizontal' ? 'flex-shrink-0' : ''}
                                         style={
-                                            childLayout === 'horizontal' && childWidth > 0
-                                                ? { width: `${childWidth}px` }
+                                            childLayout === 'horizontal'
+                                                ? {
+                                                    width: childWidth > 0 ? `${childWidth}px` : 'auto',
+                                                    flexBasis: childWidth > 0 ? `${childWidth}px` : 'auto',
+                                                    flexGrow: childWidth > 0 ? 0 : 1,
+                                                }
                                                 : undefined
                                         }
                                     >
