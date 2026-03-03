@@ -266,7 +266,7 @@ export default function HorizontalZoneFilter({
                                     onChange={(e) => handleDropdownSelect(e.target.value, lvl.parentId)}
                                     className={`appearance-none pl-3 pr-8 ${compact ? 'py-1' : 'py-1.5'} bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm min-w-[100px] focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:border-blue-400 transition-colors`}
                                 >
-                                    <option value="">Tất cả {lvl.level === 2 ? 'Khu' : lvl.level === 3 ? 'Dãy' : lvl.level === 4 ? 'Tầng' : 'Zone'}</option>
+                                    <option value="">Tất cả {lvl.level === 2 ? 'Ô' : lvl.level === 3 ? 'Dãy' : lvl.level === 4 ? 'Tầng' : 'Zone'}</option>
                                     {lvl.children.map(c => (
                                         <option key={c.id} value={c.id}>
                                             {c.name}

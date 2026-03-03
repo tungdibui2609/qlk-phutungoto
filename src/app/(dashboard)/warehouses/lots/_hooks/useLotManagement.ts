@@ -295,9 +295,31 @@ export function useLotManagement() {
             // 'unassigned' is handled by RPC call above.
 
             if (selectedZoneId) {
-                // Filter by specific zone using the embedded resource
-                // Since we used !inner on positions, we can safely filter on it
-                query = query.eq('positions.zone_positions.zone_id', selectedZoneId)
+                // Fetch all zones to find descendants of selectedZoneId
+                // This is needed because positions are assigned to leaf zones,
+                // but user may select a parent zone (warehouse, section, etc.)
+                const { data: allZones } = await supabase
+                    .from('zones')
+                    .select('id, parent_id')
+                    .eq('system_type', currentSystem.code)
+
+                if (allZones) {
+                    // Build set of all descendant zone IDs including the selected one
+                    const descendantIds = new Set<string>([selectedZoneId])
+                    let changed = true
+                    while (changed) {
+                        changed = false
+                        for (const zone of allZones) {
+                            if (zone.parent_id && descendantIds.has(zone.parent_id) && !descendantIds.has(zone.id)) {
+                                descendantIds.add(zone.id)
+                                changed = true
+                            }
+                        }
+                    }
+
+                    const zoneIds = Array.from(descendantIds)
+                    query = query.in('positions.zone_positions.zone_id', zoneIds)
+                }
             }
 
             // Pagination

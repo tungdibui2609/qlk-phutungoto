@@ -17,9 +17,10 @@ interface LotListProps {
     onSplit?: (lot: Lot) => void
     onExport?: (lot: Lot) => void
     onBulkClone?: (lot: Lot) => void
+    onAssignLocation?: (lot: Lot) => void
 }
 
-export function LotList({ loading, lots, isModuleEnabled, isUtilityEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone }: LotListProps) {
+export function LotList({ loading, lots, isModuleEnabled, isUtilityEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone, onAssignLocation }: LotListProps) {
     if (loading) {
         return (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -59,6 +60,7 @@ export function LotList({ loading, lots, isModuleEnabled, isUtilityEnabled, onEd
                     onSplit={onSplit}
                     onExport={onExport}
                     onBulkClone={onBulkClone}
+                    onAssignLocation={onAssignLocation}
                 />
             ))}
         </div>

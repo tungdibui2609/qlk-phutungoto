@@ -20,9 +20,10 @@ interface LotCardProps {
     onSplit?: (lot: Lot) => void
     onExport?: (lot: Lot) => void
     onBulkClone?: (lot: Lot) => void
+    onAssignLocation?: (lot: Lot) => void
 }
 
-export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone }: LotCardProps) {
+export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone, onAssignLocation }: LotCardProps) {
     const router = useRouter()
     const [isExpanded, setIsExpanded] = useState(false)
     const [historyData, setHistoryData] = useState<any>(null)
@@ -124,7 +125,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                     </div>
                     {lot.positions && lot.positions.length > 0 ? (
                         <button
-                            onClick={() => router.push(`/warehouses/map?assignLotId=${lot.id}`)}
+                            onClick={() => onAssignLocation ? onAssignLocation(lot) : router.push(`/warehouses/map?assignLotId=${lot.id}`)}
                             className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-[10px] font-bold border border-orange-200 dark:border-orange-800 hover:bg-orange-200 dark:hover:bg-orange-900/60 transition-colors shadow-sm"
                         >
                             <MapPin size={12} />
@@ -133,7 +134,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                         </button>
                     ) : (
                         <button
-                            onClick={() => router.push(`/warehouses/map?assignLotId=${lot.id}`)}
+                            onClick={() => onAssignLocation ? onAssignLocation(lot) : router.push(`/warehouses/map?assignLotId=${lot.id}`)}
                             className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white dark:bg-zinc-800 text-zinc-400 text-[10px] font-bold border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
                         >
                             <MapPin size={12} />

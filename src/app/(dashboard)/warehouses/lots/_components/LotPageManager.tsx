@@ -10,6 +10,7 @@ import { LotSplitModal } from '@/components/warehouse/lots/LotSplitModal'
 import { LotExportModal } from '@/components/warehouse/lots/LotExportModal'
 import { LotExportBuffer } from '@/components/warehouse/lots/LotExportBuffer'
 import { LotBulkCloneModal } from '@/components/warehouse/lots/LotBulkCloneModal'
+import { LotAssignPositionModal } from '@/components/warehouse/lots/LotAssignPositionModal'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
 import Protected from '@/components/auth/Protected'
@@ -74,6 +75,7 @@ export function LotPageManager() {
     const [splittingLot, setSplittingLot] = useState<Lot | null>(null)
     const [exportingLot, setExportingLot] = useState<Lot | null>(null)
     const [bulkCloningLot, setBulkCloningLot] = useState<Lot | null>(null)
+    const [assigningLot, setAssigningLot] = useState<Lot | null>(null)
 
     useEffect(() => {
         if (currentSystem?.code) {
@@ -229,6 +231,7 @@ export function LotPageManager() {
                     onSplit={handleSplit}
                     onExport={handleExport}
                     onBulkClone={handleBulkClone}
+                    onAssignLocation={setAssigningLot}
                 />
 
                 {/* Pagination Controls */}
@@ -347,6 +350,17 @@ export function LotPageManager() {
                     onClose={() => setBulkCloningLot(null)}
                     onSuccess={() => {
                         setBulkCloningLot(null);
+                        fetchLots();
+                    }}
+                />
+            )}
+
+            {assigningLot && (
+                <LotAssignPositionModal
+                    lot={assigningLot}
+                    onClose={() => setAssigningLot(null)}
+                    onSuccess={() => {
+                        setAssigningLot(null);
                         fetchLots();
                     }}
                 />
