@@ -196,6 +196,9 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
                         const subRegex = new RegExp(sCodeEscaped, 'i')
                         if (subRegex.test(newCode)) {
                             newCode = newCode.replace(subRegex, currentZone.code)
+                        } else {
+                            // Fallback: Code did not match anything, avoiding exact collision
+                            newCode = `${targetFullPrefix}.${newCode}`
                         }
                     }
 
