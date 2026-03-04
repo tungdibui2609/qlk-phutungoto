@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Package, Settings, Eye, Info, BarChart3, Layout, Warehouse } from 'lucide-react'
+import { Package, ChevronRight, ChevronDown, Check, Columns, MousePointer2, Copy, Trash2, ArrowRight, Settings, BarChart3, Grid3X3, Layout, Warehouse, Eye, Info } from 'lucide-react'
 import { Database } from '@/lib/database.types'
+import { InView } from 'react-intersection-observer'
 import { GroupedZoneDetailModal } from './GroupedZoneDetailModal'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
+type ZoneLayout = Database['public']['Tables']['zone_layouts']['Row']
 
 interface PositionWithZone extends Position {
     zone_id?: string | null
@@ -19,6 +21,7 @@ interface WarehouseStatusMapProps {
     isDesignMode?: boolean
     isCompactMode?: boolean
     onToggleCollapse: (zoneId: string) => void
+    onUpdateCollapsedWarehouses?: (setter: (prev: Set<string>) => Set<string>) => void
     onConfigureZone?: (zone: Zone) => void
     onViewDetails?: (lotId: string) => void
     lotInfo?: Record<string, {
@@ -79,36 +82,45 @@ const MemoizedStatusCell = React.memo(function StatusCell({
     }
 
     return (
-        <div
-            style={{
-                height: cellHeight > 0 ? `${cellHeight}px` : '42px',
-                ...customBgStyle
-            }}
-            className={`
-                relative border text-center transition-all p-1 group
-                flex flex-col items-center justify-center
-                ${bgClass} ${borderClass}
-                hover:scale-105 hover:z-10 hover:shadow-lg ${lotDetail ? 'cursor-pointer' : 'cursor-default'}
-            `}
-            onClick={(e) => {
-                if (lotDetail && onViewDetails) {
-                    e.stopPropagation()
-                    onViewDetails(pos.lot_id!)
-                }
-            }}
-        >
-            <span className={`text-[8px] font-bold leading-none ${isOccupied ? 'text-slate-900 dark:text-white' : 'text-slate-400'} ${cellWidth === 0 ? 'whitespace-nowrap px-0.5' : ''}`}>
-                {pos.code.split('-').pop()}
-            </span>
+        <InView triggerOnce={false} rootMargin="200px 0px">
+            {({ inView, ref }: any) => (
+                <div
+                    ref={ref}
+                    style={{
+                        height: cellHeight > 0 ? `${cellHeight}px` : '42px',
+                        ...customBgStyle
+                    }}
+                    className={`
+                        relative border text-center transition-all p-1 group
+                        flex flex-col items-center justify-center
+                        ${bgClass} ${borderClass}
+                        hover:scale-105 hover:z-10 hover:shadow-lg ${lotDetail ? 'cursor-pointer' : 'cursor-default'}
+                    `}
+                    onClick={(e) => {
+                        if (lotDetail && onViewDetails) {
+                            e.stopPropagation()
+                            onViewDetails(pos.lot_id!)
+                        }
+                    }}
+                >
+                    {inView && (
+                        <>
+                            <span className={`text-[8px] font-bold leading-none ${isOccupied ? 'text-slate-900 dark:text-white' : 'text-slate-400'} ${cellWidth === 0 ? 'whitespace-nowrap px-0.5' : ''}`}>
+                                {pos.code.split('-').pop()}
+                            </span>
 
-            {isOccupied ? (
-                <div className="mt-0.5 flex items-center justify-center">
-                    <div className="w-1.5 h-1.5 rounded-full" style={dotStyle}></div>
+                            {isOccupied ? (
+                                <div className="mt-0.5 flex items-center justify-center">
+                                    <div className="w-1.5 h-1.5 rounded-full" style={dotStyle}></div>
+                                </div>
+                            ) : (
+                                <div className="mt-0.5 w-1.5 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700"></div>
+                            )}
+                        </>
+                    )}
                 </div>
-            ) : (
-                <div className="mt-0.5 w-1.5 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700"></div>
             )}
-        </div>
+        </InView>
     )
 }, (prev, next) => {
     return prev.pos.id === next.pos.id &&
@@ -128,12 +140,17 @@ export default function WarehouseStatusMap({
     isDesignMode = false,
     isCompactMode = false,
     onToggleCollapse,
+    onUpdateCollapsedWarehouses,
     onConfigureZone,
     onViewDetails,
     lotInfo = {}
 }: WarehouseStatusMapProps) {
     const [viewingZone, setViewingZone] = React.useState<{ zone: Zone, allPositions: PositionWithZone[] } | null>(null)
-    const [collapsedWarehouses, setCollapsedWarehouses] = useState<Set<string>>(new Set())
+    const [collapsedWarehouses, setCollapsedWarehouses] = useState<Set<string>>(() => {
+        const rootNames = new Set<string>()
+        zones.filter(z => !z.parent_id).forEach(z => rootNames.add(z.name))
+        return rootNames
+    })
 
     // Build zone tree (copied structure logic from FlexibleZoneGrid)
     const zoneTree = useMemo(() => {
@@ -184,6 +201,15 @@ export default function WarehouseStatusMap({
             })
     }, [zones, positions])
 
+    const getAllDescendantIds = React.useCallback((zone: Zone & { children: Zone[] }): string[] => {
+        let ids: string[] = []
+        zone.children.forEach(child => {
+            ids.push(child.id)
+            ids = ids.concat(getAllDescendantIds(child as any))
+        })
+        return ids
+    }, [])
+
     function renderZone(
         zone: Zone & { children: Zone[], positions: PositionWithZone[] },
         depth: number = 0,
@@ -200,7 +226,13 @@ export default function WarehouseStatusMap({
         const childColumns = layout?.child_columns ?? 0
         const childWidth = layout?.child_width ?? 0
         const collapsible = layout?.collapsible ?? true
-        const displayType = layout?.display_type ?? 'auto'
+        let displayType = layout?.display_type ?? 'auto'
+
+        // Force Root Zones (Warehouses) to ALWAYS show, overriding user's 'hidden' layout settings
+        // because we want Warehouses to wrap their children in the Map view now.
+        if (depth === 0 && displayType === 'hidden') {
+            displayType = 'auto' // fallback to normal header wrapper
+        }
 
         const currentBreadcrumb = [...breadcrumb, zone.name]
 
@@ -258,7 +290,7 @@ export default function WarehouseStatusMap({
         }
 
         return (
-            <div key={zone.id} className={`mb-4 ${depth === 0 ? 'bg-white dark:bg-slate-900 shadow-sm border border-slate-100 dark:border-slate-800' : ''} overflow-hidden`}>
+            <div key={zone.id} className={`group mb-4 ${depth === 0 ? 'bg-white dark:bg-slate-900 shadow-sm border border-slate-100 dark:border-slate-800' : ''} overflow-hidden`}>
                 {/* Status Header */}
                 {(effectiveDisplayType !== 'hidden') && (
                     <div
@@ -282,6 +314,59 @@ export default function WarehouseStatusMap({
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
+                            {/* Nút bấm Gập/Mở cục bộ */}
+                            {depth === 0 && onUpdateCollapsedWarehouses && (
+                                <div className="flex items-center gap-1 mr-2 bg-indigo-50/50 dark:bg-indigo-900/20 p-0.5 rounded-md border border-indigo-100 dark:border-indigo-800/50">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            const descendantIds = getAllDescendantIds(zone as any)
+                                            onUpdateCollapsedWarehouses(prev => {
+                                                const next = new Set(prev)
+                                                next.delete(zone.id)
+                                                descendantIds.forEach(id => next.add(id))
+                                                return next
+                                            })
+                                        }}
+                                        className="px-2 py-1 text-[10px] sm:text-xs rounded bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors border border-indigo-100 dark:border-indigo-800"
+                                        title="Bung Dãy/Sảnh (Giấu Vị trí)"
+                                    >
+                                        Mở Dãy
+                                    </button>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            const descendantIds = getAllDescendantIds(zone as any)
+                                            onUpdateCollapsedWarehouses(prev => {
+                                                const next = new Set(prev)
+                                                next.delete(zone.id)
+                                                descendantIds.forEach(id => next.delete(id))
+                                                return next
+                                            })
+                                        }}
+                                        className="px-2 py-1 text-[10px] sm:text-xs rounded bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors border border-indigo-100 dark:border-indigo-800"
+                                        title="Mở bung toàn bộ lưới Vị trí"
+                                    >
+                                        Mở Hết
+                                    </button>
+                                    <div className="w-px h-3 bg-slate-200 dark:bg-slate-700 mx-0.5"></div>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onUpdateCollapsedWarehouses(prev => {
+                                                const next = new Set(prev)
+                                                next.add(zone.id)
+                                                return next
+                                            })
+                                        }}
+                                        className="px-2 py-1 text-[10px] sm:text-xs rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                                        title="Gập gọn Kho này lại"
+                                    >
+                                        Thu Gọn
+                                    </button>
+                                </div>
+                            )}
+
                             {isDesignMode && (
                                 <button
                                     onClick={(e) => { e.stopPropagation(); onConfigureZone?.(zone); }}
@@ -538,7 +623,7 @@ export default function WarehouseStatusMap({
 
         if (childrenHaveDeepDescendants) {
             // Recurse: we're too high (e.g. at Kho level, need to go to Dãy level)
-            let groups: CompactGroup[] = []
+            const groups: CompactGroup[] = []
             for (const child of node.children) {
                 // When recursing, pass the name of this node as part of breadcrumb
                 groups.push(...collectCompactGroups(child, currentBreadcrumb))

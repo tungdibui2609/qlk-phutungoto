@@ -19,6 +19,7 @@ export function useWarehouseData() {
     const [positions, setPositions] = useState<PositionWithZone[]>([])
     const [zones, setZones] = useState<Zone[]>([])
     const [layouts, setLayouts] = useState<ZoneLayout[]>([])
+    const [collapsedZones, setCollapsedZones] = useState<Set<string>>(() => new Set())
     const [occupiedIds, setOccupiedIds] = useState<Set<string>>(new Set())
     const [lotInfo, setLotInfo] = useState<Record<string, any>>({})
 
@@ -216,6 +217,16 @@ export function useWarehouseData() {
             setLayouts(layoutData)
             setLotInfo(lotInfoMap)
 
+            // Auto collapse ONLY Root Zones (Warehouses) on initial load
+            // This prevents massive DOM rendering while solving the "double click to expand" issue
+            const parentZoneIds = new Set<string>()
+            zoneData.forEach((z: any) => {
+                if (!z.parent_id) {
+                    parentZoneIds.add(z.id)
+                }
+            })
+            setCollapsedZones(parentZoneIds)
+
             const occupied = new Set<string>()
             posWithZone.forEach(pos => {
                 if (pos.lot_id && lotInfoMap[pos.lot_id]) {
@@ -356,6 +367,8 @@ export function useWarehouseData() {
         refreshLotInfo,
         // Helper derived
         totalPositions: positions.length,
-        totalZones: zones.length
+        totalZones: zones.length,
+        collapsedZones,
+        setCollapsedZones
     }
 }

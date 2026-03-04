@@ -3,6 +3,7 @@ import React, { useMemo } from 'react'
 import { ChevronDown, ChevronRight, Package, Settings, Eye, MoreHorizontal } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { TagDisplay } from '@/components/lots/TagDisplay'
+import { InView } from 'react-intersection-observer'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -21,6 +22,7 @@ interface FlexibleZoneGridProps {
     selectedPositionIds: Set<string>
     isDesignMode?: boolean
     isAssignmentMode?: boolean
+    onUpdateCollapsedZones?: (setter: (prev: Set<string>) => Set<string>) => void
     onToggleCollapse: (zoneId: string) => void
     onPositionSelect: (positionId: string) => void
     onViewDetails?: (lotId: string) => void
@@ -49,22 +51,25 @@ interface PositionCellProps {
     onPositionMenu?: (pos: Position, e: React.MouseEvent) => void
 }
 
-const MemoizedPositionCell = React.memo(function PositionCell({
-    pos,
-    cellHeight,
-    cellWidth,
-    isMobile,
-    isOccupied,
-    isSelected,
-    isTargetLot,
-    lotDetail,
-    isAssignmentMode,
-    isHighlightBlinking,
-    onPositionSelect,
-    onViewDetails,
-    onPositionMenu
-}: PositionCellProps) {
-    const hasLot = !!pos.lot_id
+const MemoizedPositionCell = React.memo<{
+    pos: PositionWithZone,
+    cellHeight: number,
+    cellWidth: number,
+    isMobile: boolean,
+    isOccupied: boolean,
+    isSelected: boolean,
+    isTargetLot: boolean,
+    lotDetail: any,
+    isAssignmentMode: boolean,
+    isHighlightBlinking: boolean,
+    onPositionSelect: (id: string) => void,
+    onViewDetails?: (lotId: string) => void,
+    onPositionMenu?: (pos: PositionWithZone, event: React.MouseEvent) => void
+}>(({
+    pos, cellHeight, cellWidth, isMobile, isOccupied, isSelected,
+    isTargetLot, lotDetail, isAssignmentMode, isHighlightBlinking,
+    onPositionSelect, onViewDetails, onPositionMenu
+}) => {
     let bgClass = 'bg-white dark:bg-gray-700'
     let borderClass = 'border-gray-200 dark:border-gray-600'
     let ringClass = ''
@@ -77,147 +82,161 @@ const MemoizedPositionCell = React.memo(function PositionCell({
         bgClass = 'bg-purple-100 dark:bg-purple-900/40'
         borderClass = 'border-purple-500'
         ringClass = 'ring-2 ring-purple-300'
-    } else if (hasLot || isOccupied) {
+    } else if (isOccupied) { // Changed from hasLot || isOccupied to just isOccupied
         bgClass = 'bg-amber-50 dark:bg-amber-900/10'
         borderClass = 'border-amber-200 dark:border-amber-800'
     }
 
     return (
-        <div
-            onClick={isAssignmentMode ? () => onPositionSelect(pos.id) : undefined}
-            style={cellHeight > 0 ? { height: `${cellHeight}px` } : { minHeight: isMobile ? '60px' : '80px' }}
-            className={`
-                relative ${isAssignmentMode ? 'cursor-pointer' : ''} ${isMobile ? 'p-1' : 'p-1.5'} rounded-lg border-2 transition-all
-                flex flex-col justify-between overflow-hidden
-                ${bgClass} ${borderClass} ${ringClass}
-                ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.02] hover:z-10' : ''}
-                ${isHighlightBlinking ? 'animate-highlight-blink' : ''}
-            `}
-        >
-            {!isAssignmentMode && (
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation()
-                        onPositionSelect(pos.id)
+        <InView triggerOnce={false} rootMargin="200px 0px">
+            {({ inView, ref }: any) => (
+                <div
+                    ref={ref}
+                    style={{
+                        height: cellHeight > 0 ? `${cellHeight}px` : (isMobile ? '120px' : '150px'),
+                        width: cellWidth > 0 ? `${cellWidth}px` : '100%'
                     }}
                     className={`
-                        absolute bottom-1 left-1 z-20 w-4 h-4 rounded 
-                        border-2 transition-all duration-150
-                        flex items-center justify-center
-                        ${isSelected
-                            ? 'bg-blue-500 border-blue-500 text-white shadow-md'
-                            : 'bg-white/90 dark:bg-gray-800/90 border-gray-300 dark:border-gray-500 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30'
-                        }
+                        relative ${isAssignmentMode ? 'cursor-pointer' : ''} ${isMobile ? 'p-1' : 'p-1.5'} rounded-lg border-2 transition-all
+                        flex flex-col justify-between overflow-hidden
+                        ${bgClass} ${borderClass} ${ringClass}
+                        ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.02] hover:z-10' : ''}
+                        ${isHighlightBlinking ? 'animate-highlight-blink' : ''}
                     `}
-                    title={isSelected ? "Bỏ chọn vị trí" : "Chọn vị trí"}
+                    onClick={() => isAssignmentMode && onPositionSelect(pos.id)}
                 >
-                    {isSelected && (
-                        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
-                    )}
-                </button>
-            )}
-            <div className="flex justify-center items-start w-full relative mb-1 shrink-0">
-                {!isAssignmentMode && hasLot && lotDetail && (
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation()
-                            onViewDetails?.(pos.lot_id!)
-                        }}
-                        className="absolute left-0 top-0 text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors z-20"
-                        title="Xem chi tiết LOT"
-                    >
-                        <Eye size={12} />
-                    </button>
-                )}
-
-                <span className={`font-mono text-[10px] items-center text-black dark:text-white font-bold leading-none ${cellWidth === 0 ? 'whitespace-nowrap px-1' : ''}`}>
-                    {pos.code}
-                </span>
-
-                {!isAssignmentMode && (
-                    <button
-                        onClick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            onPositionMenu?.(pos, e)
-                        }}
-                        className="absolute right-0 top-0 text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors z-40 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-bl-lg"
-                        title="Tùy chọn"
-                    >
-                        <MoreHorizontal size={14} />
-                    </button>
-                )}
-
-                <div className={`flex gap-0.5 absolute ${!isAssignmentMode ? 'right-5' : 'right-0'} top-0`}>
-                    {isTargetLot && (
-                        <div title="Đang chọn" className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
-                    )}
-                    {(hasLot || isOccupied) && !isTargetLot && (
-                        <div title="Có hàng">
-                            <Package size={10} className="text-amber-500 dark:text-amber-400" />
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {lotDetail ? (
-                <div className="flex flex-col items-center w-full flex-1 min-h-0 gap-1">
-                    <div className={`text-xs font-bold leading-tight w-full text-center truncate shrink-0 ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {lotDetail.code}
-                    </div>
-
-                    <div className="w-full flex-col gap-1.5 overflow-y-auto custom-scrollbar flex-1 min-h-0">
-                        {lotDetail.items?.map((item: any, idx: number) => (
-                            <div key={idx} className="flex flex-col gap-0.5 w-full text-center border-b border-black/5 dark:border-white/5 last:border-0 pb-1 last:pb-0 shrink-0">
-                                {item.product_name && (
-                                    <div className="text-[9px] text-gray-600 dark:text-gray-300 leading-tight line-clamp-2" title={item.product_name}>
-                                        {item.product_name}
-                                    </div>
+                    {inView ? (
+                        <>
+                            {!isAssignmentMode && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        onPositionSelect(pos.id)
+                                    }}
+                                    className={`
+                                        absolute bottom-1 left-1 z-20 w-4 h-4 rounded
+                                        border-2 transition-all duration-150
+                                        flex items-center justify-center
+                                        ${isSelected
+                                            ? 'bg-blue-500 border-blue-500 text-white shadow-md'
+                                            : 'bg-white/90 dark:bg-gray-800/90 border-gray-300 dark:border-gray-500 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30'
+                                        }
+                                    `}
+                                    title={isSelected ? "Bỏ chọn vị trí" : "Chọn vị trí"}
+                                >
+                                    {isSelected && (
+                                        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    )}
+                                </button>
+                            )}
+                            <div className="flex justify-center items-start w-full relative mb-1 shrink-0">
+                                {!isAssignmentMode && isOccupied && lotDetail && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onViewDetails?.(pos.lot_id!)
+                                        }}
+                                        className="absolute left-0 top-0 text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors z-20"
+                                        title="Xem chi tiết LOT"
+                                    >
+                                        <Eye size={12} />
+                                    </button>
                                 )}
-                                <div className="text-[9px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap">
-                                    {item.sku || '-'} : {item.quantity} {item.unit || '-'}
+
+                                <span className={`font-mono text-[10px] items-center text-black dark:text-white font-bold leading-none ${cellWidth === 0 ? 'whitespace-nowrap px-1' : ''}`}>
+                                    {pos.code}
+                                </span>
+
+                                {!isAssignmentMode && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            onPositionMenu?.(pos, e)
+                                        }}
+                                        className="absolute right-0 top-0 text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors z-40 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-bl-lg"
+                                        title="Tùy chọn"
+                                    >
+                                        <MoreHorizontal size={14} />
+                                    </button>
+                                )}
+
+                                <div className={`flex gap-0.5 absolute ${!isAssignmentMode ? 'right-5' : 'right-0'} top-0`}>
+                                    {isTargetLot && (
+                                        <div title="Đang chọn" className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
+                                    )}
+                                    {isOccupied && !isTargetLot && (
+                                        <div title="Có hàng">
+                                            <Package size={10} className="text-amber-500 dark:text-amber-400" />
+                                        </div>
+                                    )}
                                 </div>
-                                {item.tags && item.tags.length > 0 && (
-                                    <TagDisplay
-                                        tags={item.tags}
-                                        variant="compact"
-                                        placeholderMap={{ '@': item.sku || '' }}
-                                        className="mt-0.5"
-                                    />
-                                )}
                             </div>
-                        ))}
-                    </div>
 
-                    <div className="flex justify-center items-center gap-1 w-full px-1 pt-1 opacity-70 text-[8px] text-gray-500 dark:text-gray-400 shrink-0 mt-auto">
-                        {(() => {
-                            const dates = []
+                            {lotDetail ? (
+                                <div className="flex flex-col items-center w-full flex-1 min-h-0 gap-1">
+                                    <div className={`text-xs font-bold leading-tight w-full text-center truncate shrink-0 ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'}`}>
+                                        {lotDetail.code}
+                                    </div>
 
-                            if (lotDetail.peeling_date) {
-                                dates.push(`B: ${new Date(lotDetail.peeling_date).toLocaleDateString('vi-VN')}`)
-                            }
-                            if (lotDetail.packaging_date) {
-                                dates.push(`Đ: ${new Date(lotDetail.packaging_date).toLocaleDateString('vi-VN')}`)
-                            }
-                            if (lotDetail.inbound_date && !lotDetail.peeling_date && !lotDetail.packaging_date) {
-                                dates.push(`N: ${new Date(lotDetail.inbound_date).toLocaleDateString('vi-VN')}`)
-                            }
+                                    <div className="w-full flex-col gap-1.5 overflow-y-auto custom-scrollbar flex-1 min-h-0">
+                                        {lotDetail.items?.map((item: any, idx: number) => (
+                                            <div key={idx} className="flex flex-col gap-0.5 w-full text-center border-b border-black/5 dark:border-white/5 last:border-0 pb-1 last:pb-0 shrink-0">
+                                                {item.product_name && (
+                                                    <div className="text-[9px] text-gray-600 dark:text-gray-300 leading-tight line-clamp-2" title={item.product_name}>
+                                                        {item.product_name}
+                                                    </div>
+                                                )}
+                                                <div className="text-[9px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap">
+                                                    {item.sku || '-'} : {item.quantity} {item.unit || '-'}
+                                                </div>
+                                                {item.tags && item.tags.length > 0 && (
+                                                    <TagDisplay
+                                                        tags={item.tags}
+                                                        variant="compact"
+                                                        placeholderMap={{ '@': item.sku || '' }}
+                                                        className="mt-0.5"
+                                                    />
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
 
-                            return dates.map((d, i) => (
-                                <React.Fragment key={i}>
-                                    {i > 0 && <span className="text-gray-300 dark:text-gray-600">|</span>}
-                                    <span>{d}</span>
-                                </React.Fragment>
-                            ))
-                        })()}
-                    </div>
+                                    <div className="flex justify-center items-center gap-1 w-full px-1 pt-1 opacity-70 text-[8px] text-gray-500 dark:text-gray-400 shrink-0 mt-auto">
+                                        {(() => {
+                                            const dates = []
+
+                                            if (lotDetail.peeling_date) {
+                                                dates.push(`B: ${new Date(lotDetail.peeling_date).toLocaleDateString('vi-VN')}`)
+                                            }
+                                            if (lotDetail.packaging_date) {
+                                                dates.push(`Đ: ${new Date(lotDetail.packaging_date).toLocaleDateString('vi-VN')}`)
+                                            }
+                                            if (lotDetail.inbound_date && !lotDetail.peeling_date && !lotDetail.packaging_date) {
+                                                dates.push(`N: ${new Date(lotDetail.inbound_date).toLocaleDateString('vi-VN')}`)
+                                            }
+
+                                            return dates.map((d, i) => (
+                                                <React.Fragment key={i}>
+                                                    {i > 0 && <span className="text-gray-300 dark:text-gray-600">|</span>}
+                                                    <span>{d}</span>
+                                                </React.Fragment>
+                                            ))
+                                        })()}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex-1 shrink-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                                    <span className="text-[10px] text-gray-400 font-medium">Trống</span>
+                                </div>
+                            )}
+                        </>
+                    ) : null}
                 </div>
-            ) : (
-                <div className="flex-1"></div>
             )}
-        </div>
+        </InView>
     )
 }, (prev, next) => {
     return prev.pos.id === next.pos.id &&
@@ -241,6 +260,7 @@ export default function FlexibleZoneGrid({
     collapsedZones,
     selectedPositionIds,
     isDesignMode = false,
+    onUpdateCollapsedZones,
     onToggleCollapse,
     onPositionSelect,
     onViewDetails,
@@ -307,6 +327,16 @@ export default function FlexibleZoneGrid({
             })
     }, [zones, positions])
 
+    // Lấy toàn bộ ID của Cây phả hệ con cháu dưới 1 Node
+    const getAllDescendantIds = React.useCallback((zone: Zone & { children: Zone[] }): string[] => {
+        let ids: string[] = []
+        zone.children.forEach(child => {
+            ids.push(child.id)
+            ids = ids.concat(getAllDescendantIds(child as any))
+        })
+        return ids
+    }, [])
+
     // Recursive render function
     function renderZone(
         zone: Zone & { children: Zone[], positions: PositionWithZone[] },
@@ -331,11 +361,17 @@ export default function FlexibleZoneGrid({
         const childColumns = layout?.child_columns ?? 0
         const childWidth = layout?.child_width ?? 0
         const collapsible = layout?.collapsible ?? true
-        const displayType = layout?.display_type ?? 'auto'
+        let displayType = layout?.display_type ?? 'auto'
         const alternatingRows = layout?.alternating_rows ?? false
         const headerColor = layout?.header_color ?? null
         const headerTextColor = layout?.header_text_color ?? null
         const effectiveChildCols = childColumns > 0 ? childColumns : 3
+
+        // Force Root Zones (Warehouses) to ALWAYS show, overriding user's 'hidden' layout settings
+        // because we want Warehouses to wrap their children in the Map view now.
+        if (depth === 0 && displayType === 'hidden') {
+            displayType = 'auto' // fallback to normal header wrapper
+        }
 
         // Build breadcrumb path (needed for all display types including hidden)
         const currentBreadcrumb = [...breadcrumb, zone.name]
@@ -474,6 +510,59 @@ export default function FlexibleZoneGrid({
                                 </div>
                             </div>
                             <div className="flex items-center gap-2 print:hidden">
+                                {/* Mở/Thu Cục Bộ */}
+                                {depth === 0 && onUpdateCollapsedZones && (
+                                    <div className="flex items-center gap-1 mr-2 bg-black/10 rounded overflow-hidden">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                const descendantIds = getAllDescendantIds(zone as any)
+                                                onUpdateCollapsedZones(prev => {
+                                                    const next = new Set(prev)
+                                                    next.delete(zone.id)
+                                                    descendantIds.forEach(id => next.add(id))
+                                                    return next
+                                                })
+                                            }}
+                                            className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
+                                            title="Bung Dãy/Sảnh (Giấu Vị trí)"
+                                        >
+                                            Mở Dãy
+                                        </button>
+                                        <div className="w-px h-3 bg-white/30"></div>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                const descendantIds = getAllDescendantIds(zone as any)
+                                                onUpdateCollapsedZones(prev => {
+                                                    const next = new Set(prev)
+                                                    next.delete(zone.id)
+                                                    descendantIds.forEach(id => next.delete(id))
+                                                    return next
+                                                })
+                                            }}
+                                            className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
+                                            title="Mở bung toàn bộ lưới Vị trí"
+                                        >
+                                            Mở Hết
+                                        </button>
+                                        <div className="w-px h-3 bg-white/30"></div>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                onUpdateCollapsedZones(prev => {
+                                                    const next = new Set(prev)
+                                                    next.add(zone.id)
+                                                    return next
+                                                })
+                                            }}
+                                            className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
+                                            title="Gập gọn Kho này lại"
+                                        >
+                                            Thu Gọn
+                                        </button>
+                                    </div>
+                                )}
                                 {onTogglePageBreak && (
                                     <button
                                         onClick={(e) => {
@@ -512,22 +601,26 @@ export default function FlexibleZoneGrid({
 
                         {/* Positions grid */}
                         <div className="p-4">
-                            <div
-                                className="grid gap-2"
-                                style={{
-                                    gridTemplateColumns: cellWidth > 0
-                                        ? `repeat(${positionColumns}, ${cellWidth}px)`
-                                        : `repeat(${positionColumns}, minmax(auto, 1fr))`
-                                }}
-                            >
-                                {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth))}
-                            </div>
+                            {!isCollapsed && (
+                                <>
+                                    <div
+                                        className="grid gap-2"
+                                        style={{
+                                            gridTemplateColumns: cellWidth > 0
+                                                ? `repeat(${positionColumns}, ${cellWidth}px)`
+                                                : `repeat(${positionColumns}, minmax(auto, 1fr))`
+                                        }}
+                                    >
+                                        {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth))}
+                                    </div>
 
-                            {/* Also render child zones if any */}
-                            {hasChildren && (
-                                <div className="mt-4 space-y-3">
-                                    {zone.children.map(child => renderZone(child as any, depth + 1, currentBreadcrumb))}
-                                </div>
+                                    {/* Also render child zones if any */}
+                                    {hasChildren && (
+                                        <div className="mt-4 space-y-3">
+                                            {zone.children.map(child => renderZone(child as any, depth + 1, currentBreadcrumb))}
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     </div>
@@ -583,6 +676,59 @@ export default function FlexibleZoneGrid({
                                 </div>
                             </div>
                             <div className="flex items-center gap-2 print:hidden">
+                                {/* Mở/Thu Cục Bộ */}
+                                {depth === 0 && onUpdateCollapsedZones && (
+                                    <div className="flex items-center gap-1 mr-2 bg-black/10 rounded overflow-hidden">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                const descendantIds = getAllDescendantIds(zone as any)
+                                                onUpdateCollapsedZones(prev => {
+                                                    const next = new Set(prev)
+                                                    next.delete(zone.id)
+                                                    descendantIds.forEach(id => next.add(id))
+                                                    return next
+                                                })
+                                            }}
+                                            className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
+                                            title="Bung Dãy/Sảnh (Giấu Vị trí)"
+                                        >
+                                            Mở Dãy
+                                        </button>
+                                        <div className="w-px h-3 bg-white/30"></div>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                const descendantIds = getAllDescendantIds(zone as any)
+                                                onUpdateCollapsedZones(prev => {
+                                                    const next = new Set(prev)
+                                                    next.delete(zone.id)
+                                                    descendantIds.forEach(id => next.delete(id))
+                                                    return next
+                                                })
+                                            }}
+                                            className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
+                                            title="Mở bung toàn bộ lưới Vị trí"
+                                        >
+                                            Mở Hết
+                                        </button>
+                                        <div className="w-px h-3 bg-white/30"></div>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                onUpdateCollapsedZones(prev => {
+                                                    const next = new Set(prev)
+                                                    next.add(zone.id)
+                                                    return next
+                                                })
+                                            }}
+                                            className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
+                                            title="Gập gọn Kho này lại"
+                                        >
+                                            Thu Gọn
+                                        </button>
+                                    </div>
+                                )}
                                 {onTogglePageBreak && (
                                     <button
                                         onClick={(e) => {
@@ -679,7 +825,7 @@ export default function FlexibleZoneGrid({
                 return (
                     <div
                         key={zone.id}
-                        className={`rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden ${depth === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50'}`}
+                        className={`group rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden ${depth === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50'}`}
                         style={overrideBgStyle}
                     >
                         {/* Zone Header */}
@@ -715,6 +861,63 @@ export default function FlexibleZoneGrid({
                                     </span>
                                 )}
                             </div>
+
+                            {/* Mini Local Collapse Controls (For Warehouse Level 0) */}
+                            {depth === 0 && onUpdateCollapsedZones && (
+                                <div className="flex items-center gap-1 mr-2 bg-black/10 rounded overflow-hidden">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            // Mở Dãy (Cấp 1): Xoá Kho khỏi Collapse + Thêm Descendant vào Collapse
+                                            const descendantIds = getAllDescendantIds(zone as any)
+                                            onUpdateCollapsedZones(prev => {
+                                                const next = new Set(prev)
+                                                next.delete(zone.id)
+                                                descendantIds.forEach(id => next.add(id))
+                                                return next
+                                            })
+                                        }}
+                                        className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
+                                        title="Bung Dãy/Sảnh (Giấu Vị trí)"
+                                    >
+                                        Mở Dãy
+                                    </button>
+                                    <div className="w-px h-3 bg-white/30"></div>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            // Mở Tất Cả (Cấp 2): Xoá Kho và Toàn bộ Descendant khỏi Collapse
+                                            const descendantIds = getAllDescendantIds(zone as any)
+                                            onUpdateCollapsedZones(prev => {
+                                                const next = new Set(prev)
+                                                next.delete(zone.id)
+                                                descendantIds.forEach(id => next.delete(id))
+                                                return next
+                                            })
+                                        }}
+                                        className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
+                                        title="Mở bung toàn bộ lưới Vị trí"
+                                    >
+                                        Mở Hết
+                                    </button>
+                                    <div className="w-px h-3 bg-white/30"></div>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            // Thu Tất cả: Gập chính cái Kho này lại
+                                            onUpdateCollapsedZones(prev => {
+                                                const next = new Set(prev)
+                                                next.add(zone.id)
+                                                return next
+                                            })
+                                        }}
+                                        className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
+                                        title="Gập gọn Kho này lại"
+                                    >
+                                        Thu Gọn
+                                    </button>
+                                </div>
+                            )}
 
                             {/* Design mode: configure button */}
                             {isDesignMode && (

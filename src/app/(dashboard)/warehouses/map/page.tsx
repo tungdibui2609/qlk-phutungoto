@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
+import { ChevronUp, ChevronDown, Layers, X } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import MultiSelectActionBar from '@/components/warehouse/map/MultiSelectActionBar'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
@@ -51,7 +52,9 @@ function WarehouseMapContent() {
         fetchData,
         refreshLotInfo,
         totalPositions,
-        totalZones
+        totalZones,
+        collapsedZones,
+        setCollapsedZones
     } = useWarehouseData()
 
     // 2. Filter Hook
@@ -73,7 +76,6 @@ function WarehouseMapContent() {
     const [showMobileFilters, setShowMobileFilters] = useState(false)
     const [isDesignMode, setIsDesignMode] = useState(false)
     const [assignLot, setAssignLot] = useState<{ id: string, code: string } | null>(null)
-    const [collapsedZones, setCollapsedZones] = useState<Set<string>>(new Set())
     const [configuringZone, setConfiguringZone] = useState<Zone | null>(null)
 
     // Multi-select & Modals
@@ -84,6 +86,7 @@ function WarehouseMapContent() {
     const [taggingLotId, setTaggingLotId] = useState<string | null>(null)
     const [viewingLot, setViewingLot] = useState<any>(null)
     const [qrLot, setQrLot] = useState<any>(null)
+    const [isMapControlsOpen, setIsMapControlsOpen] = useState(false)
 
     useEffect(() => {
         const checkMobile = () => setIsMobile(window.innerWidth < 1024)
@@ -254,7 +257,7 @@ function WarehouseMapContent() {
     // --- Layout Handlers ---
 
     function toggleZoneCollapse(zoneId: string) {
-        setCollapsedZones(prev => {
+        setCollapsedZones((prev: Set<string>) => {
             const next = new Set(prev)
             if (next.has(zoneId)) next.delete(zoneId)
             else next.add(zoneId)
@@ -521,11 +524,83 @@ function WarehouseMapContent() {
 
             {/* Map Grid Area */}
             <div className="space-y-4">
-                <div className="flex justify-end">
-                    <ZoneCollapseControls
-                        onExpandAll={() => setCollapsedZones(new Set())}
-                        onCollapseAll={() => setCollapsedZones(new Set(zones.map(z => z.id)))}
-                    />
+                {/* Floating Map Controls (Bong bóng) */}
+                <div className="fixed bottom-6 right-6 z-[60] shadow-2xl transition-all duration-300 hover:scale-[1.02] flex justify-end">
+                    {!isMapControlsOpen ? (
+                        <button
+                            onClick={() => setIsMapControlsOpen(true)}
+                            className="bg-slate-800 text-white dark:bg-slate-700 dark:text-slate-100 rounded-full p-3 shadow-lg hover:scale-110 transition flex items-center justify-center border border-slate-600 dark:border-slate-500 hover:bg-slate-700 dark:hover:bg-slate-600 animate-in fade-in"
+                            title="Mở công cụ bản đồ"
+                        >
+                            <Layers size={22} className="text-emerald-400" />
+                        </button>
+                    ) : (
+                        <div className="flex bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-full p-1 border border-slate-200 dark:border-slate-700 shadow-sm animate-in zoom-in-95 duration-200">
+                            {/* Mở rộng Group */}
+                            <div className="flex relative items-center mr-1 pr-2 border-r border-slate-300 dark:border-slate-600">
+                                <span className="text-[10px] text-slate-500 font-bold px-3 uppercase tracking-wider">Mở</span>
+                                <button
+                                    onClick={() => {
+                                        // Mở Cấp 1: Xóa Root(Kho) khỏi Set. Chỉ gập list Dãy/Sảnh.
+                                        setCollapsedZones(new Set(zones.filter(z => z.parent_id).map(z => z.id)))
+                                    }}
+                                    className="px-3 py-2 text-slate-600 dark:text-slate-300 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1 font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800"
+                                    title="Bung list Kho tải các Dãy (Ẩn Vị trí)"
+                                >
+                                    <ChevronDown size={14} />
+                                    Cấp 1 (Dãy)
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        // Mở Cấp 2: Show hết sạch
+                                        setCollapsedZones(new Set())
+                                    }}
+                                    className="px-3 py-2 text-slate-600 dark:text-slate-300 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition ml-1 flex items-center gap-1 font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                                    title="Mở bung toàn bộ mọi Vị trí"
+                                >
+                                    <ChevronDown size={14} />
+                                    Cấp 2 (Vị trí)
+                                </button>
+                            </div>
+
+                            {/* Thu gọn Group */}
+                            <div className="flex relative items-center">
+                                <span className="text-[10px] text-slate-500 font-bold px-3 uppercase tracking-wider">Thu</span>
+                                <button
+                                    onClick={() => {
+                                        // Thu Cấp 1 (Gập Vị trí): Gom tất cả Zone có Parent vào Set
+                                        setCollapsedZones(new Set(zones.filter(z => z.parent_id).map(z => z.id)))
+                                    }}
+                                    className="px-3 py-2 text-slate-600 dark:text-slate-300 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1 font-medium"
+                                    title="Thu gọn Vị trí (Chỉ xem Vỏ Sảnh/Dãy)"
+                                >
+                                    <ChevronUp size={14} className="text-slate-400" />
+                                    Vị trí
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        // Thu Cấp 2 (Tất cả): Gom tất cả Root Zone (!z.parent_id) vào Set
+                                        const allZoneIds = zones.map(z => z.id)
+                                        setCollapsedZones(new Set(allZoneIds))
+                                    }}
+                                    className="px-3 py-2 text-slate-600 dark:text-slate-300 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition ml-1 flex items-center gap-1 font-medium"
+                                    title="Thu gọn Tất cả (Chỉ nhìn thấy Kho)"
+                                >
+                                    <ChevronUp size={14} className="text-slate-400" />
+                                    Kho
+                                </button>
+
+                                {/* Nút Đóng Mini Menu */}
+                                <button
+                                    onClick={() => setIsMapControlsOpen(false)}
+                                    className="p-1.5 mx-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700"
+                                    title="Đóng công cụ"
+                                >
+                                    <X size={14} />
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="min-w-0">
@@ -538,6 +613,7 @@ function WarehouseMapContent() {
                         selectedPositionIds={selectedPositionIds}
                         collapsedZones={collapsedZones}
                         onToggleCollapse={toggleZoneCollapse}
+                        onUpdateCollapsedZones={setCollapsedZones}
                         onPositionSelect={handlePositionSelect}
                         onPositionMenu={(pos, e) => handlePositionMenu(pos, e)}
                         onViewDetails={(lotId) => fetchFullLotDetails(lotId)}

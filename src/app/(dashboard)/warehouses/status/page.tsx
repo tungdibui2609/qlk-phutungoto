@@ -353,8 +353,8 @@ function WarehouseStatusContent() {
                     <button
                         onClick={() => setIsCompactMode(!isCompactMode)}
                         className={`flex items-center gap-2 px-6 py-2.5 font-bold transition-all shadow-sm ${isCompactMode
-                                ? 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                            ? 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                             }`}
                     >
                         <Eye size={18} />
@@ -463,6 +463,7 @@ function WarehouseStatusContent() {
                     isDesignMode={isDesignMode}
                     isCompactMode={isCompactMode}
                     onToggleCollapse={toggleZoneCollapse}
+                    onUpdateCollapsedWarehouses={setCollapsedZones}
                     onConfigureZone={setConfiguringZone}
                     onViewDetails={fetchFullLotDetails}
                 />
