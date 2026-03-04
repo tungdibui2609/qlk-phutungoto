@@ -19,6 +19,7 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
     const { currentSystem } = useSystem()
     const [loading, setLoading] = useState(false)
     const [code, setCode] = useState('')
+    const [searchTerm, setSearchTerm] = useState('')
     const [positions, setPositions] = useState<ComboboxOption[]>([])
     const [loadingPositions, setLoadingPositions] = useState(false)
 
@@ -26,17 +27,25 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
     useEffect(() => {
         if (!currentSystem?.code) return
 
-        async function fetchPositions() {
+        async function fetchPositions(search: string = '') {
             setLoadingPositions(true)
             try {
-                const { data, error } = await supabase
+                let query = supabase
                     .from('positions')
                     .select('code')
                     .eq('system_type', currentSystem!.code)
                     .order('code')
+                    .limit(100)
+
+                if (search) {
+                    query = query.ilike('code', `%${search}%`)
+                }
+
+                const { data, error } = await query
 
                 if (error) throw error
                 if (data) {
+                    // console.log(`Fetched ${data.length} positions for search "${search}"`)
                     const options = data.map(p => ({
                         value: p.code,
                         label: p.code
@@ -50,10 +59,12 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
             }
         }
 
-        fetchPositions()
-    }, [currentSystem?.code])
+        const timer = setTimeout(() => {
+            fetchPositions(searchTerm)
+        }, 300)
 
-
+        return () => clearTimeout(timer)
+    }, [currentSystem?.code, searchTerm])
 
     const handleAssign = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -153,8 +164,11 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                         <Combobox
                             options={positions}
                             value={code}
-                            onChange={(val) => setCode(val || '')}
-                            onSearchChange={(val) => setCode(val)}
+                            onChange={(val) => {
+                                setCode(val || '')
+                                if (val) setSearchTerm(val)
+                            }}
+                            onSearchChange={(val) => setSearchTerm(val)}
                             placeholder="Nhập mã vị trí (VD: A-1-1)"
                             className="w-full"
                             isLoading={loadingPositions}
