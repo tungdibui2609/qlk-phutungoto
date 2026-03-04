@@ -656,7 +656,7 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                         >
                                             <Printer size={16} className="text-orange-500" />
                                             <div>
-                                                <div className="font-medium">Phiếu theo thông tư</div>
+                                                <div className="font-medium">Hệ Thống</div>
                                                 <div className="text-xs text-stone-500">Mẫu 01-VT đầy đủ</div>
                                             </div>
                                         </button>

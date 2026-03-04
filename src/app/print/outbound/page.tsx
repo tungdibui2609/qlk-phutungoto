@@ -135,6 +135,15 @@ function OutboundPrintContent() {
     // General note field
     const [editNote, setEditNote] = useState('')
 
+    // Transport info fields
+    const [editVehicleNumber, setEditVehicleNumber] = useState('')
+    const [editContainerNumber, setEditContainerNumber] = useState('')
+    const [editSealNumber, setEditSealNumber] = useState('')
+
+    // New 5th signature for driver
+    const [signTitle5, setSignTitle5] = useState('Tài xế')
+    const [signPerson5, setSignPerson5] = useState('')
+
     // Capture and snapshot state
     const [isDownloading, setIsDownloading] = useState(false)
     const { isCapturing, downloadTimer, handleCapture } = useCaptureReceipt({
@@ -236,6 +245,11 @@ function OutboundPrintContent() {
                     setDebitAccount(searchParams.get('debitAccount') || '')
                     setCreditAccount(searchParams.get('creditAccount') || '')
                     setEditNote(searchParams.get('editNote') || '')
+                    setEditVehicleNumber(searchParams.get('editVehicleNumber') || o.metadata?.vehicleNumber || '')
+                    setEditContainerNumber(searchParams.get('editContainerNumber') || o.metadata?.containerNumber || '')
+                    setEditSealNumber(searchParams.get('editSealNumber') || o.metadata?.sealNumber || '')
+                    setSignTitle5(searchParams.get('signTitle5') || 'Tài xế')
+                    setSignPerson5(searchParams.get('signPerson5') || o.metadata?.driverName || '')
 
                     // Fetch units for conversion map
                     let unitsData: { id: string, name: string }[] | null = null
@@ -522,6 +536,38 @@ function OutboundPrintContent() {
                     />
                     <span className={`hidden print:inline ml-2 flex-1 font-bold ${isSnapshotMode ? 'inline' : ''}`}>{editNote || '\u00A0'}</span>
                 </div>
+                <div className="flex items-center gap-6">
+                    <div className="flex items-center">
+                        <span className="text-gray-600 shrink-0">- Biển số xe:</span>
+                        <input
+                            type="text"
+                            value={editVehicleNumber}
+                            onChange={(e) => setEditVehicleNumber(e.target.value)}
+                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} ml-2 w-28 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                        />
+                        <span className={`hidden print:inline ml-2 min-w-[50px] font-bold ${isSnapshotMode ? 'inline' : ''}`}>{editVehicleNumber || '\u00A0'}</span>
+                    </div>
+                    <div className="flex items-center">
+                        <span className="text-gray-600 shrink-0">Số cont:</span>
+                        <input
+                            type="text"
+                            value={editContainerNumber}
+                            onChange={(e) => setEditContainerNumber(e.target.value)}
+                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} ml-2 w-32 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                        />
+                        <span className={`hidden print:inline ml-2 min-w-[50px] font-bold ${isSnapshotMode ? 'inline' : ''}`}>{editContainerNumber || '\u00A0'}</span>
+                    </div>
+                    <div className="flex items-center flex-1">
+                        <span className="text-gray-600 shrink-0">Số seal:</span>
+                        <input
+                            type="text"
+                            value={editSealNumber}
+                            onChange={(e) => setEditSealNumber(e.target.value)}
+                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} ml-2 flex-1 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                        />
+                        <span className={`hidden print:inline ml-2 min-w-[50px] font-bold ${isSnapshotMode ? 'inline' : ''}`}>{editSealNumber || '\u00A0'}</span>
+                    </div>
+                </div>
             </div>
 
             <div className="mt-6">
@@ -748,7 +794,7 @@ function OutboundPrintContent() {
                 )}
             </div>
 
-            <div className="mt-10 grid grid-cols-4 gap-3 text-center text-sm">
+            <div className="mt-10 grid grid-cols-5 gap-3 text-center text-sm">
                 <div>
                     <div className="text-sm italic text-center mb-1 invisible">
                         Ngày ... tháng ... năm ...
@@ -774,6 +820,33 @@ function OutboundPrintContent() {
                             className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                         />
                         <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson1}</span>
+                    </div>
+                </div>
+                <div>
+                    <div className="text-sm italic text-center mb-1 invisible">
+                        Ngày ... tháng ... năm ...
+                    </div>
+                    <div className="font-semibold">
+                        <input
+                            type="text"
+                            value={signTitle5}
+                            onChange={(e) => setSignTitle5(e.target.value)}
+                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
+                        />
+                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle5}</span>
+                    </div>
+                    <div className="text-xs text-gray-500 italic hidden">(Hoặc bộ phận có nhu cầu xuất)</div>
+                    <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
+                    <div className="h-16"></div>
+                    <div className="mt-4">
+                        <input
+                            type="text"
+                            value={signPerson5}
+                            onChange={(e) => setSignPerson5(e.target.value)}
+                            placeholder="Nhập tên..."
+                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                        />
+                        <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson5}</span>
                     </div>
                 </div>
                 <div>
