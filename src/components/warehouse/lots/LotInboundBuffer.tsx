@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import { formatQuantityFull } from '@/lib/numberUtils'
+import { generateOrderCode } from '@/lib/orderCodeUtils'
 
 interface PendingInbound {
     lot_id: string
@@ -180,35 +181,8 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
 
         setSyncing(true)
         try {
-            // 1. Generate Order Code (Sequential STT)
-            const getPrefix = (code: string, name?: string): string => {
-                if (name) {
-                    const nameWithoutKho = name.replace(/^Kho\s+/i, '')
-                    return nameWithoutKho.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").split(' ').filter(word => word.length > 0).map(word => word[0]).join('').toUpperCase()
-                }
-                return code.substring(0, 3).toUpperCase()
-            }
-
-            const today = new Date()
-            const dateStr = `${String(today.getDate()).padStart(2, '0')}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getFullYear()).slice(-2)}`
-            const startOfDay = new Date(today.setHours(0, 0, 0, 0)).toISOString()
-            const endOfDay = new Date(today.setHours(23, 59, 59, 999)).toISOString()
-
-            const { count, error: countErr } = await supabase.from('inbound_orders')
-                .select('*', { count: 'exact', head: true })
-                .eq('system_code', systemType)
-                .gte('created_at', startOfDay)
-                .lte('created_at', endOfDay)
-
-            const prefix = getPrefix(systemType, currentSystem?.name)
-            let orderCode = ''
-            if (countErr) {
-                const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0')
-                orderCode = `${prefix}-PNK-${dateStr}-${random}`
-            } else {
-                const stt = String((count || 0) + 1).padStart(3, '0')
-                orderCode = `${prefix}-PNK-${dateStr}-${stt}`
-            }
+            // 1. Generate Order Code
+            const orderCode = await generateOrderCode('PNK', systemType)
 
             // 2. Identify Supplier
             let finalSupplierId = quickSupplierId || null

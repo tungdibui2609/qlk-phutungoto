@@ -4,6 +4,7 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
 import { Product, Supplier, Unit, OrderItem } from '../types'
+import { generateOrderCode } from '@/lib/orderCodeUtils'
 
 export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, onSuccess, onClose }: any) {
     const { showToast } = useToast()
@@ -22,6 +23,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
     const [vehicleNumber, setVehicleNumber] = useState('')
     const [driverName, setDriverName] = useState('')
     const [containerNumber, setContainerNumber] = useState('')
+    const [sealNumber, setSealNumber] = useState('')
     const [orderTypeId, setOrderTypeId] = useState('')
     // Images State
     const [images, setImages] = useState<string[]>([])
@@ -36,34 +38,6 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
     const [orderTypes, setOrderTypes] = useState<any[]>([])
     const [loadingData, setLoadingData] = useState(false)
     const [submitting, setSubmitting] = useState(false)
-
-    // Helper: Config Check
-
-    const generateOrderCode = async (type: 'PNK' | 'PXK', sysCode?: string, sysName?: string) => {
-        const getSystemAbbreviation = (code: string, name?: string): string => {
-            if (name) {
-                const nameWithoutKho = name.replace(/^Kho\s+/i, '')
-                return nameWithoutKho.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").split(' ').filter(word => word.length > 0).map(word => word[0]).join('').toUpperCase()
-            }
-            return code.substring(0, 3).toUpperCase()
-        }
-        const today = new Date()
-        const dateStr = `${String(today.getDate()).padStart(2, '0')}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getFullYear()).slice(2)}`
-        const startOfDay = new Date(today.setHours(0, 0, 0, 0)).toISOString()
-        const endOfDay = new Date(today.setHours(23, 59, 59, 999)).toISOString()
-        const tableName = type === 'PNK' ? 'inbound_orders' : 'outbound_orders'
-
-        const { count, error } = await supabase.from(tableName).select('*', { count: 'exact', head: true }).gte('created_at', startOfDay).lte('created_at', endOfDay)
-        if (error) {
-            const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0')
-            const prefix = sysCode ? `${getSystemAbbreviation(sysCode, sysName)}-` : ''
-            return `${prefix}${type}-${dateStr}-${random}`
-        }
-        const stt = String((count || 0) + 1).padStart(3, '0')
-        const prefix = sysCode ? `${getSystemAbbreviation(sysCode, sysName)}-` : ''
-        return `${prefix}${type}-${dateStr}-${stt}`
-    }
-
 
     useEffect(() => {
         if (isOpen) {
@@ -83,6 +57,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
         setVehicleNumber('')
         setDriverName('')
         setContainerNumber('')
+        setSealNumber('')
         setOrderTypeId('')
         setImages([])
         setTargetUnit('')
@@ -135,6 +110,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                     setVehicleNumber(meta.vehicleNumber || '')
                     setDriverName(meta.driverName || '')
                     setContainerNumber(meta.containerNumber || '')
+                    setSealNumber(meta.sealNumber || '')
                     if (meta.targetUnit) setTargetUnit(meta.targetUnit)
 
                     const { data: itemsData } = await supabase.from('inbound_order_items').select('*').eq('order_id', editOrderId)
@@ -168,9 +144,9 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
 
                 if (initialData.description) setDescription(initialData.description)
 
-                generateOrderCode('PNK', systemCode, currentSystem?.name).then(setCode)
+                generateOrderCode('PNK', systemCode).then(setCode)
             } else {
-                if (!editOrderId) generateOrderCode('PNK', systemCode, currentSystem?.name).then(setCode)
+                if (!editOrderId) generateOrderCode('PNK', systemCode).then(setCode)
             }
         } catch (error) {
             console.error(error)
@@ -218,7 +194,6 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
     const removeItem = (id: string) => setItems(prev => prev.filter(i => i.id !== id))
 
     const handleSubmit = async () => {
-        if (!supplierId) return showToast('Vui lòng chọn nhà cung cấp', 'warning')
         if (items.length === 0) return showToast('Vui lòng thêm ít nhất 1 sản phẩm', 'warning')
         if (items.find(i => !i.productId || !i.unit)) return showToast('Vui lòng chọn đầy đủ sản phẩm và đơn vị tính', 'warning')
 
@@ -234,7 +209,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                 order_type_id: orderTypeId || null,
                 images,
                 updated_at: new Date().toISOString(),
-                metadata: { vehicleNumber, driverName, containerNumber, targetUnit },
+                metadata: { vehicleNumber, driverName, containerNumber, sealNumber, targetUnit },
                 company_id: profile?.company_id || null
             }
 
@@ -306,6 +281,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
         vehicleNumber, setVehicleNumber,
         driverName, setDriverName,
         containerNumber, setContainerNumber,
+        sealNumber, setSealNumber,
         orderTypeId, setOrderTypeId,
         images, setImages,
         targetUnit, setTargetUnit,

@@ -24,6 +24,7 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
         vehicleNumber, setVehicleNumber,
         driverName, setDriverName,
         containerNumber, setContainerNumber,
+        sealNumber, setSealNumber,
         orderTypeId, setOrderTypeId,
         images, setImages,
         targetUnit, setTargetUnit,
@@ -143,6 +144,7 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
                         vehicleNumber={vehicleNumber} setVehicleNumber={setVehicleNumber}
                         driverName={driverName} setDriverName={setDriverName}
                         containerNumber={containerNumber} setContainerNumber={setContainerNumber}
+                        sealNumber={sealNumber} setSealNumber={setSealNumber}
                     />
                 )}
 

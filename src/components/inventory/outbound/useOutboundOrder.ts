@@ -7,6 +7,7 @@ import { useUser } from '@/contexts/UserContext'
 import { unbundleService } from '@/services/inventory/unbundleService'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { Product, Customer, Unit, OrderItem } from '../types'
+import { generateOrderCode } from '@/lib/orderCodeUtils'
 
 export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, onClose, editOrderId }: any) {
     const { showToast } = useToast()
@@ -26,6 +27,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
     const [vehicleNumber, setVehicleNumber] = useState('')
     const [driverName, setDriverName] = useState('')
     const [containerNumber, setContainerNumber] = useState('')
+    const [sealNumber, setSealNumber] = useState('')
     const [orderTypeId, setOrderTypeId] = useState('')
     // Site Inventory State
     const [workerName, setWorkerName] = useState('')
@@ -60,30 +62,6 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         return Array.isArray(modules?.utility_modules) && modules.utility_modules.includes(utilityId)
     }
 
-    const generateOrderCode = async (type: 'PNK' | 'PXK', sysCode?: string, sysName?: string) => {
-        const getSystemAbbreviation = (code: string, name?: string): string => {
-            if (name) {
-                const nameWithoutKho = name.replace(/^Kho\s+/i, '')
-                return nameWithoutKho.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").split(' ').filter(word => word.length > 0).map(word => word[0]).join('').toUpperCase()
-            }
-            return code.substring(0, 3).toUpperCase()
-        }
-        const today = new Date()
-        const dateStr = `${String(today.getDate()).padStart(2, '0')}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getFullYear()).slice(2)}`
-        const startOfDay = new Date(today.setHours(0, 0, 0, 0)).toISOString()
-        const endOfDay = new Date(today.setHours(23, 59, 59, 999)).toISOString()
-        const tableName = type === 'PNK' ? 'inbound_orders' : 'outbound_orders'
-
-        const { count, error } = await supabase.from(tableName).select('*', { count: 'exact', head: true }).gte('created_at', startOfDay).lte('created_at', endOfDay)
-        if (error) {
-            const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0')
-            const prefix = sysCode ? `${getSystemAbbreviation(sysCode, sysName)}-` : ''
-            return `${prefix}${type}-${dateStr}-${random}`
-        }
-        const stt = String((count || 0) + 1).padStart(3, '0')
-        const prefix = sysCode ? `${getSystemAbbreviation(sysCode, sysName)}-` : ''
-        return `${prefix}${type}-${dateStr}-${stt}`
-    }
 
     useEffect(() => {
         if (isOpen) {
@@ -121,6 +99,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                 setVehicleNumber(meta.vehicleNumber || '')
                 setDriverName(meta.driverName || '')
                 setContainerNumber(meta.containerNumber || '')
+                setSealNumber(meta.sealNumber || '')
                 setTargetUnit(meta.targetUnit || '')
                 setWorkerName(meta.workerName || '')
                 setTeamName(meta.teamName || '')
@@ -157,6 +136,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         setVehicleNumber('')
         setDriverName('')
         setContainerNumber('')
+        setSealNumber('')
         setOrderTypeId('')
         setImages([])
         setTargetUnit('')
@@ -221,7 +201,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                 if (initialData.items) setItems(initialData.items)
                 if (initialData.customerName) setCustomerName(initialData.customerName)
             }
-            generateOrderCode('PXK', systemCode, currentSystem?.name).then(setCode)
+            generateOrderCode('PXK', systemCode).then(setCode)
         } catch (error) {
             console.error(error)
             showToast('Lỗi tải dữ liệu', 'error')
@@ -294,7 +274,6 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
     const removeItem = (id: string) => setItems(prev => prev.filter(i => i.id !== id))
 
     const handleSubmit = async () => {
-        if (!customerName) return showToast('Vui lòng nhập tên khách hàng', 'warning')
         if (items.length === 0) return showToast('Vui lòng thêm ít nhất 1 sản phẩm', 'warning')
         if (items.find(i => !i.productId || !i.unit)) return showToast('Vui lòng chọn đầy đủ sản phẩm và đơn vị tính', 'warning')
 
@@ -357,7 +336,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                             systemCode,
                             mainOrderCode: code,
                             convTypeId,
-                            generateOrderCode: (type) => generateOrderCode(type, systemCode, currentSystem?.name)
+                            generateOrderCode: (type) => generateOrderCode(type, systemCode)
                         })
 
                         if (baseToBreak) {
@@ -383,6 +362,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                         vehicleNumber,
                         driverName,
                         containerNumber,
+                        sealNumber,
                         targetUnit
                     },
                     company_id: profile?.company_id || null
@@ -472,6 +452,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         vehicleNumber, setVehicleNumber,
         driverName, setDriverName,
         containerNumber, setContainerNumber,
+        sealNumber, setSealNumber,
         orderTypeId, setOrderTypeId,
         images, setImages,
         targetUnit, setTargetUnit,

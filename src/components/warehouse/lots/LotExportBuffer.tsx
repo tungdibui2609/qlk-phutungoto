@@ -8,6 +8,7 @@ import { toBaseAmount as toBaseAmountLogic, ConversionMap, UnitNameMap } from '@
 import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import { formatQuantityFull } from '@/lib/numberUtils'
+import { generateOrderCode } from '@/lib/orderCodeUtils'
 
 interface PendingExport {
     lot_id: string
@@ -246,38 +247,9 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             })
 
             // Generate Order Code Helper (Matches useOutboundOrder logic)
-            const generateInternalCode = async (type: 'PNK' | 'PXK') => {
-                const getPrefix = (code: string, name?: string): string => {
-                    if (name) {
-                        const nameWithoutKho = name.replace(/^Kho\s+/i, '')
-                        return nameWithoutKho.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").split(' ').filter(word => word.length > 0).map(word => word[0]).join('').toUpperCase()
-                    }
-                    return code.substring(0, 3).toUpperCase()
-                }
-
-                const today = new Date()
-                const dateStr = `${String(today.getDate()).padStart(2, '0')}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getFullYear()).slice(-2)}`
-                const startOfDay = new Date(today.setHours(0, 0, 0, 0)).toISOString()
-                const endOfDay = new Date(today.setHours(23, 59, 59, 999)).toISOString()
-                const tableName = type === 'PNK' ? 'inbound_orders' : 'outbound_orders'
-
-                const { count, error } = await supabase.from(tableName)
-                    .select('*', { count: 'exact', head: true })
-                    .eq('system_code', systemType)
-                    .gte('created_at', startOfDay)
-                    .lte('created_at', endOfDay)
-
-                const prefix = getPrefix(systemType, currentSystem?.name)
-                if (error) {
-                    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0')
-                    return `${prefix}-${type}-${dateStr}-${random}`
-                }
-                const stt = String((count || 0) + 1).padStart(3, '0')
-                return `${prefix}-${type}-${dateStr}-${stt}`
-            }
 
             // --- B. GENERATE MAIN ORDER CODE ---
-            const orderCode = await generateInternalCode('PXK')
+            const orderCode = await generateOrderCode('PXK', systemType)
 
             // --- C. PROCESS UNBUNDLE FOR EACH ITEM (Per LOT) ---
             interface AggregateItem {
@@ -360,7 +332,7 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                         systemCode: systemType,
                         mainOrderCode: orderCode,
                         convTypeId: convType?.id,
-                        generateOrderCode: generateInternalCode
+                        generateOrderCode: (type) => generateOrderCode(type, systemType)
                     })
 
                     if (baseToBreak && baseToBreak > 0) {

@@ -23,6 +23,7 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
         vehicleNumber, setVehicleNumber,
         driverName, setDriverName,
         containerNumber, setContainerNumber,
+        sealNumber, setSealNumber,
         orderTypeId, setOrderTypeId,
         images, setImages,
         targetUnit, setTargetUnit,
@@ -104,6 +105,7 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
                     vehicleNumber={vehicleNumber} setVehicleNumber={setVehicleNumber}
                     driverName={driverName} setDriverName={setDriverName}
                     containerNumber={containerNumber} setContainerNumber={setContainerNumber}
+                    sealNumber={sealNumber} setSealNumber={setSealNumber}
                 />
             )}
 
