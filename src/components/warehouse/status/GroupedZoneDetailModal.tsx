@@ -15,11 +15,12 @@ interface GroupedZoneDetailModalProps {
     occupiedIds: Set<string>
     lotInfo: Record<string, {
         code: string,
-        items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>,
+        items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[], internal_code?: string, internal_name?: string }>,
         inbound_date?: string,
         created_at?: string,
         tags?: string[]
     }>
+    displayInternalCode?: boolean
     onClose: () => void
 }
 
@@ -28,7 +29,8 @@ export function GroupedZoneDetailModal({
     allPositions,
     occupiedIds,
     lotInfo,
-    onClose
+    onClose,
+    displayInternalCode
 }: GroupedZoneDetailModalProps) {
     const occupiedCount = allPositions.filter(p => occupiedIds.has(p.id)).length
 
@@ -81,8 +83,9 @@ export function GroupedZoneDetailModal({
 
                             if (lot && lot.items && lot.items.length > 0) {
                                 if (lot.items.length === 1) {
-                                    displayProduct = lot.items[0].product_name
-                                    displayQty = `${lot.items[0].quantity} ${lot.items[0].unit}`
+                                    const item = lot.items[0]
+                                    displayProduct = displayInternalCode && item.internal_name ? item.internal_name : item.product_name
+                                    displayQty = `${item.quantity} ${item.unit}`
                                 } else {
                                     displayProduct = `Nhiều sản phẩm (${lot.items.length})`
                                     displayQty = '...'
@@ -123,12 +126,14 @@ export function GroupedZoneDetailModal({
                                                 {lot.items.length === 1 ? (
                                                     <>
                                                         <div className="flex items-center gap-1.5 flex-wrap">
-                                                            <span className="text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-800">{lot.items[0].sku}</span>
+                                                            <span className="text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-800">
+                                                                {displayInternalCode && lot.items[0].internal_code ? lot.items[0].internal_code : lot.items[0].sku}
+                                                            </span>
                                                             {lot.items[0].tags?.map((tag: string, ti: number) => (
                                                                 <span key={ti} className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded border border-amber-100 dark:border-amber-800">{tag}</span>
                                                             ))}
                                                         </div>
-                                                        <div className="text-xs text-slate-600 dark:text-slate-300 truncate" title={lot.items[0].product_name}>{lot.items[0].product_name}</div>
+                                                        <div className="text-xs text-slate-600 dark:text-slate-300 truncate" title={displayProduct}>{displayProduct}</div>
                                                     </>
                                                 ) : (
                                                     <div className="text-xs text-slate-600 dark:text-slate-300">{`Nhiều sản phẩm (${lot.items.length})`}</div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { Map, Printer, Settings } from 'lucide-react'
+import { Map, Printer, Settings, Hash } from 'lucide-react'
 import Protected from '@/components/auth/Protected'
 
 interface MapHeaderProps {
@@ -12,6 +12,8 @@ interface MapHeaderProps {
     isDesignMode: boolean
     setIsDesignMode: (val: boolean) => void
     isMobile: boolean
+    displayInternalCode: boolean
+    setDisplayInternalCode: (val: boolean) => void
 }
 
 export function MapHeader({
@@ -22,13 +24,16 @@ export function MapHeader({
     searchTerm,
     isDesignMode,
     setIsDesignMode,
-    isMobile
+    isMobile,
+    displayInternalCode,
+    setDisplayInternalCode
 }: MapHeaderProps) {
     const handlePrint = () => {
         const params = new URLSearchParams()
         if (systemType) params.set('systemType', systemType)
         if (selectedZoneId) params.set('zoneId', selectedZoneId)
         if (searchTerm) params.set('search', searchTerm)
+        if (displayInternalCode) params.set('internalCode', 'true')
         window.open(`/print/warehouse-map?${params.toString()}`, '_blank')
     }
 
@@ -45,13 +50,24 @@ export function MapHeader({
             </div>
 
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
-                {/* Print Button */}
                 <button
                     onClick={handlePrint}
                     className="px-3 py-1.5 sm:px-4 sm:py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg font-medium flex items-center gap-2 transition-colors shadow-sm text-sm"
                 >
                     <Printer size={18} />
                     <span className="whitespace-nowrap">In Sơ Đồ</span>
+                </button>
+
+                <button
+                    onClick={() => setDisplayInternalCode(!displayInternalCode)}
+                    className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg font-medium flex items-center gap-2 transition-colors shadow-sm text-sm ${displayInternalCode
+                        ? 'bg-purple-600 text-white hover:bg-purple-700'
+                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        }`}
+                    title="Hiển thị mã sản phẩm nội bộ"
+                >
+                    <Hash size={18} />
+                    <span className="whitespace-nowrap">Mã Nội Bộ</span>
                 </button>
 
                 <Protected permission="warehousemap.manage">

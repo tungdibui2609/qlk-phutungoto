@@ -15,10 +15,11 @@ interface OutboundItemsTableProps {
     targetUnit: string
     hasModule: (id: string) => boolean
     compact?: boolean
+    displayInternalCode?: boolean
 }
 
 export function OutboundItemsTable({
-    items, products, units, updateItem, removeItem, targetUnit, hasModule, compact
+    items, products, units, updateItem, removeItem, targetUnit, hasModule, compact, displayInternalCode
 }: OutboundItemsTableProps) {
     const [editingValue, setEditingValue] = useState<{ id: string, field: string, value: string } | null>(null)
 
@@ -84,12 +85,16 @@ export function OutboundItemsTable({
                                     <td className="px-4 py-3 text-stone-400">{index + 1}</td>
                                     <td className="px-4 py-3 align-top">
                                         <Combobox
-                                            options={products.map(p => ({
-                                                value: p.id,
-                                                label: `${p.sku} - ${p.name}`,
-                                                sku: p.sku,
-                                                name: p.name
-                                            }))}
+                                            options={products.map(p => {
+                                                const displaySku = displayInternalCode && p.internal_code ? p.internal_code : p.sku
+                                                const displayName = displayInternalCode && p.internal_name ? p.internal_name : p.name
+                                                return {
+                                                    value: p.id,
+                                                    label: `${displaySku} - ${displayName}`,
+                                                    sku: displaySku || '',
+                                                    name: displayName || ''
+                                                }
+                                            })}
                                             value={item.productId}
                                             onChange={(val) => updateItem(item.id, 'productId', val)}
                                             placeholder="-- Chọn SP --"
@@ -265,12 +270,16 @@ export function OutboundItemsTable({
                             <div className="space-y-1">
                                 <label className="text-xs text-stone-500">Sản phẩm</label>
                                 <Combobox
-                                    options={products.map(p => ({
-                                        value: p.id,
-                                        label: `${p.sku} - ${p.name}`,
-                                        sku: p.sku,
-                                        name: p.name
-                                    }))}
+                                    options={products.map(p => {
+                                        const displaySku = displayInternalCode && p.internal_code ? p.internal_code : p.sku
+                                        const displayName = displayInternalCode && p.internal_name ? p.internal_name : p.name
+                                        return {
+                                            value: p.id,
+                                            label: `${displaySku} - ${displayName}`,
+                                            sku: displaySku || '',
+                                            name: displayName || ''
+                                        }
+                                    })}
                                     value={item.productId}
                                     onChange={(val) => updateItem(item.id, 'productId', val)}
                                     placeholder="-- Chọn SP --"

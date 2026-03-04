@@ -1,4 +1,4 @@
-import { Car, Package, Thermometer, Truck, Box, Image as ImageIcon, DollarSign, Link as LinkIcon, Settings2, Scale } from 'lucide-react'
+import { Car, Package, Thermometer, Truck, Box, Image as ImageIcon, DollarSign, Link as LinkIcon, Settings2, Scale, PackageSearch } from 'lucide-react'
 
 export interface ProductModule {
     id: string
@@ -43,6 +43,14 @@ export const PRODUCT_MODULES: ProductModule[] = [
         icon: Box,
         fields: [],
         is_basic: true
+    },
+    {
+        id: 'internal_products',
+        name: 'Sản phẩm nội bộ',
+        description: 'Ánh xạ mã và tên sản phẩm gốc sang mã nội bộ dùng cho hệ thống xưởng',
+        icon: PackageSearch,
+        fields: [],
+        is_basic: false
     }
 ]
 

@@ -16,6 +16,8 @@ interface InventoryItem {
     id: string
     productCode: string
     productName: string
+    internalCode?: string | null
+    internalName?: string | null
     unit: string
     opening: number
     qtyIn: number
@@ -30,6 +32,8 @@ interface LotItem {
     lotCode: string
     productSku: string
     productName: string
+    internalCode?: string | null
+    internalName?: string | null
     productUnit: string
     quantity: number
     batchCode: string
@@ -42,6 +46,8 @@ interface ReconciliationItem {
     productId: string
     productCode: string
     productName: string
+    internalCode?: string | null
+    internalName?: string | null
     unit: string
     accountingBalance: number
     lotBalance: number
@@ -57,6 +63,7 @@ export default function InventoryPrintPage() {
     const warehouse = searchParams.get('warehouse') || ''
     const searchTerm = searchParams.get('search') || ''
     const convertToKg = searchParams.get('convertToKg') === 'true'
+    const isInternalCodeDisplay = searchParams.get('internalCode') === 'true'
     const isSnapshot = searchParams.get('snapshot') === '1'
     const token = searchParams.get('token')
 
@@ -185,9 +192,9 @@ export default function InventoryPrintPage() {
                         *,
                         lot_items (
                             id, quantity, product_id,
-                            products (name, unit, sku, product_code:id)
+                            products (name, unit, sku, product_code:id, internal_code, internal_name)
                         ),
-                        products!inner(name, unit, product_code:id, sku, system_type),
+                        products!inner(name, unit, product_code:id, sku, system_type, internal_code, internal_name),
                         suppliers(name),
                         positions(code)
                     `)
@@ -209,6 +216,8 @@ export default function InventoryPrintPage() {
                                 lotCode: lot.code,
                                 productSku: item.products?.sku || 'N/A',
                                 productName: item.products?.name || 'Unknown',
+                                internalCode: item.products?.internal_code || null,
+                                internalName: item.products?.internal_name || null,
                                 productUnit: item.products?.unit || '-',
                                 quantity: item.quantity,
                                 batchCode: lot.batch_code || '-',
@@ -222,6 +231,8 @@ export default function InventoryPrintPage() {
                                 lotCode: lot.code,
                                 productSku: lot.products.sku || 'N/A',
                                 productName: lot.products.name,
+                                internalCode: lot.products.internal_code || null,
+                                internalName: lot.products.internal_name || null,
                                 productUnit: lot.products.unit,
                                 quantity: lot.quantity,
                                 batchCode: lot.batch_code || '-',
@@ -238,7 +249,9 @@ export default function InventoryPrintPage() {
                         !searchTerm ||
                         item.lotCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
                         item.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        item.productSku.toLowerCase().includes(searchTerm.toLowerCase())
+                        (item.internalName && item.internalName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                        item.productSku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                        (item.internalCode && item.internalCode.toLowerCase().includes(searchTerm.toLowerCase()))
                     )
 
                     setLotItems(filtered)
@@ -257,14 +270,14 @@ export default function InventoryPrintPage() {
                 // Fetch Lots
                 const { data: lots, error: lotError } = await supabase
                     .from('lots')
-                    .select('product_id, quantity, products!inner(name, sku, unit, system_type)')
+                    .select('product_id, quantity, products!inner(name, sku, unit, system_type, internal_code, internal_name)')
                     .eq('status', 'active')
                     .eq('products.system_type', systemType) // Filter by system
 
                 if (lotError) throw lotError
 
                 const lotMap = new Map<string, number>()
-                const productDetails = new Map<string, { code: string, name: string, unit: string }>()
+                const productDetails = new Map<string, { code: string, name: string, unit: string, internalCode?: string | null, internalName?: string | null }>()
 
                 lots?.forEach((lot: any) => {
                     if (!lot.product_id) return
@@ -275,6 +288,8 @@ export default function InventoryPrintPage() {
                         productDetails.set(lot.product_id, {
                             code: lot.products.sku,
                             name: lot.products.name,
+                            internalCode: lot.products.internal_code,
+                            internalName: lot.products.internal_name,
                             unit: lot.products.unit
                         })
                     }
@@ -288,6 +303,8 @@ export default function InventoryPrintPage() {
                         productId: acc.id,
                         productCode: acc.productCode,
                         productName: acc.productName,
+                        internalCode: acc.internalCode,
+                        internalName: acc.internalName,
                         unit: acc.unit,
                         accountingBalance: acc.balance,
                         lotBalance: lotQty,
@@ -302,6 +319,8 @@ export default function InventoryPrintPage() {
                         productId: productId,
                         productCode: details?.code || 'N/A',
                         productName: details?.name || 'Unknown',
+                        internalCode: details?.internalCode || null,
+                        internalName: details?.internalName || null,
                         unit: details?.unit || '',
                         accountingBalance: 0,
                         lotBalance: qty,
@@ -425,21 +444,26 @@ export default function InventoryPrintPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {accountingItems.map((item, idx) => (
-                                <tr key={`${item.id}-${idx}`} className={item.isUnconvertible ? 'bg-orange-100 print:bg-transparent' : ''}>
-                                    <td className="border border-black p-1 text-center">{idx + 1}</td>
-                                    <td className="border border-black p-1">
-                                        {item.productName}
-                                        {item.isUnconvertible && <span className="ml-1 text-[10px] italic text-red-600 print:text-black">(*)</span>}
-                                    </td>
-                                    <td className="border border-black p-1">{item.productCode}</td>
-                                    <td className="border border-black p-1 text-center">{item.unit}</td>
-                                    <td className="border border-black p-1 text-right">{formatQuantityFull(item.opening)}</td>
-                                    <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyIn)}</td>
-                                    <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyOut)}</td>
-                                    <td className="border border-black p-1 text-right font-bold">{formatQuantityFull(item.balance)}</td>
-                                </tr>
-                            ))}
+                            {accountingItems.map((item, idx) => {
+                                const displayCode = isInternalCodeDisplay && item.internalCode ? item.internalCode : item.productCode || 'N/A'
+                                const displayName = isInternalCodeDisplay && item.internalName ? item.internalName : item.productName
+
+                                return (
+                                    <tr key={`${item.id}-${idx}`} className={item.isUnconvertible ? 'bg-orange-100 print:bg-transparent' : ''}>
+                                        <td className="border border-black p-1 text-center">{idx + 1}</td>
+                                        <td className="border border-black p-1">
+                                            {displayName}
+                                            {item.isUnconvertible && <span className="ml-1 text-[10px] italic text-red-600 print:text-black">(*)</span>}
+                                        </td>
+                                        <td className="border border-black p-1">{displayCode}</td>
+                                        <td className="border border-black p-1 text-center">{item.unit}</td>
+                                        <td className="border border-black p-1 text-right">{formatQuantityFull(item.opening)}</td>
+                                        <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyIn)}</td>
+                                        <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyOut)}</td>
+                                        <td className="border border-black p-1 text-right font-bold">{formatQuantityFull(item.balance)}</td>
+                                    </tr>
+                                )
+                            })}
                         </tbody>
                     </table>
                 )}
@@ -461,17 +485,22 @@ export default function InventoryPrintPage() {
                             {lotItems.length === 0 ? (
                                 <tr><td colSpan={7} className="border border-black p-4 text-center">Không có dữ liệu</td></tr>
                             ) : (
-                                lotItems.map((item, idx) => (
-                                    <tr key={`${item.id}-${idx}`}>
-                                        <td className="border border-black p-1 font-mono">{item.lotCode}</td>
-                                        <td className="border border-black p-1">{item.productSku}</td>
-                                        <td className="border border-black p-1">{item.productName}</td>
-                                        <td className="border border-black p-1">{item.supplierName}</td>
-                                        <td className="border border-black p-1 text-center">{item.inboundDate ? new Date(item.inboundDate).toLocaleDateString('vi-VN') : '-'}</td>
-                                        <td className="border border-black p-1 text-right font-bold">{formatQuantityFull(item.quantity)}</td>
-                                        <td className="border border-black p-1 text-center">{item.productUnit}</td>
-                                    </tr>
-                                ))
+                                lotItems.map((item, idx) => {
+                                    const displayCode = isInternalCodeDisplay && item.internalCode ? item.internalCode : item.productSku || 'N/A'
+                                    const displayName = isInternalCodeDisplay && item.internalName ? item.internalName : item.productName
+
+                                    return (
+                                        <tr key={`${item.id}-${idx}`}>
+                                            <td className="border border-black p-1 font-mono">{item.lotCode}</td>
+                                            <td className="border border-black p-1">{displayCode}</td>
+                                            <td className="border border-black p-1">{displayName}</td>
+                                            <td className="border border-black p-1">{item.supplierName}</td>
+                                            <td className="border border-black p-1 text-center">{item.inboundDate ? new Date(item.inboundDate).toLocaleDateString('vi-VN') : '-'}</td>
+                                            <td className="border border-black p-1 text-right font-bold">{formatQuantityFull(item.quantity)}</td>
+                                            <td className="border border-black p-1 text-center">{item.productUnit}</td>
+                                        </tr>
+                                    )
+                                })
                             )}
                         </tbody>
                     </table>
@@ -494,21 +523,26 @@ export default function InventoryPrintPage() {
                             {reconcileItems.length === 0 ? (
                                 <tr><td colSpan={7} className="border border-black p-4 text-center">Dữ liệu khớp hoàn toàn hoặc không có dữ liệu</td></tr>
                             ) : (
-                                reconcileItems.map((item) => (
-                                    <tr key={item.productId} className={item.diff !== 0 ? 'bg-orange-50 print:bg-transparent' : ''}>
-                                        <td className="border border-black p-1">{item.productCode}</td>
-                                        <td className="border border-black p-1">{item.productName}</td>
-                                        <td className="border border-black p-1 text-center">{item.unit}</td>
-                                        <td className="border border-black p-1 text-right">{formatQuantityFull(item.accountingBalance)}</td>
-                                        <td className="border border-black p-1 text-right">{formatQuantityFull(item.lotBalance)}</td>
-                                        <td className={`border border-black p-1 text-right font-bold ${item.diff !== 0 ? 'text-red-600 print:text-black' : ''}`}>
-                                            {item.diff > 0 ? '+' : ''}{formatQuantityFull(item.diff)}
-                                        </td>
-                                        <td className="border border-black p-1 text-center">
-                                            {item.diff !== 0 ? 'Lệch' : 'Khớp'}
-                                        </td>
-                                    </tr>
-                                ))
+                                reconcileItems.map((item) => {
+                                    const displayCode = isInternalCodeDisplay && item.internalCode ? item.internalCode : item.productCode || 'N/A'
+                                    const displayName = isInternalCodeDisplay && item.internalName ? item.internalName : item.productName
+
+                                    return (
+                                        <tr key={item.productId} className={item.diff !== 0 ? 'bg-orange-50 print:bg-transparent' : ''}>
+                                            <td className="border border-black p-1">{displayCode}</td>
+                                            <td className="border border-black p-1">{displayName}</td>
+                                            <td className="border border-black p-1 text-center">{item.unit}</td>
+                                            <td className="border border-black p-1 text-right">{formatQuantityFull(item.accountingBalance)}</td>
+                                            <td className="border border-black p-1 text-right">{formatQuantityFull(item.lotBalance)}</td>
+                                            <td className={`border border-black p-1 text-right font-bold ${item.diff !== 0 ? 'text-red-600 print:text-black' : ''}`}>
+                                                {item.diff > 0 ? '+' : ''}{formatQuantityFull(item.diff)}
+                                            </td>
+                                            <td className="border border-black p-1 text-center">
+                                                {item.diff !== 0 ? 'Lệch' : 'Khớp'}
+                                            </td>
+                                        </tr>
+                                    )
+                                })
                             )}
                         </tbody>
                     </table>

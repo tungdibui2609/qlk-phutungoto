@@ -2,7 +2,7 @@ import {
     LayoutDashboard, Package, Settings, Warehouse, BookUser, BarChart3, Shield,
     List, FolderTree, Boxes, Globe, Tag, Building2, Car, Users, FileText,
     ShieldCheck, Map, ClipboardCheck, StickyNote, HardHat, ArrowDownToLine,
-    ArrowUpFromLine, Activity, DollarSign, History, ArrowRightLeft, Key
+    ArrowUpFromLine, Activity, DollarSign, History, ArrowRightLeft, Key, PackageSearch
 } from 'lucide-react'
 
 export interface MenuItemConfig {
@@ -27,6 +27,7 @@ export const MENU_STRUCTURE: MenuItemConfig[] = [
         icon: Package,
         children: [
             { id: 'products', name: 'Sản phẩm', icon: List },
+            { id: 'internal_products', name: 'Sản phẩm nội bộ', icon: PackageSearch },
             { id: 'categories', name: 'Danh mục', icon: FolderTree },
             { id: 'units', name: 'Đơn vị', icon: Boxes },
             { id: 'origins', name: 'Xuất xứ', icon: Globe },

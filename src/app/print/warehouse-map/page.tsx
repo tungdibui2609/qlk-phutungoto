@@ -29,6 +29,7 @@ export default function WarehouseMapPrintPage() {
     const searchTerm = searchParams.get('search') || ''
     const token = searchParams.get('token')
     const isSnapshot = searchParams.get('snapshot') === '1'
+    const displayInternalCode = searchParams.get('internalCode') === 'true'
 
     // Company info params (for image generation service)
     const cmpName = searchParams.get('cmp_name')
@@ -144,7 +145,7 @@ export default function WarehouseMapPrintPage() {
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code')),
                 fetchAll('zone_positions', q => q.select('zone_id, position_id, positions!inner(system_type)').eq('positions.system_type', systemType)),
                 fetchAll('zone_layouts'),
-                fetchAll('lots', undefined, '*, suppliers(name), qc_info(name), products(name, unit, sku), lot_items(id, product_id, quantity, unit, products(name, unit, sku)), lot_tags(tag, lot_item_id)')
+                fetchAll('lots', undefined, '*, suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name)), lot_tags(tag, lot_item_id)')
             ])
 
             // Process structure
@@ -179,6 +180,8 @@ export default function WarehouseMapPrintPage() {
                         return {
                             product_name: item.products?.name,
                             sku: item.products?.sku,
+                            internal_code: item.products?.internal_code,
+                            internal_name: item.products?.internal_name,
                             unit: item.unit || item.products?.unit,
                             quantity: item.quantity,
                             tags: itemTags
@@ -192,6 +195,8 @@ export default function WarehouseMapPrintPage() {
                     items = [{
                         product_name: l.products.name,
                         sku: l.products.sku,
+                        internal_code: l.products.internal_code,
+                        internal_name: l.products.internal_name,
                         unit: l.products.unit,
                         quantity: l.quantity,
                         tags: itemTags
@@ -369,6 +374,7 @@ export default function WarehouseMapPrintPage() {
                         onPositionSelect={() => { }}
                         pageBreakIds={pageBreakZoneIds}
                         onTogglePageBreak={handleTogglePageBreak}
+                        displayInternalCode={displayInternalCode}
                     />
                 </div>
 

@@ -108,6 +108,8 @@ export async function GET(request: Request) {
             productId: string
             productCode: string
             productName: string
+            internalCode?: string | null
+            internalName?: string | null
             warehouse: string
             unit: string
             opening: number
@@ -187,6 +189,8 @@ export async function GET(request: Request) {
                     productId: pid,
                     productCode: prod?.sku || 'N/A',
                     productName: prod?.name || item.product_name || 'Unknown',
+                    internalCode: prod?.internal_code || null,
+                    internalName: prod?.internal_name || null,
                     warehouse: wName,
                     unit: unitDisplay,
                     opening: 0,
@@ -227,6 +231,8 @@ export async function GET(request: Request) {
             result = result.filter(i =>
                 i.productCode.toLowerCase().includes(q) ||
                 i.productName.toLowerCase().includes(q) ||
+                (i.internalCode && i.internalCode.toLowerCase().includes(q)) ||
+                (i.internalName && i.internalName.toLowerCase().includes(q)) ||
                 i.productId === q
             )
         }

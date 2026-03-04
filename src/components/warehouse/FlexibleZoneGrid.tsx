@@ -33,6 +33,7 @@ interface FlexibleZoneGridProps {
     lotInfo?: Record<string, { code: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>, inbound_date?: string, created_at?: string, packaging_date?: string, peeling_date?: string, tags?: string[] }>
     pageBreakIds?: Set<string>
     onTogglePageBreak?: (zoneId: string) => void
+    displayInternalCode?: boolean
 }
 
 interface PositionCellProps {
@@ -62,12 +63,13 @@ const MemoizedPositionCell = React.memo<{
     lotDetail: any,
     isAssignmentMode: boolean,
     isHighlightBlinking: boolean,
+    displayInternalCode?: boolean,
     onPositionSelect: (id: string) => void,
     onViewDetails?: (lotId: string) => void,
     onPositionMenu?: (pos: PositionWithZone, event: React.MouseEvent) => void
 }>(({
     pos, cellHeight, cellWidth, isMobile, isOccupied, isSelected,
-    isTargetLot, lotDetail, isAssignmentMode, isHighlightBlinking,
+    isTargetLot, lotDetail, isAssignmentMode, isHighlightBlinking, displayInternalCode,
     onPositionSelect, onViewDetails, onPositionMenu
 }) => {
     let bgClass = 'bg-white dark:bg-gray-700'
@@ -182,26 +184,30 @@ const MemoizedPositionCell = React.memo<{
                                     </div>
 
                                     <div className="w-full flex-col gap-1.5 overflow-y-auto custom-scrollbar flex-1 min-h-0">
-                                        {lotDetail.items?.map((item: any, idx: number) => (
-                                            <div key={idx} className="flex flex-col gap-0.5 w-full text-center border-b border-black/5 dark:border-white/5 last:border-0 pb-1 last:pb-0 shrink-0">
-                                                {item.product_name && (
-                                                    <div className="text-[9px] text-gray-600 dark:text-gray-300 leading-tight line-clamp-2" title={item.product_name}>
-                                                        {item.product_name}
+                                        {lotDetail.items?.map((item: any, idx: number) => {
+                                            const nameObj = displayInternalCode && item.internal_name ? item.internal_name : item.product_name;
+                                            const codeObj = displayInternalCode && item.internal_code ? item.internal_code : item.sku;
+                                            return (
+                                                <div key={idx} className="flex flex-col gap-0.5 w-full text-center border-b border-black/5 dark:border-white/5 last:border-0 pb-1 last:pb-0 shrink-0">
+                                                    {nameObj && (
+                                                        <div className="text-[9px] text-gray-600 dark:text-gray-300 leading-tight line-clamp-2" title={nameObj}>
+                                                            {nameObj}
+                                                        </div>
+                                                    )}
+                                                    <div className="text-[9px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap">
+                                                        {codeObj || '-'} : {item.quantity} {item.unit || '-'}
                                                     </div>
-                                                )}
-                                                <div className="text-[9px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap">
-                                                    {item.sku || '-'} : {item.quantity} {item.unit || '-'}
+                                                    {item.tags && item.tags.length > 0 && (
+                                                        <TagDisplay
+                                                            tags={item.tags}
+                                                            variant="compact"
+                                                            placeholderMap={{ '@': codeObj || '' }}
+                                                            className="mt-0.5"
+                                                        />
+                                                    )}
                                                 </div>
-                                                {item.tags && item.tags.length > 0 && (
-                                                    <TagDisplay
-                                                        tags={item.tags}
-                                                        variant="compact"
-                                                        placeholderMap={{ '@': item.sku || '' }}
-                                                        className="mt-0.5"
-                                                    />
-                                                )}
-                                            </div>
-                                        ))}
+                                            )
+                                        })}
                                     </div>
 
                                     <div className="flex justify-center items-center gap-1 w-full px-1 pt-1 opacity-70 text-[8px] text-gray-500 dark:text-gray-400 shrink-0 mt-auto">
@@ -249,7 +255,8 @@ const MemoizedPositionCell = React.memo<{
         prev.isTargetLot === next.isTargetLot &&
         prev.lotDetail === next.lotDetail &&
         prev.isAssignmentMode === next.isAssignmentMode &&
-        prev.isHighlightBlinking === next.isHighlightBlinking
+        prev.isHighlightBlinking === next.isHighlightBlinking &&
+        prev.displayInternalCode === next.displayInternalCode
 })
 
 export default function FlexibleZoneGrid({
@@ -270,7 +277,8 @@ export default function FlexibleZoneGrid({
     highlightingPositionIds = new Set(),
     lotInfo = {},
     pageBreakIds = new Set(),
-    onTogglePageBreak
+    onTogglePageBreak,
+    displayInternalCode = false
 }: FlexibleZoneGridProps) {
     const [isMobile, setIsMobile] = React.useState(false)
 
@@ -1015,6 +1023,7 @@ export default function FlexibleZoneGrid({
                 lotDetail={lotDetail}
                 isAssignmentMode={isAssignmentMode}
                 isHighlightBlinking={isHighlightBlinking}
+                displayInternalCode={displayInternalCode}
                 onPositionSelect={onPositionSelect}
                 onViewDetails={onViewDetails}
                 onPositionMenu={onPositionMenu}

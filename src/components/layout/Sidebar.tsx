@@ -28,6 +28,7 @@ const menuItems: MenuItem[] = [
         icon: Package,
         children: [
             { id: 'products', name: 'Sản phẩm', href: '/products', icon: List, requiredPermission: 'product.view' },
+            { id: 'internal_products', name: 'Sản phẩm nội bộ', href: '/internal-products', icon: PackageSearch, requiredModule: 'internal_products' },
             { id: 'categories', name: 'Danh mục', href: '/categories', icon: FolderTree, requiredPermission: 'product.view' },
             { id: 'units', name: 'Đơn vị', href: '/units', icon: Boxes, requiredPermission: 'product.view' },
             { id: 'origins', name: 'Xuất xứ', href: '/origins', icon: Globe, requiredPermission: 'product.view' },
@@ -134,7 +135,7 @@ export default function Sidebar() {
     const pathname = usePathname()
     const router = useRouter()
     const { isCollapsed, setCollapsed, isReady, isMobileMenuOpen, setMobileMenuOpen } = useSidebar()
-    const { currentSystem, systemType } = useSystem()
+    const { currentSystem, systemType, hasModule } = useSystem()
     const { profile, toggleFavorite, checkSubscription } = useUser() // Get checkSubscription
     const [expandedMenus, setExpandedMenus] = useState<string[]>([])
     const isInitialized = useRef(false)
@@ -205,8 +206,8 @@ export default function Sidebar() {
                     // Check subscription for child
                     if (child.requiredModule && !checkSubscription(child.requiredModule)) return false
 
-                    // Check Utility Module Gating for children with requiredModule
-                    if (child.requiredModule && !isUtilityEnabled(child.requiredModule)) return false
+                    // Check Module Gating for children with requiredModule (product, utility, etc.)
+                    if (child.requiredModule && !hasModule(child.requiredModule)) return false
 
                     // Check all hidden menus (both system and user)
                     if (allHidden.includes(child.id) || allHidden.includes(child.name)) return false
@@ -225,7 +226,7 @@ export default function Sidebar() {
 
             return item
         }).filter(Boolean) as MenuItem[] // Remove nulls
-    }, [profile, systemType, currentSystem, isLotSyncEnabled, checkSubscription])
+    }, [profile, systemType, currentSystem, isLotSyncEnabled, checkSubscription, hasModule])
 
     // Favorites Logic
     const favoriteItems = useMemo(() => {

@@ -36,7 +36,7 @@ function WarehouseStatusContent() {
 
     // Design mode state
     const [isDesignMode, setIsDesignMode] = useState(false)
-    const [isCompactMode, setIsCompactMode] = useState(false)
+    const [isCompactMode, setIsCompactMode] = useState(true)
     const [configuringZone, setConfiguringZone] = useState<Zone | null>(null)
 
     // Collapsed zones
@@ -136,7 +136,7 @@ function WarehouseStatusContent() {
                     const chunk = lotIdsArray.slice(i, i + chunkSize)
                     const { data, error } = await supabase
                         .from('lots')
-                        .select('id, code, quantity, lot_items(id, product_id, quantity, unit, products(name, sku, unit, color)), lot_tags(tag, lot_item_id)')
+                        .select('id, code, quantity, lot_items(id, product_id, quantity, unit, products(name, sku, unit, color, internal_code, internal_name)), lot_tags(tag, lot_item_id)')
                         .in('id', chunk)
 
                     if (error) {
@@ -175,6 +175,8 @@ function WarehouseStatusContent() {
                         id: it.id,
                         product_name: it.products?.name,
                         sku: it.products?.sku,
+                        internal_code: it.products?.internal_code,
+                        internal_name: it.products?.internal_name,
                         unit: it.unit || it.products?.unit,
                         product_color: it.products?.color,
                         quantity: it.quantity,

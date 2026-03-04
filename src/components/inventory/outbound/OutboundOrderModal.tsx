@@ -1,6 +1,7 @@
 'use client'
 
-import { Plus, Save, ShoppingCart } from 'lucide-react'
+import { useState } from 'react'
+import { Plus, Save, ShoppingCart, Hash } from 'lucide-react'
 import { OrderFormLayout } from '../shared/OrderFormLayout'
 import { OrderGeneralInfo } from '../shared/OrderGeneralInfo'
 import { PartnerSelect } from '../shared/PartnerSelect'
@@ -33,6 +34,8 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
         hasModule, confirmDialog, setConfirmDialog, handleCustomerSelect,
         workerName, setWorkerName, teamName, setTeamName, isUtilityEnabled
     } = useOutboundOrder({ ...props, editOrderId: props.editOrderId })
+
+    const [displayInternalCode, setDisplayInternalCode] = useState(false)
 
     const selectedCustomerId = customers.find(c => c.name === customerName)?.id || ""
 
@@ -69,6 +72,15 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
                 subtitle="Xuất hàng, bán hàng, chuyển kho"
                 onClose={props.onClose}
                 maxWidth={hasModule('outbound_ui_compact') ? 'max-w-5xl' : 'max-w-7xl'}
+                headerActions={
+                    <button
+                        onClick={() => setDisplayInternalCode(!displayInternalCode)}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm font-bold transition-all ${displayInternalCode ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' : 'bg-stone-100 text-stone-600 dark:bg-zinc-800 dark:text-gray-300'}`}
+                        title="Hiển thị mã sản phẩm nội bộ"
+                    >
+                        <Hash size={16} /> Nhập Mã Nội Bộ
+                    </button>
+                }
                 footer={footerButtons}
             >
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -163,6 +175,7 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
                     targetUnit={targetUnit}
                     hasModule={hasModule}
                     compact={hasModule('outbound_ui_compact')}
+                    displayInternalCode={displayInternalCode}
                 />
 
                 <button

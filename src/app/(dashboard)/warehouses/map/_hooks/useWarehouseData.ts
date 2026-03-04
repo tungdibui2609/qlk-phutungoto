@@ -45,7 +45,7 @@ export function useWarehouseData() {
 
         const { data: l, error } = await supabase
             .from('lots')
-            .select('*, suppliers(name), qc_info(name), products(name, unit, sku), lot_items(id, product_id, quantity, unit, products(name, unit, sku)), lot_tags(tag, lot_item_id)')
+            .select('*, suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name)), lot_tags(tag, lot_item_id)')
             .eq('id', lotId)
             .single()
 
@@ -56,7 +56,7 @@ export function useWarehouseData() {
 
         const lotItems = l.lot_items || []
         const allTags = l.lot_tags || []
-        let items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags: string[] }> = []
+        let items: Array<{ product_name: string, sku: string, internal_code?: string, internal_name?: string, unit: string, quantity: number, tags: string[] }> = []
         let accumulatedTags: string[] = []
 
         if (lotItems.length > 0) {
@@ -69,6 +69,8 @@ export function useWarehouseData() {
                 return {
                     product_name: item.products?.name || '',
                     sku: item.products?.sku || '',
+                    internal_code: item.products?.internal_code || '',
+                    internal_name: item.products?.internal_name || '',
                     unit: item.unit || item.products?.unit || '',
                     quantity: item.quantity || 0,
                     tags: itemTags
@@ -82,6 +84,8 @@ export function useWarehouseData() {
             items = [{
                 product_name: l.products.name || '',
                 sku: l.products.sku || '',
+                internal_code: l.products.internal_code || '',
+                internal_name: l.products.internal_name || '',
                 unit: l.products.unit || '',
                 quantity: l.quantity || 0,
                 tags: itemTags
@@ -153,7 +157,7 @@ export function useWarehouseData() {
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
                 fetchAllZonesPos(),
                 fetchAll('zone_layouts', q => q.order('id')),
-                fetchAll('lots', undefined, '*, suppliers(name), qc_info(name), products(name, unit, sku), lot_items(id, product_id, quantity, unit, products(name, unit, sku)), lot_tags(tag, lot_item_id)')
+                fetchAll('lots', undefined, '*, suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name)), lot_tags(tag, lot_item_id)')
             ])
 
             // Create lookup map for positions -> zone_id
@@ -171,7 +175,7 @@ export function useWarehouseData() {
             (lotsData as any[]).forEach((l: any) => {
                 const lotItems = l.lot_items || []
                 const allTags = l.lot_tags || []
-                let items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags: string[] }> = []
+                let items: Array<{ product_name: string, sku: string, internal_code?: string, internal_name?: string, unit: string, quantity: number, tags: string[] }> = []
                 let accumulatedTags: string[] = []
 
                 if (lotItems.length > 0) {
@@ -184,6 +188,8 @@ export function useWarehouseData() {
                         return {
                             product_name: item.products?.name,
                             sku: item.products?.sku,
+                            internal_code: item.products?.internal_code,
+                            internal_name: item.products?.internal_name,
                             unit: item.unit || item.products?.unit,
                             quantity: item.quantity,
                             tags: itemTags
@@ -197,6 +203,8 @@ export function useWarehouseData() {
                     items = [{
                         product_name: l.products.name,
                         sku: l.products.sku,
+                        internal_code: l.products.internal_code,
+                        internal_name: l.products.internal_name,
                         unit: l.products.unit,
                         quantity: l.quantity,
                         tags: itemTags

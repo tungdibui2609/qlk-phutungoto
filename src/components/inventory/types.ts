@@ -43,6 +43,8 @@ export type ProductWithCategory = {
     name: string
     manufacturer: string | null
     part_number: string | null
+    internal_code?: string | null
+    internal_name?: string | null
     image_url: string | null
     min_stock_level: number | null
     unit: string | null

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Printer, Loader2, Download } from 'lucide-react'
+import { Printer, Loader2, Download, Hash } from 'lucide-react'
 import { toJpeg } from 'html-to-image'
 import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { formatQuantityFull } from '@/lib/numberUtils'
@@ -19,7 +19,7 @@ interface OrderItem {
     document_quantity: number
     price: number
     note: string | null
-    products: { sku: string } | null
+    products: { sku: string, internal_code?: string | null, internal_name?: string | null } | null
 }
 
 interface OutboundOrder {
@@ -76,6 +76,7 @@ function OutboundPrintContent() {
     const [docQuantities, setDocQuantities] = useState<Record<string, string>>({})
     const [systemConfig, setSystemConfig] = useState<any>(null)
     const [unitsMap, setUnitsMap] = useState<Record<string, string>>({})
+    const [displayInternalCode, setDisplayInternalCode] = useState(false)
 
     // Use shared hook for company info
     const { companyInfo, logoSrc } = usePrintCompanyInfo({
@@ -273,6 +274,8 @@ function OutboundPrintContent() {
                                 *,
                                 products (
                                     sku,
+                                    internal_code,
+                                    internal_name,
                                     unit,
                                     product_units (
                                         unit_id,
@@ -366,6 +369,13 @@ function OutboundPrintContent() {
                             Tải ảnh phiếu
                         </>
                     )}
+                </button>
+                <button
+                    onClick={() => setDisplayInternalCode(!displayInternalCode)}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-full shadow-lg transition-all hover:scale-105 font-medium ${displayInternalCode ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-stone-200 hover:bg-stone-300 text-stone-800'}`}
+                >
+                    <Hash size={20} />
+                    {displayInternalCode ? 'Mã Nội Bộ' : 'Mã Gốc'}
                 </button>
                 <button
                     onClick={handlePrint}
@@ -592,12 +602,17 @@ function OutboundPrintContent() {
                                 }
                             }
 
+                            // Calculate names and skus based on toggle
+                            const productSource = item.products as any || {}
+                            const displaySku = displayInternalCode && productSource.internal_code ? productSource.internal_code : productSource.sku || '-'
+                            const displayName = displayInternalCode && productSource.internal_name ? productSource.internal_name : item.product_name || 'N/A'
+
                             return (
                                 <tr key={item.id} className="hover:bg-gray-50 font-bold">
                                     <td className="border border-gray-400 px-2 py-1.5 text-center">{index + 1}</td>
-                                    <td className="border border-gray-400 px-2 py-1.5">{item.product_name || 'N/A'}</td>
+                                    <td className="border border-gray-400 px-2 py-1.5">{displayName}</td>
                                     <td className="border border-gray-400 px-2 py-1.5 text-center">
-                                        {item.products?.sku || '-'}
+                                        {displaySku}
                                     </td>
                                     <td className="border border-gray-400 px-2 py-1.5 text-center">{item.unit || '-'}</td>
                                     {hasModule('outbound_financials') && (

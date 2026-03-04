@@ -75,6 +75,7 @@ function WarehouseMapContent() {
     const [isMobile, setIsMobile] = useState(false)
     const [showMobileFilters, setShowMobileFilters] = useState(false)
     const [isDesignMode, setIsDesignMode] = useState(false)
+    const [displayInternalCode, setDisplayInternalCode] = useState(false)
     const [assignLot, setAssignLot] = useState<{ id: string, code: string } | null>(null)
     const [configuringZone, setConfiguringZone] = useState<Zone | null>(null)
 
@@ -485,6 +486,8 @@ function WarehouseMapContent() {
                 isDesignMode={isDesignMode}
                 setIsDesignMode={setIsDesignMode}
                 isMobile={isMobile}
+                displayInternalCode={displayInternalCode}
+                setDisplayInternalCode={setDisplayInternalCode}
             />
 
             <MapBanners
@@ -621,6 +624,7 @@ function WarehouseMapContent() {
                         onConfigureZone={setConfiguringZone}
                         isAssignmentMode={!!assignLot}
                         highlightingPositionIds={recentlyUpdatedPositionIds}
+                        displayInternalCode={displayInternalCode}
                     />
                 </div>
             </div>

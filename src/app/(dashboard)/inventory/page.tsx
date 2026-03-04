@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useMemo } from 'react'
-import { Search, Loader2, Printer, Warehouse, ChevronDown } from 'lucide-react'
+import { Search, Loader2, Printer, Warehouse, ChevronDown, Hash } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
@@ -15,6 +15,8 @@ import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
 interface InventoryItem {
     productCode: string
     productName: string
+    internalCode?: string | null
+    internalName?: string | null
     warehouse: string
     unit: string
     opening: number
@@ -43,6 +45,7 @@ export default function InventoryPage() {
     const [activeTab, setActiveTab] = useState<'accounting' | 'lot' | 'tags' | 'reconciliation'>('accounting')
     const [items, setItems] = useState<InventoryItem[]>([])
     const [loading, setLoading] = useState(false)
+    const [displayInternalCode, setDisplayInternalCode] = useState(false)
 
     // Branches
     const [branches, setBranches] = useState<Branch[]>([])
@@ -268,44 +271,53 @@ export default function InventoryPage() {
                                     <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
                                 </div>
                             </div>
+                            <div className="flex gap-2 w-full sm:w-auto mt-6">
+                                <button
+                                    onClick={() => setDisplayInternalCode(!displayInternalCode)}
+                                    className={`p-2 border border-stone-300 dark:border-stone-700 rounded-md transition-all flex items-center justify-center w-10 sm:w-auto ${displayInternalCode ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 active:scale-95'}`}
+                                    title={displayInternalCode ? "Đang hiển thị mã nội bộ" : "Hiển thị mã nội bộ"}
+                                >
+                                    <Hash className="w-5 h-5" />
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        if (loadingCompany) return
 
-                            <button
-                                onClick={async () => {
-                                    if (loadingCompany) return
+                                        const params = new URLSearchParams()
+                                        params.set('type', 'accounting')
+                                        if (systemType) params.set('systemType', systemType)
+                                        if (dateFrom) params.set('from', dateFrom)
+                                        if (dateTo) params.set('to', dateTo)
+                                        if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
+                                        if (q) params.set('search', q)
+                                        if (targetUnitId) params.set('targetUnitId', targetUnitId)
+                                        if (displayInternalCode) params.set('internalCode', 'true')
 
-                                    const params = new URLSearchParams()
-                                    params.set('type', 'accounting')
-                                    if (systemType) params.set('systemType', systemType)
-                                    if (dateFrom) params.set('from', dateFrom)
-                                    if (dateTo) params.set('to', dateTo)
-                                    if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
-                                    if (q) params.set('search', q)
-                                    if (targetUnitId) params.set('targetUnitId', targetUnitId)
+                                        // Pass auth token to ensure company info loads correctly in new tab
+                                        const { data: { session } } = await supabase.auth.getSession()
+                                        if (session?.access_token) {
+                                            params.set('token', session.access_token)
+                                        }
 
-                                    // Pass auth token to ensure company info loads correctly in new tab
-                                    const { data: { session } } = await supabase.auth.getSession()
-                                    if (session?.access_token) {
-                                        params.set('token', session.access_token)
-                                    }
+                                        // Pass company info directly to avoid fetching issues
+                                        if (companyInfo) {
+                                            if (companyInfo.name) params.set('cmp_name', companyInfo.name)
+                                            if (companyInfo.address) params.set('cmp_address', companyInfo.address)
+                                            if (companyInfo.phone) params.set('cmp_phone', companyInfo.phone)
+                                            if (companyInfo.email) params.set('cmp_email', companyInfo.email)
+                                            if (companyInfo.logo_url) params.set('cmp_logo', companyInfo.logo_url)
+                                            if (companyInfo.short_name) params.set('cmp_short', companyInfo.short_name)
+                                        }
 
-                                    // Pass company info directly to avoid fetching issues
-                                    if (companyInfo) {
-                                        if (companyInfo.name) params.set('cmp_name', companyInfo.name)
-                                        if (companyInfo.address) params.set('cmp_address', companyInfo.address)
-                                        if (companyInfo.phone) params.set('cmp_phone', companyInfo.phone)
-                                        if (companyInfo.email) params.set('cmp_email', companyInfo.email)
-                                        if (companyInfo.logo_url) params.set('cmp_logo', companyInfo.logo_url)
-                                        if (companyInfo.short_name) params.set('cmp_short', companyInfo.short_name)
-                                    }
-
-                                    window.open(`/print/inventory?${params.toString()}`, '_blank')
-                                }}
-                                disabled={loadingCompany}
-                                className={`p-2 mt-6 border border-stone-300 dark:border-stone-700 rounded-md transition-all ${loadingCompany ? 'opacity-50 cursor-wait bg-stone-100' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 active:scale-95'}`}
-                                title={loadingCompany ? "Đang tải thông tin..." : "In báo cáo"}
-                            >
-                                <Printer className="w-5 h-5" />
-                            </button>
+                                        window.open(`/print/inventory?${params.toString()}`, '_blank')
+                                    }}
+                                    disabled={loadingCompany}
+                                    className={`p-2 mt-6 border border-stone-300 dark:border-stone-700 rounded-md transition-all ${loadingCompany ? 'opacity-50 cursor-wait bg-stone-100' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 active:scale-95'}`}
+                                    title={loadingCompany ? "Đang tải thông tin..." : "In báo cáo"}
+                                >
+                                    <Printer className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -349,33 +361,38 @@ export default function InventoryPage() {
                                                 </tr>
                                             ) : (
                                                 <>
-                                                    {items.map((item, idx) => (
-                                                        <tr
-                                                            key={idx}
-                                                            className={`
-                                                                hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors
-                                                                ${item.isUnconvertible ? 'bg-orange-50 dark:bg-orange-950/20' : ''}
-                                                            `}
-                                                        >
-                                                            <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{item.warehouse}</td>
-                                                            <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-400">{item.productCode || 'N/A'}</td>
-                                                            <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100 flex items-center gap-2">
-                                                                {item.productName}
-                                                                {item.isUnconvertible && (
-                                                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-600 border border-orange-200">
-                                                                        Chưa thể quy đổi
-                                                                    </span>
-                                                                )}
-                                                            </td>
-                                                            <td className="px-4 py-3 text-right tabular-nums text-stone-600">{formatQuantityFull(item.opening)}</td>
-                                                            <td className="px-4 py-3 text-right tabular-nums text-emerald-600 font-medium">+{formatQuantityFull(item.qtyIn)}</td>
-                                                            <td className="px-4 py-3 text-right tabular-nums text-rose-600 font-medium">-{formatQuantityFull(item.qtyOut)}</td>
-                                                            <td className="px-4 py-3 text-right tabular-nums font-bold text-stone-900 dark:text-stone-100">{formatQuantityFull(item.balance)}</td>
-                                                            <td className="px-4 py-3 text-center text-stone-500">
-                                                                {item.unit}
-                                                            </td>
-                                                        </tr>
-                                                    ))}
+                                                    {items.map((item, idx) => {
+                                                        const displayCode = displayInternalCode && item.internalCode ? item.internalCode : item.productCode || 'N/A'
+                                                        const displayName = displayInternalCode && item.internalName ? item.internalName : item.productName
+
+                                                        return (
+                                                            <tr
+                                                                key={idx}
+                                                                className={`
+                                                                    hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors
+                                                                    ${item.isUnconvertible ? 'bg-orange-50 dark:bg-orange-950/20' : ''}
+                                                                `}
+                                                            >
+                                                                <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{item.warehouse}</td>
+                                                                <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-400">{displayCode}</td>
+                                                                <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100 flex items-center gap-2">
+                                                                    {displayName}
+                                                                    {item.isUnconvertible && (
+                                                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-600 border border-orange-200">
+                                                                            Chưa thể quy đổi
+                                                                        </span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-4 py-3 text-right tabular-nums text-stone-600">{formatQuantityFull(item.opening)}</td>
+                                                                <td className="px-4 py-3 text-right tabular-nums text-emerald-600 font-medium">+{formatQuantityFull(item.qtyIn)}</td>
+                                                                <td className="px-4 py-3 text-right tabular-nums text-rose-600 font-medium">-{formatQuantityFull(item.qtyOut)}</td>
+                                                                <td className="px-4 py-3 text-right tabular-nums font-bold text-stone-900 dark:text-stone-100">{formatQuantityFull(item.balance)}</td>
+                                                                <td className="px-4 py-3 text-center text-stone-500">
+                                                                    {item.unit}
+                                                                </td>
+                                                            </tr>
+                                                        )
+                                                    })}
                                                     {/* Summary Row */}
                                                     <tr className="bg-stone-100/50 dark:bg-stone-800 font-bold border-t-2 border-stone-300 dark:border-stone-700">
                                                         <td colSpan={3} className="px-4 py-3 text-right text-stone-600 dark:text-stone-400">Tổng cộng:</td>

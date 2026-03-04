@@ -31,6 +31,7 @@ interface WarehouseStatusMapProps {
         created_at?: string,
         tags?: string[]
     }>
+    displayInternalCode?: boolean
 }
 
 interface StatusCellProps {
@@ -143,7 +144,8 @@ export default function WarehouseStatusMap({
     onUpdateCollapsedWarehouses,
     onConfigureZone,
     onViewDetails,
-    lotInfo = {}
+    lotInfo = {},
+    displayInternalCode = false
 }: WarehouseStatusMapProps) {
     const [viewingZone, setViewingZone] = React.useState<{ zone: Zone, allPositions: PositionWithZone[] } | null>(null)
     const [collapsedWarehouses, setCollapsedWarehouses] = useState<Set<string>>(() => {
@@ -818,6 +820,7 @@ export default function WarehouseStatusMap({
                         allPositions={viewingZone.allPositions}
                         occupiedIds={occupiedIds}
                         lotInfo={lotInfo}
+                        displayInternalCode={displayInternalCode}
                         onClose={() => setViewingZone(null)}
                     />
                 )}
@@ -835,6 +838,7 @@ export default function WarehouseStatusMap({
                     allPositions={viewingZone.allPositions}
                     occupiedIds={occupiedIds}
                     lotInfo={lotInfo}
+                    displayInternalCode={displayInternalCode}
                     onClose={() => setViewingZone(null)}
                 />
             )}

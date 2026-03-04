@@ -7,9 +7,10 @@ interface OrderFormLayoutProps {
     children: React.ReactNode
     maxWidth?: string
     footer?: React.ReactNode
+    headerActions?: React.ReactNode
 }
 
-export function OrderFormLayout({ title, subtitle, onClose, children, footer, maxWidth = 'max-w-7xl' }: OrderFormLayoutProps) {
+export function OrderFormLayout({ title, subtitle, onClose, children, footer, headerActions, maxWidth = 'max-w-7xl' }: OrderFormLayoutProps) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full ${maxWidth} h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200`}>
@@ -26,12 +27,15 @@ export function OrderFormLayout({ title, subtitle, onClose, children, footer, ma
                         )}
                     </div>
 
-                    <button
-                        onClick={onClose}
-                        className="p-2 hover:bg-stone-200 dark:hover:bg-zinc-800 rounded-lg transition-colors text-stone-500 hover:text-stone-700 dark:text-gray-400 dark:hover:text-gray-200"
-                    >
-                        <X size={24} />
-                    </button>
+                    <div className="flex items-center gap-3">
+                        {headerActions}
+                        <button
+                            onClick={onClose}
+                            className="p-2 hover:bg-stone-200 dark:bg-zinc-800 rounded-lg transition-colors text-stone-500 hover:text-stone-700 dark:text-gray-400 dark:hover:text-gray-200"
+                        >
+                            <X size={24} />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Body */}

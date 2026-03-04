@@ -1108,6 +1108,8 @@ export type Database = {
           dimensions: string | null
           id: string
           image_url: string | null
+          internal_code: string | null
+          internal_name: string | null
           is_active: boolean | null
           is_returnable: boolean | null
           lead_time_days: number | null
@@ -1143,6 +1145,8 @@ export type Database = {
           dimensions?: string | null
           id?: string
           image_url?: string | null
+          internal_code?: string | null
+          internal_name?: string | null
           is_active?: boolean | null
           is_returnable?: boolean | null
           lead_time_days?: number | null
@@ -1178,6 +1182,8 @@ export type Database = {
           dimensions?: string | null
           id?: string
           image_url?: string | null
+          internal_code?: string | null
+          internal_name?: string | null
           is_active?: boolean | null
           is_returnable?: boolean | null
           lead_time_days?: number | null
