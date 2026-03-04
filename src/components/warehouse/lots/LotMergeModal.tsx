@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { parseQuantity, formatQuantityFull } from '@/lib/numberUtils'
 import { QuantityInput } from '@/components/ui/QuantityInput'
+import { useSystem } from '@/contexts/SystemContext'
 
 interface LotMergeModalProps {
     targetLot: Lot
@@ -22,6 +23,8 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
     const [selectedItems, setSelectedItems] = useState<Record<string, number>>({}) // itemId -> quantity to merge
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const { hasModule } = useSystem()
+    const showInternal = hasModule('internal_products')
 
     // Confirm Dialog State
     const [showConfirm, setShowConfirm] = useState(false)
@@ -47,7 +50,9 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                 l.code.toLowerCase().includes(lowerSearch) ||
                 l.lot_items?.some(item =>
                     item.products?.name.toLowerCase().includes(lowerSearch) ||
-                    item.products?.sku.toLowerCase().includes(lowerSearch)
+                    item.products?.sku.toLowerCase().includes(lowerSearch) ||
+                    item.products?.internal_code?.toLowerCase().includes(lowerSearch) ||
+                    item.products?.internal_name?.toLowerCase().includes(lowerSearch)
                 )
             )
         }
@@ -311,7 +316,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                                                     {lot.lot_items?.slice(0, 2).map(item => (
                                                         <div key={item.id} className="flex items-center gap-2 text-xs text-slate-500">
                                                             <Boxes size={12} className="shrink-0" />
-                                                            <span className="truncate">{item.products?.name}</span>
+                                                            <span className="truncate">{showInternal && item.products?.internal_name ? item.products.internal_name : item.products?.name}</span>
                                                         </div>
                                                     ))}
                                                     {(lot.lot_items?.length || 0) > 2 && <span className="text-[10px] text-slate-400 italic">+{lot.lot_items!.length - 2} sản phẩm khác</span>}
@@ -362,8 +367,8 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                                                             className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500"
                                                         />
                                                         <div className="flex-1 min-w-0">
-                                                            <div className="text-xs font-bold truncate text-slate-700 dark:text-slate-300">{item.products?.name}</div>
-                                                            <div className="text-[10px] text-slate-400 font-mono">{item.products?.sku}</div>
+                                                            <div className="text-xs font-bold truncate text-slate-700 dark:text-slate-300">{showInternal && item.products?.internal_name ? item.products.internal_name : item.products?.name}</div>
+                                                            <div className="text-[10px] text-slate-400 font-mono">{showInternal && item.products?.internal_code ? item.products.internal_code : item.products?.sku}</div>
                                                         </div>
                                                         <div className="flex items-center gap-2">
                                                             {selectedItems[item.id] !== undefined ? (

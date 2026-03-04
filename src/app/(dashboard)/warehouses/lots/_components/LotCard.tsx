@@ -28,6 +28,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
     const [isExpanded, setIsExpanded] = useState(false)
     const [historyData, setHistoryData] = useState<any>(null)
     const [isHighlighting, setIsHighlighting] = useState(false)
+    const showInternal = isModuleEnabled('internal_products')
 
     // Trigger highlight when positions change
     const positionsHash = JSON.stringify(lot.positions || [])
@@ -263,8 +264,8 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                                     <div className="flex flex-col flex-1 min-w-0 gap-1">
                                                         <div className="flex flex-col gap-1.5">
                                                             <div className="flex items-center gap-2 flex-wrap min-w-0">
-                                                                <div className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 rounded border border-indigo-100 dark:border-indigo-800 font-mono font-bold text-xs shrink-0">
-                                                                    {item.products?.sku}
+                                                                <div className={`px-2 py-0.5 rounded border font-mono font-bold text-xs shrink-0 ${showInternal && item.products?.internal_code ? 'bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 border-violet-100 dark:border-violet-800' : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border-indigo-100 dark:border-indigo-800'}`}>
+                                                                    {showInternal && item.products?.internal_code ? item.products.internal_code : item.products?.sku}
                                                                 </div>
                                                                 <div className="flex items-center gap-1 font-mono text-xs bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 px-2 py-0.5 rounded border border-orange-100 dark:border-orange-900/30 shrink-0">
                                                                     <span className="font-bold">{item.quantity}</span>
@@ -284,7 +285,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                                                     </div>
                                                                 )}
                                                             </div>
-                                                            <span className="truncate font-bold text-sm text-slate-900 dark:text-slate-100 leading-tight" title={item.products?.name}>{item.products?.name}</span>
+                                                            <span className="truncate font-bold text-sm text-slate-900 dark:text-slate-100 leading-tight" title={showInternal && item.products?.internal_name ? item.products.internal_name : item.products?.name}>{showInternal && item.products?.internal_name ? item.products.internal_name : item.products?.name}</span>
                                                         </div>
 
                                                         {/* Inline Tags */}
@@ -301,7 +302,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                                                         )
                                                                         .map(t => t.tag)}
                                                                     placeholderMap={{
-                                                                        '@': item.products?.sku || 'SẢN PHẨM'
+                                                                        '@': (showInternal && item.products?.internal_code ? item.products.internal_code : item.products?.sku) || 'SẢN PHẨM'
                                                                     }}
                                                                 />
                                                             </div>
@@ -326,7 +327,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                             {lot.products?.name ? (
                                                 <div className="text-sm text-zinc-800 dark:text-zinc-200 flex justify-between gap-2">
                                                     <div className="flex-1 min-w-0">
-                                                        <div className="truncate">{lot.products.name}</div>
+                                                        <div className="truncate">{showInternal && lot.products.internal_name ? lot.products.internal_name : lot.products.name}</div>
                                                         {lot.lot_tags && (
                                                             <div className="mt-1">
                                                                 <TagDisplay tags={lot.lot_tags.map(t => t.tag)} />
@@ -377,7 +378,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                 )
                                 .map(t => t.tag)}
                             placeholderMap={{
-                                '@': lot.products?.sku || lot.products?.name || 'SẢN PHẨM'
+                                '@': (showInternal && lot.products?.internal_code ? lot.products.internal_code : lot.products?.sku) || lot.products?.name || 'SẢN PHẨM'
                             }}
                         />
                     </div>

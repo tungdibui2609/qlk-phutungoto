@@ -21,7 +21,8 @@ interface LotSplitModalProps {
 }
 
 export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSuccess, units, productUnits, isUtilityEnabled }) => {
-    const { currentSystem } = useSystem()
+    const { currentSystem, hasModule } = useSystem()
+    const showInternal = hasModule('internal_products')
     const { toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
     const [splitQuantities, setSplitQuantities] = useState<Record<string, number>>({})
     const [splitUnits, setSplitUnits] = useState<Record<string, string>>({}) // lot_item_id -> selected unit name
@@ -301,10 +302,10 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                                     <div className="flex items-start justify-between gap-4">
                                         <div className="flex-1 min-w-0">
                                             <div className="font-bold text-slate-900 dark:text-slate-100 truncate">
-                                                {item.products?.sku}
+                                                {showInternal && item.products?.internal_code ? item.products.internal_code : item.products?.sku}
                                             </div>
                                             <div className="text-xs text-slate-500 line-clamp-2 mt-0.5">
-                                                {item.products?.name}
+                                                {showInternal && item.products?.internal_name ? item.products.internal_name : item.products?.name}
                                             </div>
                                         </div>
                                         <div className="text-right shrink-0">

@@ -10,7 +10,7 @@ import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 export type Lot = Database['public']['Tables']['lots']['Row'] & {
     system_code?: string
     lot_items: (Database['public']['Tables']['lot_items']['Row'] & {
-        products: { name: string; unit: string | null; product_code?: string; sku: string; cost_price?: number | null } | null
+        products: { name: string; unit: string | null; product_code?: string; sku: string; cost_price?: number | null; internal_code?: string | null; internal_name?: string | null } | null
         unit?: string | null
     })[] | null
     suppliers: { name: string } | null
@@ -22,7 +22,7 @@ export type Lot = Database['public']['Tables']['lots']['Row'] & {
     }[] | null
     lot_tags?: { tag: string; lot_item_id: string | null }[] | null
     // Legacy support for display if needed
-    products?: { name: string; unit: string | null; product_code?: string; sku?: string; cost_price?: number | null } | null
+    products?: { name: string; unit: string | null; product_code?: string; sku?: string; cost_price?: number | null; internal_code?: string | null; internal_name?: string | null } | null
     images?: any
     metadata?: any
 }
@@ -168,6 +168,8 @@ export function useLotManagement() {
                         unit,
                         sku,
                         cost_price,
+                        internal_code,
+                        internal_name,
                         product_code:id
                     ),
                     unit
@@ -175,7 +177,7 @@ export function useLotManagement() {
                 suppliers (name),
                 qc_info (name),
                 lot_tags (tag, lot_item_id),
-                products (name, unit, sku, cost_price)
+                products (name, unit, sku, cost_price, internal_code, internal_name)
             `
 
             let query: any;
@@ -215,7 +217,7 @@ export function useLotManagement() {
             // 1. Search Term Logic (Deep Search)
             if (searchTerm) {
                 const term = `%${searchTerm}%`
-                let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`]
+                let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`, `internal_code.ilike.${term}`, `internal_name.ilike.${term}`]
 
                 // Safe check if searchTerm is a UUID to search in 'id' column without crashing postgres
                 const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(searchTerm)
@@ -232,7 +234,9 @@ export function useLotManagement() {
                     const sLower = searchTerm.toLowerCase();
                     const exactMatches = prods.filter(p =>
                         (p.sku && p.sku.toLowerCase() === sLower) ||
-                        (p.name && p.name.toLowerCase() === sLower)
+                        (p.name && p.name.toLowerCase() === sLower) ||
+                        ((p as any).internal_code && (p as any).internal_code.toLowerCase() === sLower) ||
+                        ((p as any).internal_name && (p as any).internal_name.toLowerCase() === sLower)
                     );
                     if (exactMatches.length > 0) {
                         prodIds = exactMatches.map(p => p.id);
@@ -349,9 +353,9 @@ export function useLotManagement() {
                     const sLower = searchTerm.toLowerCase();
                     sortedLots.sort((a, b) => {
                         const aExact = (a.code && a.code.toLowerCase() === sLower) ||
-                            a.lot_items?.some(i => (i.products?.sku && i.products.sku.toLowerCase() === sLower) || (i.products?.name && i.products.name.toLowerCase() === sLower));
+                            a.lot_items?.some(i => (i.products?.sku && i.products.sku.toLowerCase() === sLower) || (i.products?.name && i.products.name.toLowerCase() === sLower) || (i.products?.internal_code && i.products.internal_code.toLowerCase() === sLower) || (i.products?.internal_name && i.products.internal_name.toLowerCase() === sLower));
                         const bExact = (b.code && b.code.toLowerCase() === sLower) ||
-                            b.lot_items?.some(i => (i.products?.sku && i.products.sku.toLowerCase() === sLower) || (i.products?.name && i.products.name.toLowerCase() === sLower));
+                            b.lot_items?.some(i => (i.products?.sku && i.products.sku.toLowerCase() === sLower) || (i.products?.name && i.products.name.toLowerCase() === sLower) || (i.products?.internal_code && i.products.internal_code.toLowerCase() === sLower) || (i.products?.internal_name && i.products.internal_name.toLowerCase() === sLower));
 
                         if (aExact && !bExact) return -1;
                         if (!aExact && bExact) return 1;

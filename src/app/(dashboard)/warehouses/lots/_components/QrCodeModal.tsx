@@ -3,6 +3,7 @@ import QRCode from "react-qr-code"
 import { useState } from 'react'
 import { Lot } from '../_hooks/useLotManagement'
 import { useToast } from '@/components/ui/ToastProvider'
+import { useSystem } from '@/contexts/SystemContext'
 
 interface QrCodeModalProps {
     lot: Lot
@@ -12,6 +13,8 @@ interface QrCodeModalProps {
 export function QrCodeModal({ lot, onClose }: QrCodeModalProps) {
     const { showToast } = useToast()
     const [copied, setCopied] = useState(false)
+    const { hasModule } = useSystem()
+    const showInternal = hasModule('internal_products')
 
     // Generate structured content for QR
     const qrLines = [
@@ -21,9 +24,10 @@ export function QrCodeModal({ lot, onClose }: QrCodeModalProps) {
 
     // Products
     if (lot.lot_items && lot.lot_items.length > 0) {
-        const productInfo = lot.lot_items.map(item =>
-            `${item.products?.name || 'SP'} (${item.quantity} ${item.unit || item.products?.unit || ''})`
-        ).join(', ')
+        const productInfo = lot.lot_items.map(item => {
+            const name = showInternal && item.products?.internal_name ? item.products.internal_name : (item.products?.name || 'SP')
+            return `${name} (${item.quantity} ${item.unit || item.products?.unit || ''})`
+        }).join(', ')
         qrLines.push(`Sản phẩm: ${productInfo}`)
     }
 

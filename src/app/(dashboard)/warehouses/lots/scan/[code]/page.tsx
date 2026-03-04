@@ -29,7 +29,8 @@ interface PageProps {
 
 export default function LotScanPage({ params }: PageProps) {
     const { code } = use(params)
-    const { currentSystem } = useSystem()
+    const { currentSystem, hasModule } = useSystem()
+    const showInternal = hasModule('internal_products')
     const { profile } = useUser()
     const { showToast } = useToast()
 
@@ -54,7 +55,7 @@ export default function LotScanPage({ params }: PageProps) {
                     qc_info (name),
                     lot_items (
                         id, quantity, unit,
-                        products (name, sku, unit)
+                        products (name, sku, unit, internal_code, internal_name)
                     ),
                     positions (id, code),
                     lot_tags (tag, lot_item_id)
@@ -372,21 +373,21 @@ export default function LotScanPage({ params }: PageProps) {
                     {lot.lot_items?.map((item: any) => (
                         <div key={item.id} className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-zinc-800/50">
                             <div className="flex items-center gap-2 mb-2">
-                                <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 rounded text-xs font-mono font-bold border border-indigo-100 dark:border-indigo-800">
-                                    {item.products?.sku}
+                                <span className={`px-2 py-0.5 rounded text-xs font-mono font-bold border ${showInternal && item.products?.internal_code ? 'bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 border-violet-100 dark:border-violet-800' : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border-indigo-100 dark:border-indigo-800'}`}>
+                                    {showInternal && item.products?.internal_code ? item.products.internal_code : item.products?.sku}
                                 </span>
                                 <div className="flex items-center gap-1 px-2 py-0.5 bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 rounded-lg border border-orange-100 dark:border-orange-900/30">
                                     <span className="text-xs font-bold">{item.quantity}</span>
                                     <span className="text-[10px] font-medium opacity-80">{item.unit || item.products?.unit}</span>
                                 </div>
                             </div>
-                            <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight mb-3">{item.products?.name}</h4>
+                            <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight mb-3">{showInternal && item.products?.internal_name ? item.products.internal_name : item.products?.name}</h4>
 
                             {/* Tags in dynamic scan view */}
                             {lot.lot_tags && (
                                 <TagDisplay
                                     tags={lot.lot_tags.filter((t: any) => t.lot_item_id === item.id).map((t: any) => t.tag)}
-                                    placeholderMap={{ '@': item.products?.sku || '' }}
+                                    placeholderMap={{ '@': (showInternal && item.products?.internal_code ? item.products.internal_code : item.products?.sku) || '' }}
                                 />
                             )}
                         </div>

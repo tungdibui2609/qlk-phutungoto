@@ -246,8 +246,8 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                         >
                                             <div className="flex-1 min-w-0 flex flex-col gap-1">
                                                 <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                                                    <div className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 rounded text-xs font-mono font-bold border border-indigo-100 dark:border-indigo-800 shrink-0">
-                                                        {item.products?.sku}
+                                                    <div className={`px-2 py-0.5 rounded text-xs font-mono font-bold border shrink-0 ${isModuleEnabled('internal_products') && item.products?.internal_code ? 'bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 border-violet-100 dark:border-violet-800' : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border-indigo-100 dark:border-indigo-800'}`}>
+                                                        {isModuleEnabled('internal_products') && item.products?.internal_code ? item.products.internal_code : item.products?.sku}
                                                     </div>
                                                     <div className="flex items-center gap-1 px-2 py-0.5 bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 rounded-lg border border-orange-100 dark:border-orange-900/30 shrink-0">
                                                         <span className="text-xs font-bold">{item.quantity}</span>
@@ -269,7 +269,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                                         <QrIcon size={14} />
                                                     </button>
                                                 </div>
-                                                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight" title={item.products?.name}>{item.products?.name}</h4>
+                                                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight" title={isModuleEnabled('internal_products') && item.products?.internal_name ? item.products.internal_name : item.products?.name}>{isModuleEnabled('internal_products') && item.products?.internal_name ? item.products.internal_name : item.products?.name}</h4>
 
                                                 {/* Tags & History */}
                                                 <div className="flex flex-wrap items-center gap-2 mt-1">
@@ -282,7 +282,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                                                     !t.tag.startsWith('MERGED_DATA:')
                                                                 )
                                                                 .map(t => t.tag)}
-                                                            placeholderMap={{ '@': item.products?.sku || '' }}
+                                                            placeholderMap={{ '@': (isModuleEnabled('internal_products') && item.products?.internal_code ? item.products.internal_code : item.products?.sku) || '' }}
                                                         />
                                                     )}
 

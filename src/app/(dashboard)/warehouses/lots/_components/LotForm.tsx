@@ -823,9 +823,13 @@ export function LotForm({
                                             <Combobox
                                                 options={products.map(p => ({
                                                     value: p.id,
-                                                    label: `${p.sku} - ${p.name}`,
-                                                    sku: p.sku,
-                                                    name: p.name
+                                                    label: isModuleEnabled('internal_products') && (p as any).internal_code
+                                                        ? `${(p as any).internal_code} - ${(p as any).internal_name || p.name}`
+                                                        : `${p.sku} - ${p.name}`,
+                                                    sku: isModuleEnabled('internal_products') && (p as any).internal_code ? (p as any).internal_code : p.sku,
+                                                    name: isModuleEnabled('internal_products') && (p as any).internal_name ? (p as any).internal_name : p.name,
+                                                    originalSku: p.sku,
+                                                    originalName: p.name
                                                 }))}
                                                 value={item.productId}
                                                 onChange={(val) => {
