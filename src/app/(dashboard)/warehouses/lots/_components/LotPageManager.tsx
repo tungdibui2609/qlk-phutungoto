@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, MapPin, X, ArrowUpDown } from 'lucide-react'
+import { Plus, MapPin, X, ArrowUpDown, Layers } from 'lucide-react'
 import Link from 'next/link'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { LotTagModal } from '@/components/lots/LotTagModal'
@@ -11,6 +11,7 @@ import { LotExportModal } from '@/components/warehouse/lots/LotExportModal'
 import { LotExportBuffer } from '@/components/warehouse/lots/LotExportBuffer'
 import { LotBulkCloneModal } from '@/components/warehouse/lots/LotBulkCloneModal'
 import { LotAssignPositionModal } from '@/components/warehouse/lots/LotAssignPositionModal'
+import { LotBulkAssignModal } from '@/components/warehouse/lots/LotBulkAssignModal'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
 import Protected from '@/components/auth/Protected'
@@ -40,6 +41,7 @@ export function LotPageManager() {
         selectedZoneId,
         setSelectedZoneId,
         fetchLots,
+        fetchUnassignedLotsForBulkAssign,
         handleDeleteLot,
         handleToggleStar,
         isModuleEnabled,
@@ -66,6 +68,7 @@ export function LotPageManager() {
 
     // UI States
     const [showCreateForm, setShowCreateForm] = useState(false)
+    const [showBulkAssign, setShowBulkAssign] = useState(false)
     const [showMobileFilters, setShowMobileFilters] = useState(false)
     const [editingLot, setEditingLot] = useState<Lot | null>(null)
     const [qrLot, setQrLot] = useState<Lot | null>(null)
@@ -143,16 +146,27 @@ export function LotPageManager() {
                     </Link>
 
                     <Protected permission="lot.manage">
-                        <button
-                            onClick={toggleCreateForm}
-                            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all transform active:scale-95 ${showCreateForm
-                                ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200'
-                                : 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-500/20'
-                                }`}
-                        >
-                            {showCreateForm ? <X size={18} /> : <Plus size={18} />}
-                            {showCreateForm ? 'Đóng form' : 'Tạo LOT mới'}
-                        </button>
+                        <div className="flex items-center gap-2">
+                            {positionFilter === 'unassigned' && (
+                                <button
+                                    onClick={() => setShowBulkAssign(true)}
+                                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all transform active:scale-95 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
+                                >
+                                    <Layers size={18} />
+                                    Gán vị trí hàng loạt
+                                </button>
+                            )}
+                            <button
+                                onClick={toggleCreateForm}
+                                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all transform active:scale-95 ${showCreateForm
+                                    ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200'
+                                    : 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-500/20'
+                                    }`}
+                            >
+                                {showCreateForm ? <X size={18} /> : <Plus size={18} />}
+                                {showCreateForm ? 'Đóng form' : 'Tạo LOT mới'}
+                            </button>
+                        </div>
                     </Protected>
                 </div>
             </div>
@@ -363,6 +377,17 @@ export function LotPageManager() {
                         setAssigningLot(null);
                         fetchLots();
                     }}
+                />
+            )}
+
+            {showBulkAssign && (
+                <LotBulkAssignModal
+                    onClose={() => setShowBulkAssign(false)}
+                    onSuccess={() => {
+                        setShowBulkAssign(false);
+                        fetchLots();
+                    }}
+                    fetchUnassignedLots={fetchUnassignedLotsForBulkAssign}
                 />
             )}
         </section>
