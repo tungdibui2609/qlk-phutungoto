@@ -1,6 +1,7 @@
 'use client'
 
-import { Plus, Save, FileText } from 'lucide-react'
+import { useState } from 'react'
+import { Plus, Save, FileText, Hash } from 'lucide-react'
 import { OrderFormLayout } from '../shared/OrderFormLayout'
 import { OrderGeneralInfo } from '../shared/OrderGeneralInfo'
 import { PartnerSelect } from '../shared/PartnerSelect'
@@ -34,6 +35,8 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
 
     if (!props.isOpen) return null
 
+    const [displayInternalCode, setDisplayInternalCode] = useState(false)
+
     const footerButtons = (
         <>
             <button
@@ -64,6 +67,15 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
             subtitle={props.editOrderId ? 'Cập nhật phiếu' : 'Tạo phiếu mới'}
             onClose={props.onClose}
             maxWidth={hasModule('inbound_ui_compact') ? 'max-w-5xl' : 'max-w-7xl'}
+            headerActions={
+                <button
+                    onClick={() => setDisplayInternalCode(!displayInternalCode)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm font-bold transition-all ${displayInternalCode ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' : 'bg-stone-100 text-stone-600 dark:bg-zinc-800 dark:text-gray-300'}`}
+                    title="Hiển thị mã sản phẩm nội bộ"
+                >
+                    <Hash size={16} /> Nhập Mã Nội Bộ
+                </button>
+            }
             footer={footerButtons}
         >
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -120,6 +132,7 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
                 targetUnit={targetUnit}
                 hasModule={hasModule}
                 compact={hasModule('inbound_ui_compact')}
+                displayInternalCode={displayInternalCode}
             />
 
             <button

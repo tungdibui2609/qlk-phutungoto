@@ -46,6 +46,8 @@ interface OrderItem {
     products: {
         sku: string
         unit?: string
+        internal_code?: string | null
+        internal_name?: string | null
         product_units?: {
             unit_id: string
             conversion_rate: number
@@ -104,7 +106,7 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
         // Fetch Items with Product Units
         const { data, error } = await supabase
             .from('outbound_order_items')
-            .select('*, products(sku, unit, product_units(unit_id, conversion_rate))')
+            .select('*, products(sku, unit, internal_code, internal_name, product_units(unit_id, conversion_rate))')
             .eq('order_id', order.id)
 
         if (data) {
@@ -419,8 +421,10 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                                                 <tr key={item.id} className="hover:bg-stone-50 dark:hover:bg-zinc-800/30">
                                                     <td className="px-4 py-3 text-stone-400">{index + 1}</td>
                                                     <td className="px-4 py-3 font-medium text-stone-900 dark:text-white">
-                                                        <div className="text-[10px] text-stone-500 font-mono mb-0.5">{item.products?.sku || '-'}</div>
-                                                        <div>{item.product_name || 'N/A'}</div>
+                                                        <div className="text-[10px] text-stone-500 font-mono mb-0.5">
+                                                            {hasModule('internal_products') && item.products?.internal_code ? item.products.internal_code : (item.products?.sku || '-')}
+                                                        </div>
+                                                        <div>{hasModule('internal_products') && item.products?.internal_name ? item.products.internal_name : (item.product_name || 'N/A')}</div>
                                                     </td>
                                                     <td className="px-4 py-3 text-stone-500">{item.unit || '-'}</td>
                                                     {hasModule('outbound_financials') && (
