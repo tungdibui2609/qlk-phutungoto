@@ -94,12 +94,12 @@ export function useZoneManager() {
             let from = 0
             const limit = 1000
             while (true) {
-                const { data, error } = await supabase
+                const { data, error, count } = await supabase
                     .from('zone_positions')
-                    .select('zone_id, positions!inner(*)')
+                    .select('zone_id, positions!inner(*)', { count: 'exact' })
                     .eq('positions.system_type', systemType)
                     .order('zone_id', { ascending: true })
-                    .order('position_id', { ascending: true })
+                    // IMPORTANT: position_id cannot be safely ordered with inner join if it's not unique enough, but ascending order on zone_id is usually enough for pagination here
                     .range(from, from + limit - 1)
 
                 if (error) throw error
@@ -435,9 +435,40 @@ export function useZoneManager() {
 
         setIsSaving(true)
         try {
-            await supabase.from('zone_positions').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-            await supabase.from('positions').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-            await supabase.from('zones').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+            // First, find if any position is occupied before blowing everything up
+            const { data: occupied } = await supabase.from('positions').select('id').not('lot_id', 'is', null).limit(1)
+            if (occupied && occupied.length > 0) {
+                showToast('Lỗi: Cấu trúc hiện tại đang có hàng hóa. Không thể xóa sạch!', 'error')
+                setIsSaving(false)
+                return
+            }
+
+            // Safe chunked deletion
+            // Since we can't easily chunk "not eq 000" we just get all IDs then delete in chunks
+            const { data: zpData } = await supabase.from('zone_positions').select('position_id')
+            if (zpData && zpData.length > 0) {
+                const ids = zpData.map(d => d.position_id)
+                for (let i = 0; i < ids.length; i += 100) {
+                    await (supabase.from('zone_positions') as any).delete().in('position_id', ids.slice(i, i + 100))
+                }
+            }
+
+            const { data: pData } = await supabase.from('positions').select('id')
+            if (pData && pData.length > 0) {
+                const ids = pData.map(d => d.id)
+                for (let i = 0; i < ids.length; i += 100) {
+                    await (supabase.from('positions') as any).delete().in('id', ids.slice(i, i + 100))
+                }
+            }
+
+            const { data: zData } = await supabase.from('zones').select('id')
+            if (zData && zData.length > 0) {
+                const ids = zData.map(d => d.id)
+                for (let i = 0; i < ids.length; i += 100) {
+                    await (supabase.from('zones') as any).delete().in('id', ids.slice(i, i + 100))
+                }
+            }
+
             showToast('Đã xóa sạch dữ liệu cấu trúc!', 'success')
             await fetchZones(true)
         } catch (err: any) {
@@ -530,15 +561,16 @@ export function useZoneManager() {
                 }
 
                 if (posIdsToDelete.length > 0) {
-                    for (let i = 0; i < posIdsToDelete.length; i += 100) {
-                        const chunk = posIdsToDelete.slice(i, i + 100)
+                    for (let i = 0; i < posIdsToDelete.length; i += 50) { // Smaller chunk for positions
+                        const chunk = posIdsToDelete.slice(i, i + 50)
                         const { error: pDelErr } = await supabase.from('positions').delete().in('id', chunk)
                         if (pDelErr) throw pDelErr
                     }
                 }
 
-                for (const zone of zonesToDelete) {
-                    const { error } = await supabase.from('zones').delete().eq('id', zone.id)
+                for (let i = 0; i < zoneIdsToDelete.length; i += 50) {
+                    const chunk = zoneIdsToDelete.slice(i, i + 50)
+                    const { error } = await supabase.from('zones').delete().in('id', chunk)
                     if (error) throw error
                 }
             }
@@ -635,11 +667,15 @@ export function useZoneManager() {
             // Insert Links in Batches (Chunked)
             const newLinks: any[] = []
             for (const [zoneId, localPositions] of Object.entries(positionsMap)) {
-                const unsavedForZone = localPositions.filter(p => p._status === 'new')
+                // Find positions that are either specifically marked 'new' or their IDs weren't loaded correctly (defensive)
+                const unsavedForZone = localPositions.filter(p => p._status === 'new' || posIdMap.has(p.code))
                 unsavedForZone.forEach(p => {
                     const realId = posIdMap.get(p.code)
                     if (realId) {
-                        newLinks.push({ zone_id: zoneId, position_id: realId })
+                        // Check to avoid duplicates in newLinks array
+                        if (!newLinks.some(link => link.zone_id === zoneId && link.position_id === realId)) {
+                            newLinks.push({ zone_id: zoneId, position_id: realId })
+                        }
                     }
                 })
             }
