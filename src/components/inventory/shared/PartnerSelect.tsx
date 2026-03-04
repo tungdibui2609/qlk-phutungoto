@@ -34,7 +34,7 @@ export function PartnerSelect({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5 md:col-span-2">
                     <label className="text-xs font-medium text-stone-500 dark:text-gray-400">
-                        {label} <span className="text-red-500">*</span>
+                        {label}
                     </label>
                     <Combobox
                         options={partners.map(p => ({ value: p.id, label: p.name }))}
