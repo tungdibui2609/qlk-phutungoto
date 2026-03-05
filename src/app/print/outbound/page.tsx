@@ -160,7 +160,7 @@ function OutboundPrintContent() {
     const [signPerson5, setSignPerson5] = useState('')
 
     // Print size state
-    const [printSize, setPrintSize] = useState<'A4' | 'A5'>('A4')
+    const [printSize, setPrintSize] = useState<'A4' | 'A5'>('A5')
 
     // Capture and snapshot state
     const [isDownloading, setIsDownloading] = useState(false)
@@ -364,7 +364,7 @@ function OutboundPrintContent() {
     }
 
     return (
-        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('outbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-4 print:px-0 max-w-4xl mx-auto bg-white text-black text-[13px] leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
+        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('outbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 max-w-4xl mx-auto bg-white text-black text-[13px] ${printSize === 'A5' ? 'print-a5-super-compact' : 'print:text-[12px]'} leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
             {isCapturing && (
                 <style dangerouslySetInnerHTML={{
                     __html: `
@@ -430,11 +430,12 @@ function OutboundPrintContent() {
                 logoSrc={logoSrc}
                 size={isInternal ? 'large' : 'compact'}
                 rightContent={!isInternal && <PrintLegalHeader formNumber="02" />}
+                isA5={printSize === 'A5'}
             />
 
             {/* Title */}
-            <div className="relative text-center mt-4 mb-1">
-                <h1 className="text-xl font-bold tracking-wide" style={{ fontFamily: "'Times New Roman', Times, serif" }}>
+            <div className={`relative text-center ${printSize === 'A5' ? 'mt--1 mb-0' : 'mt-4 mb-1'}`}>
+                <h1 className={`${printSize === 'A5' ? 'text-base' : 'text-xl'} font-bold tracking-wide`} style={{ fontFamily: "'Times New Roman', Times, serif" }}>
                     PHIẾU XUẤT KHO
                 </h1>
 
@@ -501,8 +502,8 @@ function OutboundPrintContent() {
                 </div>
             </div>
 
-            <div className="mt-6 space-y-2 text-sm">
-                <div className="flex items-center">
+            <div className={`mt-6 ${printSize === 'A5' ? 'print:mt-0' : 'print:mt-1'} space-y-2 ${printSize === 'A5' ? 'print:space-y-0.5' : 'print:space-y-0'} text-sm ${printSize === 'A5' ? 'print:text-[10.5px]' : ''}`}>
+                <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
                     <span className="text-gray-600 shrink-0">- Họ tên người nhận hàng:</span>
                     <EditableText
                         value={editCustomerName}
@@ -511,7 +512,7 @@ function OutboundPrintContent() {
                         isSnapshot={isSnapshot}
                     />
                 </div>
-                <div className="flex items-center">
+                <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
                     <span className="text-gray-600 shrink-0">- Địa chỉ ( bộ phận ):</span>
                     <EditableText
                         value={editCustomerAddress}
@@ -520,7 +521,7 @@ function OutboundPrintContent() {
                         isSnapshot={isSnapshot}
                     />
                 </div>
-                <div className="flex items-center">
+                <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
                     <span className="text-gray-600 shrink-0">- Lý do xuất kho:</span>
                     <EditableText
                         value={editReason}
@@ -529,7 +530,7 @@ function OutboundPrintContent() {
                         isSnapshot={isSnapshot}
                     />
                 </div>
-                <div className="flex items-center gap-8">
+                <div className={`flex items-center ${printSize === 'A5' ? 'print:leading-none print:h-4 print:mt-0' : ''} gap-8 print:gap-2`}>
                     <div className="flex items-center">
                         <span className="text-gray-600 shrink-0">- Xuất tại kho:</span>
                         <EditableText
@@ -550,7 +551,7 @@ function OutboundPrintContent() {
                         <span className={`hidden print:inline ml-2 flex-1 min-w-[50px] font-bold ${isSnapshotMode ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
                     </div>
                 </div>
-                <div className="flex items-center">
+                <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
                     <span className="text-gray-600 shrink-0">- Ghi chú:</span>
                     <input
                         type="text"
@@ -560,7 +561,7 @@ function OutboundPrintContent() {
                     />
                     <span className={`hidden print:inline ml-2 flex-1 font-bold ${isSnapshotMode ? 'inline' : ''}`}>{editNote || '\u00A0'}</span>
                 </div>
-                <div className="flex items-center gap-6">
+                <div className={`flex items-center gap-6 ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
                     <div className="flex items-center">
                         <span className="text-gray-600 shrink-0">- Biển số xe:</span>
                         <input
@@ -594,12 +595,12 @@ function OutboundPrintContent() {
                 </div>
             </div>
 
-            <div className="mt-6">
+            <div className="mt-6 print:mt-2">
                 <table className="w-full border-collapse text-sm">
                     <thead>
                         <tr className="bg-gray-100">
-                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-10">STT</th>
-                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-60">Tên, nhãn hiệu quy cách, phẩm chất vật tư, dụng cụ sản phẩm, hàng hóa</th>
+                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-10`}>STT</th>
+                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-60`}>Tên, nhãn hiệu quy cách, phẩm chất vật tư, dụng cụ sản phẩm, hàng hóa</th>
                             <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">
                                 <EditableText
                                     value={editQuyCachTitle}
@@ -608,10 +609,10 @@ function OutboundPrintContent() {
                                     isSnapshot={isSnapshotMode}
                                 />
                             </th>
-                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-14">Đơn vị tính</th>
-                            <th colSpan={hasModule('outbound_conversion') && targetUnit ? (hasModule('outbound_financials') ? 3 : 2) : (hasModule('outbound_financials') ? 2 : 1)} className="border border-gray-400 px-2 py-2 text-center">Số lượng</th>
-                            {!isInternal && hasModule('outbound_financials') && <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">Đơn giá</th>}
-                            {!isInternal && hasModule('outbound_financials') && <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-28">Thành tiền</th>}
+                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-14`}>Đơn vị tính</th>
+                            <th colSpan={hasModule('outbound_conversion') && targetUnit ? (hasModule('outbound_financials') ? 3 : 2) : (hasModule('outbound_financials') ? 2 : 1)} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center`}>Số lượng</th>
+                            {!isInternal && hasModule('outbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-24`}>Đơn giá</th>}
+                            {!isInternal && hasModule('outbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-28`}>Thành tiền</th>}
                             {isInternal && (
                                 <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-16">
                                     <EditableText
@@ -624,10 +625,10 @@ function OutboundPrintContent() {
                             )}
                         </tr>
                         <tr className="bg-gray-100">
-                            {hasModule('outbound_financials') && <th className="border border-gray-400 px-2 py-2 text-center w-20 align-top">Yêu cầu</th>}
-                            <th className="border border-gray-400 px-2 py-2 text-center w-20 align-top">Thực xuất</th>
+                            {hasModule('outbound_financials') && <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-20 align-top`}>Yêu cầu</th>}
+                            <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-20 align-top`}>Thực xuất</th>
                             {hasModule('outbound_conversion') && targetUnit && (
-                                <th className="border border-gray-400 px-2 py-2 text-center w-24">Quy đổi<br /><span className="font-normal text-[10px]">({targetUnit})</span></th>
+                                <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-24`}>Quy đổi<br /><span className="font-normal text-[10px]">({targetUnit})</span></th>
                             )}
                         </tr>
                         <tr className="bg-gray-100 font-normal">
@@ -717,9 +718,9 @@ function OutboundPrintContent() {
 
                             return (
                                 <tr key={item.id} className="hover:bg-gray-50 font-bold">
-                                    <td className="border border-gray-400 px-2 py-1.5 text-center">{index + 1}</td>
-                                    <td className="border border-gray-400 px-2 py-1.5">{displayName}</td>
-                                    <td className="border border-gray-400 px-2 py-1.5 text-center">
+                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-center`}>{index + 1}</td>
+                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'}`}>{displayName}</td>
+                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-center`}>
                                         <EditableText
                                             value={editQuyCach[item.id] !== undefined ? editQuyCach[item.id] : quyCach}
                                             onChange={(val: string) => setEditQuyCach(prev => ({ ...prev, [item.id]: val }))}
@@ -727,9 +728,9 @@ function OutboundPrintContent() {
                                             isSnapshot={isSnapshotMode}
                                         />
                                     </td>
-                                    <td className="border border-gray-400 px-2 py-1.5 text-center">{item.unit || '-'}</td>
+                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-center`}>{item.unit || '-'}</td>
                                     {hasModule('outbound_financials') && (
-                                        <td className="border border-gray-400 px-2 py-1.5 text-center">
+                                        <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-center`}>
                                             <EditableText
                                                 value={docQuantities[item.id] !== undefined ? docQuantities[item.id] : (item.document_quantity || item.quantity).toString()}
                                                 onChange={(val) => setDocQuantities(prev => ({ ...prev, [item.id]: val }))}
@@ -738,26 +739,26 @@ function OutboundPrintContent() {
                                             />
                                         </td>
                                     )}
-                                    <td className="border border-gray-400 px-2 py-1.5 text-center">
+                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-center`}>
                                         {formatQuantityFull(item.quantity)}
                                     </td>
                                     {hasModule('outbound_conversion') && targetUnit && (
-                                        <td className="border border-gray-400 px-2 py-1.5 text-center text-stone-800">
+                                        <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-center text-stone-800`}>
                                             {typeof convertedQty === 'number' ? formatQuantityFull(convertedQty) : convertedQty}
                                         </td>
                                     )}
                                     {!isInternal && hasModule('outbound_financials') && (
-                                        <td className="border border-gray-400 px-2 py-1.5 text-right">
+                                        <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-right`}>
                                             {unitPrice > 0 ? unitPrice.toLocaleString('vi-VN') : '-'}
                                         </td>
                                     )}
                                     {!isInternal && hasModule('outbound_financials') && (
-                                        <td className="border border-gray-400 px-2 py-1.5 text-right">
+                                        <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-right`}>
                                             {totalPrice > 0 ? totalPrice.toLocaleString('vi-VN') : '-'}
                                         </td>
                                     )}
                                     {isInternal && (
-                                        <td className="border border-gray-400 px-2 py-1.5 text-xs text-gray-600">
+                                        <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-xs text-gray-600`}>
                                             <EditableText
                                                 value={editItemNotes[item.id] !== undefined ? editItemNotes[item.id] : (item.note || '')}
                                                 onChange={(val: string) => setEditItemNotes(prev => ({ ...prev, [item.id]: val }))}
@@ -777,7 +778,7 @@ function OutboundPrintContent() {
                             </tr>
                         )}
                         {/* Total Row */}
-                        <tr className="font-bold">
+                        <tr className="font-bold print-total-row">
                             <td className="border border-gray-400 px-2 py-1.5 text-center"></td>
                             <td className="border border-gray-400 px-2 py-1.5 text-center">Cộng</td>
                             <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
@@ -841,7 +842,7 @@ function OutboundPrintContent() {
                 </table>
             </div>
 
-            <div className={`mt-4 text-sm space-y-1 ${printSize === 'A5' ? 'mb-2' : ''}`}>
+            <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-0' : 'print:mt-4'} text-sm space-y-1 ${printSize === 'A5' ? 'mb-0' : 'mb-2'}`}>
                 {!isInternal && hasModule('outbound_financials') && (
                     <div className="flex items-center">
                         <span className="shrink-0">- Tổng số tiền (viết bằng chữ):</span>
@@ -866,13 +867,13 @@ function OutboundPrintContent() {
                 )}
             </div>
 
-            <div className={`-mt-1 grid grid-cols-[1fr_1fr_1fr_1fr_1.4fr] ${printSize === 'A5' ? 'gap-1' : 'gap-3'} text-center text-sm items-end ${printSize === 'A5' ? 'page-break-inside-avoid' : ''}`}>
+            <div className={`mt-0 ${printSize === 'A5' ? 'print:-mt-2' : 'print:-mt-1'} signature-grid grid grid-cols-[1fr_1fr_1fr_1fr_1.4fr] ${printSize === 'A5' ? 'gap-0.5' : 'gap-3'} text-center text-sm items-end ${printSize === 'A5' ? 'print:break-inside-avoid' : ''}`}>
                 {/* 1. Ngày tháng năm row */}
                 <div className="invisible">Ngày ... tháng ... năm ...</div>
                 <div className="invisible">Ngày ... tháng ... năm ...</div>
                 <div className="invisible">Ngày ... tháng ... năm ...</div>
                 <div className="invisible">Ngày ... tháng ... năm ...</div>
-                <div className="text-sm italic text-center whitespace-nowrap">
+                <div className={`text-sm italic text-center whitespace-nowrap ${printSize === 'A5' ? 'print:pr-8' : ''}`}>
                     <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
                         Ngày
                         <input type="text" value={signDay} onChange={(e) => setSignDay(e.target.value)}
@@ -917,22 +918,22 @@ function OutboundPrintContent() {
                 </div>
 
                 {/* 3. Instruction & Label (Ký, họ tên) row */}
-                <div className="text-xs text-gray-500 italic self-start pb-20 print:pb-20 pt-1">(Ký, họ tên)</div>
-                <div className="text-xs text-gray-500 italic self-start pb-20 print:pb-20 pt-1">(Ký, họ tên)</div>
-                <div className="text-xs text-gray-500 italic self-start pb-20 print:pb-20 pt-1">(Ký, họ tên)</div>
-                <div className="text-xs text-gray-500 italic self-start pb-20 print:pb-20 pt-1">(Ký, họ tên)</div>
-                <div className="text-xs text-gray-500 italic self-start whitespace-nowrap pt-1">
+                <div className={`text-xs text-gray-500 italic self-start pb-6 ${printSize === 'A5' ? 'print:pb-1' : 'print:pb-10'}`}>(Ký, họ tên)</div>
+                <div className={`text-xs text-gray-500 italic self-start pb-6 ${printSize === 'A5' ? 'print:pb-1' : 'print:pb-10'}`}>(Ký, họ tên)</div>
+                <div className={`text-xs text-gray-500 italic self-start pb-6 ${printSize === 'A5' ? 'print:pb-1' : 'print:pb-10'}`}>(Ký, họ tên)</div>
+                <div className={`text-xs text-gray-500 italic self-start pb-6 ${printSize === 'A5' ? 'print:pb-1' : 'print:pb-10'}`}>(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-start whitespace-nowrap">
                     <div className="text-gray-500">(Hoặc bộ phận có nhu cầu xuất)</div>
-                    <div className="text-gray-500 pb-20 print:pb-20">(Ký, họ tên)</div>
+                    <div className={`text-gray-500 pb-6 ${printSize === 'A5' ? 'print:pb-1' : 'print:pb-10'}`}>(Ký, họ tên)</div>
                 </div>
 
 
                 {/* 5. Spacer */}
-                <div className="h-2"></div>
-                <div className="h-2"></div>
-                <div className="h-2"></div>
-                <div className="h-2"></div>
-                <div className="h-2"></div>
+                <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-2'}`}></div>
+                <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-2'}`}></div>
+                <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-2'}`}></div>
+                <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-2'}`}></div>
+                <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-2'}`}></div>
 
                 {/* 6. Họ tên row */}
                 <div>
@@ -971,8 +972,9 @@ function OutboundPrintContent() {
             <style jsx global>{`
                 @media print {
                     @page {
-                        size: ${printSize === 'A5' ? 'A5' : 'A4'};
-                        margin: ${printSize === 'A5' ? '12mm 5mm 5mm 5mm' : '1mm 10mm 10mm 10mm'};
+                        /* 210mm width x 148mm height - standard for continuous dot matrix half-A4 paper */
+                        size: ${printSize === 'A5' ? '210mm 148mm' : 'A4'};
+                        margin: ${printSize === 'A5' ? '3mm 5mm 2mm 5mm' : '1mm 10mm 10mm 10mm'};
                     }
                     body {
                         -webkit-print-color-adjust: exact;
@@ -980,9 +982,48 @@ function OutboundPrintContent() {
                     }
                     #print-ready {
                         ${printSize === 'A5' ? `
-                            /* Removed forced zoom/width to let portrait A5 natural layout work */
+                            /* Normal 100% width on 210mm paper, let natural wrapping apply */
                         ` : ''}
                     }
+                    ${printSize === 'A5' ? `
+                    .print-a5-super-compact {
+                        font-size: 11px !important;
+                        line-height: 1.15 !important;
+                    }
+                    .print-a5-super-compact * {
+                        line-height: 1.15 !important;
+                    }
+                    .print-a5-super-compact h1 {
+                        font-size: 14px !important;
+                        margin-top: 2px !important;
+                        margin-bottom: 2px !important;
+                    }
+                    .print-a5-super-compact table th,
+                    .print-a5-super-compact table td {
+                        padding: 2px 4px !important;
+                        font-size: 11px !important;
+                    }
+                    .print-a5-super-compact .print-total-row td {
+                        padding-top: 8px !important;
+                        padding-bottom: 8px !important;
+                    }
+                    .print-a5-super-compact .pb-6 {
+                        padding-bottom: 2px !important;
+                    }
+                    .print-a5-super-compact .signature-grid {
+                        page-break-inside: avoid !important;
+                        break-inside: avoid !important;
+                    }
+                    .print-a5-super-compact img {
+                        max-height: 25px !important;
+                    }
+                    thead {
+                        display: table-row-group !important;
+                    }
+                    table {
+                        page-break-inside: avoid !important;
+                    }
+                    ` : ''}
                     .no-print {
                         display: none !important;
                     }

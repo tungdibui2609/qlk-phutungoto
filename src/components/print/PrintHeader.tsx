@@ -12,6 +12,8 @@ interface PrintHeaderProps {
     rightContent?: React.ReactNode
     /** Additional class name for the container */
     className?: string
+    /** Aggressive vertical compression for A5 continuous paper */
+    isA5?: boolean
 }
 
 /**
@@ -23,12 +25,13 @@ export function PrintHeader({
     logoSrc,
     size = 'compact',
     rightContent,
-    className = ''
+    className = '',
+    isA5 = false
 }: PrintHeaderProps) {
     const isLarge = size === 'large'
 
     return (
-        <div className={`relative mb-4 ${className}`} style={{ fontFamily: "'Times New Roman', Times, serif" }}>
+        <div className={`relative ${isA5 ? 'mb-1' : 'mb-4'} ${className}`} style={{ fontFamily: "'Times New Roman', Times, serif" }}>
             {/* Right content (e.g., legal template info) */}
             {rightContent && (
                 <div className="absolute top-0 right-0">
@@ -43,7 +46,7 @@ export function PrintHeader({
                         <img
                             src={logoSrc || companyInfo?.logo_url || ''}
                             alt="Logo"
-                            className={isLarge ? "h-20 w-auto object-contain" : "h-10 w-auto object-contain"}
+                            className={isA5 ? (isLarge ? "h-10 w-auto object-contain" : "h-6 w-auto object-contain") : (isLarge ? "h-20 w-auto object-contain" : "h-10 w-auto object-contain")}
                         />
                     ) : (
                         <div className={`${isLarge ? 'h-20 w-20 text-2xl' : 'h-14 w-14 text-xl'} bg-orange-500 rounded-lg flex items-center justify-center text-white font-bold`}>
@@ -53,16 +56,16 @@ export function PrintHeader({
                 </div>
 
                 {/* Company Info */}
-                <div className="flex flex-col justify-center gap-0.5">
-                    <div className={`text-black font-bold uppercase leading-tight ${isLarge ? 'text-sm' : 'text-[10px]'} mb-0 whitespace-nowrap`}>
+                <div className={`flex flex-col justify-center ${isA5 ? 'gap-0' : 'gap-0.5'}`}>
+                    <div className={`text-black font-bold uppercase leading-tight ${isA5 ? (isLarge ? 'text-[11px]' : 'text-[8.5px]') : (isLarge ? 'text-sm' : 'text-[10px]')} mb-0 whitespace-nowrap`}>
                         {companyInfo?.name || 'CÔNG TY'}
                     </div>
                     {companyInfo?.address && (
-                        <div className={`font-bold text-black leading-tight ${isLarge ? 'text-sm' : 'text-[8px]'}`}>
+                        <div className={`font-bold text-black leading-tight ${isA5 ? (isLarge ? 'text-[10px]' : 'text-[7px]') : (isLarge ? 'text-sm' : 'text-[8px]')}`}>
                             Địa chỉ: {companyInfo.address}
                         </div>
                     )}
-                    <div className={`font-bold text-black leading-tight ${isLarge ? 'text-sm' : 'text-[8px]'}`}>
+                    <div className={`font-bold text-black leading-tight ${isA5 ? (isLarge ? 'text-[10px]' : 'text-[7px]') : (isLarge ? 'text-sm' : 'text-[8px]')}`}>
                         {companyInfo?.email && `Email: ${companyInfo.email}`}
                         {companyInfo?.email && companyInfo?.phone && <span className="mx-1">|</span>}
                         {companyInfo?.phone && `ĐT: ${companyInfo.phone}`}
