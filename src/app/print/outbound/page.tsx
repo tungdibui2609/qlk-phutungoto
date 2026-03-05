@@ -971,7 +971,7 @@ function OutboundPrintContent() {
             <style jsx global>{`
                 @media print {
                     @page {
-                        size: ${printSize === 'A5' ? 'A5 landscape' : 'A4'};
+                        size: ${printSize === 'A5' ? 'A5' : 'A4'};
                         margin: ${printSize === 'A5' ? '5mm' : '1mm 10mm 10mm 10mm'};
                     }
                     body {
