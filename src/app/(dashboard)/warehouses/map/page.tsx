@@ -30,7 +30,7 @@ type Zone = Database['public']['Tables']['zones']['Row']
 type ZoneLayout = Database['public']['Tables']['zone_layouts']['Row']
 
 function WarehouseMapContent() {
-    const { showToast } = useToast()
+    const { showToast, showConfirm } = useToast()
     const { systemType, currentSystem, hasModule } = useSystem()
     const searchParams = useSearchParams()
     const router = useRouter()
@@ -84,7 +84,7 @@ function WarehouseMapContent() {
     const [isBulkExportOpen, setIsBulkExportOpen] = useState(false)
     const [isSelectHallOpen, setIsSelectHallOpen] = useState(false)
     const [isMoveModalOpen, setIsMoveModalOpen] = useState(false)
-    const [taggingLotId, setTaggingLotId] = useState<string | null>(null)
+    const [taggingLotIds, setTaggingLotIds] = useState<string[] | null>(null)
     const [viewingLot, setViewingLot] = useState<any>(null)
     const [qrLot, setQrLot] = useState<any>(null)
     const [isMapControlsOpen, setIsMapControlsOpen] = useState(false)
@@ -305,6 +305,60 @@ function WarehouseMapContent() {
             })
             return next
         })
+    }
+
+    const handleBulkDeleteLot = async (lotIds: string[]) => {
+        if (!lotIds.length) return
+        if (!await showConfirm(`Bạn có chắc chắn muốn xóa ${lotIds.length} LOT đã chọn?`)) return
+
+        try {
+            // 1. Clear lot_id in positions (Reference)
+            const { error: posError } = await supabase
+                .from('positions')
+                .update({ lot_id: null })
+                .in('lot_id', lotIds)
+
+            if (posError) throw posError
+
+            // 2. Delete lot_tags (Child)
+            const { error: tagError } = await supabase
+                .from('lot_tags')
+                .delete()
+                .in('lot_id', lotIds)
+
+            if (tagError) {
+                console.warn('Could not delete all tags, continuing...', tagError)
+            }
+
+            // 3. Delete lot_items (Child)
+            const { error: itemError } = await supabase
+                .from('lot_items')
+                .delete()
+                .in('lot_id', lotIds)
+
+            if (itemError) throw itemError
+
+            // 4. Finally delete lots (Owner)
+            const { error: lotError } = await supabase
+                .from('lots')
+                .delete()
+                .in('id', lotIds)
+
+            if (lotError) throw lotError
+
+            showToast(`Đã xóa ${lotIds.length} LOT thành công`, 'success')
+
+            // Refresh map data
+            fetchData()
+            setSelectedPositionIds(new Set())
+        } catch (error: any) {
+            console.error('Bulk delete error:', error)
+            showToast(error.message || "Lỗi khi xóa LOT (có thể do ràng buộc dữ liệu khác)", 'error')
+        }
+    }
+
+    const handleBulkExport = () => {
+        setIsBulkExportOpen(true)
     }
 
     async function handleMoveToHall(hallId: string) {
@@ -637,8 +691,9 @@ function WarehouseMapContent() {
                 lotInfo={lotInfo}
                 onClear={() => setSelectedPositionIds(new Set())}
                 onExportOrder={handleExportOrder}
-                onBulkExport={() => setIsBulkExportOpen(true)}
-                onTag={(lotId) => setTaggingLotId(lotId)}
+                onBulkExport={handleBulkExport}
+                onTag={(lotIds) => setTaggingLotIds(lotIds)}
+                onDeleteLot={handleBulkDeleteLot}
                 onOpenSelectHall={() => setIsSelectHallOpen(true)}
                 onOpenMove={() => setIsMoveModalOpen(true)}
             />
@@ -687,13 +742,13 @@ function WarehouseMapContent() {
                 </div>
             )}
 
-            {taggingLotId && (
+            {taggingLotIds && (
                 <LotTagModal
-                    lotId={taggingLotId}
-                    onClose={() => setTaggingLotId(null)}
+                    lotIds={taggingLotIds}
+                    onClose={() => setTaggingLotIds(null)}
                     onSuccess={() => {
-                        setTaggingLotId(null)
-                        refreshLotInfo(taggingLotId)
+                        setTaggingLotIds(null)
+                        taggingLotIds.forEach(id => refreshLotInfo(id))
                     }}
                 />
             )}

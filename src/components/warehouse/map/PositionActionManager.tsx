@@ -94,15 +94,7 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
             if (!await showConfirm('Bạn có chắc chắn muốn xóa LOT này?')) return
 
             try {
-                // Delete the lot
-                const { error: lotError } = await supabase
-                    .from('lots')
-                    .delete()
-                    .eq('id', lotId)
-
-                if (lotError) throw lotError
-
-                // Clear position reference (manually ensure consistency)
+                // 1. Clear lot_id in positions (Reference)
                 const { error: posError } = await supabase
                     .from('positions')
                     .update({ lot_id: null } as any)
@@ -110,11 +102,30 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
 
                 if (posError) throw posError
 
+                // 2. Delete lot_tags (Child)
+                await supabase.from('lot_tags').delete().eq('lot_id', lotId)
+
+                // 3. Delete lot_items (Child)
+                const { error: itemError } = await supabase
+                    .from('lot_items')
+                    .delete()
+                    .eq('lot_id', lotId)
+
+                if (itemError) throw itemError
+
+                // 4. Finally delete the lot (Owner)
+                const { error: lotError } = await supabase
+                    .from('lots')
+                    .delete()
+                    .eq('id', lotId)
+
+                if (lotError) throw lotError
+
                 showToast('Đã xóa LOT thành công', 'success')
                 onRefreshMap()
             } catch (error: any) {
-                console.error('Error deleting lot:', error)
-                showToast('Lỗi xóa LOT: ' + error.message, 'error')
+                console.error('Delete lot error:', error)
+                showToast(error.message || "Lỗi khi xóa LOT (có thể do ràng buộc dữ liệu khác)", 'error')
             }
             return
         }

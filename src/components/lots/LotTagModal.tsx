@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabaseClient"
 import { useToast } from "@/components/ui/ToastProvider"
 
 interface LotTagModalProps {
-    lotId: string | null
+    lotIds: string[] | null
     lotCodeDisplay?: string
     onClose: () => void
     onSuccess?: () => void
@@ -20,7 +20,8 @@ type TagEntry = {
     lot_item_id: string | null
 }
 
-export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTagModalProps) {
+export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotTagModalProps) {
+    const lotId = lotIds?.[0] || null // For backward compatibility in some internal lookups if needed
     const [allLotTags, setAllLotTags] = useState<TagEntry[]>([]) // All tags for this lot
     const [existingTags, setExistingTags] = useState<string[]>([]) // All unique tags from system + master
     const [inputValue, setInputValue] = useState("")
@@ -29,7 +30,7 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
     const [selectedIndex, setSelectedIndex] = useState(-1)
     const [loading, setLoading] = useState(false)
     const [saving, setSaving] = useState(false)
-    const [lotItems, setLotItems] = useState<{ id: string, product_name: string, product_sku: string, unit: string }[]>([])
+    const [lotItems, setLotItems] = useState<{ id: string, ids: string[], lotIds: string[], product_name: string, product_sku: string, unit: string }[]>([])
     const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
     const inputRef = useRef<HTMLInputElement>(null)
 
@@ -37,24 +38,47 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
     const { showToast, showConfirm } = useToast()
     // Load Data
     const loadData = useCallback(async () => {
-        if (!lotId) return
+        if (!lotIds || lotIds.length === 0) return
         setLoading(true)
         try {
-            // Fetch lot items
+            // Fetch lot items for all LOTs
             const lotItemsRes = await supabase
                 .from('lot_items')
-                .select(`id, products(name, sku, unit), unit, quantity`)
-                .eq('lot_id', lotId) as any
+                .select(`id, lot_id, products(name, sku, unit), unit, quantity`)
+                .in('lot_id', lotIds) as any
 
-            const items = lotItemsRes.data?.map((i: any) => ({
-                id: i.id,
-                product_name: i.products?.name || 'Unknown',
-                product_sku: i.products?.sku || '',
-                unit: (i as any).unit || i.products?.unit || '',
-            })) || []
+            const rawItems = lotItemsRes.data || []
+
+            // Group items by unique product attributes
+            const groupedMap: Record<string, { id: string, ids: string[], lotIds: string[], product_name: string, product_sku: string, unit: string }> = {}
+
+            rawItems.forEach((i: any) => {
+                const name = i.products?.name || 'Unknown'
+                const sku = i.products?.sku || ''
+                const unit = (i as any).unit || i.products?.unit || ''
+                const key = `${name}|${sku}|${unit}`
+
+                if (!groupedMap[key]) {
+                    groupedMap[key] = {
+                        id: i.id, // Representative ID
+                        ids: [i.id],
+                        lotIds: [i.lot_id],
+                        product_name: name,
+                        product_sku: sku,
+                        unit: unit
+                    }
+                } else {
+                    groupedMap[key].ids.push(i.id)
+                    if (!groupedMap[key].lotIds.includes(i.lot_id)) {
+                        groupedMap[key].lotIds.push(i.lot_id)
+                    }
+                }
+            })
+
+            const items = Object.values(groupedMap)
             setLotItems(items)
 
-            // Auto select if only 1
+            // Auto select if only 1 group
             if (items.length === 1 && !selectedItemId) {
                 setSelectedItemId(items[0].id)
             }
@@ -62,7 +86,7 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
             const [masterRes, allTagsRes, currentRes] = await Promise.all([
                 fetch(`/api/lot-tags/master?systemCode=${systemType}`).then(r => r.json()).catch(() => ({ ok: false })),
                 fetch("/api/lot-tags?all=1").then(r => r.json()).catch(() => ({ ok: false })),
-                fetch(`/api/lot-tags?lotId=${encodeURIComponent(lotId)}`).then(r => r.json()).catch(() => ({ ok: false }))
+                fetch(`/api/lot-tags?lotId=${encodeURIComponent(lotIds[0])}`).then(r => r.json()).catch(() => ({ ok: false }))
             ])
 
             const allUniqueTags = new Set<string>()
@@ -94,11 +118,11 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
     }, [lotId, systemType])
 
     useEffect(() => {
-        if (lotId) {
+        if (lotIds && lotIds.length > 0) {
             loadData()
             setInputValue("")
         }
-    }, [lotId, loadData])
+    }, [lotIds, loadData])
 
     // Filter current tags based on selection
     const currentTags = useMemo(() => allLotTags.filter(t => {
@@ -140,16 +164,17 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
 
     const handleAdd = async () => {
         const trimmed = inputValue.trim().toUpperCase()
-        if (!trimmed || !lotId) return
+        if (!trimmed || !lotIds || lotIds.length === 0) return
 
-        // Validation: Must select item if multiple exist
+        // Validation: Must select item group if multiple exist
         if (lotItems.length > 1 && !selectedItemId) {
             showToast("Vui lòng chọn dòng sản phẩm để gán mã", 'warning')
             return
         }
 
-        // Use selected item or the only item
-        const targetItemId = selectedItemId || (lotItems.length === 1 ? lotItems[0].id : null)
+        // Find the selected group
+        const selectedGroup = lotItems.find(i => i.id === selectedItemId) || (lotItems.length === 1 ? lotItems[0] : null)
+        if (!selectedGroup) return
 
         if (currentTags.includes(trimmed)) {
             showToast("Mã này đã được gắn rồi", 'warning')
@@ -174,39 +199,45 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
                 }
             }
 
-            // 2. Add to lot
-            const res = await fetch("/api/lot-tags", {
-                method: "POST",
-                body: JSON.stringify({
-                    lotId,
-                    tag: trimmed,
-                    lotItemId: targetItemId
-                })
+            // 2. Add to all relevant lots/items in the group
+            const promises = selectedGroup.lotIds.map((lId: string, idx: number) => {
+                const itemId = selectedGroup.ids[idx] || selectedGroup.ids[0]
+                return fetch("/api/lot-tags", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        lotId: lId,
+                        tag: trimmed,
+                        lotItemId: itemId
+                    })
+                }).then(r => r.json())
             })
 
-            const j = await res.json()
-            if (j?.ok) {
+            const results = await Promise.all(promises)
+            const allOk = results.every((r: any) => r.ok)
+
+            if (allOk) {
                 // Optimistic update
                 const newEntry: TagEntry = {
                     tag: trimmed,
                     added_at: new Date().toISOString(),
-                    lot_item_id: targetItemId
+                    lot_item_id: selectedItemId
                 }
                 setAllLotTags([...allLotTags, newEntry])
 
                 setInputValue("")
                 setShowSuggestions(false)
-                // Update existing tags with new parts locally
                 setExistingTags(prev => {
                     const newSet = new Set([...prev, ...parts])
                     return Array.from(newSet).sort()
                 })
                 onSuccess?.()
             } else {
-                showToast(j?.error || "Lỗi khi lưu", 'error')
+                const errors = results.filter(r => !r.ok).map(r => r.error).join(", ")
+                showToast(errors || "Lỗi khi lưu", 'error')
             }
 
-        } catch {
+        } catch (error) {
+            console.error(error)
             showToast("Lỗi kết nối", 'error')
         } finally {
             setSaving(false)
@@ -214,26 +245,26 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
     }
 
     const handleRemove = async (tag: string) => {
-        if (!lotId) return
-        if (!await showConfirm(`Xóa mã ${tag}?`)) return
+        if (!lotIds || lotIds.length === 0) return
+        if (!await showConfirm(`Xóa mã ${tag} khỏi tất cả các lô đã chọn?`)) return
 
-        // Find the specific entry to delete
-        const targetItemId = selectedItemId || (lotItems.length === 1 ? lotItems[0].id : undefined)
+        const selectedGroup = lotItems.find(i => i.id === selectedItemId) || (lotItems.length === 1 ? lotItems[0] : null)
+        if (!selectedGroup) return
 
         setSaving(true)
         try {
-            let url = `/api/lot-tags?lotId=${encodeURIComponent(lotId)}&tag=${encodeURIComponent(tag)}`
-            if (targetItemId) {
-                url += `&lotItemId=${encodeURIComponent(targetItemId)}`
-            }
-
-            const res = await fetch(url, {
-                method: "DELETE"
+            const promises = selectedGroup.lotIds.map((lId: string, idx: number) => {
+                const itemId = selectedGroup.ids[idx] || selectedGroup.ids[0]
+                let url = `/api/lot-tags?lotId=${encodeURIComponent(lId)}&tag=${encodeURIComponent(tag)}`
+                if (itemId) url += `&lotItemId=${encodeURIComponent(itemId)}`
+                return fetch(url, { method: "DELETE" }).then(r => r.json())
             })
 
-            if (res.ok) {
-                // Remove specific entry
-                setAllLotTags(allLotTags.filter(t => !(t.tag === tag && (targetItemId ? t.lot_item_id === targetItemId : true))))
+            const results = await Promise.all(promises)
+            const allOk = results.every((r: any) => r.ok)
+
+            if (allOk) {
+                setAllLotTags(allLotTags.filter(t => !(t.tag === tag && t.lot_item_id === selectedItemId)))
                 onSuccess?.()
             }
         } catch {
@@ -279,8 +310,10 @@ export function LotTagModal({ lotId, lotCodeDisplay, onClose, onSuccess }: LotTa
                     <div>
                         <h3 className="font-bold text-xl text-slate-900 dark:text-slate-100">Gán Mã Phụ</h3>
                         <div className="flex items-center gap-2 mt-0.5">
-                            <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-500 font-mono tracking-wider">LOT</span>
-                            <p className="text-xs text-slate-500 font-mono">{lotCodeDisplay || lotId}</p>
+                            <span className="px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-800 text-[10px] font-bold text-slate-500 font-mono tracking-wider">LOTS</span>
+                            <p className="text-xs text-slate-500 font-mono">
+                                {lotIds && lotIds.length > 3 ? `${lotIds.length} lô đang chọn` : lotIds?.join(", ")}
+                            </p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-colors">

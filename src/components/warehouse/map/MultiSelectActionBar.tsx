@@ -1,6 +1,6 @@
 'use client'
 import { useMemo } from 'react'
-import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag } from 'lucide-react'
+import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2 } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 
 type Position = Database['public']['Tables']['positions']['Row']
@@ -18,7 +18,8 @@ interface MultiSelectActionBarProps {
         tags?: string[]
     }>
     onClear: () => void
-    onTag: (lotId: string) => void
+    onTag: (lotIds: string[]) => void
+    onDeleteLot: (lotIds: string[]) => void
     onBulkExport: () => void
     onExportOrder: (positionIds: string[], lotIds: string[]) => void
     onOpenSelectHall?: () => void
@@ -31,6 +32,7 @@ export default function MultiSelectActionBar({
     lotInfo,
     onClear,
     onTag,
+    onDeleteLot,
     onBulkExport,
     onExportOrder,
     onOpenSelectHall,
@@ -161,8 +163,7 @@ export default function MultiSelectActionBar({
 
                             <button
                                 onClick={() => {
-                                    const firstLotId = Array.from(selectedLotIds)[0]
-                                    if (firstLotId) onTag(firstLotId)
+                                    if (selectedLotIds.size > 0) onTag(Array.from(selectedLotIds))
                                 }}
                                 disabled={selectedLotIds.size === 0}
                                 className="flex items-center gap-2 px-2 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all active:scale-95 disabled:opacity-50 group whitespace-nowrap"
@@ -173,6 +174,19 @@ export default function MultiSelectActionBar({
                             </button>
 
                             <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1 shrink-0" />
+
+                            <button
+                                onClick={() => {
+                                    if (selectedLotIds.size > 0) onDeleteLot(Array.from(selectedLotIds))
+                                }}
+                                disabled={selectedLotIds.size === 0}
+                                className="flex items-center gap-2 px-2 py-1.5 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all active:scale-95 disabled:opacity-50 group whitespace-nowrap"
+                            >
+                                <Trash2 size={16} className="text-rose-500 group-hover:scale-110 transition-transform" />
+                                <span>Xóa LOT</span>
+                            </button>
+
+                            <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1" />
 
                             <button
                                 onClick={onBulkExport}
