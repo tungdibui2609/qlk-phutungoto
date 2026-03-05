@@ -11,6 +11,7 @@ import { PrintHeader } from '@/components/print/PrintHeader'
 import { EditableText } from '@/components/print/PrintHelpers'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
 import { Database } from '@/lib/database.types'
+import { groupWarehouseData } from '@/lib/warehouseUtils'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -266,113 +267,7 @@ export default function WarehouseMapPrintPage() {
     // Recursive Grouping Logic
     const groupedData = useMemo(() => {
         if (!isGrouped) return { zones, positions }
-
-        // Build child lookup index for O(1) traversal
-        const parentToChildren = new Map<string, Zone[]>()
-        zones.forEach(z => {
-            if (z.parent_id) {
-                const list = parentToChildren.get(z.parent_id) || []
-                list.push(z)
-                parentToChildren.set(z.parent_id, list)
-            }
-        })
-
-        const finalZones: Zone[] = []
-        const processedZoneIds = new Set<string>()
-        const zoneIdMap = new Map<string, string>() // Old ID -> New ID
-
-        // Recursive helper to find ALL descendants with safety guards
-        const getAllDescendants = (parentId: string, visited = new Set<string>(), depth = 0): Zone[] => {
-            if (visited.has(parentId) || depth > 10) return []
-            visited.add(parentId)
-            const children = parentToChildren.get(parentId) || []
-            return [...children, ...children.flatMap(d => getAllDescendants(d.id, visited, depth + 1))]
-        }
-
-        // 1. Identify Warehouses (Root)
-        const warehouses = zones.filter(z => !z.parent_id)
-
-        warehouses.forEach(wh => {
-            finalZones.push(wh)
-            processedZoneIds.add(wh.id)
-
-            // 2. Racks under this Warehouse
-            const racks = parentToChildren.get(wh.id) || []
-            racks.forEach(rack => {
-                finalZones.push(rack)
-                processedZoneIds.add(rack.id)
-
-                // 3. Group Bins under this Rack
-                const bins = parentToChildren.get(rack.id) || []
-                const binGroups: Record<string, Zone[]> = {}
-                bins.forEach(b => {
-                    const match = b.name.match(/\d+$/)
-                    const suffix = match ? match[0] : b.name
-                    binGroups[suffix] = binGroups[suffix] || []
-                    binGroups[suffix].push(b)
-                })
-
-                Object.entries(binGroups).forEach(([suffix, members]) => {
-                    if (members.length > 1) {
-                        // MERGE CASE
-                        const vBinId = `v-bin-${members[0].id}-${suffix}`
-                        finalZones.push({
-                            ...members[0],
-                            id: vBinId,
-                            name: `Ô ${suffix}`,
-                            code: `G${suffix}`
-                        })
-
-                        // Collect and merge ALL descendants (Levels, Sections, etc.)
-                        const allDescendants = members.flatMap(m => getAllDescendants(m.id))
-                        const descGroupByName: Record<string, Zone[]> = {}
-
-                        allDescendants.forEach(d => {
-                            const key = d.name.trim().toUpperCase()
-                            descGroupByName[key] = descGroupByName[key] || []
-                            descGroupByName[key].push(d)
-                        })
-
-                        Object.entries(descGroupByName).forEach(([upperName, dMembers]) => {
-                            const vZoneId = `v-lvl-${vBinId}-${upperName}`
-                            finalZones.push({
-                                ...dMembers[0],
-                                id: vZoneId,
-                                parent_id: vBinId,
-                                name: dMembers[0].name
-                            })
-
-                            dMembers.forEach(dm => {
-                                zoneIdMap.set(dm.id, vZoneId)
-                                processedZoneIds.add(dm.id)
-                            })
-                        })
-
-                        members.forEach(m => {
-                            zoneIdMap.set(m.id, vBinId)
-                            processedZoneIds.add(m.id)
-                        })
-                    }
-                })
-            })
-        })
-
-        // 4. Final Pass: Keep all non-processed zones
-        zones.forEach(z => {
-            if (!processedZoneIds.has(z.id)) {
-                finalZones.push(z)
-            }
-        })
-
-        // 5. Transform positions in a SINGLE pass using the mapping table
-        const mappedPositions = positions.map(p => {
-            if (p.zone_id && zoneIdMap.has(p.zone_id)) {
-                return { ...p, zone_id: zoneIdMap.get(p.zone_id)! }
-            }
-            return p
-        })
-
-        return { zones: finalZones, positions: mappedPositions }
+        return groupWarehouseData(zones, positions)
     }, [isGrouped, zones, positions])
 
     const displayZones = groupedData.zones

@@ -26,14 +26,15 @@ const MemoizedPositionCell = React.memo<{
     isHighlightBlinking: boolean,
     displayInternalCode?: boolean,
     isGrouped?: boolean,
-    onPositionSelect: (id: string) => void,
+    onPositionSelect?: (id: string | string[]) => void,
     onViewDetails?: (lotId: string) => void,
-    onPositionMenu?: (pos: PositionWithZone, event: React.MouseEvent) => void
+    onPositionMenu?: (pos: any, event: React.MouseEvent) => void
 }>(({
     pos, cellHeight, cellWidth, isMobile, isOccupied, isSelected,
     isTargetLot, lotDetail, isAssignmentMode, isHighlightBlinking, displayInternalCode, isGrouped,
     onPositionSelect, onViewDetails, onPositionMenu
 }) => {
+    const ids = (pos as any).realIds || [pos.id]
     let bgClass = 'bg-white dark:bg-gray-700'
     let borderClass = 'border-gray-200 dark:border-gray-600'
     let ringClass = ''
@@ -67,7 +68,7 @@ const MemoizedPositionCell = React.memo<{
                         ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.02] hover:z-10' : ''}
                         ${isHighlightBlinking ? 'animate-highlight-blink' : ''}
                     `}
-                    onClick={() => isAssignmentMode && onPositionSelect(pos.id)}
+                    onClick={() => isAssignmentMode && onPositionSelect?.(ids)}
                 >
                     {inView ? (
                         <>
@@ -75,7 +76,7 @@ const MemoizedPositionCell = React.memo<{
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation()
-                                        onPositionSelect(pos.id)
+                                        onPositionSelect?.(ids)
                                     }}
                                     className={`
                                         absolute bottom-1 left-1 z-20 w-4 h-4 rounded
@@ -244,9 +245,9 @@ interface FlexibleZoneGridProps {
     isAssignmentMode?: boolean
     onUpdateCollapsedZones?: (setter: (prev: Set<string>) => Set<string>) => void
     onToggleCollapse: (zoneId: string) => void
-    onPositionSelect: (positionId: string) => void
+    onPositionSelect?: (positionIds: string | string[]) => void
     onViewDetails?: (lotId: string) => void
-    onPositionMenu?: (pos: Position, e: React.MouseEvent) => void
+    onPositionMenu?: (pos: any, e: React.MouseEvent) => void
     onConfigureZone?: (zone: Zone) => void
     highlightLotId?: string | null
     highlightingPositionIds?: Set<string>
@@ -266,6 +267,7 @@ export default function FlexibleZoneGrid({
     collapsedZones,
     selectedPositionIds,
     isDesignMode = false,
+    isAssignmentMode = false,
     onUpdateCollapsedZones,
     onToggleCollapse,
     onPositionSelect,
@@ -347,7 +349,16 @@ export default function FlexibleZoneGrid({
             })
     }, [zones, positions])
 
-    function renderPositionCell(pos: PositionWithZone, cellHeight: number, cellWidth: number) {
+    function renderPositionCell(pos: any, cellHeight: number, cellWidth: number) {
+        const realIds = pos.realIds || [pos.id]
+        const isOccupied = realIds.some((id: string) => occupiedIds.has(id))
+        const isSelected = realIds.some((id: string) => selectedPositionIds.has(id))
+        const isTargetLot = highlightLotId ? realIds.some((id: string) => {
+            const lotId = (pos.lot_id)
+            return lotId === highlightLotId
+        }) : false
+        const isHighlightBlinking = realIds.some((id: string) => highlightingPositionIds.has(id))
+
         return (
             <MemoizedPositionCell
                 key={pos.id}
@@ -355,12 +366,12 @@ export default function FlexibleZoneGrid({
                 cellHeight={cellHeight}
                 cellWidth={cellWidth}
                 isMobile={isMobile}
-                isOccupied={occupiedIds.has(pos.id)}
-                isSelected={selectedPositionIds.has(pos.id)}
-                isTargetLot={highlightLotId ? pos.lot_id === highlightLotId : false}
+                isOccupied={isOccupied}
+                isSelected={isSelected}
+                isTargetLot={isTargetLot}
                 lotDetail={pos.lot_id ? lotInfo[pos.lot_id] : null}
-                isAssignmentMode={!!onPositionSelect}
-                isHighlightBlinking={highlightingPositionIds.has(pos.id)}
+                isAssignmentMode={isAssignmentMode}
+                isHighlightBlinking={isHighlightBlinking}
                 displayInternalCode={displayInternalCode}
                 isGrouped={isGrouped}
                 onPositionSelect={onPositionSelect}

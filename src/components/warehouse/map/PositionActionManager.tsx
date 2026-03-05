@@ -22,14 +22,14 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
     const [contextMenu, setContextMenu] = useState<{
         x: number
         y: number
-        position: Position | null
+        position: any | null
     } | null>(null)
     const { showToast, showConfirm } = useToast()
 
     // Lot Form State
     const [showLotForm, setShowLotForm] = useState(false)
     const [editingLot, setEditingLot] = useState<Lot | null>(null)
-    const [targetPositionId, setTargetPositionId] = useState<string | null>(null)
+    const [targetPositionId, setTargetPositionId] = useState<string | string[] | null>(null)
 
     // Common Data for Lot Form
     const [commonData, setCommonData] = useState<{
@@ -94,11 +94,12 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
             if (!await showConfirm('Bạn có chắc chắn muốn xóa LOT này?')) return
 
             try {
+                const realIds = (pos as any).realIds || [pos.id]
                 // 1. Clear lot_id in positions (Reference)
                 const { error: posError } = await supabase
                     .from('positions')
                     .update({ lot_id: null } as any)
-                    .eq('lot_id', lotId)
+                    .in('id', realIds)
 
                 if (posError) throw posError
 
@@ -132,8 +133,8 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
 
         if (action === 'export') {
             const lotId = pos.lot_id
-            const posId = pos.id
-            window.location.href = `/work/export-order?posIds=${posId}&lotIds=${lotId || ''}`
+            const realIds = (pos as any).realIds || [pos.id]
+            window.location.href = `/work/export-order?posIds=${realIds.join(',')}&lotIds=${lotId || ''}`
             return
         }
 
@@ -153,7 +154,7 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
         if (action === 'create') {
             await fetchCommonData()
             setEditingLot(null)
-            setTargetPositionId(pos.id)
+            setTargetPositionId((pos as any).realIds || [pos.id])
             setShowLotForm(true)
         }
 
@@ -175,7 +176,7 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
 
             if (data) {
                 setEditingLot(data as unknown as Lot)
-                setTargetPositionId(pos.id)
+                setTargetPositionId((pos as any).realIds || [pos.id])
                 setShowLotForm(true)
             }
         }
@@ -183,10 +184,11 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
 
     const handleLotFormSuccess = async (lotData?: any) => {
         if (targetPositionId && lotData?.id) {
+            const ids = Array.isArray(targetPositionId) ? targetPositionId : [targetPositionId]
             await supabase
                 .from('positions')
                 .update({ lot_id: lotData.id } as any)
-                .eq('id', targetPositionId)
+                .in('id', ids)
         }
 
         setShowLotForm(false)

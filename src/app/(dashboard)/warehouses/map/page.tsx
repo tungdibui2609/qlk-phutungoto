@@ -25,6 +25,7 @@ import { ZoneCollapseControls } from './_components/ZoneCollapseControls'
 import { MapSearchStats } from './_components/MapSearchStats'
 import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
 import { SelectMoveDestinationModal } from '@/components/warehouse/map/SelectMoveDestinationModal'
+import { groupWarehouseData } from '@/lib/warehouseUtils'
 
 type Zone = Database['public']['Tables']['zones']['Row']
 type ZoneLayout = Database['public']['Tables']['zone_layouts']['Row']
@@ -88,6 +89,7 @@ function WarehouseMapContent() {
     const [viewingLot, setViewingLot] = useState<any>(null)
     const [qrLot, setQrLot] = useState<any>(null)
     const [isMapControlsOpen, setIsMapControlsOpen] = useState(false)
+    const [isGrouped, setIsGrouped] = useState(false)
 
     useEffect(() => {
         const checkMobile = () => setIsMobile(window.innerWidth < 1024)
@@ -106,16 +108,23 @@ function WarehouseMapContent() {
         }
     }, [assignLotId])
 
-    function handlePositionSelect(positionId: string) {
+    function handlePositionSelect(positionIdOrIds: string | string[]) {
+        const targetIds = Array.isArray(positionIdOrIds) ? positionIdOrIds : [positionIdOrIds]
+
         if (assignLot && assignLotId) {
-            // Assignment / Move Logic
-            const pos = positions.find(p => p.id === positionId)
-            if (!pos) return
+            // Assignment / Move Logic - focusing on first ID if multi-select but usually it should be single action applied to all
+            // For now, let's just handle the first one or apply to all if it makes sense. 
+            // In assignment mode, usually we assign ONE lot to ONE or MORE positions.
 
             const isMoveMode = searchParams.get('mode') === 'move'
-            const isAssignedToThisLot = pos.lot_id === assignLotId
-
             if (isMoveMode) {
+                // Move logic for multiple positions: 
+                // If targeting a virtual cell, we clear current lot from its old positions and move to ALL real IDs in the target cell?
+                // Actually, move usually means move ONE lot from old pos to ONE new pos. 
+                // If it's a virtual cell, it might be confusing. For now, let's keep it simple: take the first ID.
+                const positionId = targetIds[0]
+                const pos = positions.find(p => p.id === positionId)
+                if (!pos) return
                 if (pos.lot_id) {
                     showToast('Vị trí này đã có hàng, vui lòng chọn một vị trí trống khác.', 'warning')
                     return
@@ -124,11 +133,10 @@ function WarehouseMapContent() {
                 // 1. Find the old position(s) of this lot and clear them
                 const oldPositions = positions.filter(p => p.lot_id === assignLotId)
                 const updates: { id: string, lot_id: string | null }[] = []
-
                 oldPositions.forEach(p => updates.push({ id: p.id, lot_id: null }))
 
-                // 2. Assign to the newly selected position
-                updates.push({ id: positionId, lot_id: assignLotId })
+                // 2. Assign to the newly selected position(s)
+                targetIds.forEach(id => updates.push({ id, lot_id: assignLotId }))
 
                 // Optimistic UI update
                 setPositions(prev => prev.map(p => {
@@ -148,7 +156,7 @@ function WarehouseMapContent() {
                         fetchData()
                     } else {
                         showToast('Đã dời vị trí thành công!', 'success')
-                        router.push('/warehouses/map') // exit move mode
+                        router.push('/warehouses/map')
                     }
                 })
 
@@ -156,36 +164,38 @@ function WarehouseMapContent() {
             }
 
             // Normal Assignment Mode (Toggle)
+            const firstPos = positions.find(p => p.id === targetIds[0])
+            const isAssignedToThisLot = firstPos?.lot_id === assignLotId
             const newLotId = isAssignedToThisLot ? null : assignLotId
 
             // Optimistic update
             setPositions(prev => prev.map(p =>
-                p.id === positionId ? { ...p, lot_id: newLotId } : p
+                targetIds.includes(p.id) ? { ...p, lot_id: newLotId } : p
             ))
 
             // DB Update
-            supabase
-                .from('positions')
-                .update({ lot_id: newLotId } as any)
-                .eq('id', positionId)
-                .then(({ error }) => {
-                    if (error) {
-                        console.warn('Update position error:', error)
-                        const rawMsg = (error as any)?.message || ''
-                        let displayMsg = rawMsg || 'Có lỗi xảy ra khi cập nhật vị trí'
-                        if (rawMsg.includes('unique_lot_in_positions') || rawMsg.includes('duplicate key')) {
-                            displayMsg = 'LOT này đã được gán ở vị trí khác! Vui lòng gỡ bỏ khỏi vị trí cũ trước hoặc dùng tính năng Di chuyển.'
-                        }
-                        showToast(displayMsg, 'error')
-                        fetchData()
-                    }
-                })
+            const promises = targetIds.map(id =>
+                supabase.from('positions').update({ lot_id: newLotId } as any).eq('id', id)
+            )
+
+            Promise.all(promises).then(results => {
+                const hasError = results.some(r => r.error)
+                if (hasError) {
+                    showToast('Có lỗi xảy ra khi cập nhật vị trí', 'error')
+                    fetchData()
+                }
+            })
         } else {
             // Multi-select toggle
             setSelectedPositionIds(prev => {
                 const next = new Set(prev)
-                if (next.has(positionId)) next.delete(positionId)
-                else next.add(positionId)
+                const allSelected = targetIds.every(id => next.has(id))
+
+                if (allSelected) {
+                    targetIds.forEach(id => next.delete(id))
+                } else {
+                    targetIds.forEach(id => next.add(id))
+                }
                 return next
             })
         }
@@ -581,117 +591,135 @@ function WarehouseMapContent() {
 
             {/* Map Grid Area */}
             <div className="space-y-4">
-                {/* Floating Map Controls (Bong bóng) */}
-                <div className="fixed bottom-6 right-6 z-[60] shadow-2xl transition-all duration-300 hover:scale-[1.02] flex justify-end">
-                    {!isMapControlsOpen ? (
-                        <button
-                            onClick={() => setIsMapControlsOpen(true)}
-                            className="bg-slate-800 text-white dark:bg-slate-700 dark:text-slate-100 rounded-full p-3 shadow-lg hover:scale-110 transition flex items-center justify-center border border-slate-600 dark:border-slate-500 hover:bg-slate-700 dark:hover:bg-slate-600 animate-in fade-in"
-                            title="Mở công cụ bản đồ"
-                        >
-                            <Layers size={22} className="text-emerald-400" />
-                        </button>
-                    ) : (
-                        <div className="flex bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-full p-1 border border-slate-200 dark:border-slate-700 shadow-sm animate-in zoom-in-95 duration-200">
-                            {/* Mở rộng Group */}
-                            <div className="flex relative items-center mr-1 pr-2 border-r border-slate-300 dark:border-slate-600">
-                                <span className="text-[10px] text-slate-500 font-bold px-3 uppercase tracking-wider">Mở</span>
-                                <button
-                                    onClick={() => {
-                                        // Mở Cấp 1: Xóa Root(Kho) khỏi Set. Chỉ gập list Dãy/Sảnh.
-                                        setCollapsedZones(new Set(zones.filter(z => z.parent_id).map(z => z.id)))
-                                    }}
-                                    className="px-3 py-2 text-slate-600 dark:text-slate-300 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1 font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800"
-                                    title="Bung list Kho tải các Dãy (Ẩn Vị trí)"
-                                >
-                                    <ChevronDown size={14} />
-                                    Cấp 1 (Dãy)
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        // Mở Cấp 2: Show hết sạch
-                                        setCollapsedZones(new Set())
-                                    }}
-                                    className="px-3 py-2 text-slate-600 dark:text-slate-300 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition ml-1 flex items-center gap-1 font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
-                                    title="Mở bung toàn bộ mọi Vị trí"
-                                >
-                                    <ChevronDown size={14} />
-                                    Cấp 2 (Vị trí)
-                                </button>
-                            </div>
+                {/* Process grouped data if enabled */}
+                {(() => {
+                    const { zones: displayZones, positions: displayPositions } = isGrouped
+                        ? groupWarehouseData(filteredZones, filteredPositions)
+                        : { zones: filteredZones, positions: filteredPositions }
 
-                            {/* Thu gọn Group */}
-                            <div className="flex relative items-center">
-                                <span className="text-[10px] text-slate-500 font-bold px-3 uppercase tracking-wider">Thu</span>
-                                <button
-                                    onClick={() => {
-                                        // Thu Cấp 1 (Gập Vị trí): Gom tất cả Zone có Parent vào Set
-                                        setCollapsedZones(new Set(zones.filter(z => z.parent_id).map(z => z.id)))
-                                    }}
-                                    className="px-3 py-2 text-slate-600 dark:text-slate-300 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1 font-medium"
-                                    title="Thu gọn Vị trí (Chỉ xem Vỏ Sảnh/Dãy)"
-                                >
-                                    <ChevronUp size={14} className="text-slate-400" />
-                                    Vị trí
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        // Thu Cấp 2 (Tất cả): Gom tất cả Root Zone (!z.parent_id) vào Set
-                                        const allZoneIds = zones.map(z => z.id)
-                                        setCollapsedZones(new Set(allZoneIds))
-                                    }}
-                                    className="px-3 py-2 text-slate-600 dark:text-slate-300 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition ml-1 flex items-center gap-1 font-medium"
-                                    title="Thu gọn Tất cả (Chỉ nhìn thấy Kho)"
-                                >
-                                    <ChevronUp size={14} className="text-slate-400" />
-                                    Kho
-                                </button>
-
-                                {/* Nút Đóng Mini Menu */}
-                                <button
-                                    onClick={() => setIsMapControlsOpen(false)}
-                                    className="p-1.5 mx-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700"
-                                    title="Đóng công cụ"
-                                >
-                                    <X size={14} />
-                                </button>
-                            </div>
+                    return (
+                        <div className="min-w-0">
+                            <FlexibleZoneGrid
+                                zones={displayZones}
+                                positions={displayPositions}
+                                layouts={layoutRecord}
+                                lotInfo={lotInfo}
+                                occupiedIds={occupiedIds}
+                                selectedPositionIds={selectedPositionIds}
+                                collapsedZones={collapsedZones}
+                                onToggleCollapse={toggleZoneCollapse}
+                                onUpdateCollapsedZones={setCollapsedZones}
+                                onPositionSelect={handlePositionSelect}
+                                onPositionMenu={(pos, e) => handlePositionMenu(pos, e)}
+                                onViewDetails={(lotId) => fetchFullLotDetails(lotId)}
+                                isDesignMode={isDesignMode}
+                                onConfigureZone={setConfiguringZone}
+                                isAssignmentMode={!!assignLot}
+                                highlightingPositionIds={recentlyUpdatedPositionIds}
+                                displayInternalCode={displayInternalCode}
+                                isGrouped={isGrouped}
+                                onPrintZone={(zoneId) => {
+                                    const params = new URLSearchParams()
+                                    params.set('systemType', systemType)
+                                    params.set('zoneId', zoneId)
+                                    if (searchTerm) params.set('search', searchTerm)
+                                    if (displayInternalCode) params.set('internalCode', 'true')
+                                    window.open(`/print/warehouse-map?${params.toString()}`, '_blank')
+                                }}
+                            />
                         </div>
-                    )}
-                </div>
-
-                <div className="min-w-0">
-                    <FlexibleZoneGrid
-                        zones={filteredZones}
-                        positions={filteredPositions}
-                        layouts={layoutRecord}
-                        lotInfo={lotInfo}
-                        occupiedIds={occupiedIds}
-                        selectedPositionIds={selectedPositionIds}
-                        collapsedZones={collapsedZones}
-                        onToggleCollapse={toggleZoneCollapse}
-                        onUpdateCollapsedZones={setCollapsedZones}
-                        onPositionSelect={handlePositionSelect}
-                        onPositionMenu={(pos, e) => handlePositionMenu(pos, e)}
-                        onViewDetails={(lotId) => fetchFullLotDetails(lotId)}
-                        isDesignMode={isDesignMode}
-                        onConfigureZone={setConfiguringZone}
-                        isAssignmentMode={!!assignLot}
-                        highlightingPositionIds={recentlyUpdatedPositionIds}
-                        displayInternalCode={displayInternalCode}
-                        onPrintZone={(zoneId) => {
-                            const params = new URLSearchParams()
-                            params.set('systemType', systemType)
-                            params.set('zoneId', zoneId)
-                            if (searchTerm) params.set('search', searchTerm)
-                            if (displayInternalCode) params.set('internalCode', 'true')
-                            window.open(`/print/warehouse-map?${params.toString()}`, '_blank')
-                        }}
-                    />
-                </div>
+                    )
+                })()}
             </div>
+            <div className="fixed bottom-6 right-6 z-[60] shadow-2xl transition-all duration-300 hover:scale-[1.02] flex justify-end">
+                {!isMapControlsOpen ? (
+                    <button
+                        onClick={() => setIsMapControlsOpen(true)}
+                        className="bg-slate-800 text-white dark:bg-slate-700 dark:text-slate-100 rounded-full p-3 shadow-lg hover:scale-110 transition flex items-center justify-center border border-slate-600 dark:border-slate-500 hover:bg-slate-700 dark:hover:bg-slate-600 animate-in fade-in"
+                        title="Mở công cụ bản đồ"
+                    >
+                        <Layers size={22} className="text-emerald-400" />
+                    </button>
+                ) : (
+                    <div className="flex bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-full p-1 border border-slate-200 dark:border-slate-700 shadow-sm animate-in zoom-in-95 duration-200">
+                        {/* Mở rộng Group */}
+                        <div className="flex relative items-center mr-1 pr-2 border-r border-slate-300 dark:border-slate-600">
+                            <span className="text-[10px] text-slate-500 font-bold px-3 uppercase tracking-wider">Mở</span>
+                            <button
+                                onClick={() => {
+                                    // Mở Cấp 1: Xóa Root(Kho) khỏi Set. Chỉ gập list Dãy/Sảnh.
+                                    setCollapsedZones(new Set(zones.filter(z => z.parent_id).map(z => z.id)))
+                                }}
+                                className="px-3 py-2 text-slate-600 dark:text-slate-300 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1 font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800"
+                                title="Bung list Kho tải các Dãy (Ẩn Vị trí)"
+                            >
+                                <ChevronDown size={14} />
+                                Cấp 1 (Dãy)
+                            </button>
+                            <button
+                                onClick={() => {
+                                    // Mở Cấp 2: Show hết sạch
+                                    setCollapsedZones(new Set())
+                                }}
+                                className="px-3 py-2 text-slate-600 dark:text-slate-300 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition ml-1 flex items-center gap-1 font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                                title="Mở bung toàn bộ mọi Vị trí"
+                            >
+                                <ChevronDown size={14} />
+                                Cấp 2 (Vị trí)
+                            </button>
+                        </div>
 
-            {/* Modals & Overlays */}
+                        {/* Gom ô Group */}
+                        <div className="flex relative items-center ml-1 pl-2 border-l border-slate-300 dark:border-slate-600">
+                            <button
+                                onClick={() => setIsGrouped(!isGrouped)}
+                                className={`px-3 py-2 rounded-full text-xs transition flex items-center gap-1 font-medium ${isGrouped ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'} border border-transparent`}
+                                title={isGrouped ? "Tắt chế độ gom ô" : "Bật chế độ gom ô"}
+                            >
+                                <Layers size={14} className={isGrouped ? 'text-white' : 'text-indigo-500'} />
+                                {isGrouped ? 'Đang Gom ô' : 'Gom ô'}
+                            </button>
+                        </div>
+
+                        {/* Thu gọn Group */}
+                        <div className="flex relative items-center">
+                            <span className="text-[10px] text-slate-500 font-bold px-3 uppercase tracking-wider">Thu</span>
+                            <button
+                                onClick={() => {
+                                    // Thu Cấp 1 (Gập Vị trí): Gom tất cả Zone có Parent vào Set
+                                    setCollapsedZones(new Set(zones.filter(z => z.parent_id).map(z => z.id)))
+                                }}
+                                className="px-3 py-2 text-slate-600 dark:text-slate-300 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1 font-medium"
+                                title="Thu gọn Vị trí (Chỉ xem Vỏ Sảnh/Dãy)"
+                            >
+                                <ChevronUp size={14} className="text-slate-400" />
+                                Vị trí
+                            </button>
+                            <button
+                                onClick={() => {
+                                    // Thu Cấp 2 (Tất cả): Gom tất cả Root Zone (!z.parent_id) vào Set
+                                    const allZoneIds = zones.map(z => z.id)
+                                    setCollapsedZones(new Set(allZoneIds))
+                                }}
+                                className="px-3 py-2 text-slate-600 dark:text-slate-300 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition ml-1 flex items-center gap-1 font-medium"
+                                title="Thu gọn Tất cả (Chỉ nhìn thấy Kho)"
+                            >
+                                <ChevronUp size={14} className="text-slate-400" />
+                                Kho
+                            </button>
+
+                            {/* Nút Đóng Mini Menu */}
+                            <button
+                                onClick={() => setIsMapControlsOpen(false)}
+                                className="p-1.5 mx-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700"
+                                title="Đóng công cụ"
+                            >
+                                <X size={14} />
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
 
             <MultiSelectActionBar
                 selectedPositionIds={selectedPositionIds}
