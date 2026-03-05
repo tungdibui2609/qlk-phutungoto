@@ -364,7 +364,7 @@ function OutboundPrintContent() {
     }
 
     return (
-        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('outbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-4 max-w-4xl mx-auto bg-white text-black text-[13px] leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
+        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('outbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-4 print:px-0 max-w-4xl mx-auto bg-white text-black text-[13px] leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
             {isCapturing && (
                 <style dangerouslySetInnerHTML={{
                     __html: `
@@ -917,13 +917,13 @@ function OutboundPrintContent() {
                 </div>
 
                 {/* 3. Instruction & Label (Ký, họ tên) row */}
-                <div className="text-xs text-gray-500 italic self-start pb-12 print:pb-12">(Ký, họ tên)</div>
-                <div className="text-xs text-gray-500 italic self-start pb-12 print:pb-12">(Ký, họ tên)</div>
-                <div className="text-xs text-gray-500 italic self-start pb-12 print:pb-12">(Ký, họ tên)</div>
-                <div className="text-xs text-gray-500 italic self-start pb-12 print:pb-12">(Ký, họ tên)</div>
-                <div className="text-xs text-gray-500 italic self-start whitespace-nowrap">
+                <div className="text-xs text-gray-500 italic self-start pb-20 print:pb-20 pt-1">(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-start pb-20 print:pb-20 pt-1">(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-start pb-20 print:pb-20 pt-1">(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-start pb-20 print:pb-20 pt-1">(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-start whitespace-nowrap pt-1">
                     <div className="text-gray-500">(Hoặc bộ phận có nhu cầu xuất)</div>
-                    <div className="text-gray-500 pb-12 print:pb-12">(Ký, họ tên)</div>
+                    <div className="text-gray-500 pb-20 print:pb-20">(Ký, họ tên)</div>
                 </div>
 
 
@@ -972,7 +972,7 @@ function OutboundPrintContent() {
                 @media print {
                     @page {
                         size: ${printSize === 'A5' ? 'A5' : 'A4'};
-                        margin: ${printSize === 'A5' ? '5mm' : '1mm 10mm 10mm 10mm'};
+                        margin: ${printSize === 'A5' ? '12mm 5mm 5mm 5mm' : '1mm 10mm 10mm 10mm'};
                     }
                     body {
                         -webkit-print-color-adjust: exact;

@@ -363,7 +363,7 @@ function InboundPrintContent() {
     }
 
     return (
-        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('inbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-4 max-w-4xl mx-auto bg-white text-black text-[13px] leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
+        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('inbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-4 print:px-0 max-w-4xl mx-auto bg-white text-black text-[13px] leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
             {isCapturing && (
                 <style dangerouslySetInnerHTML={{
                     __html: `
@@ -906,9 +906,9 @@ function InboundPrintContent() {
                         />
                         <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle1}</span>
                     </div>
-                    <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
+                    <div className="text-xs text-gray-500 italic pt-1">(Ký, họ tên)</div>
                     <div className="text-xs text-gray-500 italic invisible">(Hoặc bộ phận có nhu cầu nhập)</div>
-                    <div className="h-10"></div>
+                    <div className="h-16"></div>
                     <div className="mt-1">
                         <input
                             type="text"
@@ -933,9 +933,9 @@ function InboundPrintContent() {
                         />
                         <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle2}</span>
                     </div>
-                    <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
+                    <div className="text-xs text-gray-500 italic pt-1">(Ký, họ tên)</div>
                     <div className="text-xs text-gray-500 italic invisible">(Hoặc bộ phận có nhu cầu nhập)</div>
-                    <div className="h-10"></div>
+                    <div className="h-16"></div>
                     <div className="mt-1">
                         <input
                             type="text"
@@ -985,9 +985,9 @@ function InboundPrintContent() {
                         />
                         <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle3}</span>
                     </div>
-                    <div className="text-xs text-gray-500 italic">(Hoặc bộ phận có nhu cầu nhập)</div>
+                    <div className="text-xs text-gray-500 italic pt-1">(Hoặc bộ phận có nhu cầu nhập)</div>
                     <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
-                    <div className="h-12"></div>
+                    <div className="h-20"></div>
                     <div className="mt-1">
                         <input
                             type="text"
@@ -1005,7 +1005,7 @@ function InboundPrintContent() {
                 @media print {
                     @page {
                         size: ${printSize === 'A5' ? 'A5' : 'A4'};
-                        margin: ${printSize === 'A5' ? '5mm' : '1mm 10mm 10mm 10mm'};
+                        margin: ${printSize === 'A5' ? '12mm 5mm 5mm 5mm' : '1mm 10mm 10mm 10mm'};
                     }
                     body {
                         -webkit-print-color-adjust: exact;
