@@ -99,16 +99,22 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
         if (data) {
             const mapped = data.map((d: any) => {
                 let factor = d.conversion_rate
-                if (d.ref_unit_id) {
-                    const refUnit = data.find((r: any) => r.unit_id === d.ref_unit_id)
+                let ref_unit_id = d.ref_unit_id
+
+                // Break infinite loops/circular references caused by saving bugs previously
+                if (ref_unit_id === d.unit_id) {
+                    ref_unit_id = null
+                } else if (ref_unit_id) {
+                    const refUnit = data.find((r: any) => r.unit_id === ref_unit_id)
                     if (refUnit) {
                         factor = d.conversion_rate / refUnit.conversion_rate
                     }
                 }
+
                 return {
                     unit_id: d.unit_id,
                     factor: factor,
-                    ref_unit_id: d.ref_unit_id || ''
+                    ref_unit_id: ref_unit_id || ''
                 }
             })
             setAlternativeUnits(mapped)
@@ -192,6 +198,15 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
         setAlternativeUnits(prev => {
             const newUnits = [...prev]
             newUnits[index] = { ...newUnits[index], [field]: value }
+
+            // Prevent circular references where unit references itself
+            if (field === 'unit_id' && newUnits[index].ref_unit_id === value) {
+                newUnits[index].ref_unit_id = ''
+            }
+            if (field === 'ref_unit_id' && newUnits[index].unit_id === value) {
+                newUnits[index].ref_unit_id = ''
+            }
+
             return newUnits
         })
     }
@@ -245,7 +260,13 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
                             company_id: profile?.company_id || null
                         })
                     }
-                    if (validUnits.length > 0) await (supabase.from('product_units') as any).insert(validUnits)
+                    if (validUnits.length > 0) {
+                        const { error: insertErr } = await (supabase.from('product_units') as any).insert(validUnits)
+                        if (insertErr) {
+                            console.error("Product Units Insert Error: ", insertErr);
+                            throw insertErr;
+                        }
+                    }
                 }
             }
 

@@ -32,15 +32,18 @@ export function ProductUnits({
     // Helper to get Available Reference Units for a given index (Base + Previous Rows)
     const getAvailableRefs = (currentIndex: number) => {
         const refs = []
+        const seenIds = new Set<string>()
         // Add Base Unit
         if (formData.unit && baseUnitId) {
             refs.push({ id: '', name: formData.unit }) // Empty string ID represents Base Unit
+            seenIds.add('')
         }
         // Add previous alternative units that have a unit selected
         for (let i = 0; i < currentIndex; i++) {
             const u = alternativeUnits[i]
             const unitObj = units.find(unit => unit.id === u.unit_id)
-            if (unitObj) {
+            if (unitObj && !seenIds.has(unitObj.id)) {
+                seenIds.add(unitObj.id)
                 refs.push({ id: unitObj.id, name: unitObj.name })
             }
         }
