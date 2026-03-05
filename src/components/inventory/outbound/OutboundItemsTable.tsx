@@ -184,21 +184,51 @@ export function OutboundItemsTable({
                                         <td className="px-4 py-3 text-center font-medium text-orange-600">
                                             {(() => {
                                                 if (!item.quantity || !item.unit || !product) return '-'
-                                                let baseQty = 0
-                                                if (item.unit === product.unit) baseQty = item.quantity
-                                                else {
-                                                    const uConfig = product.product_units?.find(pu => units.find(u => u.id === pu.unit_id)?.name === item.unit)
-                                                    if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
-                                                    else return '-'
-                                                }
-                                                if (targetUnit === product.unit) return formatQuantityFull(baseQty)
 
-                                                const targetConfig = product.product_units?.find(pu => units.find(u => u.id === pu.unit_id)?.name === targetUnit)
-                                                if (targetConfig) {
-                                                    const val = baseQty / targetConfig.conversion_rate
-                                                    return formatQuantityFull(val)
+                                                const getRate = (unitName: string) => {
+                                                    if (!product) return 1
+                                                    if (product.unit && unitName.toLowerCase() === product.unit.toLowerCase()) return 1
+
+                                                    if (product.product_units) {
+                                                        for (const pu of product.product_units) {
+                                                            const u = units.find(unit => unit.id === pu.unit_id)
+                                                            if (u) {
+                                                                const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                                                const labelStr = isBase
+                                                                    ? u.name
+                                                                    : `${u.name} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
+
+                                                                if (labelStr.toLowerCase() === unitName.toLowerCase()) {
+                                                                    return pu.conversion_rate || 1
+                                                                }
+                                                            }
+                                                        }
+                                                        for (const pu of product.product_units) {
+                                                            const u = units.find(unit => unit.id === pu.unit_id)
+                                                            if (u && u.name.toLowerCase() === unitName.toLowerCase()) {
+                                                                return pu.conversion_rate || 1
+                                                            }
+                                                        }
+                                                    }
+                                                    return 1
                                                 }
-                                                return '-'
+
+                                                const sourceRate = getRate(item.unit)
+                                                const targetRate = getRate(targetUnit)
+
+                                                const itemUnitName = item.unit.toLowerCase()
+                                                const targetUnitName = targetUnit.toLowerCase()
+                                                const baseUnitName = (product.unit || '').toLowerCase()
+
+                                                if (sourceRate === 1 && targetRate === 1
+                                                    && itemUnitName !== baseUnitName
+                                                    && targetUnitName !== baseUnitName
+                                                    && itemUnitName !== targetUnitName) {
+                                                    return '-'
+                                                }
+
+                                                const val = (item.quantity * sourceRate) / targetRate
+                                                return formatQuantityFull(val)
                                             })()}
                                         </td>
                                     )}
@@ -373,21 +403,51 @@ export function OutboundItemsTable({
                                     <span className="font-bold">
                                         {(() => {
                                             if (!item.quantity || !item.unit || !product) return '-'
-                                            let baseQty = 0
-                                            if (item.unit === product.unit) baseQty = item.quantity
-                                            else {
-                                                const uConfig = product.product_units?.find(pu => units.find(u => u.id === pu.unit_id)?.name === item.unit)
-                                                if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
-                                                else return '-'
-                                            }
-                                            if (targetUnit === product.unit) return formatQuantityFull(baseQty)
 
-                                            const targetConfig = product.product_units?.find(pu => units.find(u => u.id === pu.unit_id)?.name === targetUnit)
-                                            if (targetConfig) {
-                                                const val = baseQty / targetConfig.conversion_rate
-                                                return formatQuantityFull(val)
+                                            const getRate = (unitName: string) => {
+                                                if (!product) return 1
+                                                if (product.unit && unitName.toLowerCase() === product.unit.toLowerCase()) return 1
+
+                                                if (product.product_units) {
+                                                    for (const pu of product.product_units) {
+                                                        const u = units.find(unit => unit.id === pu.unit_id)
+                                                        if (u) {
+                                                            const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                                            const labelStr = isBase
+                                                                ? u.name
+                                                                : `${u.name} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
+
+                                                            if (labelStr.toLowerCase() === unitName.toLowerCase()) {
+                                                                return pu.conversion_rate || 1
+                                                            }
+                                                        }
+                                                    }
+                                                    for (const pu of product.product_units) {
+                                                        const u = units.find(unit => unit.id === pu.unit_id)
+                                                        if (u && u.name.toLowerCase() === unitName.toLowerCase()) {
+                                                            return pu.conversion_rate || 1
+                                                        }
+                                                    }
+                                                }
+                                                return 1
                                             }
-                                            return '-'
+
+                                            const sourceRate = getRate(item.unit)
+                                            const targetRate = getRate(targetUnit)
+
+                                            const itemUnitName = item.unit.toLowerCase()
+                                            const targetUnitName = targetUnit.toLowerCase()
+                                            const baseUnitName = (product.unit || '').toLowerCase()
+
+                                            if (sourceRate === 1 && targetRate === 1
+                                                && itemUnitName !== baseUnitName
+                                                && targetUnitName !== baseUnitName
+                                                && itemUnitName !== targetUnitName) {
+                                                return '-'
+                                            }
+
+                                            const val = (item.quantity * sourceRate) / targetRate
+                                            return formatQuantityFull(val)
                                         })()}
                                     </span>
                                 </div>

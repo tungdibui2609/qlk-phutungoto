@@ -151,19 +151,33 @@ export function InboundItemsTable({
                                             const product = products.find(p => p.id === item.productId)
                                             if (!product) return '-'
 
-                                            // Helper to find rate
                                             const getRate = (unitName: string) => {
                                                 if (!product) return 1
-                                                // 1. Check if it's the base unit of the product (case-insensitive)
                                                 if (product.unit && unitName.toLowerCase() === product.unit.toLowerCase()) return 1
 
-                                                // 2. Map name to ID
-                                                const u = units.find(u => u.name.toLowerCase() === unitName.toLowerCase())
-                                                if (!u) return 1
+                                                if (product.product_units) {
+                                                    for (const pu of product.product_units) {
+                                                        const u = units.find(unit => unit.id === pu.unit_id)
+                                                        if (u) {
+                                                            const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                                            const labelStr = isBase
+                                                                ? u.name
+                                                                : `${u.name} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
 
-                                                // 3. Find in product_units
-                                                const pUnit = product.product_units?.find(pu => pu.unit_id === u.id)
-                                                return pUnit?.conversion_rate || 1
+                                                            if (labelStr.toLowerCase() === unitName.toLowerCase()) {
+                                                                return pu.conversion_rate || 1
+                                                            }
+                                                        }
+                                                    }
+                                                    // Fallback for legacy format
+                                                    for (const pu of product.product_units) {
+                                                        const u = units.find(unit => unit.id === pu.unit_id)
+                                                        if (u && u.name.toLowerCase() === unitName.toLowerCase()) {
+                                                            return pu.conversion_rate || 1
+                                                        }
+                                                    }
+                                                }
+                                                return 1
                                             }
 
                                             const sourceRate = getRate(item.unit)
@@ -333,10 +347,30 @@ export function InboundItemsTable({
                                         const getRate = (unitName: string) => {
                                             if (!product) return 1
                                             if (product.unit && unitName.toLowerCase() === product.unit.toLowerCase()) return 1
-                                            const u = units.find(u => u.name.toLowerCase() === unitName.toLowerCase())
-                                            if (!u) return 1
-                                            const pUnit = product.product_units?.find(pu => pu.unit_id === u.id)
-                                            return pUnit?.conversion_rate || 1
+
+                                            if (product.product_units) {
+                                                for (const pu of product.product_units) {
+                                                    const u = units.find(unit => unit.id === pu.unit_id)
+                                                    if (u) {
+                                                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                                        const labelStr = isBase
+                                                            ? u.name
+                                                            : `${u.name} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
+
+                                                        if (labelStr.toLowerCase() === unitName.toLowerCase()) {
+                                                            return pu.conversion_rate || 1
+                                                        }
+                                                    }
+                                                }
+                                                // Fallback
+                                                for (const pu of product.product_units) {
+                                                    const u = units.find(unit => unit.id === pu.unit_id)
+                                                    if (u && u.name.toLowerCase() === unitName.toLowerCase()) {
+                                                        return pu.conversion_rate || 1
+                                                    }
+                                                }
+                                            }
+                                            return 1
                                         }
 
                                         const sourceRate = getRate(item.unit)

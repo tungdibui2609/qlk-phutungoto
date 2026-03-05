@@ -897,7 +897,13 @@ export function LotForm({
                                                     .filter(pu => pu.product_id === item.productId)
                                                     .forEach(pu => {
                                                         const u = units.find(u => u.id === pu.unit_id)
-                                                        if (u) availableUnits.add(u.name)
+                                                        if (u) {
+                                                            const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                                            const labelStr = isBase
+                                                                ? u.name
+                                                                : `${u.name} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
+                                                            availableUnits.add(labelStr)
+                                                        }
                                                     })
 
                                                 return Array.from(availableUnits).map(u => (

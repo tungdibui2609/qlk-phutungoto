@@ -20,7 +20,13 @@ export function ItemUnitSelect({ product, units, value, onChange }: ItemUnitSele
         product.product_units.forEach(pu => {
             const uName = units.find(u => u.id === pu.unit_id)?.name
             if (uName) {
-                options.push({ value: uName, label: uName })
+                // Determine format
+                const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                const labelStr = isBase
+                    ? uName
+                    : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
+
+                options.push({ value: labelStr, label: labelStr })
             }
         })
     }
