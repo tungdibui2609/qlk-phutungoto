@@ -153,6 +153,9 @@ function InboundPrintContent() {
     const [editNoteTitle, setEditNoteTitle] = useState('Ghi chú')
     const [editItemNotes, setEditItemNotes] = useState<Record<string, string>>({})
 
+    // Print size state
+    const [printSize, setPrintSize] = useState<'A4' | 'A5'>('A4')
+
     // Capture and snapshot state
     const [isDownloading, setIsDownloading] = useState(false)
     const { isCapturing, downloadTimer, handleCapture } = useCaptureReceipt({
@@ -381,6 +384,12 @@ function InboundPrintContent() {
             )}
             {/* Toolbar - Hidden when printing or snapshotting */}
             <div className={`fixed top-4 right-4 print:hidden z-50 flex items-center gap-2 ${isSnapshotMode ? 'hidden' : ''}`}>
+                <button
+                    onClick={() => setPrintSize(prev => prev === 'A4' ? 'A5' : 'A4')}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-full shadow-lg transition-all hover:scale-105 font-medium ${printSize === 'A5' ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-stone-200 hover:bg-stone-300 text-stone-800'}`}
+                >
+                    Khổ in: {printSize}
+                </button>
                 <button
                     onClick={handleDownload}
                     disabled={isDownloadingState}
@@ -995,8 +1004,8 @@ function InboundPrintContent() {
             <style jsx global>{`
                 @media print {
                     @page {
-                        size: A4;
-                        margin: 1mm 10mm 10mm 10mm;
+                        size: ${printSize === 'A5' ? 'A5 landscape' : 'A4'};
+                        margin: ${printSize === 'A5' ? '5mm' : '1mm 10mm 10mm 10mm'};
                     }
                     body {
                         -webkit-print-color-adjust: exact;
