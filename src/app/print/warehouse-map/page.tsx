@@ -136,16 +136,32 @@ export default function WarehouseMapPrintPage() {
                     if (data.length < limit) break
                     from += limit
                 }
+
+                // Deduplicate based on table
+                if (['positions', 'zones', 'zone_layouts', 'lots'].includes(table)) {
+                    const uniqueMap = new Map()
+                    for (const item of allRecs) {
+                        if (item.id) uniqueMap.set(item.id, item)
+                    }
+                    return Array.from(uniqueMap.values())
+                } else if (table === 'zone_positions') {
+                    const uniqueMap = new Map()
+                    for (const item of allRecs) {
+                        uniqueMap.set(`${item.zone_id}-${item.position_id}`, item)
+                    }
+                    return Array.from(uniqueMap.values())
+                }
+
                 return allRecs
             }
 
             // Fetch data similarly to Map Page
             const [posData, zoneData, zpData, layoutData, lotsData] = await Promise.all([
-                fetchAll('positions', q => q.eq('system_type', systemType).order('code')),
-                fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code')),
-                fetchAll('zone_positions', q => q.select('zone_id, position_id, positions!inner(system_type)').eq('positions.system_type', systemType)),
-                fetchAll('zone_layouts'),
-                fetchAll('lots', undefined, '*, suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name)), lot_tags(tag, lot_item_id)')
+                fetchAll('positions', q => q.eq('system_type', systemType).order('code').order('id')),
+                fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
+                fetchAll('zone_positions', q => q.select('zone_id, position_id, positions!inner(system_type)').eq('positions.system_type', systemType).order('zone_id', { ascending: true }).order('position_id', { ascending: true })),
+                fetchAll('zone_layouts', q => q.order('id')),
+                fetchAll('lots', q => q.order('id'), '*, suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name)), lot_tags(tag, lot_item_id)')
             ])
 
             // Process structure

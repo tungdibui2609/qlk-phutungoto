@@ -221,15 +221,22 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
             if (productId) {
                 await (supabase.from('product_units') as any).delete().eq('product_id', productId)
                 if (alternativeUnits.length > 0) {
-                    const ratesMap = new Map<string, number>()
-                    const validUnits = []
+                    const validUnits: {
+                        product_id: string;
+                        unit_id: string;
+                        conversion_rate: number;
+                        ref_unit_id: string | null;
+                        company_id: string | null;
+                    }[] = []
                     for (const u of alternativeUnits.filter(u => u.unit_id && u.factor > 0)) {
                         let absoluteRate = u.factor
                         if (u.ref_unit_id) {
-                            const parentRate = ratesMap.get(u.ref_unit_id)
-                            if (parentRate) absoluteRate = u.factor * parentRate
+                            // Find parent rate from earlier in the validUnits list since we removed the map
+                            const parent = validUnits.find(vu => vu.unit_id === u.ref_unit_id)
+                            if (parent) {
+                                absoluteRate = u.factor * parent.conversion_rate
+                            }
                         }
-                        ratesMap.set(u.unit_id, absoluteRate)
                         validUnits.push({
                             product_id: productId,
                             unit_id: u.unit_id,

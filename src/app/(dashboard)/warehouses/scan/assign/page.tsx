@@ -85,7 +85,13 @@ export default function FastScanPage() {
                 }
                 from += limit
             }
-            return allData
+
+            // Deduplicate
+            const uniqueMap = new Map()
+            for (const item of allData) {
+                if (item.id) uniqueMap.set(item.id, item)
+            }
+            return Array.from(uniqueMap.values())
         }
 
         const loadData = async () => {
@@ -96,9 +102,9 @@ export default function FastScanPage() {
             // Parallel fetch
             const [posData, zData, zpData] = await Promise.all([
                 // Positions
-                fetchAll('positions', (q) => q.select('id, code, lot_id').eq('system_type', currentSystem.code)),
+                fetchAll('positions', (q) => q.select('id, code, lot_id').eq('system_type', currentSystem.code).order('code').order('id')),
                 // Zones
-                fetchAll('zones', (q) => q.eq('system_type', currentSystem.code).order('level').order('code')),
+                fetchAll('zones', (q) => q.eq('system_type', currentSystem.code).order('level').order('code').order('id')),
                 // Zone Positions - Need custom query style for inner join? 
                 // Supabase JS client handles joined select pagination tricky? 
                 // Actually fetchAll works on the main table. For 'zone_positions', we want to filter by system_type via join.
@@ -113,6 +119,8 @@ export default function FastScanPage() {
                             .from('zone_positions')
                             .select('zone_id, position_id, positions!inner(system_type)')
                             .eq('positions.system_type', currentSystem.code)
+                            .order('zone_id', { ascending: true })
+                            .order('position_id', { ascending: true })
                             .range(from, from + limit - 1)
 
                         if (error) break

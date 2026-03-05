@@ -122,7 +122,7 @@ export function ProductUnits({
                                 {baseUnitId && <option value="">{formData.unit} (Cơ bản)</option>}
 
                                 {/* Other Available Units (Previous definitions) */}
-                                {getAvailableRefs(index).filter(r => r.id !== '').map(ref => (
+                                {getAvailableRefs(index).filter(r => r.id !== '' && r.id !== alt.unit_id).map(ref => (
                                     <option key={ref.id} value={ref.id}>{ref.name}</option>
                                 ))}
                             </select>
