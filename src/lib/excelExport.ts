@@ -1,0 +1,328 @@
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
+import { CompanyInfo } from '@/hooks/usePrintCompanyInfo';
+
+interface ExportData {
+    type: 'inbound' | 'outbound';
+    printType: 'internal' | 'official';
+    order: any;
+    items: any[];
+    companyInfo: CompanyInfo | null;
+    editableFields: {
+        customerSupplierName: string;
+        customerSupplierAddress: string;
+        reasonDescription: string;
+        warehouse: string;
+        location: string;
+        note: string;
+        day: string;
+        month: string;
+        year: string;
+        debitAccount?: string;
+        creditAccount?: string;
+        amountInWords?: string;
+        attachedDocs?: string;
+        vehicleNumber?: string;
+        containerNumber?: string;
+        sealNumber?: string;
+        signatures: {
+            title: string;
+            name: string;
+        }[];
+        signDate: {
+            day: string;
+            month: string;
+            year: string;
+        };
+    };
+    modules: {
+        hasFinancials: boolean;
+        hasConversion: boolean;
+        targetUnit?: string;
+    };
+}
+
+export async function exportToExcel(data: ExportData) {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(data.type === 'inbound' ? 'Phieu Nhap Kho' : 'Phieu Xuat Kho');
+
+    // Set columns width
+    worksheet.columns = [
+        { width: 5 },  // A: STT
+        { width: 35 }, // B: Tên hàng
+        { width: 15 }, // C: Quy cách
+        { width: 10 }, // D: ĐVT
+        { width: 12 }, // E: Số lượng (Yêu cầu/Theo CT)
+        { width: 12 }, // F: Số lượng (Thực nhập/Thực xuất)
+        { width: 12 }, // G: Quy đổi
+        { width: 15 }, // H: Đơn giá
+        { width: 18 }, // I: Thành tiền
+        { width: 15 }, // J: Ghi chú
+    ];
+
+    // 1. Header: Company Info
+    if (data.companyInfo) {
+        const nameCell = worksheet.getCell('A1');
+        nameCell.value = data.companyInfo.name?.toUpperCase();
+        nameCell.font = { bold: true, size: 10 };
+        worksheet.mergeCells('A1:D1');
+
+        const addrCell = worksheet.getCell('A2');
+        addrCell.value = `Địa chỉ: ${data.companyInfo.address}`;
+        addrCell.font = { size: 9 };
+        worksheet.mergeCells('A2:D2');
+
+        const contactCell = worksheet.getCell('A3');
+        contactCell.value = `${data.companyInfo.email ? `Email: ${data.companyInfo.email} | ` : ''}ĐT: ${data.companyInfo.phone || ''}`;
+        contactCell.font = { size: 9 };
+        worksheet.mergeCells('A3:D3');
+    }
+
+    // 2. Legal Header (Official only)
+    if (data.printType === 'official') {
+        const legalCell = worksheet.getCell('H1');
+        legalCell.value = `Mẫu số ${data.type === 'inbound' ? '01' : '02'} - VT`;
+        legalCell.font = { bold: true, size: 9 };
+        legalCell.alignment = { horizontal: 'center' };
+        worksheet.mergeCells('H1:J1');
+
+        const legalSub = worksheet.getCell('H2');
+        legalSub.value = '(Ban hành theo Thông tư số 200/2014/TT-BTC';
+        legalSub.font = { italic: true, size: 8 };
+        legalSub.alignment = { horizontal: 'center' };
+        worksheet.mergeCells('H2:J2');
+
+        const legalSub2 = worksheet.getCell('H3');
+        legalSub2.value = 'Ngày 22/12/2014 của Bộ Tài chính)';
+        legalSub2.font = { italic: true, size: 8 };
+        legalSub2.alignment = { horizontal: 'center' };
+        worksheet.mergeCells('H3:J3');
+    }
+
+    // 3. Title
+    const titleRow = 5;
+    const titleCell = worksheet.getCell(`A${titleRow}`);
+    titleCell.value = data.type === 'inbound' ? 'PHIẾU NHẬP KHO' : 'PHIẾU XUẤT KHO';
+    titleCell.font = { bold: true, size: 16 };
+    titleCell.alignment = { horizontal: 'center' };
+    worksheet.mergeCells(`A${titleRow}:J${titleRow}`);
+
+    const dateCell = worksheet.getCell(`A${titleRow + 1}`);
+    dateCell.value = `Ngày ${data.editableFields.day} tháng ${data.editableFields.month} năm ${data.editableFields.year}`;
+    dateCell.alignment = { horizontal: 'center' };
+    dateCell.font = { italic: true };
+    worksheet.mergeCells(`A${titleRow + 1}:J${titleRow + 1}`);
+
+    const codeCell = worksheet.getCell(`A${titleRow + 2}`);
+    codeCell.value = `Số: ${data.order.code}`;
+    codeCell.alignment = { horizontal: 'center' };
+    codeCell.font = { bold: true };
+    worksheet.mergeCells(`A${titleRow + 2}:J${titleRow + 2}`);
+
+    // Accounts (Financials)
+    if (data.modules.hasFinancials) {
+        worksheet.getCell('I5').value = `Nợ: ${data.editableFields.debitAccount || ''}`;
+        worksheet.getCell('I6').value = `Có: ${data.editableFields.creditAccount || ''}`;
+    }
+
+    // 4. Order Info
+    let currentRow = titleRow + 4;
+    const addInfoRow = (label: string, value: string) => {
+        const row = worksheet.getRow(currentRow);
+        row.getCell(1).value = label;
+        row.getCell(2).value = value;
+        row.getCell(2).font = { bold: true };
+        worksheet.mergeCells(`B${currentRow}:J${currentRow}`);
+        currentRow++;
+    };
+
+    addInfoRow(data.type === 'inbound' ? '- Họ tên người giao:' : '- Họ tên người nhận hàng:', data.editableFields.customerSupplierName);
+    addInfoRow('- Địa chỉ (bộ phận):', data.editableFields.customerSupplierAddress);
+    addInfoRow(data.type === 'inbound' ? '- Lý do nhập:' : '- Lý do xuất kho:', data.editableFields.reasonDescription);
+
+    // Warehouse & Location
+    const whRow = worksheet.getRow(currentRow);
+    whRow.getCell(1).value = data.type === 'inbound' ? '- Nhập tại kho:' : '- Xuất tại kho:';
+    whRow.getCell(2).value = data.editableFields.warehouse;
+    whRow.getCell(2).font = { bold: true };
+    whRow.getCell(4).value = 'Địa điểm:';
+    whRow.getCell(5).value = data.editableFields.location;
+    whRow.getCell(5).font = { bold: true };
+    currentRow++;
+
+    addInfoRow('- Ghi chú:', data.editableFields.note);
+
+    if (data.type === 'outbound') {
+        const transRow = worksheet.getRow(currentRow);
+        transRow.getCell(1).value = '- Biển số xe:';
+        transRow.getCell(2).value = data.editableFields.vehicleNumber || '';
+        transRow.getCell(4).value = 'Số cont:';
+        transRow.getCell(5).value = data.editableFields.containerNumber || '';
+        transRow.getCell(7).value = 'Số seal:';
+        transRow.getCell(8).value = data.editableFields.sealNumber || '';
+        currentRow++;
+    }
+
+    currentRow++; // Spacer
+
+    // 5. Items Table Header
+    const tableHeaderRow = currentRow;
+    const headers = [
+        'STT',
+        'Tên hàng hóa, quy cách, phẩm chất',
+        'Quy cách',
+        'ĐVT',
+        data.type === 'inbound' ? 'Theo chứng từ' : 'Yêu cầu',
+        data.type === 'inbound' ? 'Thực nhập' : 'Thực xuất'
+    ];
+
+    if (data.modules.hasConversion) headers.push(`Quy đổi (${data.modules.targetUnit || ''})`);
+    if (data.modules.hasFinancials && data.printType === 'official') {
+        headers.push('Đơn giá');
+        headers.push('Thành tiền');
+    }
+    if (data.printType === 'internal') headers.push('Ghi chú');
+
+    const headerRow = worksheet.getRow(tableHeaderRow);
+    headers.forEach((h, i) => {
+        const cell = headerRow.getCell(i + 1);
+        cell.value = h;
+        cell.font = { bold: true };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+        };
+        cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'F2F2F2' }
+        };
+    });
+    currentRow++;
+
+    // 6. Table Body
+    data.items.forEach((item, index) => {
+        const row = worksheet.getRow(currentRow);
+        const cells = [
+            index + 1,
+            item.product_name || '',
+            item.quyCach || '',
+            item.unit || '',
+            item.document_quantity || item.quantity,
+            item.quantity
+        ];
+
+        if (data.modules.hasConversion) cells.push(item.convertedQty || '-');
+        if (data.modules.hasFinancials && data.printType === 'official') {
+            cells.push(item.price || 0);
+            cells.push((item.price || 0) * item.quantity);
+        }
+        if (data.printType === 'internal') cells.push(item.note || '');
+
+        cells.forEach((val, i) => {
+            const cell = row.getCell(i + 1);
+            cell.value = val;
+            cell.border = {
+                top: { style: 'thin' },
+                left: { style: 'thin' },
+                bottom: { style: 'thin' },
+                right: { style: 'thin' }
+            };
+            if (typeof val === 'number') {
+                cell.numFmt = '#,##0.##';
+            }
+        });
+        currentRow++;
+    });
+
+    // Total Row
+    const totalRow = worksheet.getRow(currentRow);
+    totalRow.getCell(2).value = 'Cộng';
+    totalRow.getCell(2).font = { bold: true };
+    totalRow.getCell(2).alignment = { horizontal: 'center' };
+
+    // Sum quantity
+    const qtyCol = 6;
+    totalRow.getCell(qtyCol).value = data.items.reduce((sum, item) => sum + item.quantity, 0);
+    totalRow.getCell(qtyCol).font = { bold: true };
+    totalRow.getCell(qtyCol).numFmt = '#,##0.##';
+
+    if (data.modules.hasFinancials && data.printType === 'official') {
+        const totalAmount = data.items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0);
+        const amountCol = headers.indexOf('Thành tiền') + 1;
+        totalRow.getCell(amountCol).value = totalAmount;
+        totalRow.getCell(amountCol).font = { bold: true };
+        totalRow.getCell(amountCol).numFmt = '#,##0.##';
+    }
+
+    // Border for total row
+    for (let i = 1; i <= headers.length; i++) {
+        totalRow.getCell(i).border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+        };
+    }
+    currentRow += 2;
+
+    // 7. Footer strings
+    if (data.modules.hasFinancials && data.editableFields.amountInWords) {
+        const wordRow = worksheet.getRow(currentRow);
+        wordRow.getCell(1).value = `- Tổng số tiền (viết bằng chữ): ${data.editableFields.amountInWords}`;
+        wordRow.getCell(1).font = { italic: true };
+        worksheet.mergeCells(`A${currentRow}:J${currentRow}`);
+        currentRow++;
+    }
+    if (data.editableFields.attachedDocs) {
+        const docRow = worksheet.getRow(currentRow);
+        docRow.getCell(1).value = `- Số chứng từ gốc kèm theo: ${data.editableFields.attachedDocs}`;
+        worksheet.mergeCells(`A${currentRow}:J${currentRow}`);
+        currentRow++;
+    }
+
+    currentRow += 2;
+
+    // 8. Signatures
+    const signDateRow = worksheet.getRow(currentRow);
+    const signDateCol = data.editableFields.signatures.length > 3 ? 4 : 3;
+    signDateRow.getCell(signDateCol).value = `Ngày ${data.editableFields.signDate.day || '...'} tháng ${data.editableFields.signDate.month || '...'} năm ${data.editableFields.signDate.year || '...'}`;
+    signDateRow.getCell(signDateCol).font = { italic: true };
+    signDateRow.getCell(signDateCol).alignment = { horizontal: 'center' };
+    worksheet.mergeCells(currentRow, signDateCol, currentRow, signDateCol + 1);
+    currentRow++;
+
+    const signHeaderRow = worksheet.getRow(currentRow);
+    data.editableFields.signatures.forEach((sig, i) => {
+        const cell = signHeaderRow.getCell(i + 1);
+        cell.value = sig.title;
+        cell.font = { bold: true };
+        cell.alignment = { horizontal: 'center' };
+    });
+    currentRow++;
+
+    const signNoteRow = worksheet.getRow(currentRow);
+    data.editableFields.signatures.forEach((sig, i) => {
+        const cell = signNoteRow.getCell(i + 1);
+        cell.value = '(Ký, họ tên)';
+        cell.font = { italic: true, size: 8 };
+        cell.alignment = { horizontal: 'center' };
+    });
+
+    currentRow += 5; // Space for signature
+
+    const signNameRow = worksheet.getRow(currentRow);
+    data.editableFields.signatures.forEach((sig, i) => {
+        const cell = signNameRow.getCell(i + 1);
+        cell.value = sig.name;
+        cell.font = { bold: true };
+        cell.alignment = { horizontal: 'center' };
+    });
+
+    // Write and save
+    const buffer = await workbook.xlsx.writeBuffer();
+    saveAs(new Blob([buffer]), `${data.type === 'inbound' ? 'Phieu_Nhap' : 'Phieu_Xuat'}_${data.order.code}.xlsx`);
+}

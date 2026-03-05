@@ -3,13 +3,15 @@
 import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Printer, Loader2, Download, Hash } from 'lucide-react'
+import { Printer, Loader2, Download, Hash, FileSpreadsheet } from 'lucide-react'
+import { exportToExcel } from '@/lib/excelExport'
 import { toJpeg } from 'html-to-image'
 import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { PrintHeader, PrintLegalHeader } from '@/components/print/PrintHeader'
 import { EditableText, AutoResizeInput, numberToVietnameseText } from '@/components/print/PrintHelpers'
+import { PrintActionMenu } from '@/components/print/PrintActionMenu'
 
 interface OrderItem {
     id: string
@@ -346,6 +348,113 @@ function InboundPrintContent() {
 
     const handleDownload = () => handleCapture(false)
 
+    const handleExcelExport = async () => {
+        if (!order) return
+
+        // Map items with quy cach and converted qty
+        const exportItems = items.map(item => {
+            const productSource = item.products as any || {}
+            let quyCachStr = ""
+            const normalizeQuyCachLocal = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
+
+            if (productSource.product_units && productSource.product_units.length > 0) {
+                const itemUnitStr = normalizeQuyCachLocal(item.unit)
+                const uConfig = productSource.product_units.find((pu: any) => {
+                    if (!pu.unit_id) return false
+                    return normalizeQuyCachLocal(unitsMap[pu.unit_id]) === itemUnitStr
+                })
+                if (uConfig) quyCachStr = `${item.unit}/${uConfig.conversion_rate}${productSource.unit || ''}`
+                else {
+                    const firstConfig = productSource.product_units[0]
+                    const mappedUnitName = firstConfig.unit_id ? unitsMap[firstConfig.unit_id] : ''
+                    quyCachStr = `${mappedUnitName}/${firstConfig.conversion_rate}${productSource.unit || ''}`
+                }
+            } else if (item.unit && productSource.unit && normalizeQuyCachLocal(item.unit) !== normalizeQuyCachLocal(productSource.unit)) {
+                quyCachStr = `${item.unit}/1${productSource.unit}`
+            }
+
+            // Converted Qty calculation
+            let convertedQtyValue: any = '-'
+            if (hasModule('inbound_conversion') && targetUnit && item.products) {
+                const product = item.products as any
+                let baseQty = 0
+                const normalizeLocal = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
+                const itemUnit = normalizeLocal(item.unit)
+                const prodUnit = normalizeLocal(product.unit)
+                const tgtUnit = normalizeLocal(targetUnit)
+
+                if (itemUnit === prodUnit) baseQty = item.quantity
+                else {
+                    const uConfig = product.product_units?.find((pu: any) => {
+                        if (!pu.unit_id) return false
+                        const mapVal = normalizeLocal(unitsMap[pu.unit_id])
+                        return mapVal === itemUnit
+                    })
+                    if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
+                }
+
+                if (tgtUnit === prodUnit) {
+                    if (baseQty > 0) convertedQtyValue = baseQty
+                } else {
+                    const targetConfig = product.product_units?.find((pu: any) => {
+                        if (!pu.unit_id) return false
+                        const mapVal = normalizeLocal(unitsMap[pu.unit_id])
+                        return mapVal === tgtUnit
+                    })
+                    if (targetConfig) convertedQtyValue = baseQty / targetConfig.conversion_rate
+                }
+            }
+
+            return {
+                ...item,
+                product_name: displayInternalCode && productSource.internal_name ? productSource.internal_name : item.product_name || 'N/A',
+                quyCach: editQuyCach[item.id] !== undefined ? editQuyCach[item.id] : quyCachStr,
+                convertedQty: convertedQtyValue,
+                document_quantity: docQuantities[item.id] !== undefined ? parseFloat(docQuantities[item.id]) : (item.document_quantity || item.quantity)
+            }
+        })
+
+        const signatures = [
+            { title: signTitle1, name: signPerson1 },
+            { title: signTitle2, name: signPerson2 },
+            { title: signTitle3, name: signPerson3 }
+        ]
+
+        await exportToExcel({
+            type: 'inbound',
+            printType: isInternal ? 'internal' : 'official',
+            order,
+            items: exportItems,
+            companyInfo,
+            editableFields: {
+                customerSupplierName: editSupplierName,
+                customerSupplierAddress: editSupplierAddress,
+                reasonDescription: editDescription,
+                warehouse: editWarehouse,
+                location: editLocation,
+                note: editNote,
+                day: editDay,
+                month: editMonth,
+                year: editYear,
+                debitAccount,
+                creditAccount,
+                amountInWords,
+                attachedDocs,
+                signatures,
+                signDate: {
+                    day: signDay,
+                    month: signMonth,
+                    year: signYear
+                }
+            },
+            modules: {
+                hasFinancials: hasModule('inbound_financials'),
+                hasConversion: hasModule('inbound_conversion'),
+                targetUnit
+            }
+        })
+    }
+
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
@@ -382,46 +491,18 @@ function InboundPrintContent() {
                     }
                 `}} />
             )}
-            {/* Toolbar - Hidden when printing or snapshotting */}
-            <div className={`fixed top-4 right-4 print:hidden z-50 flex items-center gap-2 ${isSnapshotMode ? 'hidden' : ''}`}>
-                <button
-                    onClick={() => setPrintSize(prev => prev === 'A4' ? 'A5' : 'A4')}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-full shadow-lg transition-all hover:scale-105 font-medium ${printSize === 'A5' ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-stone-200 hover:bg-stone-300 text-stone-800'}`}
-                >
-                    Khổ in: {printSize}
-                </button>
-                <button
-                    onClick={handleDownload}
-                    disabled={isDownloadingState}
-                    className={`flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium rounded-full shadow-lg transition-all hover:scale-105 ${isDownloadingState ? 'opacity-70 cursor-wait' : ''}`}
-                >
-                    {isDownloadingState ? (
-                        <>
-                            <Loader2 size={20} className="animate-spin" />
-                            Đang tạo ảnh... ({downloadTimer}s)
-                        </>
-                    ) : (
-                        <>
-                            <Download size={20} />
-                            Tải ảnh phiếu
-                        </>
-                    )}
-                </button>
-                <button
-                    onClick={() => setDisplayInternalCode(!displayInternalCode)}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-full shadow-lg transition-all hover:scale-105 font-medium ${displayInternalCode ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-stone-200 hover:bg-stone-300 text-stone-800'}`}
-                >
-                    <Hash size={20} />
-                    {displayInternalCode ? 'Mã Nội Bộ' : 'Mã Gốc'}
-                </button>
-                <button
-                    onClick={handlePrint}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-full shadow-lg transition-all hover:scale-105"
-                >
-                    <Printer size={20} />
-                    In phiếu
-                </button>
-            </div>
+            {/* Consolidated Menu */}
+            <PrintActionMenu
+                printSize={printSize}
+                onPrintSizeChange={() => setPrintSize(prev => prev === 'A4' ? 'A5' : 'A4')}
+                isDownloading={isDownloadingState}
+                downloadTimer={downloadTimer}
+                onDownload={handleDownload}
+                displayInternalCode={displayInternalCode}
+                onDisplayInternalCodeChange={() => setDisplayInternalCode(!displayInternalCode)}
+                onPrint={handlePrint}
+                onExcelExport={handleExcelExport}
+            />
 
             {/* Header with Shared Component */}
             <PrintHeader
