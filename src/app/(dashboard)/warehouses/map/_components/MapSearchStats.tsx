@@ -234,8 +234,28 @@ export function MapSearchStats({
             }
         })
 
-        // Sort zones by count descending
-        const sortedZones = Object.values(zoneStats).sort((a, b) => b.count - a.count)
+        // Sort zones
+        const sortedZones = Object.values(zoneStats).sort((a, b) => {
+            if (isFifoEnabled) {
+                // If FIFO, sort by oldest date first
+                if (!a.oldestDate && !b.oldestDate) return 0;
+                if (!a.oldestDate) return 1;
+                if (!b.oldestDate) return -1;
+                return a.oldestDate.localeCompare(b.oldestDate);
+            }
+
+            // Otherwise, sort by display_order then code (to match infrastructure layout)
+            const zA = zones.find(z => z.id === a.id)
+            const zB = zones.find(z => z.id === b.id)
+            const orderA = (zA as any)?.display_order ?? 0
+            const orderB = (zB as any)?.display_order ?? 0
+            if (orderA !== orderB) return orderA - orderB
+
+            // If same order, try to extract numeric parts from the code for better sorting
+            const codeA = zA?.code || '';
+            const codeB = zB?.code || '';
+            return codeA.localeCompare(codeB, undefined, { numeric: true });
+        })
 
         return {
             totalPositions: filteredPositions.length,
@@ -244,7 +264,7 @@ export function MapSearchStats({
             oldestDate: globalOldest,
             newestDate: globalNewest
         }
-    }, [filteredPositions, zones, lotInfo, searchTerm])
+    }, [filteredPositions, zones, lotInfo, searchTerm, isFifoEnabled])
 
     // State for expanded zones
     const [expandedZoneId, setExpandedZoneId] = useState<string | null>(null)
