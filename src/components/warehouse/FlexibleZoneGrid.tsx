@@ -1,6 +1,6 @@
 'use client'
 import React, { useMemo } from 'react'
-import { ChevronDown, ChevronRight, Package, Settings, Eye, MoreHorizontal } from 'lucide-react'
+import { ChevronDown, ChevronRight, Package, Settings, Eye, MoreHorizontal, Printer } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { InView } from 'react-intersection-observer'
@@ -33,7 +33,9 @@ interface FlexibleZoneGridProps {
     lotInfo?: Record<string, { code: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>, inbound_date?: string, created_at?: string, packaging_date?: string, peeling_date?: string, tags?: string[] }>
     pageBreakIds?: Set<string>
     onTogglePageBreak?: (zoneId: string) => void
+    onPrintZone?: (zoneId: string) => void
     displayInternalCode?: boolean
+    isGrouped?: boolean
 }
 
 interface PositionCellProps {
@@ -278,7 +280,9 @@ export default function FlexibleZoneGrid({
     lotInfo = {},
     pageBreakIds = new Set(),
     onTogglePageBreak,
-    displayInternalCode = false
+    onPrintZone,
+    displayInternalCode = false,
+    isGrouped = false
 }: FlexibleZoneGridProps) {
     const [isMobile, setIsMobile] = React.useState(false)
 
@@ -473,6 +477,10 @@ export default function FlexibleZoneGrid({
             ? (hasPositions && !hasChildren ? 'grid' : 'header')
             : displayType
 
+        // Detect virtual grouping states for styling
+        const isBigBin = isGrouped && zone.id.startsWith('v-bin-')
+        const isLevelUnderBin = isGrouped && zone.id.startsWith('v-lvl-')
+
         // Render based on display type
         switch (effectiveDisplayType) {
             case 'grid':
@@ -489,7 +497,7 @@ export default function FlexibleZoneGrid({
                         )}
                         {/* QLK-style header with breadcrumb */}
                         <div
-                            className="flex items-center justify-between px-4 py-3 border-b"
+                            className={`flex items-center justify-between px-4 border-b ${isLevelUnderBin ? 'py-1.5' : 'py-3'}`}
                             style={headerColor
                                 ? { backgroundColor: headerColor, borderColor: headerColor }
                                 : { background: 'linear-gradient(to right, rgb(236 253 245), white)' }
@@ -497,15 +505,15 @@ export default function FlexibleZoneGrid({
                         >
                             <div className="flex items-center gap-3">
                                 <div
-                                    className="w-1 h-8 rounded-full shrink-0"
+                                    className={`rounded-full shrink-0 ${isLevelUnderBin ? 'w-0.5 h-4' : 'w-1 h-8'}`}
                                     style={{ backgroundColor: headerTextColor || (headerColor ? 'rgba(255,255,255,0.8)' : '#22c55e') }}
                                 />
                                 <div>
                                     <h2
-                                        className={`font-bold tracking-tight ${isMobile ? 'text-sm' : 'text-lg'}`}
+                                        className={`font-bold tracking-tight ${isMobile ? 'text-sm' : isBigBin ? 'text-2xl' : isLevelUnderBin ? 'text-base' : 'text-lg'}`}
                                         style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
                                     >
-                                        {isMobile ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • ')}
+                                        {isMobile || isGrouped ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • ')}
                                     </h2>
                                     {totalPositions > 0 && (
                                         <p
@@ -590,6 +598,19 @@ export default function FlexibleZoneGrid({
                                             <path d="M12 17v4" />
                                         </svg>
                                         {pageBreakIds.has(zone.id) ? 'Đã ngắt trang' : 'Ngắt trang'}
+                                    </button>
+                                )}
+                                {onPrintZone && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onPrintZone(zone.id)
+                                        }}
+                                        className="flex items-center gap-1 px-2 py-1 bg-white text-gray-600 border border-gray-200 hover:bg-gray-50 rounded text-xs font-medium transition-colors"
+                                        title="In sơ đồ zone này"
+                                    >
+                                        <Printer size={12} />
+                                        In sơ đồ
                                     </button>
                                 )}
                                 {isDesignMode && (
@@ -649,7 +670,7 @@ export default function FlexibleZoneGrid({
                         )}
                         {/* QLK-style header with breadcrumb - same as Grid mode */}
                         <div
-                            className="flex items-center justify-between px-4 py-3 border-b cursor-pointer"
+                            className={`flex items-center justify-between px-4 border-b cursor-pointer ${isLevelUnderBin ? 'py-1.5' : 'py-3'}`}
                             style={headerColor
                                 ? { backgroundColor: headerColor, borderColor: headerColor }
                                 : { background: 'linear-gradient(to right, rgb(236 253 245), white)' }
@@ -659,19 +680,19 @@ export default function FlexibleZoneGrid({
                             <div className="flex items-center gap-3">
                                 {collapsible && (
                                     isCollapsed
-                                        ? <ChevronRight size={16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
-                                        : <ChevronDown size={16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
+                                        ? <ChevronRight size={isLevelUnderBin ? 14 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
+                                        : <ChevronDown size={isLevelUnderBin ? 14 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
                                 )}
                                 <div
-                                    className="w-1 h-8 rounded-full shrink-0"
+                                    className={`rounded-full shrink-0 ${isLevelUnderBin ? 'w-0.5 h-4' : 'w-1 h-8'}`}
                                     style={{ backgroundColor: headerTextColor || (headerColor ? 'rgba(255,255,255,0.8)' : '#22c55e') }}
                                 />
                                 <div>
                                     <h2
-                                        className={`font-bold tracking-tight ${isMobile ? 'text-sm' : 'text-lg'}`}
+                                        className={`font-bold tracking-tight ${isMobile ? 'text-sm' : isBigBin ? 'text-2xl' : isLevelUnderBin ? 'text-base' : 'text-lg'}`}
                                         style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
                                     >
-                                        {isMobile ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • ')}
+                                        {isMobile || isGrouped ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • ')}
                                     </h2>
                                     {totalPositions > 0 && (
                                         <p
@@ -756,6 +777,19 @@ export default function FlexibleZoneGrid({
                                             <path d="M12 17v4" />
                                         </svg>
                                         {pageBreakIds.has(zone.id) ? 'Đã ngắt trang' : 'Ngắt trang'}
+                                    </button>
+                                )}
+                                {onPrintZone && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onPrintZone(zone.id)
+                                        }}
+                                        className="flex items-center gap-1 px-2 py-1 bg-white text-gray-600 border border-gray-200 hover:bg-gray-50 rounded text-xs font-medium transition-colors"
+                                        title="In sơ đồ zone này"
+                                    >
+                                        <Printer size={12} />
+                                        In sơ đồ
                                     </button>
                                 )}
                                 {isDesignMode && (

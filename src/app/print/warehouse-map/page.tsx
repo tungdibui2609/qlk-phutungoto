@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, Printer, Download } from 'lucide-react'
+import { Loader2, Printer, Download, Search, Check, ChevronDown, ChevronRight, MapPin, X, Settings as SettingsIcon, Layout, Monitor, Layers } from 'lucide-react'
 import { toJpeg } from 'html-to-image'
 import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
@@ -66,6 +66,13 @@ export default function WarehouseMapPrintPage() {
     const [signPerson1, setSignPerson1] = useState('')
     const [signPerson2, setSignPerson2] = useState('')
     const [signPerson3, setSignPerson3] = useState('')
+    const [showTable, setShowTable] = useState(false)
+    const [occupancyFilter, setOccupancyFilter] = useState<'all' | 'occupied' | 'empty'>('all')
+    const [isZonePickerOpen, setIsZonePickerOpen] = useState(false)
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+    const [zoneSearchTerm, setZoneSearchTerm] = useState('')
+    const [expandedZoneIds, setExpandedZoneIds] = useState<Set<string>>(new Set())
+    const [isGrouped, setIsGrouped] = useState(false)
 
     const [pageBreakZoneIds, setPageBreakZoneIds] = useState<Set<string>>(new Set())
 
@@ -94,6 +101,13 @@ export default function WarehouseMapPrintPage() {
             else next.add(zoneId)
             return next
         })
+    }
+
+    const handleZoneChange = (zoneId: string) => {
+        const params = new URLSearchParams(searchParams.toString())
+        if (zoneId) params.set('zoneId', zoneId)
+        else params.delete('zoneId')
+        router.push(`${pathname}?${params.toString()}`)
     }
 
     // Use shared hook for company info
@@ -249,44 +263,124 @@ export default function WarehouseMapPrintPage() {
         }
     }
 
-    // Filter positions based on selected zone and search term (same as main page)
+    // Recursive Grouping Logic
+    const groupedData = useMemo(() => {
+        if (!isGrouped) return { zones, positions }
+
+        const finalZones: Zone[] = []
+        const mappedPositions = positions.map(p => ({ ...p }))
+
+        const warehouses = zones.filter(z => !z.parent_id)
+        finalZones.push(...warehouses)
+
+        warehouses.forEach(wh => {
+            const racks = zones.filter(z => z.parent_id === wh.id)
+            finalZones.push(...racks)
+
+            racks.forEach(rack => {
+                const bins = zones.filter(z => z.parent_id === rack.id)
+                const binGroups: Record<string, Zone[]> = {}
+                bins.forEach(b => {
+                    const match = b.name.match(/\d+$/)
+                    const suffix = match ? match[0] : b.name
+                    binGroups[suffix] = binGroups[suffix] || []
+                    binGroups[suffix].push(b)
+                })
+
+                Object.entries(binGroups).forEach(([suffix, members]) => {
+                    if (members.length > 1) {
+                        const vBinId = `v-bin-${members[0].id}-${suffix}`
+                        finalZones.push({
+                            ...members[0],
+                            id: vBinId,
+                            name: `Ô ${suffix}`,
+                            code: `G${suffix}`
+                        })
+
+                        const levels = zones.filter(z => members.some(m => m.id === z.parent_id))
+                        const levelGroups: Record<string, Zone[]> = {}
+                        levels.forEach(l => {
+                            levelGroups[l.name] = levelGroups[l.name] || []
+                            levelGroups[l.name].push(l)
+                        })
+
+                        Object.entries(levelGroups).forEach(([lName, lMembers]) => {
+                            const vLevelId = `v-lvl-${vBinId}-${lName}`
+                            finalZones.push({
+                                ...lMembers[0],
+                                id: vLevelId,
+                                parent_id: vBinId,
+                                name: lName
+                            })
+
+                            lMembers.forEach(lm => {
+                                mappedPositions.forEach(p => {
+                                    if (p.zone_id === lm.id) p.zone_id = vLevelId
+                                })
+                            })
+                        })
+
+                        members.forEach(m => {
+                            mappedPositions.forEach(p => {
+                                if (p.zone_id === m.id) p.zone_id = vBinId
+                            })
+                        })
+                    } else if (members.length === 1) {
+                        const b = members[0]
+                        finalZones.push(b)
+                        const levels = zones.filter(z => z.parent_id === b.id)
+                        finalZones.push(...levels)
+                    }
+                })
+            })
+        })
+
+        return { zones: finalZones, positions: mappedPositions }
+    }, [isGrouped, zones, positions])
+
+    const displayZones = groupedData.zones
+    const displayPositions = groupedData.positions
+
     const filteredPositions = useMemo(() => {
-        let result = positions
+        let result = displayPositions
+
+        if (selectedZoneId) {
+            const getDescendantIds = (id: string): string[] => {
+                const children = displayZones.filter(z => z.parent_id === id)
+                return [id, ...children.flatMap(c => getDescendantIds(c.id))]
+            }
+            const descendantIds = getDescendantIds(selectedZoneId)
+            result = result.filter(p => p.zone_id && descendantIds.includes(p.zone_id))
+        }
+
+        if (occupancyFilter === 'occupied') {
+            result = result.filter(p => occupiedIds.has(p.id))
+        } else if (occupancyFilter === 'empty') {
+            result = result.filter(p => !occupiedIds.has(p.id))
+        }
+
         if (searchTerm) {
-            const term = searchTerm.toLowerCase()
+            const lowTerm = searchTerm.toLowerCase()
             result = result.filter(p => {
-                const posCode = p.code.toLowerCase()
-                if (posCode.includes(term)) return true
-                const lot = p.lot_id ? lotInfo[p.lot_id] : null
-                if (!lot) return false
-                // Check lot code
-                if (lot.code.toLowerCase().includes(term)) return true
-                // Check product name/sku
-                return lot.items.some((item: any) =>
-                    item.product_name?.toLowerCase().includes(term) ||
-                    item.sku?.toLowerCase().includes(term)
-                )
+                const pLot = lotInfo[p.id] || (p.lot_id ? lotInfo[p.lot_id] : {})
+                return p.code.toLowerCase().includes(lowTerm) ||
+                    (pLot.items || []).some((item: any) =>
+                        item.product_name?.toLowerCase().includes(lowTerm) ||
+                        item.sku?.toLowerCase().includes(lowTerm)
+                    ) ||
+                    pLot.code?.toLowerCase().includes(lowTerm)
             })
         }
-        if (selectedZoneId) {
-            const getDescendantIds = (parentId: string): string[] => {
-                const children = zones.filter(z => z.parent_id === parentId)
-                const descendantIds = children.map(c => c.id)
-                children.forEach(child => descendantIds.push(...getDescendantIds(child.id)))
-                return descendantIds
-            }
-            const validZoneIds = new Set([selectedZoneId, ...getDescendantIds(selectedZoneId)])
-            result = result.filter(p => p.zone_id && validZoneIds.has(p.zone_id))
-        }
+
         return result
-    }, [positions, selectedZoneId, searchTerm, zones, lotInfo])
+    }, [displayPositions, displayZones, selectedZoneId, occupancyFilter, searchTerm, occupiedIds, lotInfo])
 
     const filteredZones = useMemo(() => {
-        if (!selectedZoneId) return zones
+        if (!selectedZoneId) return displayZones
         const getDescendantIds = (parentId: string): Set<string> => {
             const ids = new Set<string>()
             const collect = (pId: string) => {
-                zones.filter(z => z.parent_id === pId).forEach(c => {
+                displayZones.filter(z => z.parent_id === pId).forEach(c => {
                     ids.add(c.id); collect(c.id)
                 })
             }
@@ -295,8 +389,8 @@ export default function WarehouseMapPrintPage() {
         }
         const allowedIds = getDescendantIds(selectedZoneId)
         allowedIds.add(selectedZoneId)
-        return zones.filter(z => allowedIds.has(z.id))
-    }, [zones, selectedZoneId])
+        return displayZones.filter(z => allowedIds.has(z.id))
+    }, [displayZones, selectedZoneId])
 
     const handlePrint = () => window.print()
 
@@ -308,36 +402,219 @@ export default function WarehouseMapPrintPage() {
     return (
         <>
             {/* Toolbar */}
-            <div className={`fixed top-4 right-4 z-50 print:hidden flex gap-2 items-center ${isSnapshotMode ? 'hidden' : ''}`}>
-                <div className="flex bg-white rounded-lg shadow-xl border border-gray-200 p-1">
+            <div className={`fixed top-4 right-4 z-50 print:hidden flex gap-3 items-center ${isSnapshotMode ? 'hidden' : ''}`}>
+                {/* Unified Settings Dropdown */}
+                <div className="relative">
                     <button
-                        onClick={() => handleOrientationChange('portrait')}
-                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${orientation === 'portrait' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}
+                        onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                        className={`flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow-xl border transition-all cursor-pointer hover:bg-gray-50 group ${isSettingsOpen ? 'border-indigo-500 ring-2 ring-indigo-50' : 'border-gray-200'}`}
                     >
-                        Dọc (A4)
+                        <SettingsIcon size={18} className={`text-gray-600 group-hover:text-indigo-600 transition-transform ${isSettingsOpen ? 'rotate-90' : ''}`} />
+                        <span className="text-sm font-semibold text-gray-700">Cấu hình in</span>
+                        <ChevronDown size={14} className="text-gray-400" />
+                    </button>
+
+                    {isSettingsOpen && (
+                        <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col p-4 gap-6 animate-in fade-in slide-in-from-top-2 duration-200">
+                            {/* 1. Zone Selection */}
+                            <div className="flex flex-col gap-2">
+                                <label className="text-[11px] font-bold uppercase text-gray-400 flex items-center gap-2">
+                                    <MapPin size={12} /> Khu vực in
+                                </label>
+                                <div className="relative">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setIsZonePickerOpen(!isZonePickerOpen);
+                                        }}
+                                        className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors text-sm text-gray-700 cursor-pointer"
+                                    >
+                                        <span className="truncate flex-1 text-left">
+                                            {displayZones.find(z => z.id === selectedZoneId)?.name || 'Tất cả Zone'}
+                                        </span>
+                                        <ChevronRight size={14} className={`text-gray-400 transition-transform ${isZonePickerOpen ? 'rotate-90' : ''}`} />
+                                    </button>
+
+                                    {isZonePickerOpen && (
+                                        <div className="absolute right-full mr-2 top-0 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[400px] z-[60]">
+                                            <div className="p-2 border-b bg-gray-50/50">
+                                                <div className="relative">
+                                                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={12} />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Tìm zone..."
+                                                        value={zoneSearchTerm}
+                                                        onChange={(e) => setZoneSearchTerm(e.target.value)}
+                                                        className="w-full pl-8 pr-2 py-1.5 bg-white border border-gray-200 rounded text-xs outline-none"
+                                                        autoFocus
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="overflow-y-auto p-1 custom-scrollbar">
+                                                {(() => {
+                                                    const baseZones = selectedZoneId && !zoneSearchTerm
+                                                        ? displayZones.filter(z => z.id === selectedZoneId)
+                                                        : displayZones.filter(z => !z.parent_id);
+
+                                                    const toggleExpand = (e: React.MouseEvent, id: string) => {
+                                                        e.stopPropagation()
+                                                        const newSet = new Set(expandedZoneIds)
+                                                        if (newSet.has(id)) newSet.delete(id)
+                                                        else newSet.add(id)
+                                                        setExpandedZoneIds(newSet)
+                                                    }
+
+                                                    const renderTree = (z: Zone, depth: number): React.ReactNode[] => {
+                                                        const subZones = displayZones.filter(c => c.parent_id === z.id)
+                                                        const hasChildren = subZones.length > 0
+                                                        const isExpanded = expandedZoneIds.has(z.id) || zoneSearchTerm
+                                                        const matchesSearch = !zoneSearchTerm || z.name.toLowerCase().includes(zoneSearchTerm.toLowerCase())
+                                                        const descendantMatch = (zone: Zone): boolean => {
+                                                            const children = displayZones.filter(c => c.parent_id === zone.id)
+                                                            return children.some(c => c.name.toLowerCase().includes(zoneSearchTerm.toLowerCase()) || descendantMatch(c))
+                                                        }
+                                                        if (!matchesSearch && !descendantMatch(z)) return []
+
+                                                        return [
+                                                            <div key={z.id}>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        handleZoneChange(z.id)
+                                                                        setIsZonePickerOpen(false)
+                                                                        setZoneSearchTerm('')
+                                                                    }}
+                                                                    className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded text-xs hover:bg-blue-50 group ${selectedZoneId === z.id ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-700'}`}
+                                                                >
+                                                                    <div className="shrink-0" style={{ width: depth * 12 }} />
+                                                                    {hasChildren ? (
+                                                                        <div onClick={(e) => toggleExpand(e, z.id)} className="p-0.5 hover:bg-gray-200 rounded text-gray-400">
+                                                                            {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                                                        </div>
+                                                                    ) : <div className="w-[18px]" />}
+                                                                    <span className="truncate flex-1 text-left">{z.name}</span>
+                                                                    {selectedZoneId === z.id && <Check size={12} />}
+                                                                </button>
+                                                                {isExpanded && subZones.flatMap(c => renderTree(c, depth + 1))}
+                                                            </div>
+                                                        ]
+                                                    }
+                                                    return baseZones.flatMap(root => renderTree(root, 0))
+                                                })()}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* 2. Occupancy Filter */}
+                            <div className="flex flex-col gap-2">
+                                <label className="text-[11px] font-bold uppercase text-gray-400 flex items-center gap-2">
+                                    <Layers size={12} /> Lọc trạng thái
+                                </label>
+                                <div className="grid grid-cols-3 gap-1 bg-gray-100 p-1 rounded-lg">
+                                    {(['all', 'occupied', 'empty'] as const).map(f => (
+                                        <button
+                                            key={f}
+                                            onClick={() => setOccupancyFilter(f)}
+                                            className={`py-1.5 text-[11px] font-medium rounded-md transition-all cursor-pointer ${occupancyFilter === f ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                        >
+                                            {f === 'all' ? 'Tất cả' : f === 'occupied' ? 'Có hàng' : 'Trống'}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* 3. Orientation & View Type */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-[11px] font-bold uppercase text-gray-400 flex items-center gap-2">
+                                        <Monitor size={12} /> Khổ giấy
+                                    </label>
+                                    <div className="flex bg-gray-100 p-1 rounded-lg">
+                                        <button
+                                            onClick={() => handleOrientationChange('portrait')}
+                                            className={`flex-1 py-1.5 text-[11px] font-medium rounded-md cursor-pointer ${orientation === 'portrait' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500'}`}
+                                        >
+                                            Dọc
+                                        </button>
+                                        <button
+                                            onClick={() => handleOrientationChange('landscape')}
+                                            className={`flex-1 py-1.5 text-[11px] font-medium rounded-md cursor-pointer ${orientation === 'landscape' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500'}`}
+                                        >
+                                            Ngang
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-[11px] font-bold uppercase text-gray-400 flex items-center gap-2">
+                                        <Layout size={12} /> Hiển thị
+                                    </label>
+                                    <div className="flex bg-gray-100 p-1 rounded-lg">
+                                        <button
+                                            onClick={() => setShowTable(false)}
+                                            className={`flex-1 py-1.5 text-[11px] font-medium rounded-md cursor-pointer ${!showTable ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500'}`}
+                                        >
+                                            Sơ đồ
+                                        </button>
+                                        <button
+                                            onClick={() => setShowTable(true)}
+                                            className={`flex-1 py-1.5 text-[11px] font-medium rounded-md cursor-pointer ${showTable ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500'}`}
+                                        >
+                                            Bảng
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 4. Grouping Toggle */}
+                            <div className="flex flex-col gap-2">
+                                <label className="text-[11px] font-bold uppercase text-gray-400 flex items-center gap-2">
+                                    <Layers size={12} /> Chế độ gom ô
+                                </label>
+                                <button
+                                    onClick={() => setIsGrouped(!isGrouped)}
+                                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-all cursor-pointer ${isGrouped ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-gray-50 border-gray-200 text-gray-600'}`}
+                                >
+                                    <span className="text-xs font-semibold">{isGrouped ? 'Đang bật Gom ô' : 'Đang tắt Gom ô'}</span>
+                                    <div className={`w-8 h-4 rounded-full relative transition-colors ${isGrouped ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+                                        <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${isGrouped ? 'left-4.5' : 'left-0.5'}`} />
+                                    </div>
+                                </button>
+                                <p className="text-[10px] text-gray-400 italic">Gộp các ô có chung hậu tố số (A01, B01 {"->"} Ô 01) để thu gọn sơ đồ.</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex bg-white rounded-lg shadow-xl border border-gray-200 p-1 gap-1">
+                    <button
+                        onClick={handleDownload}
+                        className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition-colors cursor-pointer shadow-sm"
+                        disabled={isCapturing}
+                    >
+                        {isCapturing ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
+                        Tải ảnh phiếu
                     </button>
                     <button
-                        onClick={() => handleOrientationChange('landscape')}
-                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${orientation === 'landscape' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}
+                        onClick={handlePrint}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors cursor-pointer shadow-sm"
                     >
-                        Ngang (A4)
+                        <Printer size={16} />
+                        In sơ đồ
                     </button>
                 </div>
-                <button
-                    onClick={handleDownload}
-                    disabled={isDownloadingState}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-lg cursor-pointer transition-colors"
-                >
-                    {isDownloadingState ? <Loader2 size={20} className="animate-spin" /> : <Download size={20} />}
-                    Tải ảnh phiếu
-                </button>
-                <button
-                    onClick={handlePrint}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-lg cursor-pointer transition-colors"
-                >
-                    <Printer size={20} /> In sơ đồ
-                </button>
             </div>
+
+            {/* Backdrop for Settings */}
+            {isSettingsOpen && (
+                <div
+                    className="fixed inset-0 z-40 cursor-default"
+                    onClick={() => {
+                        setIsSettingsOpen(false);
+                        setIsZonePickerOpen(false);
+                    }}
+                />
+            )}
 
             <div id="print-ready" data-ready="true" className={`bg-white min-h-screen ${orientation === 'landscape' ? 'w-[297mm]' : 'w-[210mm]'} mx-auto text-black p-8 print:p-4 text-[13px] ${isCapturing ? 'shadow-none !w-[1150px]' : ''} ${isCapturing && orientation === 'landscape' ? '!w-[1400px]' : ''}`}>
                 {isCapturing && (
@@ -369,29 +646,105 @@ export default function WarehouseMapPrintPage() {
                     />
                     <p className="italic mt-1">Ngày in: {new Date().toLocaleDateString('vi-VN')}</p>
                     {selectedZoneId && (
-                        <p className="font-medium mt-1">Vùng kho: {zones.find(z => z.id === selectedZoneId)?.name}</p>
+                        <p className="font-medium mt-1">Vùng kho: {displayZones.find(z => z.id === selectedZoneId)?.name}</p>
                     )}
                     {searchTerm && (
                         <p className="text-sm mt-1">Lọc theo: "{searchTerm}"</p>
                     )}
                 </div>
 
-                {/* The Map Grid */}
+                {/* The Map Grid OR Data Table View */}
                 <div className="mb-8 print:mb-4">
-                    <FlexibleZoneGrid
-                        zones={filteredZones}
-                        positions={filteredPositions}
-                        layouts={layouts}
-                        occupiedIds={occupiedIds}
-                        lotInfo={lotInfo}
-                        collapsedZones={new Set()} // Expand all for printing
-                        selectedPositionIds={new Set()}
-                        onToggleCollapse={() => { }}
-                        onPositionSelect={() => { }}
-                        pageBreakIds={pageBreakZoneIds}
-                        onTogglePageBreak={handleTogglePageBreak}
-                        displayInternalCode={displayInternalCode}
-                    />
+                    {!showTable ? (
+                        <div className="mt-8">
+                            <FlexibleZoneGrid
+                                zones={displayZones}
+                                positions={displayPositions}
+                                layouts={layouts}
+                                occupiedIds={occupiedIds}
+                                lotInfo={lotInfo}
+                                collapsedZones={new Set()} // Expand all for printing
+                                selectedPositionIds={new Set()}
+                                onToggleCollapse={() => { }}
+                                onPositionSelect={() => { }}
+                                pageBreakIds={pageBreakZoneIds}
+                                onTogglePageBreak={isGrouped ? undefined : handleTogglePageBreak}
+                                displayInternalCode={displayInternalCode}
+                                isDesignMode={false}
+                                onPrintZone={isGrouped ? undefined : () => { }}
+                                isGrouped={isGrouped}
+                            />
+                        </div>
+                    ) : (
+                        <div className="overflow-hidden border border-gray-300 rounded-lg">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-gray-50 text-[11px] font-bold uppercase tracking-wider border-b border-gray-300">
+                                        <th className="px-3 py-2 border-r border-gray-300 w-[12%]">Vị trí</th>
+                                        <th className="px-3 py-2 border-r border-gray-300 w-[15%]">Số lô (Lot)</th>
+                                        <th className="px-3 py-2 border-r border-gray-300">Sản phẩm</th>
+                                        <th className="px-3 py-2 border-r border-gray-300 w-[15%]">Mã sản phẩm</th>
+                                        <th className="px-3 py-2 border-r border-gray-300 w-[8%] text-center">ĐVT</th>
+                                        <th className="px-3 py-2 border-r border-gray-300 w-[8%] text-right">S.Lượng</th>
+                                        <th className="px-3 py-2">Mã phụ / Tags</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                    {filteredPositions
+                                        .map((p, pIdx) => {
+                                            const lot = p.lot_id ? lotInfo[p.lot_id] : null
+
+                                            // Case 1: Occupied position
+                                            if (lot) {
+                                                return lot.items.map((item: any, iIdx: number) => (
+                                                    <tr key={`${p.id}-${iIdx}`} className="text-[12px] hover:bg-gray-50/50 transition-colors break-inside-avoid">
+                                                        {iIdx === 0 ? (
+                                                            <>
+                                                                <td className="px-3 py-2 border-r border-gray-300 font-bold bg-gray-50/30" rowSpan={lot.items.length}>
+                                                                    {p.code}
+                                                                </td>
+                                                                <td className="px-3 py-2 border-r border-gray-300 font-bold text-indigo-700 bg-indigo-50/10" rowSpan={lot.items.length}>
+                                                                    {lot.code}
+                                                                </td>
+                                                            </>
+                                                        ) : null}
+                                                        <td className="px-3 py-2 border-r border-gray-300 font-medium">
+                                                            {displayInternalCode && item.internal_name ? item.internal_name : item.product_name}
+                                                        </td>
+                                                        <td className="px-3 py-2 border-r border-gray-300 font-mono text-[11px]">
+                                                            {displayInternalCode && item.internal_code ? item.internal_code : item.sku}
+                                                        </td>
+                                                        <td className="px-3 py-2 border-r border-gray-300 text-center">
+                                                            {item.unit}
+                                                        </td>
+                                                        <td className="px-3 py-2 border-r border-gray-300 text-right font-bold text-blue-700">
+                                                            {item.quantity?.toLocaleString('vi-VN')}
+                                                        </td>
+                                                        <td className="px-3 py-2 italic text-gray-600 text-[11px]">
+                                                            {[item.tags?.join(', '), lot.batch_code ? `Lô: ${lot.batch_code}` : null]
+                                                                .filter(Boolean)
+                                                                .join(' | ') || '-'}
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            }
+
+                                            // Case 2: Empty position
+                                            return (
+                                                <tr key={p.id} className="text-[12px] hover:bg-gray-50/50 transition-colors break-inside-avoid italic text-gray-400 bg-gray-50/5">
+                                                    <td className="px-3 py-2 border-r border-gray-300 font-bold not-italic text-gray-600">
+                                                        {p.code}
+                                                    </td>
+                                                    <td className="px-3 py-2 border-r border-gray-300" colSpan={6}>
+                                                        (Vị trí trống)
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
 
                 {/* Footer Signatures */}

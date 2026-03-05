@@ -679,6 +679,14 @@ function WarehouseMapContent() {
                         isAssignmentMode={!!assignLot}
                         highlightingPositionIds={recentlyUpdatedPositionIds}
                         displayInternalCode={displayInternalCode}
+                        onPrintZone={(zoneId) => {
+                            const params = new URLSearchParams()
+                            params.set('systemType', systemType)
+                            params.set('zoneId', zoneId)
+                            if (searchTerm) params.set('search', searchTerm)
+                            if (displayInternalCode) params.set('internalCode', 'true')
+                            window.open(`/print/warehouse-map?${params.toString()}`, '_blank')
+                        }}
                     />
                 </div>
             </div>
