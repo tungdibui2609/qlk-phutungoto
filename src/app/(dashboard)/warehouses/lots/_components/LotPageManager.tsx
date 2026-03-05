@@ -309,7 +309,7 @@ export function LotPageManager() {
 
             {taggingLot && (
                 <LotTagModal
-                    lotId={taggingLot.id}
+                    lotIds={[taggingLot.id]}
                     lotCodeDisplay={taggingLot.code}
                     onClose={() => setTaggingLot(null)}
                     onSuccess={() => {

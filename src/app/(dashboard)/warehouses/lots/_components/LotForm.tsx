@@ -11,6 +11,7 @@ import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '../_hooks/use
 import { useUser } from '@/contexts/UserContext'
 
 interface LotItemInput {
+    id?: string
     productId: string
     quantity: number | string
     unit: string
@@ -83,6 +84,7 @@ export function LotForm({
                 // Populate items
                 if (editingLot.lot_items && editingLot.lot_items.length > 0) {
                     setLotItems(editingLot.lot_items.map(item => ({
+                        id: item.id,
                         productId: item.product_id,
                         quantity: item.quantity,
                         unit: (item as any).unit || ''
@@ -512,22 +514,12 @@ export function LotForm({
         let error
 
         if (lotId) {
-            // Update
+            // Update Lot metadata
             const { error: updateError } = await (supabase
                 .from('lots') as any)
                 .update(lotData)
                 .eq('id', lotId)
-
             error = updateError
-
-            if (!error) {
-                // Reset items
-                const { error: deleteError } = await supabase
-                    .from('lot_items')
-                    .delete()
-                    .eq('lot_id', lotId)
-                if (deleteError) console.error(deleteError)
-            }
         } else {
             // Create
             const { data: newLot, error: createError } = await (supabase
@@ -546,19 +538,57 @@ export function LotForm({
         }
 
         if (lotId && validItems.length > 0) {
-            const itemsToInsert = validItems.map(item => ({
+            // SYNC items instead of deleting all
+            const existingItems = editingLot?.lot_items || []
+            const existingIds = existingItems.map(i => i.id)
+
+            const itemsToInsert = validItems.filter(i => !i.id).map(item => ({
                 lot_id: lotId,
                 product_id: item.productId,
-                quantity: Number(item.quantity.toFixed(6)),
+                quantity: Number(Number(item.quantity).toFixed(6)),
                 unit: item.unit
             }))
 
-            const { error: itemsError } = await supabase
-                .from('lot_items')
-                .insert(itemsToInsert as any)
+            const itemsToUpdate = validItems.filter(i => i.id).map(item => ({
+                id: item.id!,
+                lot_id: lotId,
+                product_id: item.productId,
+                quantity: Number(Number(item.quantity).toFixed(6)),
+                unit: item.unit
+            }))
 
-            if (itemsError) {
-                alert('Lỗi lưu danh sách sản phẩm: ' + itemsError.message)
+            const newIds = validItems.filter(i => i.id).map(i => i.id!)
+            const idsToDelete = existingIds.filter(id => !newIds.includes(id))
+
+            // Sequence: Update, Insert, Delete
+            const promises = []
+
+            // Updates
+            for (const item of itemsToUpdate) {
+                promises.push(
+                    supabase.from('lot_items').update({
+                        quantity: item.quantity,
+                        unit: item.unit,
+                        product_id: item.product_id
+                    }).eq('id', item.id)
+                )
+            }
+
+            // Inserts
+            if (itemsToInsert.length > 0) {
+                promises.push(supabase.from('lot_items').insert(itemsToInsert as any))
+            }
+
+            // Deletions
+            if (idsToDelete.length > 0) {
+                promises.push(supabase.from('lot_items').delete().in('id', idsToDelete))
+            }
+
+            const results = await Promise.all(promises)
+            const hasError = results.some(r => r.error)
+            if (hasError) {
+                console.error('Items Update Error:', results.find(r => r.error))
+                alert('Có lỗi xảy ra khi cập nhật danh sách sản phẩm. Tuy nhiên thông tin Lô hàng có thể đã được lưu.')
             }
         }
 

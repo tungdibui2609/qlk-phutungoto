@@ -353,96 +353,122 @@ export function MapSearchStats({
                 </div>
             )}
 
-            <div className="space-y-2">
+            <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Phân bố theo khu vực</div>
-                <div className="grid grid-cols-1 gap-2 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
-                    {stats.zoneBreakdown.map((zone, idx) => {
-                        const isExpanded = expandedZoneId === zone.id
-                        // Filter positions for this zone
-                        const zonePositions = filteredPositions.filter(p => p.zone_id === zone.id)
-                        const allSelected = zonePositions.length > 0 && zonePositions.every(p => selectedPositionIds.has(p.id))
+                {onBulkSelect && filteredPositions.length > 0 && (
+                    <button
+                        onClick={() => {
+                            const allFilteredIds = filteredPositions.map(p => p.id)
+                            const isAllSelected = allFilteredIds.every(id => selectedPositionIds.has(id))
+                            onBulkSelect(allFilteredIds, !isAllSelected)
+                        }}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${filteredPositions.every(p => selectedPositionIds.has(p.id))
+                            ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800'
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-blue-300 hover:text-blue-600 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800 dark:hover:border-blue-700'
+                            }`}
+                    >
+                        {filteredPositions.every(p => selectedPositionIds.has(p.id)) ? (
+                            <>
+                                <CheckSquare size={14} />
+                                Bỏ chọn tất cả ({filteredPositions.length})
+                            </>
+                        ) : (
+                            <>
+                                <Square size={14} />
+                                Chọn tất cả kết quả ({filteredPositions.length})
+                            </>
+                        )}
+                    </button>
+                )}
+            </div>
 
-                        return (
-                            <div key={idx} className="flex flex-col bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 rounded overflow-hidden">
-                                {/* Zone Header Row */}
-                                <div
-                                    className="flex items-center justify-between p-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none"
-                                    onClick={() => toggleZone(zone.id)}
-                                >
-                                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                                        {onBulkSelect && (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    onBulkSelect(
-                                                        zonePositions.map(p => p.id),
-                                                        !allSelected
-                                                    )
-                                                }}
-                                                className={`p-0.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors ${allSelected ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
-                                                title={allSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
-                                            >
-                                                {allSelected ? <CheckSquare size={16} /> : <Square size={16} />}
-                                            </button>
-                                        )}
-                                        <ChevronDown size={14} className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                                        <span className="font-medium text-slate-700 dark:text-slate-300 truncate text-sm" title={zone.name}>
-                                            {zone.name}
+            <div className="grid grid-cols-1 gap-2 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
+                {stats.zoneBreakdown.map((zone, idx) => {
+                    const isExpanded = expandedZoneId === zone.id
+                    // Filter positions for this zone
+                    const zonePositions = filteredPositions.filter(p => p.zone_id === zone.id)
+                    const allSelected = zonePositions.length > 0 && zonePositions.every(p => selectedPositionIds.has(p.id))
+
+                    return (
+                        <div key={idx} className="flex flex-col bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 rounded overflow-hidden">
+                            {/* Zone Header Row */}
+                            <div
+                                className="flex items-center justify-between p-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none"
+                                onClick={() => toggleZone(zone.id)}
+                            >
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    {onBulkSelect && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                onBulkSelect(
+                                                    zonePositions.map(p => p.id),
+                                                    !allSelected
+                                                )
+                                            }}
+                                            className={`p-0.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors ${allSelected ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+                                            title={allSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+                                        >
+                                            {allSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                                        </button>
+                                    )}
+                                    <ChevronDown size={14} className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                    <span className="font-medium text-slate-700 dark:text-slate-300 truncate text-sm" title={zone.name}>
+                                        {zone.name}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-3 text-xs shrink-0 ml-2">
+                                    <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded">
+                                        {zone.count} vt
+                                    </span>
+                                    {zone.quantity > 0 && (
+                                        <span className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded">
+                                            {zone.quantity.toLocaleString()}
                                         </span>
+                                    )}
+                                </div>
+                            </div>
+                            {/* Per-zone FIFO date info */}
+                            {isFifoEnabled && (zone.oldestDate || zone.newestDate) && (
+                                <div className="px-3 pb-1.5 -mt-0.5">
+                                    <div className="text-[11px] font-bold text-orange-600 dark:text-orange-400">
+                                        Ngày cũ nhất: {zone.oldestDate ? new Date(zone.oldestDate).toLocaleDateString('vi-VN') : '--'}
                                     </div>
-                                    <div className="flex items-center gap-3 text-xs shrink-0 ml-2">
-                                        <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded">
-                                            {zone.count} vt
-                                        </span>
-                                        {zone.quantity > 0 && (
-                                            <span className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded">
-                                                {zone.quantity.toLocaleString()}
-                                            </span>
-                                        )}
+                                    <div className="text-[11px] font-bold text-orange-600 dark:text-orange-400">
+                                        Ngày mới nhất: {zone.newestDate ? new Date(zone.newestDate).toLocaleDateString('vi-VN') : '--'}
                                     </div>
                                 </div>
-                                {/* Per-zone FIFO date info */}
-                                {isFifoEnabled && (zone.oldestDate || zone.newestDate) && (
-                                    <div className="px-3 pb-1.5 -mt-0.5">
-                                        <div className="text-[11px] font-bold text-orange-600 dark:text-orange-400">
-                                            Ngày cũ nhất: {zone.oldestDate ? new Date(zone.oldestDate).toLocaleDateString('vi-VN') : '--'}
-                                        </div>
-                                        <div className="text-[11px] font-bold text-orange-600 dark:text-orange-400">
-                                            Ngày mới nhất: {zone.newestDate ? new Date(zone.newestDate).toLocaleDateString('vi-VN') : '--'}
-                                        </div>
-                                    </div>
-                                )}
+                            )}
 
-                                {/* Expanded Position Grid */}
-                                {isExpanded && (
-                                    <div className="p-2 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                                        {isFifoEnabled && (
-                                            <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mb-1.5 flex items-center gap-1">
-                                                <ArrowUpDown size={10} />
-                                                Sắp xếp theo ngày nhập kho (cũ nhất trước)
-                                            </div>
-                                        )}
-                                        <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2">
-                                            {[...zonePositions].sort((a, b) => {
-                                                if (isFifoEnabled) {
-                                                    const lotA = a.lot_id ? lotInfo[a.lot_id] : null
-                                                    const lotB = b.lot_id ? lotInfo[b.lot_id] : null
-                                                    if (!lotA && !lotB) return 0
-                                                    if (!lotA) return 1
-                                                    if (!lotB) return -1
-                                                    const dateA = lotA.inbound_date || lotA.created_at || ''
-                                                    const dateB = lotB.inbound_date || lotB.created_at || ''
-                                                    return dateA.localeCompare(dateB)
-                                                }
-                                                return (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
-                                            }).map(pos => renderPositionCard(pos))}
+                            {/* Expanded Position Grid */}
+                            {isExpanded && (
+                                <div className="p-2 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50">
+                                    {isFifoEnabled && (
+                                        <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mb-1.5 flex items-center gap-1">
+                                            <ArrowUpDown size={10} />
+                                            Sắp xếp theo ngày nhập kho (cũ nhất trước)
                                         </div>
+                                    )}
+                                    <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2">
+                                        {[...zonePositions].sort((a, b) => {
+                                            if (isFifoEnabled) {
+                                                const lotA = a.lot_id ? lotInfo[a.lot_id] : null
+                                                const lotB = b.lot_id ? lotInfo[b.lot_id] : null
+                                                if (!lotA && !lotB) return 0
+                                                if (!lotA) return 1
+                                                if (!lotB) return -1
+                                                const dateA = lotA.inbound_date || lotA.created_at || ''
+                                                const dateB = lotB.inbound_date || lotB.created_at || ''
+                                                return dateA.localeCompare(dateB)
+                                            }
+                                            return (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
+                                        }).map(pos => renderPositionCard(pos))}
                                     </div>
-                                )}
-                            </div>
-                        )
-                    })}
-                </div>
+                                </div>
+                            )}
+                        </div>
+                    )
+                })}
             </div>
         </div>
     )
