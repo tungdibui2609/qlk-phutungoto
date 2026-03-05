@@ -495,8 +495,8 @@ function InboundPrintContent() {
                     </span>
                 </div>
 
-                <div className="text-sm font-medium mt-1">
-                    Số: <span className="font-bold text-orange-600">{order.code}</span>
+                <div className="text-sm font-medium mt-1 text-black">
+                    Số: <span className="font-bold text-black">{order.code}</span>
                 </div>
             </div>
 
@@ -776,7 +776,7 @@ function InboundPrintContent() {
                                         {formatQuantityFull(item.quantity)}
                                     </td>
                                     {hasModule('inbound_conversion') && targetUnit && (
-                                        <td className="border border-gray-400 px-2 py-1.5 text-center text-orange-600">
+                                        <td className="border border-gray-400 px-2 py-1.5 text-center text-stone-800">
                                             {typeof convertedQty === 'number' ? formatQuantityFull(convertedQty) : convertedQty}
                                         </td>
                                     )}
@@ -867,7 +867,7 @@ function InboundPrintContent() {
                 </table>
             </div>
 
-            <div className="mt-4 text-sm space-y-1">
+            <div className={`mt-4 text-sm space-y-1 ${printSize === 'A5' ? 'mb-2' : ''}`}>
                 {!isInternal && hasModule('inbound_financials') && (
                     <div className="flex items-center">
                         <span className="shrink-0">- Tổng số tiền (viết bằng chữ):</span>
@@ -892,7 +892,7 @@ function InboundPrintContent() {
                 )}
             </div>
 
-            <div className="-mt-1 grid grid-cols-3 gap-4 text-center text-sm">
+            <div className={`-mt-1 grid grid-cols-3 ${printSize === 'A5' ? 'gap-1' : 'gap-4'} text-center text-sm ${printSize === 'A5' ? 'page-break-inside-avoid' : ''}`}>
                 <div>
                     <div className="text-sm italic text-center mb-1 invisible">
                         Ngày ... tháng ... năm ...
@@ -987,7 +987,7 @@ function InboundPrintContent() {
                     </div>
                     <div className="text-xs text-gray-500 italic">(Hoặc bộ phận có nhu cầu nhập)</div>
                     <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
-                    <div className="h-10"></div>
+                    <div className="h-12"></div>
                     <div className="mt-1">
                         <input
                             type="text"
@@ -1011,9 +1011,23 @@ function InboundPrintContent() {
                         -webkit-print-color-adjust: exact;
                         print-color-adjust: exact;
                     }
+                    #print-ready {
+                        ${printSize === 'A5' ? `
+                            zoom: 0.65 !important;
+                            width: 100% !important;
+                            max-width: none !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                        ` : ''}
+                    }
                     .no-print {
                         display: none !important;
                     }
+                }
+
+                /* Force all text in the print area to be black, both on screen and when printed */
+                #print-ready * {
+                    color: black !important;
                 }
             `}</style>
 

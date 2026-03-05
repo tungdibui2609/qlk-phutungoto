@@ -54,15 +54,15 @@ export function PrintHeader({
 
                 {/* Company Info */}
                 <div className="flex flex-col justify-center gap-0.5">
-                    <div className={`text-emerald-700 font-bold uppercase leading-tight ${isLarge ? 'text-sm' : 'text-[10px]'} mb-0 whitespace-nowrap`}>
+                    <div className={`text-black font-bold uppercase leading-tight ${isLarge ? 'text-sm' : 'text-[10px]'} mb-0 whitespace-nowrap`}>
                         {companyInfo?.name || 'CÔNG TY'}
                     </div>
                     {companyInfo?.address && (
-                        <div className={`font-bold text-gray-700 leading-tight ${isLarge ? 'text-sm' : 'text-[8px]'}`}>
+                        <div className={`font-bold text-black leading-tight ${isLarge ? 'text-sm' : 'text-[8px]'}`}>
                             Địa chỉ: {companyInfo.address}
                         </div>
                     )}
-                    <div className={`font-bold text-gray-700 leading-tight ${isLarge ? 'text-sm' : 'text-[8px]'}`}>
+                    <div className={`font-bold text-black leading-tight ${isLarge ? 'text-sm' : 'text-[8px]'}`}>
                         {companyInfo?.email && `Email: ${companyInfo.email}`}
                         {companyInfo?.email && companyInfo?.phone && <span className="mx-1">|</span>}
                         {companyInfo?.phone && `ĐT: ${companyInfo.phone}`}
@@ -78,8 +78,8 @@ export function PrintHeader({
  */
 export function PrintLegalHeader({ formNumber }: { formNumber: '01' | '02' }) {
     return (
-        <div className="text-center text-[9px] leading-tight font-bold text-gray-700">
-            <div className="text-red-600 font-bold">Mẫu số {formNumber} - VT</div>
+        <div className="text-center text-[9px] leading-tight font-bold text-black">
+            <div className="text-black font-bold">Mẫu số {formNumber} - VT</div>
             <div>(Ban hành theo Thông tư số 200/2014/TT-BTC</div>
             <div>Ngày 22/12/2014 của Bộ Tài chính)</div>
         </div>

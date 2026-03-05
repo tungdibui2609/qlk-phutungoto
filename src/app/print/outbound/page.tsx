@@ -496,8 +496,8 @@ function OutboundPrintContent() {
                     </span>
                 </div>
 
-                <div className="text-sm font-medium mt-1">
-                    Số: <span className="font-bold text-orange-600">{order.code}</span>
+                <div className="text-sm font-medium mt-1 text-black">
+                    Số: <span className="font-bold text-black">{order.code}</span>
                 </div>
             </div>
 
@@ -742,7 +742,7 @@ function OutboundPrintContent() {
                                         {formatQuantityFull(item.quantity)}
                                     </td>
                                     {hasModule('outbound_conversion') && targetUnit && (
-                                        <td className="border border-gray-400 px-2 py-1.5 text-center text-orange-600">
+                                        <td className="border border-gray-400 px-2 py-1.5 text-center text-stone-800">
                                             {typeof convertedQty === 'number' ? formatQuantityFull(convertedQty) : convertedQty}
                                         </td>
                                     )}
@@ -841,7 +841,7 @@ function OutboundPrintContent() {
                 </table>
             </div>
 
-            <div className="mt-4 text-sm space-y-1">
+            <div className={`mt-4 text-sm space-y-1 ${printSize === 'A5' ? 'mb-2' : ''}`}>
                 {!isInternal && hasModule('outbound_financials') && (
                     <div className="flex items-center">
                         <span className="shrink-0">- Tổng số tiền (viết bằng chữ):</span>
@@ -866,7 +866,7 @@ function OutboundPrintContent() {
                 )}
             </div>
 
-            <div className={`-mt-1 grid grid-cols-[1fr_1fr_1fr_1fr_1.4fr] gap-3 text-center text-sm items-end`}>
+            <div className={`-mt-1 grid grid-cols-[1fr_1fr_1fr_1fr_1.4fr] ${printSize === 'A5' ? 'gap-1' : 'gap-3'} text-center text-sm items-end ${printSize === 'A5' ? 'page-break-inside-avoid' : ''}`}>
                 {/* 1. Ngày tháng năm row */}
                 <div className="invisible">Ngày ... tháng ... năm ...</div>
                 <div className="invisible">Ngày ... tháng ... năm ...</div>
@@ -917,13 +917,13 @@ function OutboundPrintContent() {
                 </div>
 
                 {/* 3. Instruction & Label (Ký, họ tên) row */}
-                <div className="text-xs text-gray-500 italic self-center pb-8 print:pb-8">(Ký, họ tên)</div>
-                <div className="text-xs text-gray-500 italic self-center pb-8 print:pb-8">(Ký, họ tên)</div>
-                <div className="text-xs text-gray-500 italic self-center pb-8 print:pb-8">(Ký, họ tên)</div>
-                <div className="text-xs text-gray-500 italic self-center pb-8 print:pb-8">(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-center pb-12 print:pb-12">(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-center pb-12 print:pb-12">(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-center pb-12 print:pb-12">(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-center pb-12 print:pb-12">(Ký, họ tên)</div>
                 <div className="text-xs text-gray-500 italic self-start whitespace-nowrap">
-                    <div>(Hoặc bộ phận có nhu cầu xuất)</div>
-                    <div>(Ký, họ tên)</div>
+                    <div className="text-gray-500">(Hoặc bộ phận có nhu cầu xuất)</div>
+                    <div className="text-gray-500 pb-12 print:pb-12">(Ký, họ tên)</div>
                 </div>
 
 
@@ -978,9 +978,23 @@ function OutboundPrintContent() {
                         -webkit-print-color-adjust: exact;
                         print-color-adjust: exact;
                     }
+                    #print-ready {
+                        ${printSize === 'A5' ? `
+                            zoom: 0.65 !important;
+                            width: 100% !important;
+                            max-width: none !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                        ` : ''}
+                    }
                     .no-print {
                         display: none !important;
                     }
+                }
+                
+                /* Force all text in the print area to be black, both on screen and when printed */
+                #print-ready * {
+                    color: black !important;
                 }
             `}</style>
 
