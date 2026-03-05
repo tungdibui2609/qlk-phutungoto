@@ -82,7 +82,7 @@ export default function WarehouseMapPrintPage() {
     })
     const isSnapshotMode = isSnapshot || isCapturing
     const isDownloadingState = isDownloading || isCapturing
-    const [orientation, setOrientation] = useState<'portrait' | 'landscape'>((searchParams.get('orientation') as any) || 'portrait')
+    const [orientation, setOrientation] = useState<'portrait' | 'landscape'>((searchParams.get('orientation') as any) || 'landscape')
 
     const router = useRouter()
     const pathname = usePathname()
@@ -267,18 +267,43 @@ export default function WarehouseMapPrintPage() {
     const groupedData = useMemo(() => {
         if (!isGrouped) return { zones, positions }
 
-        const finalZones: Zone[] = []
-        const mappedPositions = positions.map(p => ({ ...p }))
+        // Build child lookup index for O(1) traversal
+        const parentToChildren = new Map<string, Zone[]>()
+        zones.forEach(z => {
+            if (z.parent_id) {
+                const list = parentToChildren.get(z.parent_id) || []
+                list.push(z)
+                parentToChildren.set(z.parent_id, list)
+            }
+        })
 
+        const finalZones: Zone[] = []
+        const processedZoneIds = new Set<string>()
+        const zoneIdMap = new Map<string, string>() // Old ID -> New ID
+
+        // Recursive helper to find ALL descendants with safety guards
+        const getAllDescendants = (parentId: string, visited = new Set<string>(), depth = 0): Zone[] => {
+            if (visited.has(parentId) || depth > 10) return []
+            visited.add(parentId)
+            const children = parentToChildren.get(parentId) || []
+            return [...children, ...children.flatMap(d => getAllDescendants(d.id, visited, depth + 1))]
+        }
+
+        // 1. Identify Warehouses (Root)
         const warehouses = zones.filter(z => !z.parent_id)
-        finalZones.push(...warehouses)
 
         warehouses.forEach(wh => {
-            const racks = zones.filter(z => z.parent_id === wh.id)
-            finalZones.push(...racks)
+            finalZones.push(wh)
+            processedZoneIds.add(wh.id)
 
+            // 2. Racks under this Warehouse
+            const racks = parentToChildren.get(wh.id) || []
             racks.forEach(rack => {
-                const bins = zones.filter(z => z.parent_id === rack.id)
+                finalZones.push(rack)
+                processedZoneIds.add(rack.id)
+
+                // 3. Group Bins under this Rack
+                const bins = parentToChildren.get(rack.id) || []
                 const binGroups: Record<string, Zone[]> = {}
                 bins.forEach(b => {
                     const match = b.name.match(/\d+$/)
@@ -289,6 +314,7 @@ export default function WarehouseMapPrintPage() {
 
                 Object.entries(binGroups).forEach(([suffix, members]) => {
                     if (members.length > 1) {
+                        // MERGE CASE
                         const vBinId = `v-bin-${members[0].id}-${suffix}`
                         finalZones.push({
                             ...members[0],
@@ -297,42 +323,53 @@ export default function WarehouseMapPrintPage() {
                             code: `G${suffix}`
                         })
 
-                        const levels = zones.filter(z => members.some(m => m.id === z.parent_id))
-                        const levelGroups: Record<string, Zone[]> = {}
-                        levels.forEach(l => {
-                            levelGroups[l.name] = levelGroups[l.name] || []
-                            levelGroups[l.name].push(l)
+                        // Collect and merge ALL descendants (Levels, Sections, etc.)
+                        const allDescendants = members.flatMap(m => getAllDescendants(m.id))
+                        const descGroupByName: Record<string, Zone[]> = {}
+
+                        allDescendants.forEach(d => {
+                            const key = d.name.trim().toUpperCase()
+                            descGroupByName[key] = descGroupByName[key] || []
+                            descGroupByName[key].push(d)
                         })
 
-                        Object.entries(levelGroups).forEach(([lName, lMembers]) => {
-                            const vLevelId = `v-lvl-${vBinId}-${lName}`
+                        Object.entries(descGroupByName).forEach(([upperName, dMembers]) => {
+                            const vZoneId = `v-lvl-${vBinId}-${upperName}`
                             finalZones.push({
-                                ...lMembers[0],
-                                id: vLevelId,
+                                ...dMembers[0],
+                                id: vZoneId,
                                 parent_id: vBinId,
-                                name: lName
+                                name: dMembers[0].name
                             })
 
-                            lMembers.forEach(lm => {
-                                mappedPositions.forEach(p => {
-                                    if (p.zone_id === lm.id) p.zone_id = vLevelId
-                                })
+                            dMembers.forEach(dm => {
+                                zoneIdMap.set(dm.id, vZoneId)
+                                processedZoneIds.add(dm.id)
                             })
                         })
 
                         members.forEach(m => {
-                            mappedPositions.forEach(p => {
-                                if (p.zone_id === m.id) p.zone_id = vBinId
-                            })
+                            zoneIdMap.set(m.id, vBinId)
+                            processedZoneIds.add(m.id)
                         })
-                    } else if (members.length === 1) {
-                        const b = members[0]
-                        finalZones.push(b)
-                        const levels = zones.filter(z => z.parent_id === b.id)
-                        finalZones.push(...levels)
                     }
                 })
             })
+        })
+
+        // 4. Final Pass: Keep all non-processed zones
+        zones.forEach(z => {
+            if (!processedZoneIds.has(z.id)) {
+                finalZones.push(z)
+            }
+        })
+
+        // 5. Transform positions in a SINGLE pass using the mapping table
+        const mappedPositions = positions.map(p => {
+            if (p.zone_id && zoneIdMap.has(p.zone_id)) {
+                return { ...p, zone_id: zoneIdMap.get(p.zone_id)! }
+            }
+            return p
         })
 
         return { zones: finalZones, positions: mappedPositions }
@@ -341,16 +378,33 @@ export default function WarehouseMapPrintPage() {
     const displayZones = groupedData.zones
     const displayPositions = groupedData.positions
 
+    // Helper for O(1) zone filtering
+    const descendantIdSet = useMemo(() => {
+        if (!selectedZoneId) return null
+        const parentToChildren = new Map<string, string[]>()
+        displayZones.forEach(z => {
+            if (z.parent_id) {
+                const children = parentToChildren.get(z.parent_id) || []
+                children.push(z.id)
+                parentToChildren.set(z.parent_id, children)
+            }
+        })
+
+        const ids = new Set<string>()
+        const collect = (id: string) => {
+            ids.add(id)
+            const children = parentToChildren.get(id) || []
+            children.forEach(collect)
+        }
+        collect(selectedZoneId)
+        return ids
+    }, [displayZones, selectedZoneId])
+
     const filteredPositions = useMemo(() => {
         let result = displayPositions
 
-        if (selectedZoneId) {
-            const getDescendantIds = (id: string): string[] => {
-                const children = displayZones.filter(z => z.parent_id === id)
-                return [id, ...children.flatMap(c => getDescendantIds(c.id))]
-            }
-            const descendantIds = getDescendantIds(selectedZoneId)
-            result = result.filter(p => p.zone_id && descendantIds.includes(p.zone_id))
+        if (descendantIdSet) {
+            result = result.filter(p => p.zone_id && descendantIdSet.has(p.zone_id))
         }
 
         if (occupancyFilter === 'occupied') {
@@ -360,7 +414,7 @@ export default function WarehouseMapPrintPage() {
         }
 
         if (searchTerm) {
-            const lowTerm = searchTerm.toLowerCase()
+            const lowTerm = searchTerm.toLowerCase().trim()
             result = result.filter(p => {
                 const pLot = lotInfo[p.id] || (p.lot_id ? lotInfo[p.lot_id] : {})
                 return p.code.toLowerCase().includes(lowTerm) ||
@@ -373,24 +427,12 @@ export default function WarehouseMapPrintPage() {
         }
 
         return result
-    }, [displayPositions, displayZones, selectedZoneId, occupancyFilter, searchTerm, occupiedIds, lotInfo])
+    }, [displayPositions, descendantIdSet, occupancyFilter, searchTerm, occupiedIds, lotInfo])
 
     const filteredZones = useMemo(() => {
-        if (!selectedZoneId) return displayZones
-        const getDescendantIds = (parentId: string): Set<string> => {
-            const ids = new Set<string>()
-            const collect = (pId: string) => {
-                displayZones.filter(z => z.parent_id === pId).forEach(c => {
-                    ids.add(c.id); collect(c.id)
-                })
-            }
-            collect(selectedZoneId)
-            return ids
-        }
-        const allowedIds = getDescendantIds(selectedZoneId)
-        allowedIds.add(selectedZoneId)
-        return displayZones.filter(z => allowedIds.has(z.id))
-    }, [displayZones, selectedZoneId])
+        if (!descendantIdSet) return displayZones
+        return displayZones.filter(z => descendantIdSet.has(z.id))
+    }, [displayZones, descendantIdSet])
 
     const handlePrint = () => window.print()
 
@@ -464,16 +506,38 @@ export default function WarehouseMapPrintPage() {
                                                         setExpandedZoneIds(newSet)
                                                     }
 
+                                                    // Use pre-computed map for O(1) child lookups
+                                                    const childrenMap = new Map<string, Zone[]>()
+                                                    displayZones.forEach(z => {
+                                                        if (z.parent_id) {
+                                                            const list = childrenMap.get(z.parent_id) || []
+                                                            list.push(z)
+                                                            childrenMap.set(z.parent_id, list)
+                                                        }
+                                                    })
+
                                                     const renderTree = (z: Zone, depth: number): React.ReactNode[] => {
-                                                        const subZones = displayZones.filter(c => c.parent_id === z.id)
+                                                        const subZones = childrenMap.get(z.id) || []
                                                         const hasChildren = subZones.length > 0
                                                         const isExpanded = expandedZoneIds.has(z.id) || zoneSearchTerm
+
                                                         const matchesSearch = !zoneSearchTerm || z.name.toLowerCase().includes(zoneSearchTerm.toLowerCase())
-                                                        const descendantMatch = (zone: Zone): boolean => {
-                                                            const children = displayZones.filter(c => c.parent_id === zone.id)
-                                                            return children.some(c => c.name.toLowerCase().includes(zoneSearchTerm.toLowerCase()) || descendantMatch(c))
+
+                                                        // Optimization: O(1) check if any descendant matches the search
+                                                        let descendantMatch = false
+                                                        if (zoneSearchTerm && !matchesSearch && hasChildren) {
+                                                            const checkDescendants = (nodeId: string): boolean => {
+                                                                const children = childrenMap.get(nodeId) || []
+                                                                for (const child of children) {
+                                                                    if (child.name.toLowerCase().includes(zoneSearchTerm.toLowerCase())) return true
+                                                                    if (checkDescendants(child.id)) return true
+                                                                }
+                                                                return false
+                                                            }
+                                                            descendantMatch = checkDescendants(z.id)
                                                         }
-                                                        if (!matchesSearch && !descendantMatch(z)) return []
+
+                                                        if (!matchesSearch && !descendantMatch) return []
 
                                                         return [
                                                             <div key={z.id}>
@@ -616,12 +680,44 @@ export default function WarehouseMapPrintPage() {
                 />
             )}
 
-            <div id="print-ready" data-ready="true" className={`bg-white min-h-screen ${orientation === 'landscape' ? 'w-[297mm]' : 'w-[210mm]'} mx-auto text-black p-8 print:p-4 text-[13px] ${isCapturing ? 'shadow-none !w-[1150px]' : ''} ${isCapturing && orientation === 'landscape' ? '!w-[1400px]' : ''}`}>
-                {isCapturing && (
+            {/* Main Wrapper for better screen presentation */}
+            <div className={`min-h-screen bg-gray-100/50 print:bg-white py-8 print:py-0 ${isCapturing ? '!p-0 !bg-white' : ''}`}>
+                <div
+                    id="print-ready"
+                    data-ready="true"
+                    className={`
+                        bg-white mx-auto text-black p-4 print:p-2 text-[13px] transition-all duration-500
+                        ${isCapturing ? 'shadow-none !p-4' : 'shadow-2xl rounded-xl ring-1 ring-black/5'}
+                        ${orientation === 'landscape'
+                            ? (isCapturing ? '!w-[1400px]' : 'w-[98%] max-w-[1700px]')
+                            : (isCapturing ? '!w-[1100px]' : 'w-[95%] max-w-[1300px]')
+                        }
+                    `}
+                    style={!isCapturing ? {
+                        minHeight: orientation === 'landscape' ? '210mm' : '297mm'
+                    } : undefined}
+                >
                     <style dangerouslySetInnerHTML={{
                         __html: `
+                            @media print {
+                                #print-ready {
+                                    width: ${orientation === 'landscape' ? '297mm' : '210mm'} !important;
+                                    max-width: none !important;
+                                    margin: 0 !important;
+                                    padding: 10mm !important;
+                                    box-shadow: none !important;
+                                    border-radius: 0 !important;
+                                    ring: none !important;
+                                }
+                                body { background: white !important; }
+                            }
+                        `
+                    }} />
+                    {isCapturing && (
+                        <style dangerouslySetInnerHTML={{
+                            __html: `
                     #print-ready {
-                        width: ${orientation === 'landscape' ? '1400px' : '1150px'} !important;
+                        width: ${orientation === 'landscape' ? '1400px' : '1100px'} !important;
                         margin: 0 !important;
                         padding: 40px 60px !important;
                         display: flex !important;
@@ -630,158 +726,158 @@ export default function WarehouseMapPrintPage() {
                         box-sizing: border-box !important;
                     }
                 `}} />
-                )}
-
-                <div className="mb-6">
-                    <PrintHeader companyInfo={companyInfo} logoSrc={logoSrc} size="compact" />
-                </div>
-
-                <div className="text-center mb-6">
-                    <EditableText
-                        value={editReportTitle}
-                        onChange={setEditReportTitle}
-                        className="text-2xl font-bold uppercase text-center w-full"
-                        style={{ fontFamily: "'Times New Roman', Times, serif" }}
-                        isSnapshot={isSnapshotMode}
-                    />
-                    <p className="italic mt-1">Ngày in: {new Date().toLocaleDateString('vi-VN')}</p>
-                    {selectedZoneId && (
-                        <p className="font-medium mt-1">Vùng kho: {displayZones.find(z => z.id === selectedZoneId)?.name}</p>
                     )}
-                    {searchTerm && (
-                        <p className="text-sm mt-1">Lọc theo: "{searchTerm}"</p>
-                    )}
-                </div>
 
-                {/* The Map Grid OR Data Table View */}
-                <div className="mb-8 print:mb-4">
-                    {!showTable ? (
-                        <div className="mt-8">
-                            <FlexibleZoneGrid
-                                zones={displayZones}
-                                positions={displayPositions}
-                                layouts={layouts}
-                                occupiedIds={occupiedIds}
-                                lotInfo={lotInfo}
-                                collapsedZones={new Set()} // Expand all for printing
-                                selectedPositionIds={new Set()}
-                                onToggleCollapse={() => { }}
-                                onPositionSelect={() => { }}
-                                pageBreakIds={pageBreakZoneIds}
-                                onTogglePageBreak={isGrouped ? undefined : handleTogglePageBreak}
-                                displayInternalCode={displayInternalCode}
-                                isDesignMode={false}
-                                onPrintZone={isGrouped ? undefined : () => { }}
-                                isGrouped={isGrouped}
-                            />
-                        </div>
-                    ) : (
-                        <div className="overflow-hidden border border-gray-300 rounded-lg">
-                            <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-gray-50 text-[11px] font-bold uppercase tracking-wider border-b border-gray-300">
-                                        <th className="px-3 py-2 border-r border-gray-300 w-[12%]">Vị trí</th>
-                                        <th className="px-3 py-2 border-r border-gray-300 w-[15%]">Số lô (Lot)</th>
-                                        <th className="px-3 py-2 border-r border-gray-300">Sản phẩm</th>
-                                        <th className="px-3 py-2 border-r border-gray-300 w-[15%]">Mã sản phẩm</th>
-                                        <th className="px-3 py-2 border-r border-gray-300 w-[8%] text-center">ĐVT</th>
-                                        <th className="px-3 py-2 border-r border-gray-300 w-[8%] text-right">S.Lượng</th>
-                                        <th className="px-3 py-2">Mã phụ / Tags</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200">
-                                    {filteredPositions
-                                        .map((p, pIdx) => {
-                                            const lot = p.lot_id ? lotInfo[p.lot_id] : null
+                    <div className="mb-3">
+                        <PrintHeader companyInfo={companyInfo} logoSrc={logoSrc} size="compact" />
+                    </div>
 
-                                            // Case 1: Occupied position
-                                            if (lot) {
-                                                return lot.items.map((item: any, iIdx: number) => (
-                                                    <tr key={`${p.id}-${iIdx}`} className="text-[12px] hover:bg-gray-50/50 transition-colors break-inside-avoid">
-                                                        {iIdx === 0 ? (
-                                                            <>
-                                                                <td className="px-3 py-2 border-r border-gray-300 font-bold bg-gray-50/30" rowSpan={lot.items.length}>
-                                                                    {p.code}
-                                                                </td>
-                                                                <td className="px-3 py-2 border-r border-gray-300 font-bold text-indigo-700 bg-indigo-50/10" rowSpan={lot.items.length}>
-                                                                    {lot.code}
-                                                                </td>
-                                                            </>
-                                                        ) : null}
-                                                        <td className="px-3 py-2 border-r border-gray-300 font-medium">
-                                                            {displayInternalCode && item.internal_name ? item.internal_name : item.product_name}
+                    <div className="text-center mb-3">
+                        <EditableText
+                            value={editReportTitle}
+                            onChange={setEditReportTitle}
+                            className="text-2xl font-bold uppercase text-center w-full"
+                            style={{ fontFamily: "'Times New Roman', Times, serif" }}
+                            isSnapshot={isSnapshotMode}
+                        />
+                        <p className="italic mt-1">Ngày in: {new Date().toLocaleDateString('vi-VN')}</p>
+                        {selectedZoneId && (
+                            <p className="font-medium mt-1">Vùng kho: {displayZones.find(z => z.id === selectedZoneId)?.name}</p>
+                        )}
+                        {searchTerm && (
+                            <p className="text-sm mt-1">Lọc theo: "{searchTerm}"</p>
+                        )}
+                    </div>
+
+                    {/* The Map Grid OR Data Table View */}
+                    <div className="mb-8 print:mb-4">
+                        {!showTable ? (
+                            <div className="mt-8">
+                                <FlexibleZoneGrid
+                                    zones={filteredZones}
+                                    positions={filteredPositions}
+                                    layouts={layouts}
+                                    occupiedIds={occupiedIds}
+                                    lotInfo={lotInfo}
+                                    collapsedZones={new Set()} // Expand all for printing
+                                    selectedPositionIds={new Set()}
+                                    onToggleCollapse={() => { }}
+                                    onPositionSelect={() => { }}
+                                    pageBreakIds={pageBreakZoneIds}
+                                    onTogglePageBreak={isGrouped ? undefined : handleTogglePageBreak}
+                                    displayInternalCode={displayInternalCode}
+                                    isDesignMode={false}
+                                    onPrintZone={isGrouped ? undefined : () => { }}
+                                    isGrouped={isGrouped}
+                                />
+                            </div>
+                        ) : (
+                            <div className="overflow-hidden border border-gray-300 rounded-lg">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-gray-50 text-[11px] font-bold uppercase tracking-wider border-b border-gray-300">
+                                            <th className="px-3 py-2 border-r border-gray-300 w-[12%]">Vị trí</th>
+                                            <th className="px-3 py-2 border-r border-gray-300 w-[15%]">Số lô (Lot)</th>
+                                            <th className="px-3 py-2 border-r border-gray-300">Sản phẩm</th>
+                                            <th className="px-3 py-2 border-r border-gray-300 w-[15%]">Mã sản phẩm</th>
+                                            <th className="px-3 py-2 border-r border-gray-300 w-[8%] text-center">ĐVT</th>
+                                            <th className="px-3 py-2 border-r border-gray-300 w-[8%] text-right">S.Lượng</th>
+                                            <th className="px-3 py-2">Mã phụ / Tags</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200">
+                                        {filteredPositions
+                                            .map((p, pIdx) => {
+                                                const lot = p.lot_id ? lotInfo[p.lot_id] : null
+
+                                                // Case 1: Occupied position
+                                                if (lot) {
+                                                    return lot.items.map((item: any, iIdx: number) => (
+                                                        <tr key={`${p.id}-${iIdx}`} className="text-[12px] hover:bg-gray-50/50 transition-colors break-inside-avoid">
+                                                            {iIdx === 0 ? (
+                                                                <>
+                                                                    <td className="px-3 py-2 border-r border-gray-300 font-bold bg-gray-50/30" rowSpan={lot.items.length}>
+                                                                        {p.code}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 border-r border-gray-300 font-bold text-indigo-700 bg-indigo-50/10" rowSpan={lot.items.length}>
+                                                                        {lot.code}
+                                                                    </td>
+                                                                </>
+                                                            ) : null}
+                                                            <td className="px-3 py-2 border-r border-gray-300 font-medium">
+                                                                {displayInternalCode && item.internal_name ? item.internal_name : item.product_name}
+                                                            </td>
+                                                            <td className="px-3 py-2 border-r border-gray-300 font-mono text-[11px]">
+                                                                {displayInternalCode && item.internal_code ? item.internal_code : item.sku}
+                                                            </td>
+                                                            <td className="px-3 py-2 border-r border-gray-300 text-center">
+                                                                {item.unit}
+                                                            </td>
+                                                            <td className="px-3 py-2 border-r border-gray-300 text-right font-bold text-blue-700">
+                                                                {item.quantity?.toLocaleString('vi-VN')}
+                                                            </td>
+                                                            <td className="px-3 py-2 italic text-gray-600 text-[11px]">
+                                                                {[item.tags?.join(', '), lot.batch_code ? `Lô: ${lot.batch_code}` : null]
+                                                                    .filter(Boolean)
+                                                                    .join(' | ') || '-'}
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                }
+
+                                                // Case 2: Empty position
+                                                return (
+                                                    <tr key={p.id} className="text-[12px] hover:bg-gray-50/50 transition-colors break-inside-avoid italic text-gray-400 bg-gray-50/5">
+                                                        <td className="px-3 py-2 border-r border-gray-300 font-bold not-italic text-gray-600">
+                                                            {p.code}
                                                         </td>
-                                                        <td className="px-3 py-2 border-r border-gray-300 font-mono text-[11px]">
-                                                            {displayInternalCode && item.internal_code ? item.internal_code : item.sku}
-                                                        </td>
-                                                        <td className="px-3 py-2 border-r border-gray-300 text-center">
-                                                            {item.unit}
-                                                        </td>
-                                                        <td className="px-3 py-2 border-r border-gray-300 text-right font-bold text-blue-700">
-                                                            {item.quantity?.toLocaleString('vi-VN')}
-                                                        </td>
-                                                        <td className="px-3 py-2 italic text-gray-600 text-[11px]">
-                                                            {[item.tags?.join(', '), lot.batch_code ? `Lô: ${lot.batch_code}` : null]
-                                                                .filter(Boolean)
-                                                                .join(' | ') || '-'}
+                                                        <td className="px-3 py-2 border-r border-gray-300" colSpan={6}>
+                                                            (Vị trí trống)
                                                         </td>
                                                     </tr>
-                                                ))
-                                            }
+                                                )
+                                            })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
 
-                                            // Case 2: Empty position
-                                            return (
-                                                <tr key={p.id} className="text-[12px] hover:bg-gray-50/50 transition-colors break-inside-avoid italic text-gray-400 bg-gray-50/5">
-                                                    <td className="px-3 py-2 border-r border-gray-300 font-bold not-italic text-gray-600">
-                                                        {p.code}
-                                                    </td>
-                                                    <td className="px-3 py-2 border-r border-gray-300" colSpan={6}>
-                                                        (Vị trí trống)
-                                                    </td>
-                                                </tr>
-                                            )
-                                        })}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
+                    {/* Footer Signatures */}
+                    <div className="flex justify-between mt-12 break-inside-avoid">
+                        {[
+                            { title: signTitle1, setTitle: setSignTitle1, person: signPerson1, setPerson: setSignPerson1 },
+                            { title: signTitle2, setTitle: setSignTitle2, person: signPerson2, setPerson: setSignPerson2 },
+                            { title: signTitle3, setTitle: setSignTitle3, person: signPerson3, setPerson: setSignPerson3, extra: '(Ký, họ tên, đóng dấu)' }
+                        ].map((s, i) => (
+                            <div key={i} className="text-center w-1/3">
+                                <EditableText value={s.title} onChange={s.setTitle} className="font-bold text-center w-full mb-1" isSnapshot={isSnapshotMode} />
+                                <p className="italic text-xs">{s.extra || '(Ký, họ tên)'}</p>
+                                <div className="h-24"></div>
+                                <EditableText value={s.person} onChange={s.setPerson} className="font-bold text-center w-full" placeholder="Nhập tên..." isSnapshot={isSnapshotMode} />
+                            </div>
+                        ))}
+                    </div>
+
+                    <style dangerouslySetInnerHTML={{
+                        __html: `
+                        @media print {
+                            @page { 
+                                size: A4 ${orientation}; 
+                                margin: 10mm; 
+                            }
+                            body { background: white !important; }
+                            .print-hidden { display: none !important; }
+                        }
+                        #print-ready .grid {
+                            page-break-inside: avoid;
+                        }
+                        .print-break-before-page {
+                            break-before: page;
+                            page-break-before: always;
+                        }
+                    `}} />
                 </div>
-
-                {/* Footer Signatures */}
-                <div className="flex justify-between mt-12 break-inside-avoid">
-                    {[
-                        { title: signTitle1, setTitle: setSignTitle1, person: signPerson1, setPerson: setSignPerson1 },
-                        { title: signTitle2, setTitle: setSignTitle2, person: signPerson2, setPerson: setSignPerson2 },
-                        { title: signTitle3, setTitle: setSignTitle3, person: signPerson3, setPerson: setSignPerson3, extra: '(Ký, họ tên, đóng dấu)' }
-                    ].map((s, i) => (
-                        <div key={i} className="text-center w-1/3">
-                            <EditableText value={s.title} onChange={s.setTitle} className="font-bold text-center w-full mb-1" isSnapshot={isSnapshotMode} />
-                            <p className="italic text-xs">{s.extra || '(Ký, họ tên)'}</p>
-                            <div className="h-24"></div>
-                            <EditableText value={s.person} onChange={s.setPerson} className="font-bold text-center w-full" placeholder="Nhập tên..." isSnapshot={isSnapshotMode} />
-                        </div>
-                    ))}
-                </div>
-
-                <style dangerouslySetInnerHTML={{
-                    __html: `
-                @media print {
-                    @page { 
-                        size: A4 ${orientation}; 
-                        margin: 10mm; 
-                    }
-                    body { background: white !important; }
-                    .print-hidden { display: none !important; }
-                }
-                /* Ensure grid is readable on A4 */
-                #print-ready .grid {
-                    page-break-inside: avoid;
-                }
-                .print-break-before-page {
-                    break-before: page;
-                    page-break-before: always;
-                }
-            `}} />
             </div>
         </>
     )

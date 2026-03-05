@@ -13,47 +13,6 @@ interface PositionWithZone extends Position {
     zone_id?: string | null
 }
 
-interface FlexibleZoneGridProps {
-    zones: Zone[]
-    positions: PositionWithZone[]
-    layouts: Record<string, ZoneLayout>
-    occupiedIds: Set<string>
-    collapsedZones: Set<string>
-    selectedPositionIds: Set<string>
-    isDesignMode?: boolean
-    isAssignmentMode?: boolean
-    onUpdateCollapsedZones?: (setter: (prev: Set<string>) => Set<string>) => void
-    onToggleCollapse: (zoneId: string) => void
-    onPositionSelect: (positionId: string) => void
-    onViewDetails?: (lotId: string) => void
-    onPositionMenu?: (pos: Position, e: React.MouseEvent) => void
-    onConfigureZone?: (zone: Zone) => void
-    highlightLotId?: string | null
-    highlightingPositionIds?: Set<string>
-    lotInfo?: Record<string, { code: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>, inbound_date?: string, created_at?: string, packaging_date?: string, peeling_date?: string, tags?: string[] }>
-    pageBreakIds?: Set<string>
-    onTogglePageBreak?: (zoneId: string) => void
-    onPrintZone?: (zoneId: string) => void
-    displayInternalCode?: boolean
-    isGrouped?: boolean
-}
-
-interface PositionCellProps {
-    pos: PositionWithZone
-    cellHeight: number
-    cellWidth: number
-    isMobile: boolean
-    isOccupied: boolean
-    isSelected: boolean
-    isTargetLot: boolean
-    lotDetail: any
-    isAssignmentMode: boolean
-    isHighlightBlinking: boolean
-    onPositionSelect: (positionId: string) => void
-    onViewDetails?: (lotId: string) => void
-    onPositionMenu?: (pos: Position, e: React.MouseEvent) => void
-}
-
 const MemoizedPositionCell = React.memo<{
     pos: PositionWithZone,
     cellHeight: number,
@@ -66,12 +25,13 @@ const MemoizedPositionCell = React.memo<{
     isAssignmentMode: boolean,
     isHighlightBlinking: boolean,
     displayInternalCode?: boolean,
+    isGrouped?: boolean,
     onPositionSelect: (id: string) => void,
     onViewDetails?: (lotId: string) => void,
     onPositionMenu?: (pos: PositionWithZone, event: React.MouseEvent) => void
 }>(({
     pos, cellHeight, cellWidth, isMobile, isOccupied, isSelected,
-    isTargetLot, lotDetail, isAssignmentMode, isHighlightBlinking, displayInternalCode,
+    isTargetLot, lotDetail, isAssignmentMode, isHighlightBlinking, displayInternalCode, isGrouped,
     onPositionSelect, onViewDetails, onPositionMenu
 }) => {
     let bgClass = 'bg-white dark:bg-gray-700'
@@ -86,7 +46,7 @@ const MemoizedPositionCell = React.memo<{
         bgClass = 'bg-purple-100 dark:bg-purple-900/40'
         borderClass = 'border-purple-500'
         ringClass = 'ring-2 ring-purple-300'
-    } else if (isOccupied) { // Changed from hasLot || isOccupied to just isOccupied
+    } else if (isOccupied) {
         bgClass = 'bg-amber-50 dark:bg-amber-900/10'
         borderClass = 'border-amber-200 dark:border-amber-800'
     }
@@ -97,11 +57,11 @@ const MemoizedPositionCell = React.memo<{
                 <div
                     ref={ref}
                     style={{
-                        height: cellHeight > 0 ? `${cellHeight}px` : (isMobile ? '120px' : '150px'),
+                        height: cellHeight > 0 ? `${cellHeight}px` : (isMobile ? '100px' : '125px'),
                         width: cellWidth > 0 ? `${cellWidth}px` : '100%'
                     }}
                     className={`
-                        relative ${isAssignmentMode ? 'cursor-pointer' : ''} ${isMobile ? 'p-1' : 'p-1.5'} rounded-lg border-2 transition-all
+                        relative ${isAssignmentMode ? 'cursor-pointer' : ''} ${isMobile ? 'p-0.5' : 'p-1'} rounded-lg border-2 transition-all
                         flex flex-col justify-between overflow-hidden
                         ${bgClass} ${borderClass} ${ringClass}
                         ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.02] hover:z-10' : ''}
@@ -149,9 +109,9 @@ const MemoizedPositionCell = React.memo<{
                                     </button>
                                 )}
 
-                                <span className={`font-mono text-[10px] items-center text-black dark:text-white font-bold leading-none ${cellWidth === 0 ? 'whitespace-nowrap px-1' : ''}`}>
+                                <div className={`font-mono ${isGrouped ? 'text-[8px]' : 'text-[10px]'} flex justify-center items-center text-black dark:text-white font-bold leading-tight w-full text-center ${cellWidth === 0 && !isGrouped ? 'whitespace-nowrap px-1' : 'break-all px-0.5'}`} style={{ minWidth: 0 }}>
                                     {pos.code}
-                                </span>
+                                </div>
 
                                 {!isAssignmentMode && (
                                     <button
@@ -180,23 +140,24 @@ const MemoizedPositionCell = React.memo<{
                             </div>
 
                             {lotDetail ? (
-                                <div className="flex flex-col items-center w-full flex-1 min-h-0 gap-1">
-                                    <div className={`text-xs font-bold leading-tight w-full text-center truncate shrink-0 ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'}`}>
+                                <div className="flex flex-col items-center w-full flex-1 min-h-0 gap-0.5 mt-0.5">
+                                    <div className={`${isGrouped ? 'text-[8px]' : 'text-[10px]'} font-bold leading-tight w-full text-center shrink-0 ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'} ${isGrouped ? 'break-all' : 'truncate'}`}>
                                         {lotDetail.code}
                                     </div>
 
-                                    <div className="w-full flex-col gap-1.5 overflow-y-auto custom-scrollbar flex-1 min-h-0">
+                                    {/* Wrapping Logic: No scrollbars, SKU and Quantity wrap naturally */}
+                                    <div className="w-full space-y-1 flex-1 min-h-0">
                                         {lotDetail.items?.map((item: any, idx: number) => {
                                             const nameObj = displayInternalCode && item.internal_name ? item.internal_name : item.product_name;
                                             const codeObj = displayInternalCode && item.internal_code ? item.internal_code : item.sku;
                                             return (
-                                                <div key={idx} className="flex flex-col gap-0.5 w-full text-center border-b border-black/5 dark:border-white/5 last:border-0 pb-1 last:pb-0 shrink-0">
+                                                <div key={idx} className="flex flex-col gap-0.5 w-full text-center border-b border-black/5 dark:border-white/5 last:border-0 pb-0.5 last:pb-0 shrink-0">
                                                     {nameObj && (
                                                         <div className="text-[9px] text-gray-600 dark:text-gray-300 leading-tight line-clamp-2" title={nameObj}>
                                                             {nameObj}
                                                         </div>
                                                     )}
-                                                    <div className="text-[9px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap">
+                                                    <div className="text-[9px] font-mono text-blue-600 dark:text-blue-400 font-bold break-words">
                                                         {codeObj || '-'} : {item.quantity} {item.unit || '-'}
                                                     </div>
                                                     {item.tags && item.tags.length > 0 && (
@@ -212,26 +173,36 @@ const MemoizedPositionCell = React.memo<{
                                         })}
                                     </div>
 
-                                    <div className="flex justify-center items-center gap-1 w-full px-1 pt-1 opacity-70 text-[8px] text-gray-500 dark:text-gray-400 shrink-0 mt-auto">
+                                    <div className="flex justify-between items-center w-full px-0.5 pt-0.5 opacity-80 text-[8px] text-gray-500 dark:text-gray-400 mt-auto font-mono">
                                         {(() => {
-                                            const dates = []
+                                            const formatDate = (dateStr: string) => {
+                                                if (!dateStr) return '';
+                                                const d = new Date(dateStr);
+                                                const day = String(d.getDate()).padStart(2, '0');
+                                                const month = String(d.getMonth() + 1).padStart(2, '0');
+                                                const year = String(d.getFullYear()).slice(-2);
+                                                return `${day}/${month}/${year}`;
+                                            };
 
-                                            if (lotDetail.peeling_date) {
-                                                dates.push(`B: ${new Date(lotDetail.peeling_date).toLocaleDateString('vi-VN')}`)
-                                            }
-                                            if (lotDetail.packaging_date) {
-                                                dates.push(`Đ: ${new Date(lotDetail.packaging_date).toLocaleDateString('vi-VN')}`)
-                                            }
-                                            if (lotDetail.inbound_date && !lotDetail.peeling_date && !lotDetail.packaging_date) {
-                                                dates.push(`N: ${new Date(lotDetail.inbound_date).toLocaleDateString('vi-VN')}`)
+                                            const peeling = lotDetail.peeling_date ? `B:${formatDate(lotDetail.peeling_date)}` : '';
+                                            const packaging = lotDetail.packaging_date ? `Đ:${formatDate(lotDetail.packaging_date)}` : '';
+                                            const inbound = lotDetail.inbound_date && !lotDetail.peeling_date && !lotDetail.packaging_date
+                                                ? `N:${formatDate(lotDetail.inbound_date)}`
+                                                : '';
+
+                                            if (peeling && packaging) {
+                                                return (
+                                                    <>
+                                                        <span className="shrink-0">{peeling}</span>
+                                                        <span className="text-gray-300 dark:text-gray-600">|</span>
+                                                        <span className="shrink-0">{packaging}</span>
+                                                    </>
+                                                );
                                             }
 
-                                            return dates.map((d, i) => (
-                                                <React.Fragment key={i}>
-                                                    {i > 0 && <span className="text-gray-300 dark:text-gray-600">|</span>}
-                                                    <span>{d}</span>
-                                                </React.Fragment>
-                                            ))
+                                            // Fallback for single or other combinations
+                                            const display = peeling || packaging || inbound;
+                                            return <span className="w-full text-center">{display}</span>;
                                         })()}
                                     </div>
                                 </div>
@@ -258,8 +229,34 @@ const MemoizedPositionCell = React.memo<{
         prev.lotDetail === next.lotDetail &&
         prev.isAssignmentMode === next.isAssignmentMode &&
         prev.isHighlightBlinking === next.isHighlightBlinking &&
-        prev.displayInternalCode === next.displayInternalCode
+        prev.displayInternalCode === next.displayInternalCode &&
+        prev.isGrouped === next.isGrouped
 })
+
+interface FlexibleZoneGridProps {
+    zones: Zone[]
+    positions: PositionWithZone[]
+    layouts: Record<string, ZoneLayout>
+    occupiedIds: Set<string>
+    collapsedZones: Set<string>
+    selectedPositionIds: Set<string>
+    isDesignMode?: boolean
+    isAssignmentMode?: boolean
+    onUpdateCollapsedZones?: (setter: (prev: Set<string>) => Set<string>) => void
+    onToggleCollapse: (zoneId: string) => void
+    onPositionSelect: (positionId: string) => void
+    onViewDetails?: (lotId: string) => void
+    onPositionMenu?: (pos: Position, e: React.MouseEvent) => void
+    onConfigureZone?: (zone: Zone) => void
+    highlightLotId?: string | null
+    highlightingPositionIds?: Set<string>
+    lotInfo?: Record<string, { code: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>, inbound_date?: string, created_at?: string, packaging_date?: string, peeling_date?: string, tags?: string[] }>
+    pageBreakIds?: Set<string>
+    onTogglePageBreak?: (zoneId: string) => void
+    onPrintZone?: (zoneId: string) => void
+    displayInternalCode?: boolean
+    isGrouped?: boolean
+}
 
 export default function FlexibleZoneGrid({
     zones,
@@ -293,31 +290,27 @@ export default function FlexibleZoneGrid({
         return () => window.removeEventListener('resize', checkMobile)
     }, [])
 
-    // Build zone tree with positions count
     const zoneTree = useMemo(() => {
-        const map = new Map<string, Zone & { children: Zone[], positions: PositionWithZone[] }>()
+        const map = new Map<string, Zone & { children: Zone[], positions: PositionWithZone[], totalPositions: number, descendantIds: string[] }>()
 
-        // Initialize all zones
         zones.forEach(z => {
-            map.set(z.id, { ...z, children: [], positions: [] })
+            map.set(z.id, { ...z, children: [], positions: [], totalPositions: 0, descendantIds: [] })
         })
 
-        // Attach positions to zones
         positions.forEach(p => {
             if (p.zone_id && map.has(p.zone_id)) {
                 map.get(p.zone_id)!.positions.push(p)
             }
         })
 
-        // Build parent-child relationships
         zones.forEach(z => {
             if (z.parent_id && map.has(z.parent_id)) {
                 map.get(z.parent_id)!.children.push(map.get(z.id)!)
             }
         })
 
-        // Sort children by display_order first, then code
-        map.forEach(node => {
+        const computeNodeData = (nodeId: string) => {
+            const node = map.get(nodeId)!
             node.children.sort((a, b) => {
                 const oa = (a as any).display_order ?? 0
                 const ob = (b as any).display_order ?? 0
@@ -325,11 +318,26 @@ export default function FlexibleZoneGrid({
                 return (a.code || '').localeCompare(b.code || '')
             })
             node.positions.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }))
-        })
 
-        // Get root zones (zones with no parent OR parent not in the current list)
-        return zones
-            .filter(z => !z.parent_id || !map.has(z.parent_id))
+            let totalPos = node.positions.length
+            let descIds: string[] = []
+
+            node.children.forEach(child => {
+                computeNodeData(child.id)
+                const computedChild = map.get(child.id)!
+                totalPos += computedChild.totalPositions
+                descIds.push(computedChild.id)
+                descIds.push(...computedChild.descendantIds)
+            })
+
+            node.totalPositions = totalPos
+            node.descendantIds = descIds
+        }
+
+        const rootNodes = zones.filter(z => !z.parent_id || !map.has(z.parent_id))
+        rootNodes.forEach(root => computeNodeData(root.id))
+
+        return rootNodes
             .map(z => map.get(z.id)!)
             .sort((a, b) => {
                 const oa = (a as any).display_order ?? 0
@@ -339,19 +347,31 @@ export default function FlexibleZoneGrid({
             })
     }, [zones, positions])
 
-    // Lấy toàn bộ ID của Cây phả hệ con cháu dưới 1 Node
-    const getAllDescendantIds = React.useCallback((zone: Zone & { children: Zone[] }): string[] => {
-        let ids: string[] = []
-        zone.children.forEach(child => {
-            ids.push(child.id)
-            ids = ids.concat(getAllDescendantIds(child as any))
-        })
-        return ids
-    }, [])
+    function renderPositionCell(pos: PositionWithZone, cellHeight: number, cellWidth: number) {
+        return (
+            <MemoizedPositionCell
+                key={pos.id}
+                pos={pos}
+                cellHeight={cellHeight}
+                cellWidth={cellWidth}
+                isMobile={isMobile}
+                isOccupied={occupiedIds.has(pos.id)}
+                isSelected={selectedPositionIds.has(pos.id)}
+                isTargetLot={highlightLotId ? pos.lot_id === highlightLotId : false}
+                lotDetail={pos.lot_id ? lotInfo[pos.lot_id] : null}
+                isAssignmentMode={!!onPositionSelect}
+                isHighlightBlinking={highlightingPositionIds.has(pos.id)}
+                displayInternalCode={displayInternalCode}
+                isGrouped={isGrouped}
+                onPositionSelect={onPositionSelect}
+                onViewDetails={onViewDetails}
+                onPositionMenu={onPositionMenu}
+            />
+        )
+    }
 
-    // Recursive render function
     function renderZone(
-        zone: Zone & { children: Zone[], positions: PositionWithZone[] },
+        zone: Zone & { children: Zone[], positions: PositionWithZone[], totalPositions: number, descendantIds: string[] },
         depth: number = 0,
         breadcrumb: string[] = [],
         overrideBgStyle?: React.CSSProperties
@@ -361,14 +381,22 @@ export default function FlexibleZoneGrid({
         const hasChildren = zone.children.length > 0
         const hasPositions = zone.positions.length > 0
 
-        // Mobile optimization: Limit columns to 2 on mobile if originally > 2
+        const isBigBin = isGrouped && (zone.id.startsWith('v-bin-') || zone.name.startsWith('Ô '))
+        const isLevelUnderBin = isGrouped && (zone.id.startsWith('v-lvl-') || zone.name.toUpperCase().startsWith('TẦNG '))
+
         let positionColumns = layout?.position_columns ?? 8
         if (isMobile && positionColumns > 2) {
             positionColumns = 2
         }
 
-        const cellWidth = layout?.cell_width ?? 0
-        const cellHeight = layout?.cell_height ?? 0
+        let cellWidth = layout?.cell_width ?? 0
+        let cellHeight = layout?.cell_height ?? 0
+
+        if (isLevelUnderBin) {
+            positionColumns = 3
+            cellWidth = 0
+            cellHeight = 0
+        }
         const childLayout = layout?.child_layout ?? 'vertical'
         const childColumns = layout?.child_columns ?? 0
         const childWidth = layout?.child_width ?? 0
@@ -379,34 +407,25 @@ export default function FlexibleZoneGrid({
         const headerTextColor = layout?.header_text_color ?? null
         const effectiveChildCols = childColumns > 0 ? childColumns : 3
 
-        // Force Root Zones (Warehouses) to ALWAYS show, overriding user's 'hidden' layout settings
-        // because we want Warehouses to wrap their children in the Map view now.
         if (depth === 0 && displayType === 'hidden') {
-            displayType = 'auto' // fallback to normal header wrapper
+            displayType = 'auto'
         }
 
-        // Build breadcrumb path (needed for all display types including hidden)
         const currentBreadcrumb = [...breadcrumb, zone.name]
 
-        // Handle hidden display type
         if (displayType === 'hidden') {
-            // In Design Mode: Show zone with ghost styling AND render children inside
             if (isDesignMode) {
                 return (
                     <div
                         key={zone.id}
                         className="rounded-xl border-2 border-dashed border-orange-300 dark:border-orange-700 overflow-hidden bg-orange-50/30 dark:bg-orange-900/10"
                     >
-                        {/* Ghost Header - indicates hidden zone */}
                         <div className="flex items-center justify-between px-4 py-2 bg-orange-100/50 dark:bg-orange-900/20 border-b border-orange-200 dark:border-orange-800">
                             <div className="flex items-center gap-2">
                                 <span className="text-xs bg-orange-200 dark:bg-orange-800 text-orange-700 dark:text-orange-300 px-2 py-0.5 rounded">ẨN</span>
                                 <span className="font-mono text-xs text-gray-500">{zone.code}</span>
                                 <span className="font-medium text-sm text-gray-500 dark:text-gray-400 line-through">
                                     {zone.name}
-                                </span>
-                                <span className="text-xs text-orange-500">
-                                    (Zone con sẽ hiển thị trực tiếp khi thoát)
                                 </span>
                             </div>
                             <button
@@ -420,12 +439,10 @@ export default function FlexibleZoneGrid({
                                 Cấu hình
                             </button>
                         </div>
-                        {/* Render children so they can be configured in Design Mode */}
                         <div className="p-3 space-y-3">
-                            {/* Render positions if any */}
                             {hasPositions && (
                                 <div
-                                    className="grid gap-2"
+                                    className="grid gap-1"
                                     style={{
                                         gridTemplateColumns: cellWidth > 0
                                             ? `repeat(${positionColumns}, ${cellWidth}px)`
@@ -435,21 +452,17 @@ export default function FlexibleZoneGrid({
                                     {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth))}
                                 </div>
                             )}
-                            {/* Render child zones */}
                             {zone.children.map(child => renderZone(child as any, depth + 1, currentBreadcrumb))}
                         </div>
                     </div>
                 )
             }
 
-            // Normal mode: Render children directly without this zone's wrapper
-            // This "bubbles up" children to take parent's place
             return (
                 <div key={zone.id} className="contents">
-                    {/* Render direct positions if any */}
                     {hasPositions && (
                         <div
-                            className="grid gap-2 mb-3"
+                            className="grid gap-1 mb-1.5"
                             style={{
                                 gridTemplateColumns: cellWidth > 0
                                     ? `repeat(${positionColumns}, ${cellWidth}px)`
@@ -459,32 +472,20 @@ export default function FlexibleZoneGrid({
                             {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth))}
                         </div>
                     )}
-                    {/* Render children directly at current level - pass currentBreadcrumb to include hidden parent names */}
                     {zone.children.map(child => renderZone(child as any, depth, currentBreadcrumb))}
                 </div>
             )
         }
 
-        // Skip empty zones (no children, no positions)
         if (!hasChildren && !hasPositions) return null
 
-
-        // Calculate total positions (including nested)
-        const totalPositions = countAllPositions(zone)
-
-        // Determine effective display type
+        const totalPositions = zone.totalPositions;
         const effectiveDisplayType = displayType === 'auto'
             ? (hasPositions && !hasChildren ? 'grid' : 'header')
             : displayType
 
-        // Detect virtual grouping states for styling
-        const isBigBin = isGrouped && zone.id.startsWith('v-bin-')
-        const isLevelUnderBin = isGrouped && zone.id.startsWith('v-lvl-')
-
-        // Render based on display type
         switch (effectiveDisplayType) {
             case 'grid':
-                // Grid mode: Show breadcrumb header + positions directly
                 return (
                     <div
                         key={zone.id}
@@ -495,9 +496,8 @@ export default function FlexibleZoneGrid({
                                 -- Tiếp theo từ trang trước --
                             </div>
                         )}
-                        {/* QLK-style header with breadcrumb */}
                         <div
-                            className={`flex items-center justify-between px-4 border-b ${isLevelUnderBin ? 'py-1.5' : 'py-3'}`}
+                            className={`flex items-center justify-between px-4 border-b ${isLevelUnderBin ? 'py-1' : isBigBin ? 'py-1.5' : 'py-3'}`}
                             style={headerColor
                                 ? { backgroundColor: headerColor, borderColor: headerColor }
                                 : { background: 'linear-gradient(to right, rgb(236 253 245), white)' }
@@ -505,17 +505,20 @@ export default function FlexibleZoneGrid({
                         >
                             <div className="flex items-center gap-3">
                                 <div
-                                    className={`rounded-full shrink-0 ${isLevelUnderBin ? 'w-0.5 h-4' : 'w-1 h-8'}`}
+                                    className={`rounded-full shrink-0 ${isLevelUnderBin ? 'w-0.5 h-3' : isBigBin ? 'w-1 h-5' : 'w-1 h-8'}`}
                                     style={{ backgroundColor: headerTextColor || (headerColor ? 'rgba(255,255,255,0.8)' : '#22c55e') }}
                                 />
                                 <div>
                                     <h2
-                                        className={`font-bold tracking-tight ${isMobile ? 'text-sm' : isBigBin ? 'text-2xl' : isLevelUnderBin ? 'text-base' : 'text-lg'}`}
+                                        className={`font-bold tracking-tight ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-sm' : 'text-lg'}`}
                                         style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
                                     >
-                                        {isMobile || isGrouped ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • ')}
+                                        {isLevelUnderBin
+                                            ? `${currentBreadcrumb.join(' • ')} | ${totalPositions} vị trí`
+                                            : (isMobile || isGrouped ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • '))
+                                        }
                                     </h2>
-                                    {totalPositions > 0 && (
+                                    {!isLevelUnderBin && totalPositions > 0 && (
                                         <p
                                             className="text-xs"
                                             style={{ color: headerTextColor ? `${headerTextColor}cc` : (headerColor ? 'rgba(255,255,255,0.8)' : undefined) }}
@@ -526,13 +529,12 @@ export default function FlexibleZoneGrid({
                                 </div>
                             </div>
                             <div className="flex items-center gap-2 print:hidden">
-                                {/* Mở/Thu Cục Bộ */}
                                 {depth === 0 && onUpdateCollapsedZones && (
                                     <div className="flex items-center gap-1 mr-2 bg-black/10 rounded overflow-hidden">
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation()
-                                                const descendantIds = getAllDescendantIds(zone as any)
+                                                const descendantIds = zone.descendantIds
                                                 onUpdateCollapsedZones(prev => {
                                                     const next = new Set(prev)
                                                     next.delete(zone.id)
@@ -549,7 +551,7 @@ export default function FlexibleZoneGrid({
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation()
-                                                const descendantIds = getAllDescendantIds(zone as any)
+                                                const descendantIds = zone.descendantIds
                                                 onUpdateCollapsedZones(prev => {
                                                     const next = new Set(prev)
                                                     next.delete(zone.id)
@@ -628,12 +630,11 @@ export default function FlexibleZoneGrid({
                             </div>
                         </div>
 
-                        {/* Positions grid */}
-                        <div className="p-4">
+                        <div className="p-2">
                             {!isCollapsed && (
                                 <>
                                     <div
-                                        className="grid gap-2"
+                                        className="grid gap-1"
                                         style={{
                                             gridTemplateColumns: cellWidth > 0
                                                 ? `repeat(${positionColumns}, ${cellWidth}px)`
@@ -642,10 +643,8 @@ export default function FlexibleZoneGrid({
                                     >
                                         {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth))}
                                     </div>
-
-                                    {/* Also render child zones if any */}
                                     {hasChildren && (
-                                        <div className="mt-4 space-y-3">
+                                        <div className="mt-2 space-y-1.5">
                                             {zone.children.map(child => renderZone(child as any, depth + 1, currentBreadcrumb))}
                                         </div>
                                     )}
@@ -656,7 +655,6 @@ export default function FlexibleZoneGrid({
                 )
 
             case 'section':
-                // Section mode: Compact section with nice breadcrumb header like Grid
                 return (
                     <div
                         key={zone.id}
@@ -668,9 +666,8 @@ export default function FlexibleZoneGrid({
                                 -- Tiếp theo từ trang trước --
                             </div>
                         )}
-                        {/* QLK-style header with breadcrumb - same as Grid mode */}
                         <div
-                            className={`flex items-center justify-between px-4 border-b cursor-pointer ${isLevelUnderBin ? 'py-1.5' : 'py-3'}`}
+                            className={`flex items-center justify-between px-4 border-b cursor-pointer ${isLevelUnderBin ? 'py-1' : isBigBin ? 'py-1.5' : 'py-3'}`}
                             style={headerColor
                                 ? { backgroundColor: headerColor, borderColor: headerColor }
                                 : { background: 'linear-gradient(to right, rgb(236 253 245), white)' }
@@ -680,21 +677,24 @@ export default function FlexibleZoneGrid({
                             <div className="flex items-center gap-3">
                                 {collapsible && (
                                     isCollapsed
-                                        ? <ChevronRight size={isLevelUnderBin ? 14 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
-                                        : <ChevronDown size={isLevelUnderBin ? 14 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
+                                        ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
+                                        : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
                                 )}
                                 <div
-                                    className={`rounded-full shrink-0 ${isLevelUnderBin ? 'w-0.5 h-4' : 'w-1 h-8'}`}
+                                    className={`rounded-full shrink-0 ${isLevelUnderBin ? 'w-0.5 h-3' : isBigBin ? 'w-1 h-5' : 'w-1 h-8'}`}
                                     style={{ backgroundColor: headerTextColor || (headerColor ? 'rgba(255,255,255,0.8)' : '#22c55e') }}
                                 />
                                 <div>
                                     <h2
-                                        className={`font-bold tracking-tight ${isMobile ? 'text-sm' : isBigBin ? 'text-2xl' : isLevelUnderBin ? 'text-base' : 'text-lg'}`}
+                                        className={`font-bold tracking-tight ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-sm' : 'text-lg'}`}
                                         style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
                                     >
-                                        {isMobile || isGrouped ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • ')}
+                                        {isLevelUnderBin
+                                            ? `${currentBreadcrumb.join(' • ')} | ${totalPositions} vị trí`
+                                            : (isMobile || isGrouped ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • '))
+                                        }
                                     </h2>
-                                    {totalPositions > 0 && (
+                                    {!isLevelUnderBin && totalPositions > 0 && (
                                         <p
                                             className="text-xs"
                                             style={{ color: headerTextColor ? `${headerTextColor}cc` : (headerColor ? 'rgba(255,255,255,0.8)' : undefined) }}
@@ -705,13 +705,12 @@ export default function FlexibleZoneGrid({
                                 </div>
                             </div>
                             <div className="flex items-center gap-2 print:hidden">
-                                {/* Mở/Thu Cục Bộ */}
                                 {depth === 0 && onUpdateCollapsedZones && (
                                     <div className="flex items-center gap-1 mr-2 bg-black/10 rounded overflow-hidden">
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation()
-                                                const descendantIds = getAllDescendantIds(zone as any)
+                                                const descendantIds = zone.descendantIds
                                                 onUpdateCollapsedZones(prev => {
                                                     const next = new Set(prev)
                                                     next.delete(zone.id)
@@ -728,7 +727,7 @@ export default function FlexibleZoneGrid({
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation()
-                                                const descendantIds = getAllDescendantIds(zone as any)
+                                                const descendantIds = zone.descendantIds
                                                 onUpdateCollapsedZones(prev => {
                                                     const next = new Set(prev)
                                                     next.delete(zone.id)
@@ -807,12 +806,11 @@ export default function FlexibleZoneGrid({
                             </div>
                         </div>
 
-                        {/* Section content */}
                         {!isCollapsed && (
-                            <div className="p-4 space-y-3">
+                            <div className="p-2 space-y-1.5">
                                 {hasPositions && (
                                     <div
-                                        className="grid gap-2"
+                                        className="grid gap-1"
                                         style={{
                                             gridTemplateColumns: cellWidth > 0
                                                 ? `repeat(${positionColumns}, ${cellWidth}px)`
@@ -826,10 +824,10 @@ export default function FlexibleZoneGrid({
                                     <div
                                         className={
                                             childLayout === 'horizontal'
-                                                ? 'flex gap-3 overflow-x-auto pb-2'
+                                                ? 'flex gap-1.5 overflow-x-auto pb-2'
                                                 : childLayout === 'grid'
-                                                    ? `grid gap-3`
-                                                    : 'space-y-3'
+                                                    ? `grid gap-1.5`
+                                                    : 'space-y-1.5'
                                         }
                                         style={
                                             childLayout === 'grid' && childColumns > 0
@@ -863,16 +861,14 @@ export default function FlexibleZoneGrid({
 
             case 'header':
             default:
-                // Header mode: Just header, children below (default/auto)
                 return (
                     <div
                         key={zone.id}
                         className={`group rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden ${depth === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50'}`}
                         style={overrideBgStyle}
                     >
-                        {/* Zone Header */}
                         <div
-                            className={`flex items-center justify-between px-4 py-2 border-b cursor-pointer transition-colors ${headerColor ? '' : `border-gray-100 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/50 ${depth === 0 ? 'bg-gray-50 dark:bg-gray-900/50' : ''}`}`}
+                            className={`flex items-center justify-between px-4 border-b cursor-pointer transition-colors ${isLevelUnderBin ? 'py-1' : isBigBin ? 'py-1.5' : 'py-2'} ${headerColor ? '' : `border-gray-100 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/50 ${depth === 0 ? 'bg-gray-50 dark:bg-gray-900/50' : ''}`}`}
                             style={headerColor
                                 ? { backgroundColor: headerColor, borderColor: headerColor }
                                 : undefined
@@ -882,18 +878,18 @@ export default function FlexibleZoneGrid({
                             <div className="flex items-center gap-2">
                                 {collapsible && (hasChildren || hasPositions) && (
                                     isCollapsed
-                                        ? <ChevronRight size={16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-gray-400'} />
-                                        : <ChevronDown size={16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-gray-400'} />
+                                        ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-gray-400'} />
+                                        : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-gray-400'} />
                                 )}
                                 <span
-                                    className={`font-medium ${depth === 0 ? 'text-base' : 'text-sm'}`}
+                                    className={`font-bold tracking-tight ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-base' : depth === 0 ? 'text-base' : 'text-sm'}`}
                                     style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
                                 >
-                                    {zone.name}
+                                    {isLevelUnderBin ? `${currentBreadcrumb.join(' • ')} | ${totalPositions} vị trí` : zone.name}
                                 </span>
-                                {totalPositions > 0 && (
+                                {!isLevelUnderBin && totalPositions > 0 && (
                                     <span
-                                        className={`text-xs px-1.5 py-0.5 rounded-full ${headerColor || headerTextColor ? '' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300'}`}
+                                        className={`px-1.5 py-0.5 rounded-full ${isLevelUnderBin ? 'text-[10px]' : 'text-xs'} ${headerColor || headerTextColor ? '' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300'}`}
                                         style={{
                                             backgroundColor: headerTextColor ? `${headerTextColor}33` : (headerColor ? 'rgba(255,255,255,0.2)' : undefined),
                                             color: headerTextColor || (headerColor ? 'white' : undefined)
@@ -904,14 +900,12 @@ export default function FlexibleZoneGrid({
                                 )}
                             </div>
 
-                            {/* Mini Local Collapse Controls (For Warehouse Level 0) */}
                             {depth === 0 && onUpdateCollapsedZones && (
                                 <div className="flex items-center gap-1 mr-2 bg-black/10 rounded overflow-hidden">
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation()
-                                            // Mở Dãy (Cấp 1): Xoá Kho khỏi Collapse + Thêm Descendant vào Collapse
-                                            const descendantIds = getAllDescendantIds(zone as any)
+                                            const descendantIds = zone.descendantIds
                                             onUpdateCollapsedZones(prev => {
                                                 const next = new Set(prev)
                                                 next.delete(zone.id)
@@ -928,8 +922,7 @@ export default function FlexibleZoneGrid({
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation()
-                                            // Mở Tất Cả (Cấp 2): Xoá Kho và Toàn bộ Descendant khỏi Collapse
-                                            const descendantIds = getAllDescendantIds(zone as any)
+                                            const descendantIds = zone.descendantIds
                                             onUpdateCollapsedZones(prev => {
                                                 const next = new Set(prev)
                                                 next.delete(zone.id)
@@ -946,7 +939,6 @@ export default function FlexibleZoneGrid({
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation()
-                                            // Thu Tất cả: Gập chính cái Kho này lại
                                             onUpdateCollapsedZones(prev => {
                                                 const next = new Set(prev)
                                                 next.add(zone.id)
@@ -961,7 +953,6 @@ export default function FlexibleZoneGrid({
                                 </div>
                             )}
 
-                            {/* Design mode: configure button */}
                             {isDesignMode && (
                                 <button
                                     onClick={(e) => {
@@ -976,13 +967,11 @@ export default function FlexibleZoneGrid({
                             )}
                         </div>
 
-                        {/* Zone Content */}
                         {!isCollapsed && (
-                            <div className="p-3">
-                                {/* Render positions of this zone */}
+                            <div className="p-1.5">
                                 {hasPositions && (
                                     <div
-                                        className="grid gap-2 mb-3"
+                                        className="grid gap-1 mb-1.5"
                                         style={{
                                             gridTemplateColumns: cellWidth > 0
                                                 ? `repeat(${positionColumns}, ${cellWidth}px)`
@@ -992,40 +981,9 @@ export default function FlexibleZoneGrid({
                                         {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth))}
                                     </div>
                                 )}
-
-                                {/* Render child zones */}
                                 {hasChildren && (
-                                    <div
-                                        className={
-                                            childLayout === 'horizontal'
-                                                ? 'flex gap-3 overflow-x-auto pb-2'
-                                                : childLayout === 'grid'
-                                                    ? `grid gap-3`
-                                                    : 'space-y-3'
-                                        }
-                                        style={
-                                            childLayout === 'grid' && childColumns > 0
-                                                ? { gridTemplateColumns: `repeat(${childColumns}, minmax(0, 1fr))` }
-                                                : childLayout === 'grid'
-                                                    ? { gridTemplateColumns: `repeat(auto-fill, minmax(300px, 1fr))` }
-                                                    : undefined
-                                        }
-                                    >
-                                        {zone.children.map((child, idx) => {
-                                            const rowIdx = childLayout === 'grid' ? Math.floor(idx / effectiveChildCols) : 0
-                                            const rowStyle: React.CSSProperties | undefined = alternatingRows && childLayout === 'grid' && rowIdx % 2 !== 0
-                                                ? { backgroundColor: 'rgba(219, 234, 254, 0.55)', borderColor: 'rgba(147, 197, 253, 0.4)' }
-                                                : undefined
-                                            return (
-                                                <div
-                                                    key={child.id}
-                                                    className={childLayout === 'horizontal' ? 'shrink-0 grow' : ''}
-                                                    style={childLayout === 'horizontal' && childWidth > 0 ? { width: `${childWidth}px` } : undefined}
-                                                >
-                                                    {renderZone(child as any, depth + 1, currentBreadcrumb, rowStyle)}
-                                                </div>
-                                            )
-                                        })}
+                                    <div className="space-y-1.5">
+                                        {zone.children.map(child => renderZone(child as any, depth + 1, currentBreadcrumb))}
                                     </div>
                                 )}
                             </div>
@@ -1035,56 +993,9 @@ export default function FlexibleZoneGrid({
         }
     }
 
-    // Helper function to render a position cell
-    function renderPositionCell(pos: PositionWithZone, cellHeight: number, cellWidth: number): React.ReactNode {
-        const isOccupied = occupiedIds.has(pos.id)
-        const isSelected = selectedPositionIds.has(pos.id)
-        const isTargetLot = highlightLotId ? pos.lot_id === highlightLotId : false
-        const lotDetail = pos.lot_id ? lotInfo[pos.lot_id] : null
-        const isAssignmentMode = !!highlightLotId
-        const isHighlightBlinking = highlightingPositionIds.has(pos.id)
-
-        return (
-            <MemoizedPositionCell
-                key={pos.id}
-                pos={pos}
-                cellHeight={cellHeight}
-                cellWidth={cellWidth}
-                isMobile={isMobile}
-                isOccupied={isOccupied}
-                isSelected={isSelected}
-                isTargetLot={isTargetLot}
-                lotDetail={lotDetail}
-                isAssignmentMode={isAssignmentMode}
-                isHighlightBlinking={isHighlightBlinking}
-                displayInternalCode={displayInternalCode}
-                onPositionSelect={onPositionSelect}
-                onViewDetails={onViewDetails}
-                onPositionMenu={onPositionMenu}
-            />
-        )
-    }
-
-    function countAllPositions(zone: Zone & { children: Zone[], positions: PositionWithZone[] }): number {
-        let count = zone.positions.length
-        for (const child of zone.children) {
-            count += countAllPositions(child as any)
-        }
-        return count
-    }
-
-    if (zoneTree.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                <Package size={48} className="mb-4" />
-                <p className="text-sm">Chưa có zone nào</p>
-            </div>
-        )
-    }
-
     return (
-        <div className="space-y-4">
-            {zoneTree.map(zone => renderZone(zone))}
+        <div className="space-y-2">
+            {zoneTree.map(root => renderZone(root as any))}
         </div>
     )
 }
