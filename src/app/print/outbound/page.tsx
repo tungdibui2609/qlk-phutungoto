@@ -972,74 +972,80 @@ function OutboundPrintContent() {
             <style jsx global>{`
                 @media print {
                     @page {
-                        /* Force portrait orientation to prevent browser from auto-rotating */
                         size: ${printSize === 'A5' ? '148mm 210mm' : 'portrait'};
-                        margin: ${printSize === 'A5' ? '2mm 3mm 2mm 3mm' : '1mm 10mm 10mm 10mm'};
+                        margin: ${printSize === 'A5' ? '3mm 3mm 2mm 3mm' : '1mm 10mm 10mm 10mm'};
                     }
                     body {
                         -webkit-print-color-adjust: exact;
                         print-color-adjust: exact;
-                        ${printSize === 'A5' ? `
-                            overflow: visible !important;
-                            width: 100% !important;
-                        ` : ''}
                     }
                     ${printSize === 'A5' ? `
-                    html, body {
+                    /* === A5 FULL PAGE PRINT === */
+                    /* A5 = 148mm x 210mm, margins 3mm each side = 142mm x 205mm printable */
+                    
+                    html {
+                        width: 142mm !important;
                         overflow: visible !important;
                     }
-                    ` : ''}
-                    #print-ready {
-                        ${printSize === 'A5' ? `
-                            width: 100% !important;
-                            max-width: 100% !important;
-                            padding: 0 !important;
-                            margin: 0 !important;
-                            overflow: visible !important;
-                        ` : ''}
+                    body {
+                        width: 142mm !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        overflow: visible !important;
                     }
-                    ${printSize === 'A5' ? `
+                    #print-ready {
+                        width: 142mm !important;
+                        max-width: 142mm !important;
+                        min-width: 142mm !important;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        overflow: visible !important;
+                        box-sizing: border-box !important;
+                        font-size: 10px !important;
+                        line-height: 1.2 !important;
+                    }
+                    #print-ready * {
+                        line-height: 1.2 !important;
+                    }
+                    #print-ready h1 {
+                        font-size: 13px !important;
+                        margin-top: 1px !important;
+                        margin-bottom: 1px !important;
+                    }
+                    
+                    /* Table: fill full width, auto column sizing */
                     #print-ready table {
                         width: 100% !important;
+                        max-width: 142mm !important;
                         table-layout: auto !important;
                     }
+                    /* Remove ALL fixed Tailwind width classes on table cells */
                     #print-ready table th,
                     #print-ready table td {
+                        width: auto !important;
+                        min-width: 0 !important;
+                        max-width: none !important;
+                        padding: 1px 3px !important;
+                        font-size: 10px !important;
                         word-break: break-word !important;
                         overflow-wrap: break-word !important;
                     }
-                    ` : ''}
-                    ${printSize === 'A5' ? `
-                    .print-a5-super-compact {
-                        font-size: 11px !important;
-                        line-height: 1.15 !important;
+                    #print-ready .print-total-row td {
+                        padding-top: 4px !important;
+                        padding-bottom: 4px !important;
                     }
-                    .print-a5-super-compact * {
-                        line-height: 1.15 !important;
-                    }
-                    .print-a5-super-compact h1 {
-                        font-size: 14px !important;
-                        margin-top: 2px !important;
-                        margin-bottom: 2px !important;
-                    }
-                    .print-a5-super-compact table th,
-                    .print-a5-super-compact table td {
-                        padding: 2px 4px !important;
-                        font-size: 11px !important;
-                    }
-                    .print-a5-super-compact .print-total-row td {
-                        padding-top: 8px !important;
-                        padding-bottom: 8px !important;
-                    }
-                    .print-a5-super-compact .pb-6 {
-                        padding-bottom: 2px !important;
-                    }
-                    .print-a5-super-compact .signature-grid {
+                    
+                    /* Signature section compact */
+                    #print-ready .signature-grid {
                         page-break-inside: avoid !important;
                         break-inside: avoid !important;
+                        gap: 2px !important;
                     }
-                    .print-a5-super-compact img {
-                        max-height: 25px !important;
+                    #print-ready .pb-6 {
+                        padding-bottom: 1px !important;
+                    }
+                    #print-ready img {
+                        max-height: 20px !important;
                     }
                     thead {
                         display: table-row-group !important;
