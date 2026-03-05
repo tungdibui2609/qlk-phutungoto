@@ -285,7 +285,14 @@ function ExportOrderPrintContent() {
                 @media print {
                     @page {
                         margin: 10mm;
-                        size: A4 portrait;
+                        size: portrait;
+                    }
+                    @page landscape-page {
+                        size: landscape;
+                        margin: 10mm;
+                    }
+                    .landscape-section {
+                        page: landscape-page;
                     }
                     body {
                         print-color-adjust: exact;
@@ -529,7 +536,7 @@ function ExportOrderPrintContent() {
             </div>
 
             {/* PAGE 2: DIAGRAM */}
-            <div className={`pt-8 px-8 pb-8 print:p-0 w-full max-w-[210mm] print:max-w-none bg-white shadow-md print:shadow-none ${isCapturing ? 'w-[210mm]' : ''} page-break`}>
+            <div className={`landscape-section pt-8 px-8 pb-8 print:p-0 w-full max-w-[297mm] print:max-w-none bg-white shadow-md print:shadow-none ${isCapturing ? 'w-[297mm]' : ''} page-break`}>
                 <h2 className="font-bold text-lg mb-4 text-center uppercase border-b border-black pb-2">Sơ đồ vị trí xuất kho</h2>
                 <ExportMapDiagram items={items} />
             </div>
