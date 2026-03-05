@@ -80,7 +80,9 @@ export function InboundItemsTable({
                                                 value: p.id,
                                                 label: `${displaySku} - ${displayName}`,
                                                 sku: displaySku || '',
-                                                name: displayName || ''
+                                                name: displayName || '',
+                                                originalSku: p.sku || '',
+                                                originalName: p.name || ''
                                             }
                                         })}
                                         value={item.productId}
@@ -253,7 +255,9 @@ export function InboundItemsTable({
                                         value: p.id,
                                         label: `${displaySku} - ${displayName}`,
                                         sku: displaySku || '',
-                                        name: displayName || ''
+                                        name: displayName || '',
+                                        originalSku: p.sku || '',
+                                        originalName: p.name || ''
                                     }
                                 })}
                                 value={item.productId}

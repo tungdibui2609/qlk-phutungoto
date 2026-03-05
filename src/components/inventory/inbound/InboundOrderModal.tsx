@@ -33,9 +33,9 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
         hasModule
     } = useInboundOrder(props)
 
-    if (!props.isOpen) return null
+    const [displayInternalCode, setDisplayInternalCode] = useState(hasModule('internal_products'))
 
-    const [displayInternalCode, setDisplayInternalCode] = useState(false)
+    if (!props.isOpen) return null
 
     const footerButtons = (
         <>

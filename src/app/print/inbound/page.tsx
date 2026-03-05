@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Printer, Loader2, Download } from 'lucide-react'
+import { Printer, Loader2, Download, Hash } from 'lucide-react'
 import { toJpeg } from 'html-to-image'
 import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { formatQuantityFull } from '@/lib/numberUtils'
@@ -19,7 +19,7 @@ interface OrderItem {
     document_quantity: number
     price: number
     note: string | null
-    products: { sku: string } | null
+    products: { sku: string, internal_code?: string | null, internal_name?: string | null } | null
 }
 
 interface InboundOrder {
@@ -76,6 +76,7 @@ function InboundPrintContent() {
     const [docQuantities, setDocQuantities] = useState<Record<string, string>>({})
     const [systemConfig, setSystemConfig] = useState<any>(null)
     const [unitsMap, setUnitsMap] = useState<Record<string, string>>({})
+    const [displayInternalCode, setDisplayInternalCode] = useState(false)
 
     // Use shared hook for company info
     const { companyInfo, logoSrc } = usePrintCompanyInfo({
@@ -98,6 +99,13 @@ function InboundPrintContent() {
             : systemConfig.inbound_modules
         return Array.isArray(modules) && modules.includes(moduleId)
     }
+
+    // Set displayInternalCode default when config loads
+    useEffect(() => {
+        if (systemConfig) {
+            setDisplayInternalCode(hasModule('internal_products'))
+        }
+    }, [systemConfig])
 
     const { targetUnit } = order?.metadata || {}
 
@@ -136,6 +144,14 @@ function InboundPrintContent() {
 
     // General note field
     const [editNote, setEditNote] = useState('')
+
+    // Column C Editable fields
+    const [editQuyCachTitle, setEditQuyCachTitle] = useState('Quy cách')
+    const [editQuyCach, setEditQuyCach] = useState<Record<string, string>>({})
+
+    // Note column editable fields
+    const [editNoteTitle, setEditNoteTitle] = useState('Ghi chú')
+    const [editItemNotes, setEditItemNotes] = useState<Record<string, string>>({})
 
     // Capture and snapshot state
     const [isDownloading, setIsDownloading] = useState(false)
@@ -281,6 +297,8 @@ function InboundPrintContent() {
                                 *,
                                 products (
                                     sku,
+                                    internal_code,
+                                    internal_name,
                                     unit,
                                     product_units (
                                         unit_id,
@@ -379,6 +397,13 @@ function InboundPrintContent() {
                             Tải ảnh phiếu
                         </>
                     )}
+                </button>
+                <button
+                    onClick={() => setDisplayInternalCode(!displayInternalCode)}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-full shadow-lg transition-all hover:scale-105 font-medium ${displayInternalCode ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-stone-200 hover:bg-stone-300 text-stone-800'}`}
+                >
+                    <Hash size={20} />
+                    {displayInternalCode ? 'Mã Nội Bộ' : 'Mã Gốc'}
                 </button>
                 <button
                     onClick={handlePrint}
@@ -597,19 +622,35 @@ function InboundPrintContent() {
                     <thead>
                         <tr className="bg-gray-100">
                             <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-10">STT</th>
-                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-48">Tên, nhãn hiệu quy cách, phẩm chất vật tư, dụng cụ sản phẩm, hàng hóa</th>
-                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">Mã số</th>
+                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-60">Tên, nhãn hiệu quy cách, phẩm chất vật tư, dụng cụ sản phẩm, hàng hóa</th>
+                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">
+                                <EditableText
+                                    value={editQuyCachTitle}
+                                    onChange={setEditQuyCachTitle}
+                                    className="text-center font-bold min-w-0 w-full"
+                                    isSnapshot={isSnapshotMode}
+                                />
+                            </th>
                             <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-14">Đơn vị tính</th>
                             <th colSpan={hasModule('inbound_conversion') && targetUnit ? (hasModule('inbound_financials') ? 3 : 2) : (hasModule('inbound_financials') ? 2 : 1)} className="border border-gray-400 px-2 py-2 text-center">Số lượng</th>
                             {!isInternal && hasModule('inbound_financials') && <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">Đơn giá</th>}
                             {!isInternal && hasModule('inbound_financials') && <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-28">Thành tiền</th>}
-                            {isInternal && <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-32">Ghi chú</th>}
+                            {isInternal && (
+                                <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-16">
+                                    <EditableText
+                                        value={editNoteTitle}
+                                        onChange={setEditNoteTitle}
+                                        className="text-center font-bold min-w-0 w-full"
+                                        isSnapshot={isSnapshotMode}
+                                    />
+                                </th>
+                            )}
                         </tr>
                         <tr className="bg-gray-100">
-                            {hasModule('inbound_financials') && <th className="border border-gray-400 px-2 py-2 text-center w-16 align-top">Theo chứng từ</th>}
-                            <th className="border border-gray-400 px-2 py-2 text-center w-16 align-top">Thực nhập</th>
+                            {hasModule('inbound_financials') && <th className="border border-gray-400 px-2 py-2 text-center w-20 align-top">Theo chứng từ</th>}
+                            <th className="border border-gray-400 px-2 py-2 text-center w-20 align-top">Thực nhập</th>
                             {hasModule('inbound_conversion') && targetUnit && (
-                                <th className="border border-gray-400 px-2 py-2 text-center w-20">Quy đổi<br /><span className="font-normal text-[10px]">({targetUnit})</span></th>
+                                <th className="border border-gray-400 px-2 py-2 text-center w-24">Quy đổi<br /><span className="font-normal text-[10px]">({targetUnit})</span></th>
                             )}
                         </tr>
                         <tr className="bg-gray-100 font-normal">
@@ -670,12 +711,46 @@ function InboundPrintContent() {
                                 }
                             }
 
+                            // Calculate names and skus based on toggle
+                            const productSource = item.products as any || {}
+                            // Fetch conversion rate for "quy cách"
+                            let quyCach = ""
+                            const normalizeQuyCach = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
+                            if (productSource.product_units && productSource.product_units.length > 0) {
+                                // Find the unit mapping for the current item's unit
+                                const itemUnitStr = normalizeQuyCach(item.unit)
+                                const uConfig = productSource.product_units.find((pu: any) => {
+                                    if (!pu.unit_id) return false
+                                    return normalizeQuyCach(unitsMap[pu.unit_id]) === itemUnitStr
+                                })
+
+                                if (uConfig) {
+                                    quyCach = `${item.unit}/${uConfig.conversion_rate}${productSource.unit || ''}`
+                                } else {
+                                    // Fallback to the first mapping if we can't match the specific one
+                                    const firstConfig = productSource.product_units[0]
+                                    const mappedUnitName = firstConfig.unit_id ? unitsMap[firstConfig.unit_id] : ''
+                                    quyCach = `${mappedUnitName}/${firstConfig.conversion_rate}${productSource.unit || ''}`
+                                }
+                            } else if (item.unit && productSource.unit && normalizeQuyCach(item.unit) !== normalizeQuyCach(productSource.unit)) {
+                                quyCach = `${item.unit}/1${productSource.unit}`
+                            }
+
                             return (
                                 <tr key={item.id} className="hover:bg-gray-50 font-bold">
                                     <td className="border border-gray-400 px-2 py-1.5 text-center">{index + 1}</td>
-                                    <td className="border border-gray-400 px-2 py-1.5">{item.product_name || 'N/A'}</td>
+                                    <td className="border border-gray-400 px-2 py-1.5">
+                                        {displayInternalCode && (item.products as any)?.internal_name
+                                            ? (item.products as any).internal_name
+                                            : item.product_name || 'N/A'}
+                                    </td>
                                     <td className="border border-gray-400 px-2 py-1.5 text-center">
-                                        {item.products?.sku || '-'}
+                                        <EditableText
+                                            value={editQuyCach[item.id] !== undefined ? editQuyCach[item.id] : quyCach}
+                                            onChange={(val: string) => setEditQuyCach(prev => ({ ...prev, [item.id]: val }))}
+                                            className="text-center w-full min-w-0"
+                                            isSnapshot={isSnapshotMode}
+                                        />
                                     </td>
                                     <td className="border border-gray-400 px-2 py-1.5 text-center">{item.unit || '-'}</td>
                                     {hasModule('inbound_financials') && (
@@ -683,7 +758,7 @@ function InboundPrintContent() {
                                             <EditableText
                                                 value={docQuantities[item.id] !== undefined ? docQuantities[item.id] : (item.document_quantity || item.quantity).toString()}
                                                 onChange={(val) => setDocQuantities(prev => ({ ...prev, [item.id]: val }))}
-                                                className="text-center w-full"
+                                                className="text-center w-full min-w-0"
                                                 isSnapshot={isSnapshotMode}
                                             />
                                         </td>
@@ -708,7 +783,12 @@ function InboundPrintContent() {
                                     )}
                                     {isInternal && (
                                         <td className="border border-gray-400 px-2 py-1.5 text-xs text-gray-600">
-                                            {item.note || ''}
+                                            <EditableText
+                                                value={editItemNotes[item.id] !== undefined ? editItemNotes[item.id] : (item.note || '')}
+                                                onChange={(val: string) => setEditItemNotes(prev => ({ ...prev, [item.id]: val }))}
+                                                className="w-full min-w-0"
+                                                isSnapshot={isSnapshotMode}
+                                            />
                                         </td>
                                     )}
                                 </tr>
@@ -803,7 +883,7 @@ function InboundPrintContent() {
                 )}
             </div>
 
-            <div className="mt-10 grid grid-cols-3 gap-4 text-center text-sm">
+            <div className="-mt-1 grid grid-cols-3 gap-4 text-center text-sm">
                 <div>
                     <div className="text-sm italic text-center mb-1 invisible">
                         Ngày ... tháng ... năm ...
@@ -817,10 +897,10 @@ function InboundPrintContent() {
                         />
                         <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle1}</span>
                     </div>
-                    <div className="text-xs text-gray-500 italic hidden">(Hoặc bộ phận có nhu cầu nhập)</div>
                     <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
-                    <div className="h-16"></div>
-                    <div className="mt-4">
+                    <div className="text-xs text-gray-500 italic invisible">(Hoặc bộ phận có nhu cầu nhập)</div>
+                    <div className="h-10"></div>
+                    <div className="mt-1">
                         <input
                             type="text"
                             value={signPerson1}
@@ -844,10 +924,10 @@ function InboundPrintContent() {
                         />
                         <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle2}</span>
                     </div>
-                    <div className="text-xs text-gray-500 italic hidden">(Hoặc bộ phận có nhu cầu nhập)</div>
                     <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
-                    <div className="h-16"></div>
-                    <div className="mt-4">
+                    <div className="text-xs text-gray-500 italic invisible">(Hoặc bộ phận có nhu cầu nhập)</div>
+                    <div className="h-10"></div>
+                    <div className="mt-1">
                         <input
                             type="text"
                             value={signPerson2}
@@ -898,8 +978,8 @@ function InboundPrintContent() {
                     </div>
                     <div className="text-xs text-gray-500 italic">(Hoặc bộ phận có nhu cầu nhập)</div>
                     <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
-                    <div className="h-16"></div>
-                    <div>
+                    <div className="h-10"></div>
+                    <div className="mt-1">
                         <input
                             type="text"
                             value={signPerson3}

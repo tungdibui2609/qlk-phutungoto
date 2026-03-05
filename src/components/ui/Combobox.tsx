@@ -71,27 +71,33 @@ export function Combobox({
                 const labelMatch = option.label?.toLowerCase().includes(lowerTerm)
                 const skuMatch = option.sku?.toLowerCase().includes(lowerTerm)
                 const codeMatch = option.code?.toLowerCase().includes(lowerTerm)
-                return labelMatch || skuMatch || codeMatch
+                const originalSkuMatch = option.originalSku?.toLowerCase().includes(lowerTerm)
+                const originalNameMatch = option.originalName?.toLowerCase().includes(lowerTerm)
+                return labelMatch || skuMatch || codeMatch || originalSkuMatch || originalNameMatch
             })
             .sort((a, b) => {
                 const aLabel = a.label?.toLowerCase() || ''
                 const bLabel = b.label?.toLowerCase() || ''
                 const aSku = a.sku?.toLowerCase() || a.code?.toLowerCase() || ''
                 const bSku = b.sku?.toLowerCase() || b.code?.toLowerCase() || ''
+                const aOriginalSku = a.originalSku?.toLowerCase() || ''
+                const bOriginalSku = b.originalSku?.toLowerCase() || ''
+                const aOriginalName = a.originalName?.toLowerCase() || ''
+                const bOriginalName = b.originalName?.toLowerCase() || ''
 
                 // 1. Exact SKU Match (Highest Priority)
-                if (aSku === lowerTerm && bSku !== lowerTerm) return -1
-                if (bSku === lowerTerm && aSku !== lowerTerm) return 1
+                if ((aSku === lowerTerm || aOriginalSku === lowerTerm) && (bSku !== lowerTerm && bOriginalSku !== lowerTerm)) return -1
+                if ((bSku === lowerTerm || bOriginalSku === lowerTerm) && (aSku !== lowerTerm && aOriginalSku !== lowerTerm)) return 1
 
                 // 2. SKU Starts With
-                const aSkuStart = aSku.startsWith(lowerTerm)
-                const bSkuStart = bSku.startsWith(lowerTerm)
+                const aSkuStart = aSku.startsWith(lowerTerm) || aOriginalSku.startsWith(lowerTerm)
+                const bSkuStart = bSku.startsWith(lowerTerm) || bOriginalSku.startsWith(lowerTerm)
                 if (aSkuStart && !bSkuStart) return -1
                 if (!aSkuStart && bSkuStart) return 1
 
                 // 3. Label Starts With
-                const aLabelStart = aLabel.startsWith(lowerTerm)
-                const bLabelStart = bLabel.startsWith(lowerTerm)
+                const aLabelStart = aLabel.startsWith(lowerTerm) || aOriginalName.startsWith(lowerTerm)
+                const bLabelStart = bLabel.startsWith(lowerTerm) || bOriginalName.startsWith(lowerTerm)
                 if (aLabelStart && !bLabelStart) return -1
                 if (!aLabelStart && bLabelStart) return 1
 

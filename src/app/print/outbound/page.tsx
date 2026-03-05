@@ -100,6 +100,13 @@ function OutboundPrintContent() {
         return Array.isArray(modules) && modules.includes(moduleId)
     }
 
+    // Set displayInternalCode default when config loads
+    useEffect(() => {
+        if (systemConfig) {
+            setDisplayInternalCode(hasModule('internal_products'))
+        }
+    }, [systemConfig])
+
     const { targetUnit } = order?.metadata || {}
 
     // Editable fields
@@ -119,7 +126,7 @@ function OutboundPrintContent() {
     const [signTitle1, setSignTitle1] = useState('Người lập phiếu')
     const [signTitle2, setSignTitle2] = useState('Thủ kho')
     const [signTitle3, setSignTitle3] = useState('Kế toán trưởng')
-    const [signTitle4, setSignTitle4] = useState('Người nhận hàng')
+    const [signTitle4, setSignTitle4] = useState('TP.QLCL')
     const [signPerson1, setSignPerson1] = useState('')
     const [signPerson2, setSignPerson2] = useState('')
     const [signPerson3, setSignPerson3] = useState('')
@@ -134,6 +141,14 @@ function OutboundPrintContent() {
 
     // General note field
     const [editNote, setEditNote] = useState('')
+
+    // Quy cách overrides
+    const [editQuyCachTitle, setEditQuyCachTitle] = useState('Quy cách')
+    const [editQuyCach, setEditQuyCach] = useState<Record<string, string>>({})
+
+    // Note column editable fields
+    const [editNoteTitle, setEditNoteTitle] = useState('Ghi chú')
+    const [editItemNotes, setEditItemNotes] = useState<Record<string, string>>({})
 
     // Transport info fields
     const [editVehicleNumber, setEditVehicleNumber] = useState('')
@@ -231,7 +246,7 @@ function OutboundPrintContent() {
                     setSignTitle1(searchParams.get('signTitle1') || 'Người lập phiếu')
                     setSignTitle2(searchParams.get('signTitle2') || 'Thủ kho')
                     setSignTitle3(searchParams.get('signTitle3') || 'Kế toán trưởng')
-                    setSignTitle4(searchParams.get('signTitle4') || 'Người nhận hàng')
+                    setSignTitle4(searchParams.get('signTitle4') || 'TP.QLCL')
 
                     setSignPerson1(searchParams.get('signPerson1') || '')
                     setSignPerson2(searchParams.get('signPerson2') || '')
@@ -575,19 +590,35 @@ function OutboundPrintContent() {
                     <thead>
                         <tr className="bg-gray-100">
                             <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-10">STT</th>
-                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-48">Tên, nhãn hiệu quy cách, phẩm chất vật tư, dụng cụ sản phẩm, hàng hóa</th>
-                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">Mã số</th>
+                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-60">Tên, nhãn hiệu quy cách, phẩm chất vật tư, dụng cụ sản phẩm, hàng hóa</th>
+                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">
+                                <EditableText
+                                    value={editQuyCachTitle}
+                                    onChange={setEditQuyCachTitle}
+                                    className="text-center font-bold min-w-0 w-full"
+                                    isSnapshot={isSnapshotMode}
+                                />
+                            </th>
                             <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-14">Đơn vị tính</th>
                             <th colSpan={hasModule('outbound_conversion') && targetUnit ? (hasModule('outbound_financials') ? 3 : 2) : (hasModule('outbound_financials') ? 2 : 1)} className="border border-gray-400 px-2 py-2 text-center">Số lượng</th>
                             {!isInternal && hasModule('outbound_financials') && <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">Đơn giá</th>}
                             {!isInternal && hasModule('outbound_financials') && <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-28">Thành tiền</th>}
-                            {isInternal && <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-32">Ghi chú</th>}
+                            {isInternal && (
+                                <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-16">
+                                    <EditableText
+                                        value={editNoteTitle}
+                                        onChange={setEditNoteTitle}
+                                        className="text-center font-bold min-w-0 w-full"
+                                        isSnapshot={isSnapshotMode}
+                                    />
+                                </th>
+                            )}
                         </tr>
                         <tr className="bg-gray-100">
-                            {hasModule('outbound_financials') && <th className="border border-gray-400 px-2 py-2 text-center w-16 align-top">Yêu cầu</th>}
-                            <th className="border border-gray-400 px-2 py-2 text-center w-16 align-top">Thực xuất</th>
+                            {hasModule('outbound_financials') && <th className="border border-gray-400 px-2 py-2 text-center w-20 align-top">Yêu cầu</th>}
+                            <th className="border border-gray-400 px-2 py-2 text-center w-20 align-top">Thực xuất</th>
                             {hasModule('outbound_conversion') && targetUnit && (
-                                <th className="border border-gray-400 px-2 py-2 text-center w-20">Quy đổi<br /><span className="font-normal text-[10px]">({targetUnit})</span></th>
+                                <th className="border border-gray-400 px-2 py-2 text-center w-24">Quy đổi<br /><span className="font-normal text-[10px]">({targetUnit})</span></th>
                             )}
                         </tr>
                         <tr className="bg-gray-100 font-normal">
@@ -650,7 +681,29 @@ function OutboundPrintContent() {
 
                             // Calculate names and skus based on toggle
                             const productSource = item.products as any || {}
-                            const displaySku = displayInternalCode && productSource.internal_code ? productSource.internal_code : productSource.sku || '-'
+                            // Fetch conversion rate for "quy cách"
+                            let quyCach = ""
+                            const normalizeQuyCach = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
+                            if (productSource.product_units && productSource.product_units.length > 0) {
+                                // Find the unit mapping for the current item's unit
+                                const itemUnitStr = normalizeQuyCach(item.unit)
+                                const uConfig = productSource.product_units.find((pu: any) => {
+                                    if (!pu.unit_id) return false
+                                    return normalizeQuyCach(unitsMap[pu.unit_id]) === itemUnitStr
+                                })
+
+                                if (uConfig) {
+                                    quyCach = `${item.unit}/${uConfig.conversion_rate}${productSource.unit || ''}`
+                                } else {
+                                    // Fallback to the first mapping if we can't match the specific one
+                                    const firstConfig = productSource.product_units[0]
+                                    const mappedUnitName = firstConfig.unit_id ? unitsMap[firstConfig.unit_id] : ''
+                                    quyCach = `${mappedUnitName}/${firstConfig.conversion_rate}${productSource.unit || ''}`
+                                }
+                            } else if (item.unit && productSource.unit && normalizeQuyCach(item.unit) !== normalizeQuyCach(productSource.unit)) {
+                                quyCach = `${item.unit}/1${productSource.unit}`
+                            }
+
                             const displayName = displayInternalCode && productSource.internal_name ? productSource.internal_name : item.product_name || 'N/A'
 
                             return (
@@ -658,7 +711,12 @@ function OutboundPrintContent() {
                                     <td className="border border-gray-400 px-2 py-1.5 text-center">{index + 1}</td>
                                     <td className="border border-gray-400 px-2 py-1.5">{displayName}</td>
                                     <td className="border border-gray-400 px-2 py-1.5 text-center">
-                                        {displaySku}
+                                        <EditableText
+                                            value={editQuyCach[item.id] !== undefined ? editQuyCach[item.id] : quyCach}
+                                            onChange={(val: string) => setEditQuyCach(prev => ({ ...prev, [item.id]: val }))}
+                                            className="text-center w-full min-w-0"
+                                            isSnapshot={isSnapshotMode}
+                                        />
                                     </td>
                                     <td className="border border-gray-400 px-2 py-1.5 text-center">{item.unit || '-'}</td>
                                     {hasModule('outbound_financials') && (
@@ -666,7 +724,7 @@ function OutboundPrintContent() {
                                             <EditableText
                                                 value={docQuantities[item.id] !== undefined ? docQuantities[item.id] : (item.document_quantity || item.quantity).toString()}
                                                 onChange={(val) => setDocQuantities(prev => ({ ...prev, [item.id]: val }))}
-                                                className="text-center w-full"
+                                                className="text-center w-full min-w-0"
                                                 isSnapshot={isSnapshotMode}
                                             />
                                         </td>
@@ -691,7 +749,12 @@ function OutboundPrintContent() {
                                     )}
                                     {isInternal && (
                                         <td className="border border-gray-400 px-2 py-1.5 text-xs text-gray-600">
-                                            {item.note || ''}
+                                            <EditableText
+                                                value={editItemNotes[item.id] !== undefined ? editItemNotes[item.id] : (item.note || '')}
+                                                onChange={(val: string) => setEditItemNotes(prev => ({ ...prev, [item.id]: val }))}
+                                                className="w-full min-w-0"
+                                                isSnapshot={isSnapshotMode}
+                                            />
                                         </td>
                                     )}
                                 </tr>
@@ -794,168 +857,107 @@ function OutboundPrintContent() {
                 )}
             </div>
 
-            <div className="mt-10 grid grid-cols-5 gap-3 text-center text-sm">
+            <div className={`-mt-1 grid grid-cols-[1fr_1fr_1fr_1fr_1.4fr] gap-3 text-center text-sm items-end`}>
+                {/* 1. Ngày tháng năm row */}
+                <div className="invisible">Ngày ... tháng ... năm ...</div>
+                <div className="invisible">Ngày ... tháng ... năm ...</div>
+                <div className="invisible">Ngày ... tháng ... năm ...</div>
+                <div className="invisible">Ngày ... tháng ... năm ...</div>
+                <div className="text-sm italic text-center whitespace-nowrap">
+                    <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
+                        Ngày
+                        <input type="text" value={signDay} onChange={(e) => setSignDay(e.target.value)}
+                            className="w-5 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-0.5 font-bold" />
+                        tháng
+                        <input type="text" value={signMonth} onChange={(e) => setSignMonth(e.target.value)}
+                            className="w-5 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-0.5 font-bold" />
+                        năm
+                        <input type="text" value={signYear} onChange={(e) => setSignYear(e.target.value)}
+                            className="w-11 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-0.5 font-bold" />
+                    </span>
+                    <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>
+                        Ngày {signDay || '\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0'} tháng {signMonth || '\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0'} năm {signYear || ''}
+                    </span>
+                </div>
+
+                {/* 2. Chức danh row */}
+                <div className="font-semibold">
+                    <input type="text" value={signTitle1} onChange={(e) => setSignTitle1(e.target.value)}
+                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`} />
+                    <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle1}</span>
+                </div>
+                <div className="font-semibold">
+                    <input type="text" value={signTitle5} onChange={(e) => setSignTitle5(e.target.value)}
+                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`} />
+                    <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle5}</span>
+                </div>
+                <div className="font-semibold">
+                    <input type="text" value={signTitle4} onChange={(e) => setSignTitle4(e.target.value)}
+                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`} />
+                    <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle4}</span>
+                </div>
+                <div className="font-semibold">
+                    <input type="text" value={signTitle2} onChange={(e) => setSignTitle2(e.target.value)}
+                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`} />
+                    <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle2}</span>
+                </div>
+                <div className="font-semibold">
+                    <input type="text" value={signTitle3} onChange={(e) => setSignTitle3(e.target.value)}
+                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`} />
+                    <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle3}</span>
+                </div>
+
+                {/* 3. Instruction & Label (Ký, họ tên) row */}
+                <div className="text-xs text-gray-500 italic self-center pb-8 print:pb-8">(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-center pb-8 print:pb-8">(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-center pb-8 print:pb-8">(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-center pb-8 print:pb-8">(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-start whitespace-nowrap">
+                    <div>(Hoặc bộ phận có nhu cầu xuất)</div>
+                    <div>(Ký, họ tên)</div>
+                </div>
+
+
+                {/* 5. Spacer */}
+                <div className="h-2"></div>
+                <div className="h-2"></div>
+                <div className="h-2"></div>
+                <div className="h-2"></div>
+                <div className="h-2"></div>
+
+                {/* 6. Họ tên row */}
                 <div>
-                    <div className="text-sm italic text-center mb-1 invisible">
-                        Ngày ... tháng ... năm ...
-                    </div>
-                    <div className="font-semibold">
-                        <input
-                            type="text"
-                            value={signTitle1}
-                            onChange={(e) => setSignTitle1(e.target.value)}
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
-                        />
-                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle1}</span>
-                    </div>
-                    <div className="text-xs text-gray-500 italic hidden">(Hoặc bộ phận có nhu cầu xuất)</div>
-                    <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
-                    <div className="h-16"></div>
-                    <div className="mt-4">
-                        <input
-                            type="text"
-                            value={signPerson1}
-                            onChange={(e) => setSignPerson1(e.target.value)}
-                            placeholder="Nhập tên..."
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
-                        />
-                        <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson1}</span>
-                    </div>
+                    <input type="text" value={signPerson1} onChange={(e) => setSignPerson1(e.target.value)}
+                        placeholder="Nhập tên..."
+                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`} />
+                    <span className={`hidden print:inline font-semibold whitespace-nowrap ${isSnapshotMode ? 'inline' : ''}`}>{signPerson1}</span>
                 </div>
                 <div>
-                    <div className="text-sm italic text-center mb-1 invisible">
-                        Ngày ... tháng ... năm ...
-                    </div>
-                    <div className="font-semibold">
-                        <input
-                            type="text"
-                            value={signTitle5}
-                            onChange={(e) => setSignTitle5(e.target.value)}
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
-                        />
-                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle5}</span>
-                    </div>
-                    <div className="text-xs text-gray-500 italic hidden">(Hoặc bộ phận có nhu cầu xuất)</div>
-                    <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
-                    <div className="h-16"></div>
-                    <div className="mt-4">
-                        <input
-                            type="text"
-                            value={signPerson5}
-                            onChange={(e) => setSignPerson5(e.target.value)}
-                            placeholder="Nhập tên..."
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
-                        />
-                        <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson5}</span>
-                    </div>
+                    <input type="text" value={signPerson5} onChange={(e) => setSignPerson5(e.target.value)}
+                        placeholder="Nhập tên..."
+                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`} />
+                    <span className={`hidden print:inline font-semibold whitespace-nowrap ${isSnapshotMode ? 'inline' : ''}`}>{signPerson5}</span>
                 </div>
                 <div>
-                    <div className="text-sm italic text-center mb-1 invisible">
-                        Ngày ... tháng ... năm ...
-                    </div>
-                    <div className="font-semibold">
-                        <input
-                            type="text"
-                            value={signTitle4}
-                            onChange={(e) => setSignTitle4(e.target.value)}
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
-                        />
-                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle4}</span>
-                    </div>
-                    <div className="text-xs text-gray-500 italic hidden">(Hoặc bộ phận có nhu cầu xuất)</div>
-                    <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
-                    <div className="h-16"></div>
-                    <div className="mt-4">
-                        <input
-                            type="text"
-                            value={signPerson4}
-                            onChange={(e) => setSignPerson4(e.target.value)}
-                            placeholder="Nhập tên..."
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
-                        />
-                        <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson4}</span>
-                    </div>
+                    <input type="text" value={signPerson4} onChange={(e) => setSignPerson4(e.target.value)}
+                        placeholder="Nhập tên..."
+                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`} />
+                    <span className={`hidden print:inline font-semibold whitespace-nowrap ${isSnapshotMode ? 'inline' : ''}`}>{signPerson4}</span>
                 </div>
                 <div>
-                    <div className="text-sm italic text-center mb-1 invisible">
-                        Ngày ... tháng ... năm ...
-                    </div>
-                    <div className="font-semibold">
-                        <input
-                            type="text"
-                            value={signTitle2}
-                            onChange={(e) => setSignTitle2(e.target.value)}
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
-                        />
-                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle2}</span>
-                    </div>
-                    <div className="text-xs text-gray-500 italic hidden">(Hoặc bộ phận có nhu cầu xuất)</div>
-                    <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
-                    <div className="h-16"></div>
-                    <div className="mt-4">
-                        <input
-                            type="text"
-                            value={signPerson2}
-                            onChange={(e) => setSignPerson2(e.target.value)}
-                            placeholder="Nhập tên..."
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
-                        />
-                        <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson2}</span>
-                    </div>
+                    <input type="text" value={signPerson2} onChange={(e) => setSignPerson2(e.target.value)}
+                        placeholder="Nhập tên..."
+                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`} />
+                    <span className={`hidden print:inline font-semibold whitespace-nowrap ${isSnapshotMode ? 'inline' : ''}`}>{signPerson2}</span>
                 </div>
                 <div>
-                    <div className="text-sm italic text-center mb-1">
-                        <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
-                            Ngày
-                            <input
-                                type="text"
-                                value={signDay}
-                                onChange={(e) => setSignDay(e.target.value)}
-                                className="w-6 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-0.5 font-bold"
-                            />
-                            tháng
-                            <input
-                                type="text"
-                                value={signMonth}
-                                onChange={(e) => setSignMonth(e.target.value)}
-                                className="w-6 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-0.5 font-bold"
-                            />
-                            năm
-                            <input
-                                type="text"
-                                value={signYear}
-                                onChange={(e) => setSignYear(e.target.value)}
-                                className="w-10 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-0.5 font-bold"
-                            />
-                        </span>
-                        <span className={`hidden print:inline-block whitespace-nowrap ${isSnapshotMode ? 'inline-block' : ''}`}>
-                            Ngày <span className="inline-block min-w-[25px] text-center">{signDay}</span> tháng <span className="inline-block min-w-[25px] text-center">{signMonth}</span> năm <span className="inline-block min-w-[35px] text-center">{signYear}</span>
-                        </span>
-                    </div>
-                    <div className="font-semibold">
-                        <input
-                            type="text"
-                            value={signTitle3}
-                            onChange={(e) => setSignTitle3(e.target.value)}
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
-                        />
-                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle3}</span>
-                    </div>
-                    <div className="text-xs text-gray-500 italic whitespace-nowrap">(Hoặc bộ phận có nhu cầu xuất)</div>
-                    <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
-                    <div className="h-16"></div>
-                    <div>
-                        <input
-                            type="text"
-                            value={signPerson3}
-                            onChange={(e) => setSignPerson3(e.target.value)}
-                            placeholder="Nhập tên..."
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
-                        />
-                        <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson3}</span>
-                    </div>
+                    <input type="text" value={signPerson3} onChange={(e) => setSignPerson3(e.target.value)}
+                        placeholder="Nhập tên..."
+                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`} />
+                    <span className={`hidden print:inline font-semibold whitespace-nowrap ${isSnapshotMode ? 'inline' : ''}`}>{signPerson3}</span>
                 </div>
             </div>
+
 
             <style jsx global>{`
                 @media print {
@@ -973,9 +975,10 @@ function OutboundPrintContent() {
                 }
             `}</style>
 
-            {isSnapshot && (
-                <style dangerouslySetInnerHTML={{
-                    __html: `
+            {
+                isSnapshot && (
+                    <style dangerouslySetInnerHTML={{
+                        __html: `
                     html, body {
                         background: white !important;
                         height: fit-content !important;
@@ -1004,13 +1007,14 @@ function OutboundPrintContent() {
                         box-sizing: border-box !important;
                     }
                 `}} />
-            )}
+                )
+            }
 
             <img
                 src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
                 alt="QR"
                 className="block w-full h-[1px] opacity-0 pointer-events-none"
             />
-        </div>
+        </div >
     )
 }
