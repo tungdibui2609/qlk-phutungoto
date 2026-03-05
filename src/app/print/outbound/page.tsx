@@ -917,10 +917,10 @@ function OutboundPrintContent() {
                 </div>
 
                 {/* 3. Instruction & Label (Ký, họ tên) row */}
-                <div className="text-xs text-gray-500 italic self-center pb-12 print:pb-12">(Ký, họ tên)</div>
-                <div className="text-xs text-gray-500 italic self-center pb-12 print:pb-12">(Ký, họ tên)</div>
-                <div className="text-xs text-gray-500 italic self-center pb-12 print:pb-12">(Ký, họ tên)</div>
-                <div className="text-xs text-gray-500 italic self-center pb-12 print:pb-12">(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-start pb-12 print:pb-12">(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-start pb-12 print:pb-12">(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-start pb-12 print:pb-12">(Ký, họ tên)</div>
+                <div className="text-xs text-gray-500 italic self-start pb-12 print:pb-12">(Ký, họ tên)</div>
                 <div className="text-xs text-gray-500 italic self-start whitespace-nowrap">
                     <div className="text-gray-500">(Hoặc bộ phận có nhu cầu xuất)</div>
                     <div className="text-gray-500 pb-12 print:pb-12">(Ký, họ tên)</div>
@@ -980,11 +980,7 @@ function OutboundPrintContent() {
                     }
                     #print-ready {
                         ${printSize === 'A5' ? `
-                            zoom: 0.65 !important;
-                            width: 100% !important;
-                            max-width: none !important;
-                            margin: 0 !important;
-                            padding: 0 !important;
+                            /* Removed forced zoom/width to let portrait A5 natural layout work */
                         ` : ''}
                     }
                     .no-print {

@@ -1013,11 +1013,7 @@ function InboundPrintContent() {
                     }
                     #print-ready {
                         ${printSize === 'A5' ? `
-                            zoom: 0.65 !important;
-                            width: 100% !important;
-                            max-width: none !important;
-                            margin: 0 !important;
-                            padding: 0 !important;
+                            /* Removed forced zoom/width to let portrait A5 natural layout work */
                         ` : ''}
                     }
                     .no-print {
