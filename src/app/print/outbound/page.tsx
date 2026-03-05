@@ -973,18 +973,42 @@ function OutboundPrintContent() {
                 @media print {
                     @page {
                         /* Force portrait orientation to prevent browser from auto-rotating */
-                        size: portrait;
-                        margin: ${printSize === 'A5' ? '3mm 5mm 2mm 5mm' : '1mm 10mm 10mm 10mm'};
+                        size: ${printSize === 'A5' ? '148mm 210mm' : 'portrait'};
+                        margin: ${printSize === 'A5' ? '2mm 3mm 2mm 3mm' : '1mm 10mm 10mm 10mm'};
                     }
                     body {
                         -webkit-print-color-adjust: exact;
                         print-color-adjust: exact;
-                    }
-                    #print-ready {
                         ${printSize === 'A5' ? `
-                            /* Normal 100% width on 210mm paper, let natural wrapping apply */
+                            overflow: visible !important;
+                            width: 100% !important;
                         ` : ''}
                     }
+                    ${printSize === 'A5' ? `
+                    html, body {
+                        overflow: visible !important;
+                    }
+                    ` : ''}
+                    #print-ready {
+                        ${printSize === 'A5' ? `
+                            width: 100% !important;
+                            max-width: 100% !important;
+                            padding: 0 !important;
+                            margin: 0 !important;
+                            overflow: visible !important;
+                        ` : ''}
+                    }
+                    ${printSize === 'A5' ? `
+                    #print-ready table {
+                        width: 100% !important;
+                        table-layout: auto !important;
+                    }
+                    #print-ready table th,
+                    #print-ready table td {
+                        word-break: break-word !important;
+                        overflow-wrap: break-word !important;
+                    }
+                    ` : ''}
                     ${printSize === 'A5' ? `
                     .print-a5-super-compact {
                         font-size: 11px !important;
