@@ -160,7 +160,7 @@ function OutboundPrintContent() {
     const [signPerson5, setSignPerson5] = useState('')
 
     // Print size state
-    const [printSize, setPrintSize] = useState<'A4' | 'A5'>('A5')
+    const [printSize, setPrintSize] = useState<'A4' | 'A5'>('A4')
 
     // Capture and snapshot state
     const [isDownloading, setIsDownloading] = useState(false)

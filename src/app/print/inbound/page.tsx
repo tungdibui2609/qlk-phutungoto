@@ -154,7 +154,7 @@ function InboundPrintContent() {
     const [editItemNotes, setEditItemNotes] = useState<Record<string, string>>({})
 
     // Print size state
-    const [printSize, setPrintSize] = useState<'A4' | 'A5'>('A5')
+    const [printSize, setPrintSize] = useState<'A4' | 'A5'>('A4')
 
     // Capture and snapshot state
     const [isDownloading, setIsDownloading] = useState(false)
