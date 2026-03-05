@@ -50,7 +50,9 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
                     if (lot.items && Array.isArray(lot.items)) {
                         for (const item of lot.items) {
                             if (item.product_name && item.product_name.toLowerCase().includes(term)) return true
+                            if (item.internal_name && item.internal_name.toLowerCase().includes(term)) return true
                             if (item.sku && item.sku.toLowerCase().includes(term)) return true
+                            if (item.internal_code && item.internal_code.toLowerCase().includes(term)) return true
                             if (item.tags && Array.isArray(item.tags)) {
                                 if (item.tags.some((t: string) => t.toLowerCase().includes(term))) return true
                             }
@@ -60,7 +62,9 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
                     // Fallback for single product structure if items array missing/empty
                     if (lot.products) {
                         if (lot.products.name && lot.products.name.toLowerCase().includes(term)) return true
+                        if (lot.products.internal_name && lot.products.internal_name.toLowerCase().includes(term)) return true
                         if (lot.products.sku && lot.products.sku.toLowerCase().includes(term)) return true
+                        if (lot.products.internal_code && lot.products.internal_code.toLowerCase().includes(term)) return true
                     }
 
                     return false
