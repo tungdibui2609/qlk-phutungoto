@@ -2,7 +2,8 @@
 
 import React, { useState, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft, FileOutput } from 'lucide-react'
+import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft, FileOutput, Trash2 } from 'lucide-react'
+import { useToast } from '@/components/ui/ToastProvider'
 import { Database } from '@/lib/database.types'
 
 import { LotForm } from '@/app/(dashboard)/warehouses/lots/_components/LotForm'
@@ -23,6 +24,7 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
         y: number
         position: Position | null
     } | null>(null)
+    const { showToast, showConfirm } = useToast()
 
     // Lot Form State
     const [showLotForm, setShowLotForm] = useState(false)
@@ -80,10 +82,42 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
         })
     }
 
-    const handleMenuAction = async (action: 'create' | 'edit' | 'assign' | 'move' | 'export') => {
+    const handleMenuAction = async (action: 'create' | 'edit' | 'assign' | 'move' | 'export' | 'delete') => {
         if (!contextMenu?.position) return
         const pos = contextMenu.position
         setContextMenu(null)
+
+        if (action === 'delete') {
+            const lotId = pos.lot_id
+            if (!lotId) return
+
+            if (!await showConfirm('Bạn có chắc chắn muốn xóa LOT này?')) return
+
+            try {
+                // Delete the lot
+                const { error: lotError } = await supabase
+                    .from('lots')
+                    .delete()
+                    .eq('id', lotId)
+
+                if (lotError) throw lotError
+
+                // Clear position reference (manually ensure consistency)
+                const { error: posError } = await supabase
+                    .from('positions')
+                    .update({ lot_id: null } as any)
+                    .eq('lot_id', lotId)
+
+                if (posError) throw posError
+
+                showToast('Đã xóa LOT thành công', 'success')
+                onRefreshMap()
+            } catch (error: any) {
+                console.error('Error deleting lot:', error)
+                showToast('Lỗi xóa LOT: ' + error.message, 'error')
+            }
+            return
+        }
 
         if (action === 'export') {
             const lotId = pos.lot_id
@@ -182,6 +216,14 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
                                 >
                                     <ArrowRightLeft size={16} className="text-orange-500" />
                                     <span>Di chuyển sang vị trí khác</span>
+                                </button>
+                                <div className="my-1 border-t border-gray-100 dark:border-gray-700" />
+                                <button
+                                    onClick={() => handleMenuAction('delete')}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-md transition-colors text-left font-medium"
+                                >
+                                    <Trash2 size={16} />
+                                    <span>Xóa LOT</span>
                                 </button>
                             </>
                         ) : (
