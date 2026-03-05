@@ -972,8 +972,8 @@ function OutboundPrintContent() {
             <style jsx global>{`
                 @media print {
                     @page {
-                        /* 210mm width x 148mm height - standard for continuous dot matrix half-A4 paper */
-                        size: ${printSize === 'A5' ? '210mm 148mm' : 'A4'};
+                        /* Force portrait orientation to prevent browser from auto-rotating */
+                        size: portrait;
                         margin: ${printSize === 'A5' ? '3mm 5mm 2mm 5mm' : '1mm 10mm 10mm 10mm'};
                     }
                     body {
