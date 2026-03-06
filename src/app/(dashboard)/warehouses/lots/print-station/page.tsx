@@ -101,29 +101,32 @@ export default function PrintStationPage() {
             const nextJob = jobs[0]
 
             try {
-                // 1. Update status to processing on server
+                // 1. Force focus to window (crucial for some browsers to allow window.print)
+                window.focus()
+
+                // 2. Update status to processing on server
                 await (supabase as any).from('print_queue')
                     .update({ status: 'processing' })
                     .eq('id', nextJob.id)
 
-                // 2. Load data to UI
+                // 3. Load data to UI
                 setLastPrinted(nextJob)
 
-                // 3. Short delay to ensure DOM is updated
+                // 4. Short delay to ensure DOM and QR are fully rendered
+                await new Promise(resolve => setTimeout(resolve, 1200))
+
+                if (isCancelled) return
+
+                // 5. Trigger Print
+                console.log('Triggering print for:', nextJob.id)
+                window.print()
+
+                // 6. Delay after print dialog closes
                 await new Promise(resolve => setTimeout(resolve, 1000))
 
                 if (isCancelled) return
 
-                // 4. Trigger Print
-                console.log('Triggering print for:', nextJob.id)
-                window.print()
-
-                // 5. Short delay after print dialog closes/finishes
-                await new Promise(resolve => setTimeout(resolve, 800))
-
-                if (isCancelled) return
-
-                // 6. Mark as completed and remove from local queue
+                // 7. Mark as completed
                 await handleJobCompletion(nextJob.id)
 
             } catch (error) {
@@ -142,6 +145,17 @@ export default function PrintStationPage() {
             isCancelled = true
         }
     }, [jobs, isPrinting])
+
+    // Keyboard shortcut for manual print
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.shiftKey && e.key === 'P') {
+                window.print()
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [])
 
     const handleJobCompletion = async (id: string) => {
         // Mark as printed on server
@@ -233,19 +247,18 @@ export default function PrintStationPage() {
                         <div className="bg-orange-50 dark:bg-orange-950/20 rounded-2xl p-6 border border-orange-200 dark:border-orange-900/50 animate-in slide-in-from-top-2 duration-300">
                             <div className="flex items-center justify-between mb-4">
                                 <div className="flex items-center gap-2 text-orange-700 dark:text-orange-400">
-                                    <AlertCircle size={20} />
-                                    <h3 className="text-sm font-bold uppercase tracking-wider">Cấu hình in tự động (Silent Print)</h3>
+                                    <Printer size={20} />
+                                    <h3 className="text-sm font-bold uppercase tracking-wider">Cấu hình in tự động (Bot Python)</h3>
                                 </div>
                                 <button onClick={() => setShowHelp(false)} className="text-orange-400 hover:text-orange-600">
                                     <X size={18} />
                                 </button>
                             </div>
                             <ol className="text-xs text-orange-800 dark:text-orange-300 space-y-3 list-decimal ml-4 font-medium leading-relaxed">
-                                <li>Chuột phải vào Shortcut Chrome trên Desktop {'>'} <b>Properties</b>.</li>
-                                <li>Tại tab <b>Shortcut</b>, tìm ô <b>Target</b> (KHÔNG PHẢI ô "Start in").</li>
-                                <li>Để con trỏ xuống cuối cùng của ô <b>Target</b>, cách ra 1 dấu cách rồi dán: <code> --kiosk-printing</code></li>
-                                <li><i>Lưu ý: Dán nó đằng sau dấu ngoặc kép cuối cùng (ví dụ: ...chrome.exe" --kiosk-printing).</i></li>
-                                <li>Bấm OK và mở lại Chrome từ chính Shortcut đó để kích hoạt in tự động.</li>
+                                <li>Mở thư mục **d:/toanthang/** trên máy tính này.</li>
+                                <li>Click đúp vào file **CHAY_BOT_IN_TEM.bat** để khởi động Bot.</li>
+                                <li>Giữ cửa sổ Bot chạy ngầm. Nó sẽ tự động bấm **In** mỗi khi có tem mới.</li>
+                                <li>Mẹo: Click chuột 1 cái vào trang web này sau khi mở để kích hoạt máy in.</li>
                             </ol>
                         </div>
                     </div>
