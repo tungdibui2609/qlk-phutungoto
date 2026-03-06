@@ -125,7 +125,7 @@ function OutboundPrintContent() {
     const [attachedDocs, setAttachedDocs] = useState('')
 
     // Editable signature fields
-    const [signTitle1, setSignTitle1] = useState('Người lập phiếu')
+    const [signTitle1, setSignTitle1] = useState('Người nhận')
     const [signTitle2, setSignTitle2] = useState('Thủ kho')
     const [signTitle3, setSignTitle3] = useState('Kế toán trưởng')
     const [signTitle4, setSignTitle4] = useState('TP.QLCL')
@@ -248,7 +248,7 @@ function OutboundPrintContent() {
                     setAmountInWords(searchParams.get('amountInWords') || '')
                     setAttachedDocs(searchParams.get('attachedDocs') || '')
 
-                    setSignTitle1(searchParams.get('signTitle1') || 'Người lập phiếu')
+                    setSignTitle1(searchParams.get('signTitle1') || 'Người nhận')
                     setSignTitle2(searchParams.get('signTitle2') || 'Thủ kho')
                     setSignTitle3(searchParams.get('signTitle3') || 'Kế toán trưởng')
                     setSignTitle4(searchParams.get('signTitle4') || 'TP.QLCL')
@@ -520,8 +520,8 @@ function OutboundPrintContent() {
             />
 
             {/* Title */}
-            <div className={`relative text-center ${printSize === 'A5' ? 'mt--1 mb-0' : 'mt-4 mb-1'}`}>
-                <h1 className={`${printSize === 'A5' ? 'text-base' : 'text-xl'} font-bold tracking-wide`} style={{ fontFamily: "'Times New Roman', Times, serif" }}>
+            <div className={`relative text-center ${printSize === 'A5' ? 'mt-0 mb-0' : 'mt-4 mb-1'}`}>
+                <h1 className={`${printSize === 'A5' ? 'text-sm' : 'text-xl'} font-bold tracking-wide`} style={{ fontFamily: "'Times New Roman', Times, serif" }}>
                     PHIẾU XUẤT KHO
                 </h1>
 
@@ -588,7 +588,7 @@ function OutboundPrintContent() {
                 </div>
             </div>
 
-            <div className={`mt-6 ${printSize === 'A5' ? 'print:mt-0' : 'print:mt-1'} space-y-2 ${printSize === 'A5' ? 'print:space-y-0.5' : 'print:space-y-0'} text-sm ${printSize === 'A5' ? 'print:text-[10.5px]' : ''}`}>
+            <div className={`mt-6 ${printSize === 'A5' ? 'print:mt-0' : 'print:mt-1'} space-y-2 ${printSize === 'A5' ? 'print:space-y-0' : 'print:space-y-0'} text-sm ${printSize === 'A5' ? 'print:text-[9px]' : ''}`}>
                 <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
                     <span className="text-gray-600 shrink-0">- Họ tên người nhận hàng:</span>
                     <EditableText
@@ -953,13 +953,12 @@ function OutboundPrintContent() {
                 )}
             </div>
 
-            <div className={`mt-0 ${printSize === 'A5' ? 'print:-mt-2' : 'print:-mt-1'} signature-grid grid grid-cols-[1fr_1fr_1fr_1fr_1.4fr] ${printSize === 'A5' ? 'gap-0.5' : 'gap-3'} text-center text-sm items-end ${printSize === 'A5' ? 'print:break-inside-avoid' : ''}`}>
+            <div className={`mt-0 ${printSize === 'A5' ? 'print:mt-2' : 'print:-mt-1'} signature-grid grid ${printSize === 'A5' ? 'grid-cols-5' : 'grid-cols-[1fr_1fr_1fr_1fr_1.4fr]'} ${printSize === 'A5' ? 'gap-0.5' : 'gap-3'} text-center text-sm items-end ${printSize === 'A5' ? 'print:break-inside-avoid' : ''}`}>
                 {/* 1. Ngày tháng năm row */}
                 <div className="invisible">Ngày ... tháng ... năm ...</div>
                 <div className="invisible">Ngày ... tháng ... năm ...</div>
                 <div className="invisible">Ngày ... tháng ... năm ...</div>
-                <div className="invisible">Ngày ... tháng ... năm ...</div>
-                <div className={`text-sm italic text-center whitespace-nowrap ${printSize === 'A5' ? 'print:pr-8' : ''}`}>
+                <div className={`col-span-2 text-sm italic text-center whitespace-nowrap pr-4`}>
                     <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
                         Ngày
                         <input type="text" value={signDay} onChange={(e) => setSignDay(e.target.value)}
@@ -977,38 +976,38 @@ function OutboundPrintContent() {
                 </div>
 
                 {/* 2. Chức danh row */}
-                <div className="font-semibold">
+                <div className="font-semibold print:pt-3">
                     <input type="text" value={signTitle1} onChange={(e) => setSignTitle1(e.target.value)}
                         className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`} />
                     <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle1}</span>
                 </div>
-                <div className="font-semibold">
+                <div className="font-semibold print:pt-3">
                     <input type="text" value={signTitle5} onChange={(e) => setSignTitle5(e.target.value)}
                         className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`} />
                     <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle5}</span>
                 </div>
-                <div className="font-semibold">
+                <div className="font-semibold print:pt-3">
                     <input type="text" value={signTitle4} onChange={(e) => setSignTitle4(e.target.value)}
                         className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`} />
                     <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle4}</span>
                 </div>
-                <div className="font-semibold">
+                <div className="font-semibold print:pt-3">
                     <input type="text" value={signTitle2} onChange={(e) => setSignTitle2(e.target.value)}
                         className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`} />
                     <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle2}</span>
                 </div>
-                <div className="font-semibold">
+                <div className="font-semibold print:pt-3">
                     <input type="text" value={signTitle3} onChange={(e) => setSignTitle3(e.target.value)}
                         className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`} />
                     <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle3}</span>
                 </div>
 
                 {/* 3. Instruction & Label (Ký, họ tên) row */}
-                <div className={`text-xs text-gray-500 italic self-start pb-6 ${printSize === 'A5' ? 'print:pb-1' : 'print:pb-10'}`}>(Ký, họ tên)</div>
-                <div className={`text-xs text-gray-500 italic self-start pb-6 ${printSize === 'A5' ? 'print:pb-1' : 'print:pb-10'}`}>(Ký, họ tên)</div>
-                <div className={`text-xs text-gray-500 italic self-start pb-6 ${printSize === 'A5' ? 'print:pb-1' : 'print:pb-10'}`}>(Ký, họ tên)</div>
-                <div className={`text-xs text-gray-500 italic self-start pb-6 ${printSize === 'A5' ? 'print:pb-1' : 'print:pb-10'}`}>(Ký, họ tên)</div>
-                <div className="text-xs text-gray-500 italic self-start whitespace-nowrap">
+                <div className={`text-xs text-gray-500 italic self-start pb-6 ${printSize === 'A5' ? 'print:hidden' : 'print:pb-10'}`}>(Ký, họ tên)</div>
+                <div className={`text-xs text-gray-500 italic self-start pb-6 ${printSize === 'A5' ? 'print:hidden' : 'print:pb-10'}`}>(Ký, họ tên)</div>
+                <div className={`text-xs text-gray-500 italic self-start pb-6 ${printSize === 'A5' ? 'print:hidden' : 'print:pb-10'}`}>(Ký, họ tên)</div>
+                <div className={`text-xs text-gray-500 italic self-start pb-6 ${printSize === 'A5' ? 'print:hidden' : 'print:pb-10'}`}>(Ký, họ tên)</div>
+                <div className={`text-xs text-gray-500 italic self-start whitespace-nowrap ${printSize === 'A5' ? 'print:hidden' : ''}`}>
                     <div className="text-gray-500">(Hoặc bộ phận có nhu cầu xuất)</div>
                     <div className={`text-gray-500 pb-6 ${printSize === 'A5' ? 'print:pb-1' : 'print:pb-10'}`}>(Ký, họ tên)</div>
                 </div>
@@ -1059,7 +1058,7 @@ function OutboundPrintContent() {
                 @media print {
                     @page {
                         size: ${printSize === 'A5' ? '148mm 210mm' : 'portrait'};
-                        margin: ${printSize === 'A5' ? '3mm 3mm 2mm 3mm' : '1mm 10mm 10mm 10mm'};
+                        margin: ${printSize === 'A5' ? '3mm 6mm 2mm 3mm' : '1mm 10mm 10mm 10mm'};
                     }
                     body {
                         -webkit-print-color-adjust: exact;
@@ -1087,16 +1086,16 @@ function OutboundPrintContent() {
                         margin: 0 !important;
                         overflow: visible !important;
                         box-sizing: border-box !important;
-                        font-size: 10px !important;
-                        line-height: 1.2 !important;
+                        font-size: 9px !important;
+                        line-height: 1.15 !important;
                     }
                     #print-ready * {
-                        line-height: 1.2 !important;
+                        line-height: 1.15 !important;
                     }
                     #print-ready h1 {
-                        font-size: 13px !important;
-                        margin-top: 1px !important;
-                        margin-bottom: 1px !important;
+                        font-size: 11px !important;
+                        margin-top: 0px !important;
+                        margin-bottom: 0px !important;
                     }
                     
                     /* Table: fill full width, auto column sizing */
@@ -1130,7 +1129,7 @@ function OutboundPrintContent() {
                     #print-ready .pb-6 {
                         padding-bottom: 1px !important;
                     }
-                    #print-ready img {
+                    #print-ready img:not([alt="Logo"]) {
                         max-height: 20px !important;
                     }
                     thead {

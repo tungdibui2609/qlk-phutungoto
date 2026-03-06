@@ -988,8 +988,8 @@ function InboundPrintContent() {
                         />
                         <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle1}</span>
                     </div>
-                    <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
-                    <div className="text-xs text-gray-500 italic invisible">(Hoặc bộ phận có nhu cầu nhập)</div>
+                    <div className={`text-xs text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
+                    <div className={`text-xs text-gray-500 italic invisible ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Hoặc bộ phận có nhu cầu nhập)</div>
                     <div className={`${printSize === 'A5' ? 'print:h-5' : 'print:h-8'}`}></div>
                     <div className="mt-1">
                         <input
@@ -1015,8 +1015,8 @@ function InboundPrintContent() {
                         />
                         <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle2}</span>
                     </div>
-                    <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
-                    <div className="text-xs text-gray-500 italic invisible">(Hoặc bộ phận có nhu cầu nhập)</div>
+                    <div className={`text-xs text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
+                    <div className={`text-xs text-gray-500 italic invisible ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Hoặc bộ phận có nhu cầu nhập)</div>
                     <div className={`${printSize === 'A5' ? 'print:h-5' : 'print:h-8'}`}></div>
                     <div className="mt-1">
                         <input
@@ -1067,8 +1067,8 @@ function InboundPrintContent() {
                         />
                         <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle3}</span>
                     </div>
-                    <div className="text-xs text-gray-500 italic">(Hoặc bộ phận có nhu cầu nhập)</div>
-                    <div className="text-xs text-gray-500 italic">(Ký, họ tên)</div>
+                    <div className={`text-xs text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Hoặc bộ phận có nhu cầu nhập)</div>
+                    <div className={`text-xs text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
                     <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-8'}`}></div>
                     <div className="mt-1">
                         <input
@@ -1128,7 +1128,7 @@ function InboundPrintContent() {
                         page-break-inside: avoid !important;
                         break-inside: avoid !important;
                     }
-                    .print-a5-super-compact img {
+                    .print-a5-super-compact img:not([alt="Logo"]) {
                         max-height: 25px !important;
                     }
                     thead {
