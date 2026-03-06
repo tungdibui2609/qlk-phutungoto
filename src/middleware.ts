@@ -159,8 +159,8 @@ export async function middleware(request: NextRequest) {
     // 1. Unauthenticated User Logic
     if (!user) {
         // Allow public routes
-        // API routes are handled separately above (returning 401 if needed), so we allow them to pass here to avoid redirects
-        if (IS_LOGIN_PAGE || IS_ADMIN_LOGIN_PAGE || path.startsWith('/print') || path.startsWith('/api/')) {
+        const isSilentPrint = path === '/warehouses/lots/print-station' && url.searchParams.get('silent') === 'true'
+        if (IS_LOGIN_PAGE || IS_ADMIN_LOGIN_PAGE || path.startsWith('/print') || path.startsWith('/api/') || isSilentPrint) {
             return response
         }
 
