@@ -466,7 +466,7 @@ export default function PrintStationPage() {
                     }
 
                     @page {
-                        size: 90mm 60mm;
+                        size: 90mm 60mm portrait;
                         margin: 0;
                     }
                 }
