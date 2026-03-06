@@ -274,59 +274,30 @@ export default function PrintStationPage() {
                 </div>
 
                 {/* Actual Print Content - ONLY visible when printing */}
-                <div className="hidden print:block font-sans text-black bg-white w-[100mm] h-auto p-2" ref={printRef}>
+                <div className="hidden print:block font-sans text-black bg-white w-[90mm] h-[60mm] pt-8 pb-4 px-4 overflow-hidden" ref={printRef}>
                     {lastPrinted && (
-                        <div className="border-2 border-black p-3 rounded-lg flex flex-col items-center space-y-2">
-                            <div className="flex justify-between items-start w-full border-b border-black pb-1 mb-1">
-                                <div className="text-left flex-1">
-                                    <h1 className="font-black text-xl leading-none">{(lastPrinted.print_data.company_prefix || 'ANY').toUpperCase()} LOT</h1>
-                                    <p className="text-[10px] uppercase font-bold text-zinc-600">TRACEABILITY SYSTEM</p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-[10px] font-bold font-mono">{lastPrinted.lot_code}</p>
-                                    <p className="text-[9px]">{new Date(lastPrinted.created_at).toLocaleDateString('vi-VN')}</p>
-                                </div>
+                        <div className="h-full flex flex-col items-center justify-between">
+                            {/* QR Code Section */}
+                            <div className="p-2 bg-white border-2 border-black rounded-2xl shadow-sm">
+                                <QRCode
+                                    value={lastPrinted.print_data.scan_url}
+                                    size={165}
+                                    level="H"
+                                />
                             </div>
 
-                            <div className="flex gap-4 w-full">
-                                <div className="border border-black p-1 bg-white shrink-0">
-                                    <QRCode value={lastPrinted.print_data.scan_url} size={100} />
-                                </div>
-                                <div className="flex-1 space-y-2 min-w-0">
-                                    <div className="space-y-2">
-                                        {lastPrinted.print_data.products.map((p: any, idx: number) => (
-                                            <div key={idx} className="space-y-1 border-b border-black/5 pb-1 last:border-0">
-                                                <div>
-                                                    <p className="text-[8px] font-bold opacity-60 uppercase border-b border-black/5 inline-block">Sản phẩm:</p>
-                                                    <p className="text-[11px] font-black leading-tight break-words">{p.name}</p>
-                                                </div>
-
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    <div>
-                                                        <p className="text-[8px] font-bold opacity-60 uppercase border-b border-black/5 inline-block">Mã SP:</p>
-                                                        <p className="text-[9px] font-black font-mono truncate">{p.sku || '---'}</p>
-                                                    </div>
-                                                    {p.internal_code && (
-                                                        <div>
-                                                            <p className="text-[8px] font-bold opacity-60 uppercase border-b border-black/5 inline-block">Mã phụ:</p>
-                                                            <p className="text-[9px] font-black font-mono truncate">{p.internal_code}</p>
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                <div>
-                                                    <p className="text-[8px] font-bold opacity-60 uppercase border-b border-black/5 inline-block">Số lượng:</p>
-                                                    <p className="text-[13px] font-black text-orange-600">{p.quantity} {p.unit}</p>
-                                                </div>
-                                            </div>
-                                        ))}
+                            {/* Product Info Section */}
+                            <div className="w-full text-center pb-2">
+                                {lastPrinted.print_data.products.slice(0, 1).map((p: any, idx: number) => (
+                                    <div key={idx} className="space-y-0">
+                                        <p className="text-[14px] font-black leading-tight break-words uppercase tracking-tight line-clamp-2">
+                                            {p.name}
+                                        </p>
+                                        <p className="text-[20px] font-black text-black leading-none mt-1">
+                                            {p.quantity} {p.unit}
+                                        </p>
                                     </div>
-                                </div>
-                            </div>
-
-                            <div className="w-full flex justify-between items-center text-[7px] font-bold uppercase opacity-60 pt-1 border-t border-black/10">
-                                <span>{(lastPrinted.print_data.company_prefix || 'ANY').toUpperCase()} OPERATING SYSTEM</span>
-                                <span>{currentSystem.name}</span>
+                                ))}
                             </div>
                         </div>
                     )}
