@@ -61,6 +61,7 @@ function PrintStationContent() {
 
     // UI States
     const [activeTab, setActiveTab] = useState<'queue' | 'history' | 'logs'>('queue')
+    const hasPrintedRef = useRef(false)
 
     // Statistics
     const stats = useMemo(() => {
@@ -127,11 +128,12 @@ function PrintStationContent() {
         return () => { supabase.removeChannel(channel) }
     }, [currentSystem])
 
-    // Silent Print Logic for External Bot
+    // Silent Print Logic for External Bot (Double-trigger protection)
     useEffect(() => {
-        if (!silentParam || !jobIdParam || !currentSystem) return
+        if (!silentParam || !jobIdParam || !currentSystem || hasPrintedRef.current) return
 
         const runSilentPrint = async () => {
+            hasPrintedRef.current = true // Chặn ngay lập tức
             const { data: job } = await (supabase as any).from('print_queue')
                 .select('*')
                 .eq('id', jobIdParam)
@@ -139,6 +141,7 @@ function PrintStationContent() {
 
             if (job) {
                 setLastPrinted(job)
+                addLog(`Bot yêu cầu in: ${job.lot_code}`, 'success')
                 await new Promise(r => setTimeout(r, 1000))
                 window.print()
             }
@@ -407,8 +410,8 @@ function PrintStationContent() {
                                         <div key={log.id} className="flex gap-2">
                                             <span className="text-zinc-600 flex-shrink-0">[{format(log.timestamp, 'HH:mm:ss')}]</span>
                                             <span className={`${log.type === 'error' ? 'text-red-400' :
-                                                    log.type === 'warning' ? 'text-amber-400' :
-                                                        log.type === 'success' ? 'text-green-400' : 'text-zinc-400'
+                                                log.type === 'warning' ? 'text-amber-400' :
+                                                    log.type === 'success' ? 'text-green-400' : 'text-zinc-400'
                                                 }`}>
                                                 {log.message}
                                             </span>
