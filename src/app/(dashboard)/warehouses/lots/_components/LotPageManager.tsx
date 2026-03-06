@@ -53,6 +53,7 @@ export function LotPageManager() {
         productUnits,
         branches,
         fetchCommonData,
+        existingTags,
         // Pagination
         page,
         setPage,
@@ -183,6 +184,7 @@ export function LotPageManager() {
                 units={units}
                 productUnits={productUnits}
                 branches={branches}
+                existingTags={existingTags}
                 isModuleEnabled={isModuleEnabled}
             />
 

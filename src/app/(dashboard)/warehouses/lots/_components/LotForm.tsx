@@ -15,6 +15,7 @@ interface LotItemInput {
     productId: string
     quantity: number | string
     unit: string
+    tag?: string
 }
 
 interface LotFormProps {
@@ -30,6 +31,7 @@ interface LotFormProps {
     units: Unit[]
     productUnits: ProductUnit[]
     branches: any[]
+    existingTags?: string[]
     isModuleEnabled: (moduleId: string) => boolean
 }
 
@@ -44,6 +46,7 @@ export function LotForm({
     units,
     productUnits,
     branches,
+    existingTags = [],
     isModuleEnabled
 }: LotFormProps) {
     const { currentSystem } = useSystem()
@@ -67,7 +70,7 @@ export function LotForm({
     const [batchCode, setBatchCode] = useState('')
     const [images, setImages] = useState<string[]>([])
     const [extraInfo, setExtraInfo] = useState('')
-    const [lotItems, setLotItems] = useState<LotItemInput[]>([{ productId: '', quantity: 0, unit: '' }])
+    const [lotItems, setLotItems] = useState<LotItemInput[]>([{ productId: '', quantity: 0, unit: '', tag: '' }])
     const [isInitialized, setIsInitialized] = useState(false)
     const [isPersistent, setIsPersistent] = useState(false)
 
@@ -87,7 +90,8 @@ export function LotForm({
                         id: item.id,
                         productId: item.product_id,
                         quantity: item.quantity,
-                        unit: (item as any).unit || ''
+                        unit: (item as any).unit || '',
+                        tag: editingLot.lot_tags?.find(t => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_') && !t.tag.startsWith('SPLIT_'))?.tag || ''
                     })))
                 } else if (editingLot.products) {
                     // Fallback for legacy
@@ -96,13 +100,14 @@ export function LotForm({
                         setLotItems([{
                             productId: legacyPId,
                             quantity: editingLot.quantity || 0,
-                            unit: editingLot.products?.unit || ''
+                            unit: editingLot.products?.unit || '',
+                            tag: editingLot.lot_tags?.find(t => !t.lot_item_id && !t.tag.startsWith('MERGED_') && !t.tag.startsWith('SPLIT_'))?.tag || ''
                         }])
                     } else {
-                        setLotItems([{ productId: '', quantity: 0, unit: '' }])
+                        setLotItems([{ productId: '', quantity: 0, unit: '', tag: '' }])
                     }
                 } else {
-                    setLotItems([{ productId: '', quantity: 0, unit: '' }])
+                    setLotItems([{ productId: '', quantity: 0, unit: '', tag: '' }])
                 }
 
                 setSelectedSupplierId(editingLot.supplier_id || '')
@@ -158,6 +163,9 @@ export function LotForm({
                             // Validate and restore Warehouse
                             if (parsed.warehouseName && branches.some(b => b.name === parsed.warehouseName)) {
                                 setWarehouseName(parsed.warehouseName)
+                            } else if (branches && branches.length > 0) {
+                                const defaultBranch = branches.find(b => b.is_default)
+                                setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
                             }
 
                             if (parsed.batchCode) setBatchCode(parsed.batchCode)
@@ -170,7 +178,7 @@ export function LotForm({
                             setPeelingDate(new Date().toISOString().split('T')[0])
                             setPackagingDate(new Date().toISOString().split('T')[0])
 
-                            if (branches.length > 0) {
+                            if (branches && branches.length > 0) {
                                 const defaultBranch = branches.find(b => b.is_default)
                                 setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
                             }
@@ -185,7 +193,7 @@ export function LotForm({
                     setPeelingDate(new Date().toISOString().split('T')[0])
                     setPackagingDate(new Date().toISOString().split('T')[0])
 
-                    if (branches.length > 0) {
+                    if (branches && branches.length > 0) {
                         const defaultBranch = branches.find(b => b.is_default)
                         setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
                     }
@@ -560,35 +568,74 @@ export function LotForm({
             const newIds = validItems.filter(i => i.id).map(i => i.id!)
             const idsToDelete = existingIds.filter(id => !newIds.includes(id))
 
-            // Sequence: Update, Insert, Delete
-            const promises = []
+            // Process Updates
+            const updatePromises = itemsToUpdate.map(item =>
+                supabase.from('lot_items').update({
+                    quantity: item.quantity,
+                    unit: item.unit,
+                    product_id: item.product_id
+                }).eq('id', item.id)
+            )
 
-            // Updates
-            for (const item of itemsToUpdate) {
-                promises.push(
-                    supabase.from('lot_items').update({
-                        quantity: item.quantity,
-                        unit: item.unit,
-                        product_id: item.product_id
-                    }).eq('id', item.id)
-                )
+            // Execute Updates
+            const updateResults = await Promise.all(updatePromises)
+            if (updateResults.some(r => r.error)) {
+                console.error('Items Update Error', updateResults.find(r => r.error))
+                alert('Có lỗi xảy ra khi cập nhật danh sách sản phẩm.')
             }
 
-            // Inserts
+            // Insert new items and get IDs
+            let newInsertedItems: any[] = []
             if (itemsToInsert.length > 0) {
-                promises.push(supabase.from('lot_items').insert(itemsToInsert as any))
+                const insertRes = await supabase.from('lot_items').insert(itemsToInsert as any).select('id, product_id, quantity, unit')
+                if (insertRes.error) {
+                    console.error('Items Insert Error', insertRes.error)
+                    alert('Có lỗi xảy ra khi thêm mới sản phẩm.')
+                } else if (insertRes.data) {
+                    newInsertedItems = insertRes.data
+                }
             }
 
             // Deletions
             if (idsToDelete.length > 0) {
-                promises.push(supabase.from('lot_items').delete().in('id', idsToDelete))
+                const delRes = await supabase.from('lot_items').delete().in('id', idsToDelete)
+                if (delRes.error) console.error('Items Delete Error', delRes.error)
             }
 
-            const results = await Promise.all(promises)
-            const hasError = results.some(r => r.error)
-            if (hasError) {
-                console.error('Items Update Error:', results.find(r => r.error))
-                alert('Có lỗi xảy ra khi cập nhật danh sách sản phẩm. Tuy nhiên thông tin Lô hàng có thể đã được lưu.')
+            // Process Tags
+            // To be safe, clear explicit tags for this lot except history meta tags
+            await supabase.from('lot_tags').delete()
+                .eq('lot_id', lotId)
+                .not('tag', 'ilike', 'MERGED_%')
+                .not('tag', 'ilike', 'SPLIT_%')
+
+            const tagsToInsert: any[] = []
+
+            // Tags for existing updated items
+            for (const item of validItems) {
+                if (item.id && item.tag?.trim()) {
+                    tagsToInsert.push({ lot_id: lotId, lot_item_id: item.id, tag: item.tag.trim() })
+                }
+            }
+
+            // Tags for newly inserted items
+            // Match order of itemsToInsert and newInsertedItems
+            const newValidItems = validItems.filter(i => !i.id)
+            if (newValidItems.length === newInsertedItems.length) {
+                for (let i = 0; i < newValidItems.length; i++) {
+                    if (newValidItems[i].tag?.trim()) {
+                        tagsToInsert.push({
+                            lot_id: lotId,
+                            lot_item_id: newInsertedItems[i].id,
+                            tag: newValidItems[i].tag!.trim()
+                        })
+                    }
+                }
+            }
+
+            if (tagsToInsert.length > 0) {
+                const tagRes = await supabase.from('lot_tags').insert(tagsToInsert)
+                if (tagRes.error) console.error('Tags Insert Error', tagRes.error)
             }
         }
 
@@ -666,7 +713,8 @@ export function LotForm({
                                     type="date"
                                     value={inboundDate}
                                     onChange={(e) => setInboundDate(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all"
+                                    style={{ colorScheme: 'light dark' }}
                                 />
                             </div>
                         </div>
@@ -684,7 +732,8 @@ export function LotForm({
                                     type="date"
                                     value={peelingDate}
                                     onChange={(e) => setPeelingDate(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all"
+                                    style={{ colorScheme: 'light dark' }}
                                 />
                             </div>
                         </div>
@@ -702,7 +751,8 @@ export function LotForm({
                                     type="date"
                                     value={packagingDate}
                                     onChange={(e) => setPackagingDate(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all"
+                                    style={{ colorScheme: 'light dark' }}
                                 />
                             </div>
                         </div>
@@ -719,7 +769,7 @@ export function LotForm({
                                 <select
                                     value={warehouseName}
                                     onChange={(e) => setWarehouseName(e.target.value)}
-                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none appearance-none transition-all"
+                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all"
                                 >
                                     <option value="">-- Chọn kho hàng --</option>
                                     {branches.map(b => (
@@ -742,7 +792,7 @@ export function LotForm({
                                 <select
                                     value={selectedSupplierId}
                                     onChange={(e) => setSelectedSupplierId(e.target.value)}
-                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none appearance-none transition-all"
+                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all"
                                 >
                                     <option value="">-- Chọn nhà cung cấp --</option>
                                     {suppliers.map(s => (
@@ -765,7 +815,7 @@ export function LotForm({
                                 <select
                                     value={selectedQCId}
                                     onChange={(e) => setSelectedQCId(e.target.value)}
-                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none appearance-none transition-all"
+                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all"
                                 >
                                     <option value="">-- Chọn QC --</option>
                                     {qcList.map(qc => (
@@ -837,7 +887,7 @@ export function LotForm({
                         <label className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
                             <span>Danh sách sản phẩm ({lotItems.length})</span>
                             <button
-                                onClick={() => setLotItems([...lotItems, { productId: '', quantity: '', unit: '' }])}
+                                onClick={() => setLotItems([...lotItems, { productId: '', quantity: '', unit: '', tag: '' }])}
                                 className="text-xs flex items-center gap-1 text-orange-600 hover:text-orange-700 font-medium px-2 py-1 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
                             >
                                 <Plus size={14} />
@@ -888,59 +938,105 @@ export function LotForm({
                                         </div>
                                     </div>
 
-                                    <div className="w-full md:w-32 space-y-1">
-                                        <QuantityInput
-                                            placeholder="SL"
-                                            value={item.quantity}
-                                            onChange={(val) => {
-                                                setLotItems(prev => {
-                                                    const newItems = [...prev]
-                                                    newItems[index] = { ...newItems[index], quantity: val }
-                                                    return newItems
-                                                })
-                                            }}
-                                        />
+                                    <div className="flex flex-row gap-3 w-full md:w-auto">
+                                        <div className="flex-1 md:w-32 space-y-1">
+                                            <QuantityInput
+                                                placeholder="SL"
+                                                value={item.quantity}
+                                                onChange={(val) => {
+                                                    setLotItems(prev => {
+                                                        const newItems = [...prev]
+                                                        newItems[index] = { ...newItems[index], quantity: val }
+                                                        return newItems
+                                                    })
+                                                }}
+                                            />
+                                        </div>
+
+                                        {/* Unit Selection */}
+                                        <div className="flex-1 md:w-28 space-y-1">
+                                            <select
+                                                value={item.unit}
+                                                onChange={(e) => {
+                                                    const val = e.target.value
+                                                    setLotItems(prev => {
+                                                        const newItems = [...prev]
+                                                        newItems[index] = { ...newItems[index], unit: val }
+                                                        return newItems
+                                                    })
+                                                }}
+                                                className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm transition-all"
+                                            >
+                                                {(() => {
+                                                    const product = products.find(p => p.id === item.productId)
+                                                    if (!product) return <option value="">Đơn vị</option>
+
+                                                    const availableUnits = new Set<string>()
+                                                    if (product.unit) availableUnits.add(product.unit)
+
+                                                    productUnits
+                                                        .filter(pu => pu.product_id === item.productId)
+                                                        .forEach(pu => {
+                                                            const u = units.find(u => u.id === pu.unit_id)
+                                                            if (u) {
+                                                                const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                                                const labelStr = isBase
+                                                                    ? u.name
+                                                                    : `${u.name} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
+                                                                availableUnits.add(labelStr)
+                                                            }
+                                                        })
+
+                                                    return Array.from(availableUnits).map(u => (
+                                                        <option key={u} value={u}>{u}</option>
+                                                    ))
+                                                })()}
+                                            </select>
+                                        </div>
                                     </div>
 
-                                    {/* Unit Selection */}
-                                    <div className="w-full md:w-28 space-y-1">
-                                        <select
-                                            value={item.unit}
-                                            onChange={(e) => {
-                                                const val = e.target.value
-                                                setLotItems(prev => {
-                                                    const newItems = [...prev]
-                                                    newItems[index] = { ...newItems[index], unit: val }
-                                                    return newItems
-                                                })
-                                            }}
-                                            className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-sm transition-all"
-                                        >
-                                            {(() => {
-                                                const product = products.find(p => p.id === item.productId)
-                                                if (!product) return <option value="">Đơn vị</option>
-
-                                                const availableUnits = new Set<string>()
-                                                if (product.unit) availableUnits.add(product.unit)
-
-                                                productUnits
-                                                    .filter(pu => pu.product_id === item.productId)
-                                                    .forEach(pu => {
-                                                        const u = units.find(u => u.id === pu.unit_id)
-                                                        if (u) {
-                                                            const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                                                            const labelStr = isBase
-                                                                ? u.name
-                                                                : `${u.name} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
-                                                            availableUnits.add(labelStr)
-                                                        }
+                                    {/* Secondary Code (Tag) */}
+                                    <div className="w-full md:w-48 space-y-1">
+                                        <div className="relative group">
+                                            <input
+                                                type="text"
+                                                list={`tags-list-${index}`}
+                                                placeholder="Mã phụ..."
+                                                value={item.tag || ''}
+                                                onChange={(e) => {
+                                                    const val = e.target.value.toUpperCase()
+                                                    setLotItems(prev => {
+                                                        const newItems = [...prev]
+                                                        newItems[index] = { ...newItems[index], tag: val }
+                                                        return newItems
                                                     })
-
-                                                return Array.from(availableUnits).map(u => (
-                                                    <option key={u} value={u}>{u}</option>
-                                                ))
-                                            })()}
-                                        </select>
+                                                }}
+                                                className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm transition-all pr-8"
+                                            />
+                                            <button
+                                                onClick={() => {
+                                                    const currentVal = item.tag || '';
+                                                    const newVal = currentVal + (currentVal.endsWith('>') || currentVal === '' ? '@' : '>@');
+                                                    setLotItems(prev => {
+                                                        const newItems = [...prev]
+                                                        newItems[index] = { ...newItems[index], tag: newVal }
+                                                        return newItems
+                                                    })
+                                                }}
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-md text-[10px] font-bold hover:bg-orange-200"
+                                                title="Chèn placeholder @ (mã SKU)"
+                                            >
+                                                @
+                                            </button>
+                                        </div>
+                                        <datalist id={`tags-list-${index}`}>
+                                            {existingTags.map(tag => (
+                                                <option key={tag} value={tag} />
+                                            ))}
+                                        </datalist>
+                                        <p className="text-[9px] text-zinc-400 dark:text-zinc-500 italic mt-0.5">
+                                            Dùng <span className="font-bold text-zinc-500">@</span> cho SKU, <span className="font-bold text-zinc-500">&gt;</span> để phân tách.
+                                        </p>
                                     </div>
 
                                     {lotItems.length > 1 && (

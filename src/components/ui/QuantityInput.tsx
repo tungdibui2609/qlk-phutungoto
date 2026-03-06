@@ -68,7 +68,7 @@ export const QuantityInput: React.FC<QuantityInputProps> = ({
             onChange={handleChange}
             onBlur={handleBlur}
             className={cn(
-                "w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-sm transition-all font-mono",
+                "w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm transition-all font-mono",
                 className
             )}
         />

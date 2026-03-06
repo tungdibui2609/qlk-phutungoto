@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Briefcase, Package, LayoutGrid, UploadCloud, Settings, Loader2 } from 'lucide-react'
+import { Briefcase, Package, LayoutGrid, UploadCloud, Settings, Loader2, PlusSquare } from 'lucide-react'
 import { useUser } from '@/contexts/UserContext'
 import { useRouter } from 'next/navigation'
 
@@ -10,8 +10,9 @@ import MobileAssignTab from './_tabs/MobileAssignTab'
 import MobileWarehouseTab from './_tabs/MobileWarehouseTab'
 import MobileExportTab from './_tabs/MobileExportTab'
 import MobileSettingsTab from './_tabs/MobileSettingsTab'
+import MobileCreateLotTab from './_tabs/MobileCreateLotTab'
 
-type TabId = 'work' | 'assign' | 'warehouse' | 'export' | 'settings'
+type TabId = 'work' | 'assign' | 'create_lot' | 'warehouse' | 'export' | 'settings'
 
 interface TabConfig {
     id: TabId
@@ -22,6 +23,7 @@ interface TabConfig {
 
 const TABS: TabConfig[] = [
     { id: 'work', label: 'Công Việc', icon: Briefcase, activeColor: '#2563eb' },
+    { id: 'create_lot', label: 'LOT', icon: PlusSquare, activeColor: '#84cc16' },
     { id: 'assign', label: 'Gán Vị Trí', icon: Package, activeColor: '#059669' },
     { id: 'warehouse', label: 'Kho', icon: LayoutGrid, activeColor: '#d97706' },
     { id: 'export', label: 'Xuất Kho', icon: UploadCloud, activeColor: '#e11d48' },
@@ -54,6 +56,7 @@ export default function MobilePage() {
             {/* Main Content */}
             <div className="mobile-content">
                 {activeTab === 'work' && <MobileWorkTab />}
+                {activeTab === 'create_lot' && <MobileCreateLotTab />}
                 {activeTab === 'assign' && <MobileAssignTab />}
                 {activeTab === 'warehouse' && <MobileWarehouseTab />}
                 {activeTab === 'export' && <MobileExportTab />}

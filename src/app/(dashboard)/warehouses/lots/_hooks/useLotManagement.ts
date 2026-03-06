@@ -63,6 +63,7 @@ export function useLotManagement() {
     const [units, setUnits] = useState<Unit[]>([])
     const [productUnits, setProductUnits] = useState<ProductUnit[]>([])
     const [branches, setBranches] = useState<any[]>([])
+    const [existingTags, setExistingTags] = useState<string[]>([])
 
     // Use Ref to access latest fetchLots in subscription without re-subscribing
     const fetchLotsRef = useRef(fetchLots)
@@ -129,13 +130,14 @@ export function useLotManagement() {
     async function fetchCommonData() {
         if (!currentSystem?.code) return
 
-        const [prodRes, suppRes, qcRes, branchRes, unitRes, pUnitRes] = await Promise.all([
+        const [prodRes, suppRes, qcRes, branchRes, unitRes, pUnitRes, tagRes] = await Promise.all([
             supabase.from('products').select('*').eq('system_type', currentSystem.code).order('name'),
             supabase.from('suppliers').select('*').eq('system_code', currentSystem.code).order('name'),
             supabase.from('qc_info').select('*').eq('system_code', currentSystem.code).order('name'),
             supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'),
             supabase.from('units').select('*'),
-            supabase.from('product_units').select('*')
+            supabase.from('product_units').select('*'),
+            supabase.from('lot_tags').select('tag').order('tag')
         ])
 
         if (prodRes.data) setProducts(prodRes.data)
@@ -144,6 +146,10 @@ export function useLotManagement() {
         if (branchRes.data) setBranches(branchRes.data)
         if (unitRes.data) setUnits(unitRes.data)
         if (pUnitRes.data) setProductUnits(pUnitRes.data)
+        if (tagRes.data) {
+            const uniqueTags = Array.from(new Set(tagRes.data.map(t => t.tag))).filter(Boolean)
+            setExistingTags(uniqueTags)
+        }
     }
 
     async function fetchLots(showLoading = true) {
@@ -578,6 +584,7 @@ export function useLotManagement() {
         units,
         productUnits,
         branches,
+        existingTags,
 
         // Actions
         fetchLots,
