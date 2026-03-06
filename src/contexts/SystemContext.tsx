@@ -15,6 +15,7 @@ import { useUser } from './UserContext' // [NEW] Import
 export type SystemType = string // Was rigid Enum, now string
 
 interface System {
+  id: string
   code: string
   name: string
   description?: string
