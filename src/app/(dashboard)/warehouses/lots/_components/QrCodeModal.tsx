@@ -92,6 +92,19 @@ export function QrCodeModal({ lot, onClose }: QrCodeModalProps) {
                 }
             }
 
+            // Check if there is already a pending job for this lot in this system
+            const { data: existingJobs } = await (supabase as any).from('print_queue')
+                .select('id')
+                .eq('lot_id', lot.id)
+                .eq('system_id', currentSystem?.id)
+                .eq('status', 'pending')
+                .limit(1)
+
+            if (existingJobs && existingJobs.length > 0) {
+                showToast("Mã LOT này đã có trong hàng đợi in rồi ạ!", 'info')
+                return
+            }
+
             const printData = {
                 lot_code: lot.code,
                 scan_url: scanUrl,

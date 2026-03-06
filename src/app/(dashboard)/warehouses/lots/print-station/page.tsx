@@ -16,10 +16,12 @@ interface PrintJob {
 
 export default function PrintStationPage() {
     const { currentSystem } = useSystem()
+    const [isPrinting, setIsPrinting] = useState(false)
     const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>('connecting')
     const [jobs, setJobs] = useState<PrintJob[]>([])
     const [lastPrinted, setLastPrinted] = useState<PrintJob | null>(null)
     const [showHelp, setShowHelp] = useState(false)
+    const isProcessingRef = useRef(false)
     const printRef = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
@@ -59,14 +61,24 @@ export default function PrintStationPage() {
                 (payload: any) => {
                     console.log('New print job received:', payload.new)
                     const newJob = payload.new as PrintJob
-                    setJobs(prev => [...prev, newJob])
+                    if (newJob.status === 'pending') {
+                        setJobs((prev: PrintJob[]) => {
+                            // Avoid duplicates
+                            if (prev.some((j: PrintJob) => j.id === newJob.id)) return prev
+                            return [...prev, newJob]
+                        })
+                    }
                 }
             )
             .subscribe((status) => {
                 if (status === 'SUBSCRIBED') {
+                    console.log('Realtime connected!')
                     setStatus('connected')
-                } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-                    setStatus('error')
+                } else {
+                    console.log('Realtime status:', status)
+                    if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+                        setStatus('connecting')
+                    }
                 }
             })
 
@@ -77,39 +89,80 @@ export default function PrintStationPage() {
 
     // Auto-print effect
     useEffect(() => {
+        let isCancelled = false;
+
         const processNextJob = async () => {
-            if (jobs.length === 0) return
+            // Use both state and ref for maximum safety
+            if (jobs.length === 0 || isPrinting || isProcessingRef.current) return
+
+            isProcessingRef.current = true
+            setIsPrinting(true)
 
             const nextJob = jobs[0]
 
-            // Mark as processing
-            await (supabase as any).from('print_queue')
-                .update({ status: 'processing' })
-                .eq('id', nextJob.id)
+            try {
+                // 1. Update status to processing on server
+                await (supabase as any).from('print_queue')
+                    .update({ status: 'processing' })
+                    .eq('id', nextJob.id)
 
-            // Trigger Print
-            setLastPrinted(nextJob)
+                // 2. Load data to UI
+                setLastPrinted(nextJob)
 
-            // Short delay to ensure DOM is updated for the print view
-            setTimeout(() => {
+                // 3. Short delay to ensure DOM is updated
+                await new Promise(resolve => setTimeout(resolve, 1000))
+
+                if (isCancelled) return
+
+                // 4. Trigger Print
+                console.log('Triggering print for:', nextJob.id)
                 window.print()
 
-                // Mark as completed after print dialog closes
-                // Note: user still has to confirm the print dialog, but this is as close as we can get with web tech
-                // In a real production environment, a dedicated print agent might be better
-                handleJobCompletion(nextJob.id)
-            }, 500)
+                // 5. Short delay after print dialog closes/finishes
+                await new Promise(resolve => setTimeout(resolve, 800))
+
+                if (isCancelled) return
+
+                // 6. Mark as completed and remove from local queue
+                await handleJobCompletion(nextJob.id)
+
+            } catch (error) {
+                console.error('Print process error:', error)
+            } finally {
+                if (!isCancelled) {
+                    setIsPrinting(false)
+                    isProcessingRef.current = false
+                }
+            }
         }
 
         processNextJob()
-    }, [jobs])
+
+        return () => {
+            isCancelled = true
+        }
+    }, [jobs, isPrinting])
 
     const handleJobCompletion = async (id: string) => {
+        // Mark as printed on server
         await (supabase as any).from('print_queue')
             .update({ status: 'printed' })
             .eq('id', id)
 
-        setJobs(prev => prev.filter(j => j.id !== id))
+        // Remove from local state
+        setJobs((prev: PrintJob[]) => prev.filter((j: PrintJob) => j.id !== id))
+    }
+
+    const clearQueue = async () => {
+        if (!currentSystem) return
+        if (!window.confirm('Bạn có chắc muốn xóa sạch hàng đợi không?')) return
+
+        await (supabase as any).from('print_queue')
+            .update({ status: 'failed' })
+            .eq('system_id', currentSystem.id)
+            .eq('status', 'pending')
+
+        setJobs([])
     }
 
     if (!currentSystem) {
@@ -205,9 +258,18 @@ export default function PrintStationPage() {
                     <div className="md:col-span-2 space-y-6 print:hidden">
                         {lastPrinted ? (
                             <div className="bg-white dark:bg-zinc-900 rounded-3xl p-8 border-2 border-orange-500 shadow-xl space-y-6">
-                                <div className="flex items-center gap-3 text-orange-600 mb-2">
-                                    <CheckCircle2 size={24} />
-                                    <h2 className="text-xl font-bold uppercase tracking-wide">Đang xử lý in</h2>
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-3 text-orange-600">
+                                        <CheckCircle2 size={24} />
+                                        <h2 className="text-xl font-bold uppercase tracking-wide">Đang xử lý in</h2>
+                                    </div>
+                                    <button
+                                        onClick={() => window.print()}
+                                        className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold shadow-lg transition-all active:scale-95"
+                                    >
+                                        <Printer size={14} />
+                                        IN LẠI / IN THỦ CÔNG
+                                    </button>
                                 </div>
 
                                 <div className="flex gap-8">
@@ -250,21 +312,42 @@ export default function PrintStationPage() {
 
                     {/* Right: History/Queue */}
                     <div className="space-y-4 print:hidden">
-                        <div className="flex items-center gap-2 text-zinc-400 px-2 pt-4">
-                            <History size={16} />
-                            <span className="text-xs font-bold uppercase tracking-wider">Hàng đợi ({jobs.length})</span>
+                        <div className="flex items-center justify-between px-2 pt-4 mb-2">
+                            <div className="flex items-center gap-2 text-zinc-400">
+                                <History size={16} />
+                                <span className="text-xs font-bold uppercase tracking-wider">Hàng đợi ({jobs.length})</span>
+                            </div>
+                            {jobs.length > 0 && (
+                                <button
+                                    onClick={clearQueue}
+                                    className="text-[10px] font-bold text-red-500 hover:text-red-600 uppercase tracking-tighter transition-colors"
+                                >
+                                    Xóa tất cả
+                                </button>
+                            )}
                         </div>
+                        <p className="text-[10px] text-zinc-400 px-2 mb-2 italic">Bấm vào bất kỳ job nào để in thủ công nếu cần.</p>
                         <div className="space-y-2">
-                            {jobs.map(job => (
-                                <div key={job.id} className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
+                            {jobs.map((job: PrintJob) => (
+                                <button
+                                    key={job.id}
+                                    onClick={() => {
+                                        setLastPrinted(job)
+                                        setTimeout(() => window.print(), 100)
+                                    }}
+                                    className="w-full text-left bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between hover:border-orange-300 dark:hover:border-orange-900 transition-all group active:scale-[0.98]"
+                                >
                                     <div className="min-w-0">
-                                        <p className="text-sm font-bold text-zinc-900 dark:text-white truncate">{job.lot_code}</p>
+                                        <p className="text-sm font-bold text-zinc-900 dark:text-white truncate group-hover:text-orange-600 transition-colors">{job.lot_code}</p>
                                         <p className="text-[10px] text-zinc-500">{new Date(job.created_at).toLocaleTimeString('vi-VN')}</p>
                                     </div>
-                                    <div className="px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-[9px] font-bold text-zinc-500">
-                                        PENDING
+                                    <div className="flex items-center gap-2">
+                                        <div className="px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-[9px] font-bold text-zinc-500">
+                                            PENDING
+                                        </div>
+                                        <Printer size={14} className="text-zinc-300 group-hover:text-orange-500" />
                                     </div>
-                                </div>
+                                </button>
                             ))}
                             {jobs.length === 0 && (
                                 <p className="text-center py-8 text-xs text-zinc-400 italic">Trống</p>
@@ -274,30 +357,59 @@ export default function PrintStationPage() {
                 </div>
 
                 {/* Actual Print Content - ONLY visible when printing */}
-                <div className="hidden print:block font-sans text-black bg-white w-[90mm] h-[60mm] pt-8 pb-4 px-4 overflow-hidden" ref={printRef}>
+                <div id="print-area" className="hidden print:block font-sans text-black bg-white w-[90mm] h-[60mm] overflow-hidden" ref={printRef}>
                     {lastPrinted && (
-                        <div className="h-full flex flex-col items-center justify-between">
-                            {/* QR Code Section */}
-                            <div className="p-2 bg-white border-2 border-black rounded-2xl shadow-sm">
-                                <QRCode
-                                    value={lastPrinted.print_data.scan_url}
-                                    size={165}
-                                    level="H"
-                                />
+                        <div className="border-2 border-black h-full p-2 rounded-lg flex flex-col items-center justify-between">
+                            <div className="w-full">
+                                <div className="flex justify-between items-start w-full border-b border-black pb-1 mb-1">
+                                    <div className="text-left flex-1">
+                                        <h1 className="font-black text-lg leading-none">{(lastPrinted.print_data.company_prefix || 'ANY').toUpperCase()} LOT</h1>
+                                        <p className="text-[9px] uppercase font-bold text-zinc-600">TRACEABILITY SYSTEM</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-[9px] font-bold font-mono">{lastPrinted.lot_code}</p>
+                                        <p className="text-[8px]">{new Date(lastPrinted.created_at).toLocaleDateString('vi-VN')}</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-6 w-full mt-2 items-center flex-1 min-h-0">
+                                    <div className="bg-white shrink-0 flex flex-col justify-center h-full">
+                                        <QRCode value={lastPrinted.print_data.scan_url} size={135} />
+                                    </div>
+                                    <div className="flex-1 space-y-1.5 min-w-0">
+                                        <div className="space-y-1">
+                                            {lastPrinted.print_data.products.slice(0, 1).map((p: any, idx: number) => (
+                                                <div key={idx} className="space-y-2 pt-1">
+                                                    <div className="flex flex-col gap-0.5 leading-tight">
+                                                        <span className="text-[9px] font-bold opacity-70 uppercase">Sản phẩm:</span>
+                                                        <span className="text-[12px] font-black uppercase break-words leading-tight">{p.name}</span>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="text-[8px] font-bold opacity-70 uppercase shrink-0">Mã SP:</span>
+                                                            <span className="text-[9px] font-black font-mono">{p.sku || '---'}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="text-[8px] font-bold opacity-70 uppercase shrink-0">Mã phụ:</span>
+                                                            <span className="text-[9px] font-black font-mono">{p.internal_code || '---'}</span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-1.5 pt-0.5">
+                                                        <span className="text-[9px] font-bold opacity-70 uppercase shrink-0">Số lượng:</span>
+                                                        <span className="text-[14px] font-black text-orange-600 italic tracking-tight">{p.quantity} {p.unit}</span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
-                            {/* Product Info Section */}
-                            <div className="w-full text-center pb-2">
-                                {lastPrinted.print_data.products.slice(0, 1).map((p: any, idx: number) => (
-                                    <div key={idx} className="space-y-0">
-                                        <p className="text-[14px] font-black leading-tight break-words uppercase tracking-tight line-clamp-2">
-                                            {p.name}
-                                        </p>
-                                        <p className="text-[20px] font-black text-black leading-none mt-1">
-                                            {p.quantity} {p.unit}
-                                        </p>
-                                    </div>
-                                ))}
+                            <div className="w-full flex justify-between items-center text-[7px] font-bold uppercase opacity-60 pt-1 border-t border-black/10 mt-auto">
+                                <span>{(lastPrinted.print_data.company_prefix || 'ANY').toUpperCase()} OPERATING SYSTEM</span>
+                                <span>{currentSystem.name}</span>
                             </div>
                         </div>
                     )}
@@ -307,19 +419,55 @@ export default function PrintStationPage() {
             {/* Print Styles */}
             <style jsx global>{`
                 @media print {
-                    body {
-                        background-color: white !important;
-                    }
-                    .print-hidden, header, sidebar, nav {
+                    /* 1. Hide the known UI parts from the current page */
+                    header, 
+                    main > div.grid,
+                    .print-hidden,
+                    footer, 
+                    [role="banner"], 
+                    [role="contentinfo"] {
                         display: none !important;
                     }
+
+                    /* 2. Reset the main container to the standard flow */
                     main {
                         margin: 0 !important;
                         padding: 0 !important;
+                        display: block !important;
                     }
+
+                    /* 3. Force the page to be exactly the size of one label */
+                    html, body {
+                        background-color: white !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        width: 90mm !important;
+                        height: 60mm !important;
+                        overflow: hidden !important;
+                    }
+
+                    /* 4. Fix our print area exactly at the top-left */
+                    #print-area {
+                        display: block !important;
+                        visibility: visible !important;
+                        position: absolute !important;
+                        left: 0 !important;
+                        top: 0 !important;
+                        width: 90mm !important;
+                        height: 60mm !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        z-index: 9999 !important;
+                    }
+
+                    /* 5. Ensure all elements inside the print area are visible */
+                    #print-area * {
+                        visibility: visible !important;
+                    }
+
                     @page {
+                        size: 90mm 60mm;
                         margin: 0;
-                        size: auto;
                     }
                 }
             `}</style>
