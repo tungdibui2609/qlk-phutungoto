@@ -436,21 +436,22 @@ export default function PrintStationPage() {
                         display: block !important;
                     }
 
-                    /* 3. Force the page to be exactly the size of one label */
+                    /* 3. Force the page to be EXACTLY the size of one label */
                     html, body {
                         background-color: white !important;
                         margin: 0 !important;
                         padding: 0 !important;
                         width: 90mm !important;
                         height: 60mm !important;
+                        max-height: 60mm !important;
                         overflow: hidden !important;
                     }
 
-                    /* 4. Fix our print area exactly at the top-left */
+                    /* 4. Fix our print area EXACTLY at the top-left using fixed */
                     #print-area {
                         display: block !important;
                         visibility: visible !important;
-                        position: absolute !important;
+                        position: fixed !important;
                         left: 0 !important;
                         top: 0 !important;
                         width: 90mm !important;
@@ -458,6 +459,8 @@ export default function PrintStationPage() {
                         margin: 0 !important;
                         padding: 0 !important;
                         z-index: 9999 !important;
+                        page-break-after: avoid !important;
+                        page-break-before: avoid !important;
                     }
 
                     /* 5. Ensure all elements inside the print area are visible */
@@ -467,7 +470,7 @@ export default function PrintStationPage() {
 
                     @page {
                         size: 90mm 60mm portrait;
-                        margin: 0;
+                        margin: 0 !important;
                     }
                 }
             `}</style>
