@@ -36,16 +36,68 @@ interface LogEntry {
     timestamp: Date
 }
 
-export default function PrintStationPage() {
+// --- Components ---
+function LabelCard({ job, scale = 1, showBorder = true }: { job: PrintJob, scale?: number, showBorder?: boolean }) {
+    const data = job.print_data
+    const companyName = (data.company_prefix || 'TOAN THANG').toUpperCase()
+    const workArea = (data as any).work_area_name || ''
+
     return (
-        <Suspense fallback={
-            <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-white">
-                <Loader2 className="w-12 h-12 animate-spin text-blue-500 mb-4" />
-                <p className="italic text-zinc-400">Đang khởi động hệ thống in...</p>
+        <div
+            style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}
+            className={`bg-white text-black font-sans overflow-hidden transition-all duration-300 ${showBorder ? 'border-[3px] border-black rounded-[2rem]' : ''
+                }`}
+        >
+            <div className={`p-6 flex flex-col h-full ${scale < 1 ? 'gap-2' : 'gap-4'}`}>
+                {/* Header Section */}
+                <div className="text-center space-y-1">
+                    <h2 className="text-3xl font-black tracking-tighter leading-none">
+                        {workArea ? `${companyName} - ${workArea}` : companyName}
+                    </h2>
+                    <p className="text-sm font-bold opacity-60 tracking-[0.2em] uppercase">
+                        CONTROLLED LOT: {job.lot_code}
+                    </p>
+                </div>
+
+                {/* Divider Line */}
+                <div className="h-[2px] bg-black/20 w-full" />
+
+                {/* Main Content: QR + Info Box */}
+                <div className="flex gap-8 items-center flex-1">
+                    {/* QR Code */}
+                    <div className="bg-white p-2 rounded-xl shadow-inner border border-zinc-100 flex-shrink-0">
+                        <QRCode value={data.scan_url} size={scale < 0.5 ? 80 : 160} />
+                    </div>
+
+                    {/* Black Info Box */}
+                    <div className="flex-1 bg-black text-white p-5 rounded-[1.5rem] flex flex-col justify-center min-h-[140px] shadow-lg">
+                        <div className="mb-2">
+                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Warehouse</span>
+                            <h3 className="text-xl font-black uppercase leading-tight tracking-tight">Product</h3>
+                        </div>
+
+                        <div className="space-y-1">
+                            {data.products?.slice(0, 1).map((p: any, idx: number) => (
+                                <div key={idx}>
+                                    <p className="text-lg font-bold text-emerald-400 leading-tight truncate">{p.name}</p>
+                                    <p className="text-3xl font-black italic tracking-tighter">
+                                        {p.quantity} <span className="text-xl not-italic opacity-60">{p.unit}</span>
+                                    </p>
+                                </div>
+                            ))}
+                            {!data.products && (
+                                <div>
+                                    <p className="text-lg font-bold text-emerald-400 leading-tight truncate">{data.product_name}</p>
+                                    <p className="text-3xl font-black italic tracking-tighter">
+                                        {data.quantity} <span className="text-xl not-italic opacity-60">{data.unit}</span>
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
             </div>
-        }>
-            <PrintStationContent />
-        </Suspense>
+        </div>
     )
 }
 
@@ -284,34 +336,11 @@ function PrintStationContent() {
                     <div className="text-center">
                         <Loader2 className="w-10 h-10 animate-spin text-emerald-500 mx-auto mb-4" />
                         <p className="text-slate-400 italic">Đang tải dữ liệu nhãn in (Job: {jobIdParam})...</p>
-                        {isAuthenticating && <p className="text-[10px] text-slate-300 mt-2">Đang thiết lập phiên làm việc với Token...</p>}
+                        {isAuthenticating && <p className="text-[10px] text-zinc-300 mt-2">Đang thiết lập phiên làm việc với Token...</p>}
                     </div>
                 ) : (
                     <div id="print-area" className="block bg-white w-[90mm] h-[60mm] overflow-hidden relative border border-slate-100">
-                        <div className="border border-black h-full p-2.5 flex flex-col items-center justify-between font-sans text-black box-border">
-                            <div className="w-full text-left">
-                                <div className="flex justify-between items-start w-full border-b border-black pb-1 mb-1">
-                                    <div className="text-left flex-1">
-                                        <h1 className="font-black text-lg leading-none">{(lastPrinted.print_data.company_prefix || 'TOAN THANG').toUpperCase()}</h1>
-                                        <p className="text-[9px] uppercase font-bold opacity-60">SYSTEM TRACEABILITY</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="text-[9px] font-black font-mono">{lastPrinted.lot_code}</p>
-                                    </div>
-                                </div>
-                                <div className="flex gap-4 w-full mt-2 items-center">
-                                    <QRCode value={lastPrinted.print_data.scan_url} size={150} />
-                                    <div className="flex-1 space-y-2">
-                                        {lastPrinted.print_data.products?.slice(0, 1).map((p: any, idx: number) => (
-                                            <div key={idx}>
-                                                <p className="text-[13px] font-black uppercase leading-tight">{p.name}</p>
-                                                <p className="text-[18px] font-black italic mt-1">{p.quantity} {p.unit}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                        <LabelCard job={lastPrinted} showBorder={false} />
                     </div>
                 )}
             </div>
@@ -320,52 +349,23 @@ function PrintStationContent() {
 
     if (!currentSystem && !silentParam) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-6 text-center">
-                <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
+            <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 p-6 text-center">
+                <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mb-6 border border-red-500/20">
                     <WifiOff className="w-10 h-10 text-red-500" />
                 </div>
-                <h2 className="text-2xl font-bold text-slate-800 mb-2 font-display">Hệ thống chưa kết nối</h2>
-                <p className="text-slate-500 max-w-md">Vui lòng quay lại Dashboard để khởi tạo phiên làm việc trước khi sử dụng trạm in.</p>
+                <h2 className="text-2xl font-bold text-white mb-2 font-display">Hệ thống chưa kết nối</h2>
+                <p className="text-zinc-500 max-w-md italic">Vui lòng quay lại Dashboard để khởi tạo phiên làm việc trước khi sử dụng trạm in.</p>
             </div>
         )
     }
 
     return (
-        <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-emerald-500/30">
+        <div className="min-h-screen bg-[#09090b] text-zinc-100 font-sans selection:bg-emerald-500/30 overflow-x-hidden">
             {/* --- Dedicated Print Container (Hidden in UI) --- */}
             {lastPrinted && (
-                <div id="print-label-container" className="hidden print:block fixed inset-0 z-[9999] bg-white">
-                    <div className="w-[90mm] h-[60mm] text-black bg-white overflow-hidden p-0 m-0">
-                        <div className="border border-black h-full p-2.5 flex flex-col items-center justify-between font-sans text-black box-border">
-                            <div className="w-full text-left">
-                                <div className="flex justify-between items-start w-full border-b border-black pb-1 mb-1">
-                                    <div className="text-left flex-1">
-                                        <h1 className="font-black text-lg leading-none">{(lastPrinted.print_data.company_prefix || 'TOAN THANG').toUpperCase()}</h1>
-                                        <p className="text-[9px] uppercase font-bold opacity-60">SYSTEM TRACEABILITY</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="text-[9px] font-black font-mono">{lastPrinted.lot_code}</p>
-                                    </div>
-                                </div>
-                                <div className="flex gap-4 w-full mt-2 items-center">
-                                    <QRCode value={lastPrinted.print_data.scan_url} size={150} />
-                                    <div className="flex-1 space-y-2">
-                                        {lastPrinted.print_data.products?.slice(0, 1).map((p: any, idx: number) => (
-                                            <div key={idx}>
-                                                <p className="text-[13px] font-black uppercase leading-tight">{p.name}</p>
-                                                <p className="text-[18px] font-black italic mt-1">{p.quantity} {p.unit}</p>
-                                            </div>
-                                        ))}
-                                        {!lastPrinted.print_data.products && (
-                                            <div>
-                                                <p className="text-[13px] font-black uppercase leading-tight">{lastPrinted.print_data.product_name}</p>
-                                                <p className="text-[18px] font-black italic mt-1">{lastPrinted.print_data.quantity} {lastPrinted.print_data.unit}</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                <div id="print-label-container" className="hidden print:block fixed inset-0 z-[9999] bg-white text-black">
+                    <div className="w-[90mm] h-[60mm] bg-white overflow-hidden p-0 m-0">
+                        <LabelCard job={lastPrinted} showBorder={false} />
                     </div>
                 </div>
             )}
@@ -374,36 +374,40 @@ function PrintStationContent() {
             <div className="print:hidden">
                 {/* --- Background Elements --- */}
                 <div className="fixed inset-0 overflow-hidden pointer-events-none">
-                    <div className="absolute top-[-10%] right-[-5%] w-[45%] h-[45%] bg-emerald-100/40 blur-[120px] rounded-full" />
-                    <div className="absolute bottom-[-10%] left-[-5%] w-[45%] h-[45%] bg-blue-100/40 blur-[120px] rounded-full" />
+                    <div className="absolute top-[-10%] right-[-5%] w-[45%] h-[45%] bg-emerald-500/10 blur-[120px] rounded-full" />
+                    <div className="absolute bottom-[-10%] left-[-5%] w-[45%] h-[45%] bg-blue-500/10 blur-[120px] rounded-full" />
+                    <div className="absolute top-[20%] left-[10%] w-[30%] h-[30%] bg-zinc-500/5 blur-[80px] rounded-full" />
                 </div>
 
                 {/* --- Top Navigation / Header --- */}
-                <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/70 backdrop-blur-xl px-6 py-4">
+                <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950/70 backdrop-blur-xl px-6 py-4 shadow-2xl">
                     <div className="max-w-[1600px] mx-auto flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                                <Printer className="text-white" size={20} />
+                        <div className="flex items-center gap-5">
+                            <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20 ring-1 ring-white/10">
+                                <Printer className="text-white" size={24} />
                             </div>
                             <div>
-                                <h1 className="text-lg font-black tracking-tight flex items-center gap-2 text-slate-900">
+                                <h1 className="text-xl font-black tracking-tight flex items-center gap-3 text-white">
                                     PRINT STATION
-                                    <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded-full font-mono text-slate-500">V9.6</span>
+                                    <span className="text-[10px] bg-zinc-800 px-3 py-1 rounded-full font-mono text-emerald-500 border border-zinc-700">V9.7_REBORN</span>
                                 </h1>
-                                <p className="text-xs text-slate-500 flex items-center gap-1.5 uppercase font-bold tracking-wider">
-                                    <Activity size={10} className="text-emerald-500 animate-pulse" />
-                                    Monitoring: LIVE
-                                    <span className="ml-2 px-2 py-0.5 bg-blue-500/10 text-blue-600 rounded-full text-[9px] animate-pulse border border-blue-200">
-                                        BOT ACTIVE
+                                <p className="text-[10px] text-zinc-500 flex items-center gap-2 uppercase font-black tracking-[0.2em] mt-1">
+                                    <Activity size={12} className="text-emerald-500 animate-pulse" />
+                                    Monitoring System: <span className="text-emerald-400">ACTIVE</span>
+                                    <span className="ml-2 px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded-full text-[9px] border border-blue-500/30">
+                                        REMOTE BOT ACTIVE
                                     </span>
                                 </p>
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold italic">
-                                <Wifi size={14} className="text-emerald-500" />
-                                Supabase Connected
+                        <div className="flex items-center gap-4">
+                            <div className="hidden md:flex items-center gap-3 bg-zinc-900 px-5 py-2.5 rounded-2xl border border-zinc-800 text-zinc-400 text-xs font-black tracking-widest uppercase">
+                                <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+                                Database Linked
+                            </div>
+                            <div className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 hover:text-white transition-colors cursor-pointer">
+                                <Bell size={18} />
                             </div>
                         </div>
                     </div>
@@ -413,225 +417,275 @@ function PrintStationContent() {
                 {lastPrinted && (
                     <button
                         id="bot-print-trigger"
-                        className="sr-only" // Screen reader only (hidden from UI but clickable by bot)
+                        className="sr-only"
                         onClick={() => window.print()}
                     >
                         Print Latest
                     </button>
                 )}
 
-                <main className="max-w-[1600px] mx-auto p-6 grid grid-cols-12 gap-6 pb-20">
+                <main className="max-w-[1600px] mx-auto p-6 lg:p-10 grid grid-cols-12 gap-8 pb-32">
                     {/* --- Left Column: Dashboard & Preview --- */}
-                    <div className="col-span-12 lg:col-span-8 space-y-6">
+                    <div className="col-span-12 lg:col-span-8 space-y-8">
                         {/* Stats Grid */}
-                        <div className="grid grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             {[
-                                { label: 'Tổng in hôm nay', value: stats.totalToday, icon: LayoutGrid, color: 'blue' },
-                                { label: 'Hoàn thành', value: stats.completed, icon: CheckCircle2, color: 'green' },
-                                { label: 'Đang xếp hàng', value: stats.pending, icon: Clock, color: 'amber' }
+                                { label: 'Tổng hôm nay', value: stats.totalToday, icon: LayoutGrid, color: 'blue' },
+                                { label: 'Hoàn thành', value: stats.completed, icon: CheckCircle2, color: 'emerald' },
+                                { label: 'Đang đợi', value: stats.pending, icon: Clock, color: 'amber' }
                             ].map((s, i) => (
-                                <div key={i} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm group hover:border-emerald-500/30 transition-all duration-300">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className={`p-2 rounded-lg bg-${s.color}-500/10`}>
-                                            <s.icon size={18} className={`text-${s.color}-500`} />
+                                <div key={i} className="bg-zinc-900/40 border border-zinc-800/60 rounded-3xl p-6 backdrop-blur-sm group hover:border-emerald-500/30 transition-all duration-500 shadow-xl">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className={`p-3 rounded-2xl bg-${s.color}-500/10 ring-1 ring-${s.color}-500/20`}>
+                                            <s.icon size={22} className={`text-${s.color}-500`} />
                                         </div>
-                                        <span className="text-2xl font-black text-slate-800">{s.value}</span>
+                                        <span className="text-4xl font-black text-white tabular-nums tracking-tighter">{s.value}</span>
                                     </div>
-                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{s.label}</p>
+                                    <p className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em]">{s.label}</p>
                                 </div>
                             ))}
                         </div>
 
                         {/* Main Work Area / Preview */}
-                        <div className="relative bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-md min-h-[500px] flex flex-col">
-                            <div className="absolute top-0 right-0 p-4">
-                                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-black border bg-emerald-50 text-emerald-600 border-emerald-100 transition-all">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                    REAL-TIME SYNC: ACTIVE
+                        <div className="relative bg-zinc-900/20 border border-zinc-800 rounded-[3rem] overflow-hidden shadow-2xl min-h-[660px] flex flex-col backdrop-blur-md group">
+                            {/* Decorative Grid */}
+                            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none" />
+
+                            <div className="absolute top-8 right-10 flex items-center gap-3">
+                                <div className="px-4 py-2 rounded-2xl text-[10px] font-black border bg-emerald-500/10 text-emerald-400 border-emerald-500/20 transition-all shadow-[0_0_20px_rgba(16,185,129,0.1)]">
+                                    <span className="flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                        LIVE SYNC ENABLED
+                                    </span>
                                 </div>
                             </div>
 
                             <div className="flex-1 flex flex-col items-center justify-center p-12">
-                                {lastPrinted ? (
-                                    <div className="animate-in fade-in zoom-in duration-500 flex flex-col items-center text-center">
-                                        <div className="text-xs font-black text-blue-500 mb-4 bg-blue-500/10 px-4 py-1.5 rounded-full uppercase tracking-[0.2em]">
-                                            Ready for Next
+                                {(lastPrinted || jobs.length > 0) ? (
+                                    <div className="animate-in fade-in zoom-in duration-700 flex flex-col items-center text-center">
+                                        <div className="text-[10px] font-black text-emerald-400 mb-8 bg-emerald-500/10 px-6 py-2 rounded-full uppercase tracking-[0.3em] border border-emerald-500/20">
+                                            {jobs.length > 0 ? 'Current Printing Task' : 'Latest Printed Tag'}
                                         </div>
 
-                                        {/* Glass Preview Card */}
-                                        <div className="bg-white p-6 rounded-2xl shadow-[0_0_50px_rgba(255,255,255,0.1)] scale-110">
-                                            <div className="w-[90mm] h-[60mm] text-black">
-                                                <div className="border-2 border-black h-full p-3 rounded-lg flex flex-col justify-between">
-                                                    <div className="border-b border-black pb-2 mb-2">
-                                                        <h2 className="font-black text-xl leading-none">{(lastPrinted.print_data.company_prefix || 'ANY').toUpperCase()} AREA</h2>
-                                                        <p className="text-[10px] font-bold opacity-70">CONTROLLED LOT: {lastPrinted.lot_code}</p>
+                                        {/* Label Preview Container */}
+                                        <div className="relative p-1 bg-gradient-to-br from-emerald-500/20 to-blue-500/20 rounded-[2.5rem] shadow-2xl transition-transform hover:scale-105 duration-500">
+                                            <div className="max-w-[600px] w-full aspect-[9/6] overflow-hidden rounded-[2.2rem]">
+                                                <LabelCard job={jobs[0] || lastPrinted!} scale={1} />
+                                            </div>
+
+                                            {/* Reflection Overlay */}
+                                            <div className="absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent pointer-events-none rounded-[2.5rem]" />
+                                        </div>
+
+                                        <div className="mt-12 flex flex-col items-center gap-4">
+                                            <div className="flex -space-x-3">
+                                                {jobs.length > 0 ? (
+                                                    <div className="w-10 h-10 rounded-full border-[3px] border-zinc-900 bg-amber-500 flex items-center justify-center shadow-lg animate-pulse">
+                                                        <Clock size={18} className="text-zinc-900 font-bold" />
                                                     </div>
-                                                    <div className="flex gap-4 items-center text-left">
-                                                        <QRCode value={lastPrinted.print_data.scan_url} size={150} />
-                                                        <div className="space-y-3">
-                                                            <div className="bg-black text-white px-3 py-1 text-[11px] font-black rounded w-fit uppercase">
-                                                                Warehouse Product
-                                                            </div>
-                                                            <p className="text-lg font-black uppercase leading-[1.1]">{lastPrinted.print_data.product_name}</p>
-                                                            <p className="text-2xl font-black italic">{lastPrinted.print_data.quantity} {lastPrinted.print_data.unit}</p>
+                                                ) : (
+                                                    [1, 2, 3, 4].map(i => (
+                                                        <div key={i} className="w-10 h-10 rounded-full border-[3px] border-zinc-900 bg-emerald-500 flex items-center justify-center shadow-lg">
+                                                            <Check size={18} className="text-zinc-900 font-bold" />
                                                         </div>
-                                                    </div>
-                                                </div>
+                                                    ))
+                                                )}
                                             </div>
-                                        </div>
-
-                                        <div className="mt-8 flex items-center gap-3">
-                                            <div className="flex -space-x-2">
-                                                {[1, 2, 3].map(i => <div key={i} className="w-8 h-8 rounded-full border-2 border-zinc-900 bg-green-500/20 flex items-center justify-center"><Check size={14} className="text-green-500" /></div>)}
-                                            </div>
-                                            <p className="text-sm text-zinc-500 italic">Vừa xử lý xong: {lastPrinted.lot_code}</p>
+                                            <p className="text-zinc-400 font-bold italic text-sm">
+                                                {jobs.length > 0 ? 'Incoming Package: ' : 'Processed Package: '}
+                                                <span className="text-white not-italic">{(jobs[0] || lastPrinted!).lot_code}</span>
+                                            </p>
                                         </div>
                                     </div>
                                 ) : (
                                     <div className="text-center group">
-                                        <div className="w-24 h-24 bg-white/5 border border-white/10 rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-all duration-500 group-hover:border-blue-500/50">
-                                            <Layers className="text-zinc-600 group-hover:text-blue-500 transition-colors" size={40} />
+                                        <div className="w-32 h-32 bg-zinc-900/50 border border-zinc-800 rounded-[3rem] flex items-center justify-center mx-auto mb-8 group-hover:scale-110 transition-all duration-700 group-hover:border-emerald-500/30 group-hover:shadow-[0_0_50px_rgba(16,185,129,0.1)]">
+                                            <Layers className="text-zinc-700 group-hover:text-emerald-500 transition-colors" size={56} />
                                         </div>
-                                        <h3 className="text-xl font-bold text-slate-700">Sẵn sàng nhận lệnh</h3>
-                                        <p className="text-slate-400 max-w-[280px] mx-auto mt-2 text-sm leading-relaxed">Gửi lệnh in từ thiết bị cầm tay để bắt đầu quy trình tự động.</p>
+                                        <h3 className="text-2xl font-black text-white tracking-tight">System Ready</h3>
+                                        <p className="text-zinc-500 max-w-[320px] mx-auto mt-4 text-sm leading-relaxed font-bold italic uppercase tracking-widest opacity-60">Waiting for Remote Print Signal...</p>
                                     </div>
                                 )}
                             </div>
 
                             {/* Recent History Grid Inside Main Area */}
-                            <div className="bg-slate-50/50 border-t border-slate-100 p-6 overflow-hidden">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Lịch sử vừa in</h3>
-                                    <button onClick={() => setActiveTab('history')} className="text-[10px] text-slate-500 hover:text-emerald-600 transition-colors uppercase font-bold">Xem tất cả</button>
+                            <div className="bg-zinc-950/40 border-t border-zinc-800/60 p-8 backdrop-blur-xl">
+                                <div className="flex items-center justify-between mb-6">
+                                    <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-zinc-500">Recently Dispatched</h3>
+                                    <button
+                                        onClick={() => setActiveTab('history')}
+                                        className="text-[10px] text-emerald-500 hover:text-emerald-400 transition-colors uppercase font-black tracking-widest bg-emerald-500/10 px-4 py-2 rounded-xl"
+                                    >
+                                        View History
+                                    </button>
                                 </div>
-                                <div className="grid grid-cols-4 gap-4">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                                     {history.slice(0, 4).map((h) => (
-                                        <div key={h.id} className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm hover:border-emerald-200 transition-all">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                                <span className="text-[10px] font-bold text-slate-700 truncate">{h.lot_code}</span>
+                                        <div key={h.id} className="bg-zinc-900/60 p-4 rounded-2xl border border-zinc-800/80 hover:border-emerald-500/40 transition-all group overflow-hidden relative">
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                                                <span className="text-xs font-black text-zinc-300 truncate">{h.lot_code}</span>
                                             </div>
-                                            <p className="text-[10px] text-slate-400 font-mono italic">{format(new Date(h.created_at), 'HH:mm')}</p>
+                                            <div className="flex items-center justify-between mt-3">
+                                                <p className="text-[10px] text-zinc-500 font-black tabular-nums">{format(new Date(h.created_at), 'HH:mm:ss')}</p>
+                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <CheckCircle2 size={14} className="text-emerald-500" />
+                                                </div>
+                                            </div>
                                         </div>
                                     ))}
-                                    {history.length === 0 && <div className="col-span-4 py-4 text-center text-slate-300 text-xs italic">Chưa có lịch sử</div>}
+                                    {history.length === 0 && (
+                                        <div className="col-span-4 py-8 text-center border-2 border-dashed border-zinc-800 rounded-[2rem]">
+                                            <p className="text-zinc-600 text-[10px] font-black uppercase tracking-widest">No Recent Dispatch Data</p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     {/* --- Right Column: Tabs (Queue, Logs) --- */}
-                    <div className="col-span-12 lg:col-span-4 space-y-6">
-                        <div className="bg-white border border-slate-200 rounded-3xl shadow-xl overflow-hidden flex flex-col h-full max-h-[850px]">
+                    <div className="col-span-12 lg:col-span-4 space-y-8 h-full">
+                        <div className="bg-zinc-900/40 border border-zinc-800 rounded-[3rem] shadow-2xl overflow-hidden flex flex-col h-full max-h-[1000px] backdrop-blur-xl">
                             {/* Tab Switcher */}
-                            <div className="flex border-b border-slate-100 bg-slate-50/50">
+                            <div className="flex p-2 gap-2 border-b border-zinc-800/60 bg-zinc-950/20">
                                 {(['queue', 'history', 'logs'] as const).map(tab => (
                                     <button
                                         key={tab}
                                         onClick={() => setActiveTab(tab)}
-                                        className={`flex-1 py-4 text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab ? 'text-emerald-600 border-b-2 border-emerald-500 bg-white' : 'text-slate-400 hover:text-slate-600'
+                                        className={`flex-1 py-4 rounded-[1.8rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 relative ${activeTab === tab
+                                            ? 'text-white bg-zinc-800 shadow-xl'
+                                            : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/30'
                                             }`}
                                     >
-                                        {tab === 'queue' ? 'Hàng chờ' : tab === 'history' ? 'Lịch sử' : 'Nhật ký'}
-                                        {tab === 'queue' && jobs.length > 0 && <span className="ml-2 bg-emerald-500 text-white px-1.5 rounded-full text-[9px]">{jobs.length}</span>}
+                                        {tab === 'queue' ? 'Queue' : tab === 'history' ? 'History' : 'Logs'}
+                                        {tab === 'queue' && jobs.length > 0 && (
+                                            <span className="absolute top-3 right-4 bg-emerald-500 text-zinc-900 px-2 py-0.5 rounded-full text-[9px] font-black border-2 border-zinc-900">
+                                                {jobs.length}
+                                            </span>
+                                        )}
                                     </button>
                                 ))}
                             </div>
 
                             {/* Tab Content */}
-                            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                            <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
                                 {activeTab === 'queue' && (
-                                    <div className="space-y-3">
+                                    <div className="space-y-4">
                                         {jobs.map((job, idx) => (
-                                            <div key={job.id} className="group bg-slate-50 border border-slate-100 rounded-2xl p-4 hover:border-emerald-300 transition-all shadow-sm">
-                                                <div className="flex items-start justify-between">
-                                                    <div>
-                                                        <span className="text-[10px] font-black text-emerald-600 uppercase tracking-tighter">Priority: {idx + 1}</span>
-                                                        <h4 className="font-bold text-slate-800 mt-0.5">{job.lot_code}</h4>
-                                                        <p className="text-xs text-slate-500 mt-1 line-clamp-1 italic">{job.print_data.product_name}</p>
-                                                    </div>
-                                                    <div className="flex flex-col items-center gap-2">
-                                                        <div className="flex gap-2">
-                                                            <button
-                                                                onClick={() => handlePrioritizeJob(job)}
-                                                                className="p-2 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-500 hover:text-white transition-all border border-blue-100"
-                                                                title="Ưu tiên (Karaoke style)"
-                                                            >
-                                                                <ArrowUp size={16} />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleDeleteJob(job.id)}
-                                                                className="p-2 rounded-xl bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-all border border-red-100"
-                                                                title="Xóa lệnh này"
-                                                            >
-                                                                <Trash2 size={16} />
-                                                            </button>
-                                                            <button
-                                                                id={`job-print-${job.id}`}
-                                                                onClick={() => handlePrintJob(job)}
-                                                                className="p-2 rounded-xl bg-emerald-500 text-white hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20"
-                                                                title="In nhãn này"
-                                                            >
-                                                                <Printer size={16} />
-                                                            </button>
+                                            <div key={job.id} className="group relative">
+                                                {/* Mini Label Design for Queue */}
+                                                <div className="bg-zinc-800/40 border border-zinc-800 rounded-[2rem] p-5 hover:border-emerald-500/40 transition-all duration-500 hover:shadow-[0_20px_40px_rgba(0,0,0,0.3)]">
+                                                    <div className="flex justify-between items-start mb-4">
+                                                        <div className="flex flex-col">
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <span className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.2em]">{idx === 0 ? 'NEXT' : `POS ${idx + 1}`}</span>
+                                                                <div className={`w-1.5 h-1.5 rounded-full ${idx === 0 ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 'bg-zinc-600'}`} />
+                                                            </div>
+                                                            <h4 className="text-lg font-black text-white tracking-tight">{job.lot_code}</h4>
+                                                            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-1 italic">
+                                                                {(job.print_data as any).work_area_name || 'No Area Assigned'}
+                                                            </p>
                                                         </div>
-                                                        <div className="w-10 h-10 rounded-xl bg-slate-200/50 flex items-center justify-center text-slate-400 group-hover:bg-emerald-100 group-hover:text-emerald-600 transition-all">
-                                                            <Package size={18} />
+                                                        <div className="bg-zinc-900/80 p-1 rounded-xl shadow-inner border border-zinc-800">
+                                                            <QRCode value={job.print_data.scan_url} size={40} />
                                                         </div>
                                                     </div>
-                                                </div>
-                                                <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100">
-                                                    <span className="text-[10px] font-mono text-slate-400">{format(new Date(job.created_at), 'HH:mm:ss')}</span>
-                                                    <div className="flex items-center gap-1.5 bg-amber-50 text-amber-600 px-2.5 py-1 rounded-full text-[9px] font-black uppercase border border-amber-100">
-                                                        <Loader2 size={10} className="animate-spin" />
-                                                        Pending
+
+                                                    <div className="bg-black/40 rounded-2xl p-3 border border-zinc-800/30 mb-5">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="p-2 bg-emerald-500/10 rounded-lg">
+                                                                <Package size={14} className="text-emerald-500" />
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="text-[10px] font-black text-white truncate uppercase tracking-tight">
+                                                                    {job.print_data.products?.[0]?.name || job.print_data.product_name}
+                                                                </p>
+                                                                <p className="text-xs font-bold text-emerald-400">
+                                                                    {job.print_data.products?.[0]?.quantity || job.print_data.quantity} {job.print_data.products?.[0]?.unit || job.print_data.unit}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => handlePrioritizeJob(job)}
+                                                            className="flex-1 py-3 rounded-xl bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white transition-all border border-blue-500/20 text-[10px] font-black uppercase tracking-widest"
+                                                        >
+                                                            Move Up
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteJob(job.id)}
+                                                            className="px-4 py-3 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all border border-red-500/20"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handlePrintJob(job)}
+                                                            className="flex-1 py-3 rounded-xl bg-emerald-500 text-zinc-900 hover:bg-emerald-400 transition-all font-black text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-500/20"
+                                                        >
+                                                            Print Tag
+                                                        </button>
                                                     </div>
                                                 </div>
                                             </div>
                                         ))}
                                         {jobs.length === 0 && (
-                                            <div className="text-center py-20">
-                                                <Bell size={32} className="mx-auto text-slate-200 mb-4" />
-                                                <p className="text-sm text-slate-400 font-bold italic">Không có lệnh in nào đang chờ</p>
+                                            <div className="text-center py-32 space-y-4 opacity-40">
+                                                <div className="w-16 h-16 bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4 border border-zinc-700">
+                                                    <Printer size={24} className="text-zinc-600" />
+                                                </div>
+                                                <p className="text-xs font-black uppercase tracking-[0.3em] text-zinc-500">Queue is Clear</p>
                                             </div>
                                         )}
                                     </div>
                                 )}
 
                                 {activeTab === 'history' && (
-                                    <div className="space-y-2">
+                                    <div className="space-y-3">
                                         {history.map(job => (
-                                            <div key={job.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
-                                                <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
-                                                    <CheckCircle2 className="text-emerald-500" size={18} />
+                                            <div key={job.id} className="flex items-center gap-4 p-4 rounded-[2rem] bg-zinc-900/30 border border-zinc-800 hover:border-emerald-500/20 transition-all group">
+                                                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center flex-shrink-0 border border-emerald-500/10">
+                                                    <CheckCircle2 className="text-emerald-500" size={20} />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <div className="flex justify-between">
-                                                        <p className="text-xs font-bold text-slate-700 truncate">{job.lot_code}</p>
-                                                        <span className="text-[10px] text-slate-400">{format(new Date(job.created_at), 'HH:mm')}</span>
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <p className="text-xs font-black text-white tracking-tight">{job.lot_code}</p>
+                                                            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-0.5">{(job.print_data as any).work_area_name || 'General'}</p>
+                                                        </div>
+                                                        <span className="text-[10px] font-black text-zinc-600 tabular-nums">{format(new Date(job.created_at), 'HH:mm')}</span>
                                                     </div>
-                                                    <p className="text-[10px] text-slate-500 truncate">{job.print_data.product_name}</p>
+                                                    <p className="text-[10px] text-emerald-400 font-bold truncate mt-2 uppercase">
+                                                        {job.print_data.products?.[0]?.name || job.print_data.product_name}
+                                                    </p>
                                                 </div>
                                             </div>
                                         ))}
-                                        {history.length === 0 && <div className="text-center py-20 text-slate-300 italic">Lịch sử trống</div>}
+                                        {history.length === 0 && <div className="text-center py-20 text-zinc-600 font-black uppercase tracking-widest text-[10px]">Empty Annals</div>}
                                     </div>
                                 )}
 
                                 {activeTab === 'logs' && (
-                                    <div className="font-mono text-[10px] space-y-2 bg-slate-900 p-3 rounded-xl min-h-full">
+                                    <div className="font-mono text-[9px] space-y-3 bg-black ring-1 ring-zinc-800 p-6 rounded-[2rem] min-h-[600px] shadow-inner">
+                                        <div className="flex items-center gap-2 mb-4 border-b border-zinc-800 pb-3">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                            <span className="text-zinc-500 font-black uppercase tracking-widest">System Tailing...</span>
+                                        </div>
                                         {logs.map(log => (
-                                            <div key={log.id} className="flex gap-2">
-                                                <span className="text-slate-500 flex-shrink-0">[{format(log.timestamp, 'HH:mm:ss')}]</span>
-                                                <span className={`${log.type === 'error' ? 'text-red-400' :
+                                            <div key={log.id} className="flex gap-3 leading-relaxed">
+                                                <span className="text-zinc-600 flex-shrink-0 font-bold tracking-tighter tabular-nums">{format(log.timestamp, 'HH:mm:ss')}</span>
+                                                <span className={`break-all ${log.type === 'error' ? 'text-red-400 font-bold' :
                                                     log.type === 'warning' ? 'text-amber-400' :
-                                                        log.type === 'success' ? 'text-emerald-400' : 'text-slate-300'
+                                                        log.type === 'success' ? 'text-emerald-400' : 'text-zinc-400'
                                                     }`}>
+                                                    <span className="uppercase opacity-40 mr-2">{log.type}</span>
                                                     {log.message}
                                                 </span>
                                             </div>
                                         ))}
-                                        {logs.length === 0 && <div className="text-slate-500 italic">No logs generated...</div>}
+                                        {logs.length === 0 && <div className="text-zinc-800 italic uppercase font-black text-center mt-20 tracking-[0.3em]">Listening for events...</div>}
                                     </div>
                                 )}
                             </div>
@@ -646,10 +700,10 @@ function PrintStationContent() {
                     src: url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
                 }
                 .font-display { font-family: 'Inter', sans-serif; }
-                .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+                .custom-scrollbar::-webkit-scrollbar { width: 5px; }
                 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-                .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.05); border-radius: 10px; }
-                .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.1); }
+                .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 20px; }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.1); }
 
                 @media print {
                     @page {
@@ -680,5 +734,18 @@ function PrintStationContent() {
                 }
             `}</style>
         </div>
+    )
+}
+
+export default function PrintStationPage() {
+    return (
+        <Suspense fallback={
+            <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-white">
+                <Loader2 className="w-12 h-12 animate-spin text-blue-500 mb-4" />
+                <p className="italic text-zinc-400">Đang khởi động hệ thống in...</p>
+            </div>
+        }>
+            <PrintStationContent />
+        </Suspense>
     )
 }
