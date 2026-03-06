@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode } from 'lucide-react'
+import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -45,6 +45,7 @@ const menuItems: MenuItem[] = [
             { id: 'customers', name: 'Khách hàng', href: '/customers', icon: Users, requiredPermission: 'partner.view' },
             { id: 'order_types', name: 'Loại phiếu', href: '/order-types', icon: FileText, requiredPermission: 'warehouse.manage' },
             { id: 'qc', name: 'QC', href: '/qc', icon: ShieldCheck, requiredPermission: 'qc.view' },
+            { id: 'work_areas', name: 'Khu vực', href: '/work-areas', icon: MapPin, requiredPermission: 'warehouse.manage' },
             { id: 'members_teams', name: 'Thành viên & Đội', href: '/members-teams', icon: Users, requiredModule: 'member_team_manager' },
         ]
     },
@@ -69,6 +70,8 @@ const menuItems: MenuItem[] = [
             { id: 'qr_assign', name: 'Gán vị trí', href: '/warehouses/scan/assign', icon: MapPin, requiredPermission: 'utility.view' },
             { id: 'qr_export', name: 'Xuất kho', href: '/warehouses/scan/export', icon: ArrowUpFromLine, requiredPermission: 'utility.view' },
             { id: 'qr_export_order', name: 'Lệnh xuất', href: '/warehouses/scan/export-order', icon: FileText, requiredPermission: 'utility.view' },
+            { id: 'print_station', name: 'Máy in trạm', href: '/print/station', icon: Printer, requiredPermission: 'utility.view' },
+            { id: 'mobile_access', name: 'Mobile', href: '/mobile', icon: Smartphone, requiredPermission: 'utility.view' },
         ]
     },
     {

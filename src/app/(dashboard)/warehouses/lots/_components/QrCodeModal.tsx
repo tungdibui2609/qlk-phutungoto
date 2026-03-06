@@ -10,9 +10,10 @@ import { supabase } from '@/lib/supabaseClient'
 interface QrCodeModalProps {
     lot: Lot
     onClose: () => void
+    workArea?: { id: string; name: string } | null
 }
 
-export function QrCodeModal({ lot, onClose }: QrCodeModalProps) {
+export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
     const { showToast } = useToast()
     const [copied, setCopied] = useState(false)
     const [isPrinting, setIsPrinting] = useState(false)
@@ -110,6 +111,7 @@ export function QrCodeModal({ lot, onClose }: QrCodeModalProps) {
                 scan_url: scanUrl,
                 company_prefix: companyPrefix,
                 supplier: lot.suppliers?.name || 'N/A',
+                work_area_name: workArea?.name || '',
                 products: lot.lot_items?.map(item => ({
                     name: item.products?.name || 'SP',
                     internal_name: item.products?.internal_name || '',
@@ -129,6 +131,7 @@ export function QrCodeModal({ lot, onClose }: QrCodeModalProps) {
                     print_data: printData,
                     company_id: lot.company_id,
                     system_id: currentSystem?.id,
+                    work_area_id: workArea?.id || null,
                     status: 'pending'
                 })
 

@@ -209,9 +209,10 @@ export function useLotManagement() {
                 query = supabase
                     .from('lots')
                     .select(selectQuery, { count: 'exact' })
-                    .eq('system_code', currentSystem.code)
-                    .neq('status', 'exported')
-                    .neq('status', 'hidden')
+                if (currentSystem?.code) {
+                    query = query.eq('system_code', currentSystem.code)
+                }
+                query = query.neq('status', 'hidden')
             }
 
             // Implementation Strategy for filters:

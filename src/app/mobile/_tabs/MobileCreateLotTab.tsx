@@ -4,11 +4,12 @@ import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import { LotForm } from '@/app/(dashboard)/warehouses/lots/_components/LotForm'
 import { useLotManagement, Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
-import { useState } from 'react'
-import { RotateCcw, Plus, Package, Calendar, MapPin, Edit, Trash2, Eye, QrCode as QrIcon } from 'lucide-react'
+import { QrCodeModal } from '@/app/(dashboard)/warehouses/lots/_components/QrCodeModal'
+import { MobileWorkAreaPicker } from '@/components/mobile/MobileWorkAreaPicker'
+import { useState, useEffect } from 'react'
+import { RotateCcw, Plus, Package, Calendar, MapPin, Edit, Trash2, Eye, QrCode as QrIcon, MapPinned } from 'lucide-react'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { TagDisplay } from '@/components/lots/TagDisplay'
-import { QrCodeModal } from '@/app/(dashboard)/warehouses/lots/_components/QrCodeModal'
 
 // Helper for formatting dates cleanly
 const formatDate = (dateString?: string | null) => {
@@ -25,6 +26,27 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
     const [editingLot, setEditingLot] = useState<Lot | null>(null)
     const [viewingLot, setViewingLot] = useState<Lot | null>(null)
     const [qrLot, setQrLot] = useState<Lot | null>(null)
+    const [selectedWorkArea, setSelectedWorkArea] = useState<{ id: string, name: string } | null>(null)
+    const [showAreaPicker, setShowAreaPicker] = useState(false)
+
+    // Load work area from localStorage on mount
+    useEffect(() => {
+        const saved = localStorage.getItem('MOBILE_SELECTED_WORK_AREA')
+        if (saved) {
+            try {
+                setSelectedWorkArea(JSON.parse(saved))
+            } catch (e) {
+                console.error('Failed to parse saved work area', e)
+            }
+        }
+    }, [])
+
+    const handleSelectArea = (area: { id: string, name: string }) => {
+        setSelectedWorkArea(area)
+        localStorage.setItem('MOBILE_SELECTED_WORK_AREA', JSON.stringify(area))
+        setShowAreaPicker(false)
+        showToast(`Đã chọn khu vực: ${area.name}`, 'success')
+    }
 
     // Pull all needed data and actions from the hook
     const {
@@ -86,18 +108,35 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
 
     return (
         <div className="mobile-animate-fade-in pb-24">
+            {(!selectedWorkArea || showAreaPicker) && (
+                <MobileWorkAreaPicker
+                    onSelect={handleSelectArea}
+                    onClose={selectedWorkArea ? () => setShowAreaPicker(false) : undefined}
+                />
+            )}
+
             <div className="mobile-header">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
                         <div className="mobile-header-brand">Sarita Workspace</div>
                         <div className="mobile-header-title">Quản lý Lot</div>
                         <div className="mobile-header-subtitle">{currentSystem?.name || ''}</div>
+                        {selectedWorkArea && (
+                            <button
+                                onClick={() => setShowAreaPicker(true)}
+                                className="mt-2 flex items-center gap-1.5 px-2.5 py-1 bg-orange-500/10 border border-orange-500/20 rounded-full text-[10px] font-black uppercase tracking-wider text-orange-600 dark:text-orange-400"
+                            >
+                                <MapPinned size={12} />
+                                {selectedWorkArea.name}
+                            </button>
+                        )}
                     </div>
                     <div className="flex gap-2">
                         {view === 'list' && (
                             <button
                                 onClick={handleAddNew}
-                                className="w-10 h-10 flex items-center justify-center bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 rounded-xl hover:bg-orange-200 dark:hover:bg-orange-500/30 transition-colors"
+                                disabled={!selectedWorkArea}
+                                className="w-10 h-10 flex items-center justify-center bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 rounded-xl hover:bg-orange-200 dark:hover:bg-orange-500/30 transition-colors disabled:opacity-50"
                             >
                                 <Plus size={20} />
                             </button>
@@ -254,6 +293,7 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
             {qrLot && (
                 <QrCodeModal
                     lot={qrLot}
+                    workArea={selectedWorkArea}
                     onClose={() => setQrLot(null)}
                 />
             )}
