@@ -45,57 +45,81 @@ function LabelCard({ job, scale = 1, showBorder = true }: { job: PrintJob, scale
 
     return (
         <div
-            style={{ transform: `scale(${scale})`, transformOrigin: 'top left', width: scale === 1 ? '100%' : 'auto', height: scale === 1 ? '100%' : 'auto' }}
-            className={`bg-white text-black font-sans overflow-hidden transition-all duration-300 ${showBorder ? 'border-[3px] border-black rounded-[2.2rem]' : ''
+            style={{
+                transform: `scale(${scale})`,
+                transformOrigin: 'top left',
+                width: scale === 1 ? '100%' : 'auto',
+                height: scale === 1 ? '100%' : 'auto'
+            }}
+            className={`bg-white text-black font-sans overflow-hidden transition-all duration-300 ${showBorder ? 'border-[1px] border-black rounded-sm' : ''
                 }`}
         >
-            <div className={`p-8 flex flex-col h-full ${scale < 1 ? 'gap-2' : 'gap-5'}`}>
-                {/* Header Section */}
-                <div className="text-center space-y-1.5">
-                    <h2 className="text-3xl font-black tracking-tighter leading-none">
-                        {workArea ? `${companyName} - ${workArea}` : companyName}
-                    </h2>
-                    <p className="text-sm font-bold opacity-60 tracking-[0.2em] uppercase">
-                        CONTROLLED LOT: {job.lot_code}
-                    </p>
+            <div className="p-3 flex flex-col h-full gap-2">
+                {/* Header: Company & Lot Info */}
+                <div className="flex justify-between items-start border-b border-black pb-1.5">
+                    <div className="flex flex-col">
+                        <h2 className="text-sm font-black tracking-tight leading-tight">
+                            {companyName}
+                        </h2>
+                        <p className="text-[9px] font-bold lowercase tracking-wider text-black/60">website: chanhthu.com</p>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-[7px] font-bold uppercase opacity-50">Lot Number</p>
+                        <p className="text-[10px] font-black tracking-tight">{job.lot_code}</p>
+                    </div>
                 </div>
 
-                {/* Divider Line */}
-                <div className="h-[2px] bg-black/20 w-full" />
-
-                {/* Main Content: QR + Info Box */}
-                <div className="flex gap-8 items-center flex-1 justify-center">
-                    {/* QR Code */}
-                    <div className="bg-white p-2.5 rounded-xl shadow-inner border border-zinc-200 flex-shrink-0">
-                        <QRCode value={data.scan_url} size={scale < 0.5 ? 80 : 160} />
+                {/* Main Section: QR and Product Information */}
+                <div className="flex gap-2 items-stretch flex-1 min-h-0">
+                    {/* QR Code Segment (50%) */}
+                    <div className="w-1/2 flex flex-col items-center justify-center border-r border-dashed border-black/20 pr-1">
+                        <QRCode value={data.scan_url} size={scale < 0.5 ? 90 : 135} />
+                        <p className="text-[8px] mt-2 font-black tracking-[0.2em] opacity-80">SCAN TO ASSIGN</p>
                     </div>
 
-                    {/* Black Info Box */}
-                    <div className="flex-1 bg-black text-white p-5 rounded-[1.8rem] flex flex-col justify-center min-h-[140px] shadow-2xl">
-                        <div className="mb-2.5">
-                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Warehouse Control</span>
-                            <h3 className="text-xl font-black uppercase leading-tight tracking-tight mt-0.5">Inventory Lot</h3>
-                        </div>
+                    {/* Product Details Segment (50%) */}
+                    <div className="w-1/2 flex flex-col justify-between py-1 pl-2 min-w-0">
+                        <div>
+                            <div className="flex justify-between items-end mb-0.5">
+                                <p className="text-[7px] font-bold uppercase opacity-50">Sản phẩm</p>
+                                {data.products?.[0]?.sku && (
+                                    <p className="text-[7px] font-black text-black/40">CODE: {data.products[0].sku}</p>
+                                )}
+                            </div>
+                            <h3 className="text-[10px] font-black leading-tight uppercase break-words line-clamp-2 mb-1">
+                                {data.products?.[0]?.name || data.product_name}
+                            </h3>
 
-                        <div className="space-y-1.5">
-                            {data.products?.slice(0, 1).map((p: any, idx: number) => (
-                                <div key={idx}>
-                                    <p className="text-lg font-bold text-emerald-400 leading-tight truncate mb-1">{p.name}</p>
-                                    <p className="text-3xl font-black italic tracking-tighter">
-                                        {p.quantity} <span className="text-xl not-italic opacity-60">{p.unit}</span>
-                                    </p>
-                                </div>
-                            ))}
-                            {!data.products && (
-                                <div>
-                                    <p className="text-lg font-bold text-emerald-400 leading-tight truncate mb-1">{data.product_name}</p>
-                                    <p className="text-3xl font-black italic tracking-tighter">
-                                        {data.quantity} <span className="text-xl not-italic opacity-60">{data.unit}</span>
-                                    </p>
+                            {/* Secondary Codes / Tags */}
+                            {(data.products?.[0]?.tags && data.products[0].tags.length > 0) && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                    {data.products[0].tags.map((tag: string, i: number) => (
+                                        <span key={i} className="text-[7px] px-1 font-bold border border-black/20 rounded-[2px] bg-black/[0.03] text-black/60 truncate max-w-full">
+                                            #{tag.replace('@', data.products[0].sku || '')}
+                                        </span>
+                                    ))}
                                 </div>
                             )}
                         </div>
+
+                        <div className="border-t border-black/10 pt-1.5 mt-auto">
+                            <p className="text-[7px] font-bold uppercase opacity-50 mb-0.5">Qty / Số lượng</p>
+                            <div className="flex items-baseline justify-between">
+                                <p className="text-xl font-black tabular-nums leading-none tracking-tighter">
+                                    {data.products?.[0]?.quantity || data.quantity}
+                                    <span className="text-[9px] ml-1 font-bold uppercase opacity-60">
+                                        {data.products?.[0]?.unit || data.unit}
+                                    </span>
+                                </p>
+                                <span className="text-[7px] font-black px-1.5 py-0.5 border border-black rounded-sm uppercase transform scale-90 origin-right">Inventory</span>
+                            </div>
+                        </div>
                     </div>
+                </div>
+
+                {/* Footer: System Tag */}
+                <div className="border-t border-black pt-1 flex justify-center items-center">
+                    <span className="text-[7px] font-black tracking-[0.2em] uppercase">{companyName} SYSTEM CONTROL</span>
                 </div>
             </div>
         </div>

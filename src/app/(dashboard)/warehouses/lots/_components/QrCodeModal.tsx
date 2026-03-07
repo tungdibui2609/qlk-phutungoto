@@ -107,7 +107,8 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
                     sku: item.products?.sku || '',
                     internal_code: item.products?.internal_code || '',
                     quantity: item.quantity,
-                    unit: item.unit || item.products?.unit || ''
+                    unit: item.unit || item.products?.unit || '',
+                    tags: lot.lot_tags?.filter(t => t.lot_item_id === item.id).map(t => t.tag) || []
                 })) || [],
                 packaging_date: lot.packaging_date,
                 positions: lot.positions?.map(p => p.code) || []
