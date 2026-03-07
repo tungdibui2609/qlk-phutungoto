@@ -39,10 +39,10 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots }: 
         if (!currentSystem?.code) return;
         setLoadingHalls(true);
         try {
-            // 1. Fetch Halls
+            // 1. Fetch Halls with parent info
             const { data: hallData } = await supabase
                 .from('zones')
-                .select('id, name, display_order')
+                .select('id, name, display_order, parent_id, parent:zones!parent_id(name)')
                 .eq('system_type', currentSystem.code)
                 .eq('is_hall', true)
                 .order('display_order', { ascending: true })
@@ -63,7 +63,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots }: 
                     .is('lot_id', null)
                     .in('zone_positions.zone_id', descIds);
 
-                return { ...hall, emptyCount: count || 0 };
+                return { ...hall, emptyCount: count || 0, parentName: (hall as any).parent?.name || '' };
             }));
 
             // 3. Count Unassigned Lots
@@ -313,7 +313,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots }: 
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-lg border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-md border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 h-[85vh] max-h-[700px]">
                 <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
                     <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                         <Layers size={20} className="text-orange-500" />
@@ -426,28 +426,36 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots }: 
                                                 key={hall.id}
                                                 disabled={loading || hall.emptyCount === 0 || unassignedCount === 0}
                                                 onClick={() => handleAutoAssignHall(hall)}
-                                                className="group w-full flex items-center justify-between p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-orange-500 dark:hover:border-orange-500 hover:bg-orange-50/30 dark:hover:bg-orange-900/10 transition-all text-left disabled:opacity-50 disabled:grayscale disabled:hover:border-slate-200"
+                                                className="group w-full flex items-center justify-between p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/40 hover:border-orange-500/50 dark:hover:border-orange-500/50 hover:bg-orange-50/50 dark:hover:bg-orange-900/20 transition-all text-left disabled:opacity-50 disabled:grayscale disabled:hover:border-slate-100"
                                             >
-                                                <div className="flex items-center gap-4">
-                                                    <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 group-hover:bg-orange-100 group-hover:text-orange-600 transition-colors">
-                                                        <Layers size={20} />
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-9 h-9 rounded-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 flex items-center justify-center text-slate-400 group-hover:bg-orange-100 group-hover:text-orange-600 transition-colors shadow-sm">
+                                                        <Layers size={18} />
                                                     </div>
                                                     <div>
-                                                        <h4 className="font-bold text-slate-800 dark:text-slate-100 group-hover:text-orange-700 dark:group-hover:text-orange-400 transition-colors">
-                                                            {hall.name}
-                                                        </h4>
-                                                        <p className="text-xs text-slate-500">
+                                                        <div className="flex items-center gap-1.5 mb-0.5">
+                                                            {hall.parentName && (
+                                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
+                                                                    {hall.parentName}
+                                                                </span>
+                                                            )}
+                                                            {hall.parentName && <ChevronRight size={10} className="text-slate-300" />}
+                                                            <h4 className="font-bold text-slate-800 dark:text-slate-100 group-hover:text-orange-700 dark:group-hover:text-orange-400 transition-colors text-sm">
+                                                                {hall.name}
+                                                            </h4>
+                                                        </div>
+                                                        <p className="text-[11px] font-medium text-slate-500">
                                                             {hall.emptyCount} vị trí đang trống
                                                         </p>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     {hall.emptyCount > 0 && unassignedCount > 0 && (
-                                                        <span className="text-[10px] font-bold uppercase tracking-wider bg-orange-100 dark:bg-orange-900/50 text-orange-600 px-2 py-0.5 rounded-full">
+                                                        <span className="text-[9px] font-black uppercase tracking-wider bg-orange-100 dark:bg-orange-900/50 text-orange-600 px-2 py-0.5 rounded-md">
                                                             Khả dụng
                                                         </span>
                                                     )}
-                                                    <ChevronRight size={18} className="text-slate-300 group-hover:translate-x-1 group-hover:text-orange-400 transition-all" />
+                                                    <ChevronRight size={16} className="text-slate-300 group-hover:translate-x-1 group-hover:text-orange-400 transition-all" />
                                                 </div>
                                             </button>
                                         ))}
