@@ -172,8 +172,8 @@ export default function WarehouseMapPrintPage() {
 
             // Fetch data similarly to Map Page
             const [posData, zoneData, zpData, layoutData, lotsData] = await Promise.all([
-                fetchAll('positions', q => q.eq('system_type', systemType).order('code').order('id')),
-                fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
+                fetchAll('positions', q => q.eq('system_type', systemType).order('code', { numeric: true }).order('id')),
+                fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('display_order').order('code').order('id')),
                 fetchAll('zone_positions', q => q.select('zone_id, position_id, positions!inner(system_type)').eq('positions.system_type', systemType).order('zone_id', { ascending: true }).order('position_id', { ascending: true })),
                 fetchAll('zone_layouts', q => q.order('id')),
                 fetchAll('lots', q => q.order('id'), '*, suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name)), lot_tags(tag, lot_item_id)')
@@ -321,8 +321,41 @@ export default function WarehouseMapPrintPage() {
             })
         }
 
-        return result
-    }, [displayPositions, descendantIdSet, occupancyFilter, searchTerm, occupiedIds, lotInfo])
+        // --- Hierarchical Sorting for Table View ---
+        // 1. Build a DFS order map for zones to ensure parental hierarchy (Dãy -> Ô -> Tầng)
+        const zoneOrderMap = new Map<string, number>()
+        const parentToChildren = new Map<string, any[]>()
+        displayZones.forEach(z => {
+            if (z.parent_id) {
+                const list = parentToChildren.get(z.parent_id) || []
+                list.push(z)
+                parentToChildren.set(z.parent_id, list)
+            }
+        })
+
+        let orderIdx = 0
+        const visited = new Set<string>()
+        const walk = (z: any) => {
+            if (visited.has(z.id)) return
+            visited.add(z.id)
+            zoneOrderMap.set(z.id, orderIdx++)
+            const children = parentToChildren.get(z.id) || []
+            // Children already sorted by level/display_order/code from fetchData or groupWarehouseData
+            children.forEach(walk)
+        }
+
+        const roots = displayZones.filter(z => !z.parent_id || !displayZones.find(pz => pz.id === z.parent_id))
+        roots.forEach(walk)
+
+        // 2. Sort positions based on the DFS zone index
+        return [...result].sort((a, b) => {
+            const zoneIdxA = a.zone_id ? (zoneOrderMap.get(a.zone_id) ?? 99999) : 99999
+            const zoneIdxB = b.zone_id ? (zoneOrderMap.get(b.zone_id) ?? 99999) : 99999
+
+            if (zoneIdxA !== zoneIdxB) return zoneIdxA - zoneIdxB
+            return (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
+        })
+    }, [displayPositions, descendantIdSet, occupancyFilter, searchTerm, occupiedIds, lotInfo, displayZones])
 
     const filteredZones = useMemo(() => {
         if (!descendantIdSet) return displayZones
