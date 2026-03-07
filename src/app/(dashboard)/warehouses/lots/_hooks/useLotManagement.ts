@@ -608,9 +608,19 @@ export function useLotManagement() {
                 query = query.gte(dateFilterField, startDate).lte(dateFilterField, end.toISOString());
             }
 
-            const { data } = await (query as any).order('created_at', { ascending: false });
+            // Increase range to 5000 to catch more untagged lots if there are many tagged ones
+            const { data, error } = await (query as any)
+                .order('created_at', { ascending: false })
+                .range(0, 5000);
 
+            if (error) {
+                console.error('Error in fetchUntaggedLotsForBulkAssign query:', error);
+                throw error;
+            }
+
+            console.log(`[BulkTag] Fetched ${data?.length || 0} lots for system ${currentSystem.code}. Target limit: ${limit}`);
             let resultLots = ((data || []) as Lot[]).filter(l => !l.lot_tags || l.lot_tags.length === 0);
+            console.log(`[BulkTag] Found ${resultLots.length} untagged lots after filtering.`);
 
             if (positionFilter === 'unassigned') {
                 resultLots = resultLots.filter(l => !l.positions || l.positions.length === 0);
