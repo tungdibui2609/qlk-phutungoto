@@ -45,52 +45,52 @@ function LabelCard({ job, scale = 1, showBorder = true }: { job: PrintJob, scale
 
     return (
         <div
-            style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}
-            className={`bg-white text-black font-sans overflow-hidden transition-all duration-300 ${showBorder ? 'border-[3px] border-black rounded-[2rem]' : ''
+            style={{ transform: `scale(${scale})`, transformOrigin: 'top left', width: scale === 1 ? '100%' : 'auto', height: scale === 1 ? '100%' : 'auto' }}
+            className={`bg-white text-black font-sans overflow-hidden transition-all duration-300 ${showBorder ? 'border-[3px] border-black rounded-[2.5rem]' : ''
                 }`}
         >
-            <div className={`p-6 flex flex-col h-full ${scale < 1 ? 'gap-2' : 'gap-4'}`}>
+            <div className={`p-10 flex flex-col h-full ${scale < 1 ? 'gap-2' : 'gap-8'}`}>
                 {/* Header Section */}
-                <div className="text-center space-y-1">
-                    <h2 className="text-3xl font-black tracking-tighter leading-none">
+                <div className="text-center space-y-2">
+                    <h2 className="text-4xl font-black tracking-tighter leading-none">
                         {workArea ? `${companyName} - ${workArea}` : companyName}
                     </h2>
-                    <p className="text-sm font-bold opacity-60 tracking-[0.2em] uppercase">
+                    <p className="text-lg font-bold opacity-60 tracking-[0.3em] uppercase">
                         CONTROLLED LOT: {job.lot_code}
                     </p>
                 </div>
 
                 {/* Divider Line */}
-                <div className="h-[2px] bg-black/20 w-full" />
+                <div className="h-[3px] bg-black/20 w-full" />
 
                 {/* Main Content: QR + Info Box */}
-                <div className="flex gap-8 items-center flex-1">
+                <div className="flex gap-12 items-center flex-1 justify-center">
                     {/* QR Code */}
-                    <div className="bg-white p-2 rounded-xl shadow-inner border border-zinc-100 flex-shrink-0">
-                        <QRCode value={data.scan_url} size={scale < 0.5 ? 80 : 160} />
+                    <div className="bg-white p-3 rounded-2xl shadow-inner border border-zinc-200 flex-shrink-0">
+                        <QRCode value={data.scan_url} size={scale < 0.5 ? 80 : 200} />
                     </div>
 
                     {/* Black Info Box */}
-                    <div className="flex-1 bg-black text-white p-5 rounded-[1.5rem] flex flex-col justify-center min-h-[140px] shadow-lg">
-                        <div className="mb-2">
-                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Warehouse</span>
-                            <h3 className="text-xl font-black uppercase leading-tight tracking-tight">Product</h3>
+                    <div className="flex-1 bg-black text-white p-8 rounded-[2rem] flex flex-col justify-center min-h-[180px] shadow-2xl">
+                        <div className="mb-4">
+                            <span className="text-xs font-black uppercase tracking-[0.3em] text-zinc-400">Inventory Control</span>
+                            <h3 className="text-2xl font-black uppercase leading-tight tracking-tight mt-1">Product Details</h3>
                         </div>
 
-                        <div className="space-y-1">
+                        <div className="space-y-2">
                             {data.products?.slice(0, 1).map((p: any, idx: number) => (
                                 <div key={idx}>
-                                    <p className="text-lg font-bold text-emerald-400 leading-tight truncate">{p.name}</p>
-                                    <p className="text-3xl font-black italic tracking-tighter">
-                                        {p.quantity} <span className="text-xl not-italic opacity-60">{p.unit}</span>
+                                    <p className="text-2xl font-bold text-emerald-400 leading-tight truncate mb-2">{p.name}</p>
+                                    <p className="text-5xl font-black italic tracking-tighter">
+                                        {p.quantity} <span className="text-2xl not-italic opacity-60">{p.unit}</span>
                                     </p>
                                 </div>
                             ))}
                             {!data.products && (
                                 <div>
-                                    <p className="text-lg font-bold text-emerald-400 leading-tight truncate">{data.product_name}</p>
-                                    <p className="text-3xl font-black italic tracking-tighter">
-                                        {data.quantity} <span className="text-xl not-italic opacity-60">{data.unit}</span>
+                                    <p className="text-2xl font-bold text-emerald-400 leading-tight truncate mb-2">{data.product_name}</p>
+                                    <p className="text-5xl font-black italic tracking-tighter">
+                                        {data.quantity} <span className="text-2xl not-italic opacity-60">{data.unit}</span>
                                     </p>
                                 </div>
                             )}
@@ -340,7 +340,7 @@ function PrintStationContent() {
                         {isAuthenticating && <p className="text-[10px] text-zinc-300 mt-2">Đang thiết lập phiên làm việc với Token...</p>}
                     </div>
                 ) : (
-                    <div id="print-area" className="block bg-white w-[90mm] h-[60mm] overflow-hidden relative border border-slate-100">
+                    <div id="print-area" className="block bg-white w-[6in] h-[4in] overflow-hidden relative border border-slate-100">
                         <LabelCard job={lastPrinted} showBorder={false} />
                     </div>
                 )}
@@ -366,7 +366,7 @@ function PrintStationContent() {
             {lastPrinted && (
                 <div id="print-label-container" className="hidden print:block fixed inset-0 z-[9999] bg-white text-black">
                     {Array.from({ length: lastPrinted.print_data.label_quantity || 1 }).map((_, i) => (
-                        <div key={i} className="w-[90mm] h-[60mm] bg-white overflow-hidden p-0 m-0" style={{ pageBreakAfter: 'always' }}>
+                        <div key={i} className="w-[6in] h-[4in] bg-white overflow-hidden p-0 m-0" style={{ pageBreakAfter: 'always' }}>
                             <LabelCard job={lastPrinted} showBorder={false} />
                         </div>
                     ))}
@@ -710,14 +710,14 @@ function PrintStationContent() {
 
                 @media print {
                     @page {
-                        size: 90mm 60mm;
+                        size: 6in 4in;
                         margin: 0;
                     }
                     html, body {
                         margin: 0 !important;
                         padding: 0 !important;
-                        height: 60mm !important;
-                        width: 90mm !important;
+                        height: 4in !important;
+                        width: 6in !important;
                         overflow: hidden !important;
                     }
                     .print\:hidden {
@@ -728,8 +728,8 @@ function PrintStationContent() {
                         position: fixed !important;
                         top: 0 !important;
                         left: 0 !important;
-                        width: 90mm !important;
-                        height: 60mm !important;
+                        width: 6in !important;
+                        height: 4in !important;
                         background: white !important;
                         visibility: visible !important;
                         z-index: 99999 !important;
