@@ -160,7 +160,7 @@ export async function middleware(request: NextRequest) {
     if (!user) {
         // Allow public routes
         const isSilentPrint = path === '/warehouses/lots/print-station' && url.searchParams.get('silent') === 'true'
-        if (IS_LOGIN_PAGE || IS_ADMIN_LOGIN_PAGE || path.startsWith('/print') || path.startsWith('/api/') || isSilentPrint) {
+        if (IS_LOGIN_PAGE || IS_ADMIN_LOGIN_PAGE || path.startsWith('/print') || path.startsWith('/api/') || path.startsWith('/public') || isSilentPrint) {
             return response
         }
 
