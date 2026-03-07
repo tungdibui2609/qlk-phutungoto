@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, MapPin, X, ArrowUpDown, Layers } from 'lucide-react'
+import { Plus, MapPin, X, ArrowUpDown, Layers, Tag } from 'lucide-react'
 import Link from 'next/link'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { LotTagModal } from '@/components/lots/LotTagModal'
@@ -12,6 +12,7 @@ import { LotExportBuffer } from '@/components/warehouse/lots/LotExportBuffer'
 import { LotBulkCloneModal } from '@/components/warehouse/lots/LotBulkCloneModal'
 import { LotAssignPositionModal } from '@/components/warehouse/lots/LotAssignPositionModal'
 import { LotBulkAssignModal } from '@/components/warehouse/lots/LotBulkAssignModal'
+import { LotBulkAssignTagModal } from '@/components/warehouse/lots/LotBulkAssignTagModal'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
 import Protected from '@/components/auth/Protected'
@@ -42,6 +43,7 @@ export function LotPageManager() {
         setSelectedZoneId,
         fetchLots,
         fetchUnassignedLotsForBulkAssign,
+        fetchUntaggedLotsForBulkAssign,
         handleDeleteLot,
         handleToggleStar,
         isModuleEnabled,
@@ -70,6 +72,7 @@ export function LotPageManager() {
     // UI States
     const [showCreateForm, setShowCreateForm] = useState(false)
     const [showBulkAssign, setShowBulkAssign] = useState(false)
+    const [showBulkAssignTag, setShowBulkAssignTag] = useState(false)
     const [showMobileFilters, setShowMobileFilters] = useState(false)
     const [editingLot, setEditingLot] = useState<Lot | null>(null)
     const [qrLot, setQrLot] = useState<Lot | null>(null)
@@ -149,13 +152,22 @@ export function LotPageManager() {
                     <Protected permission="lot.manage">
                         <div className="flex items-center gap-2">
                             {positionFilter === 'unassigned' && (
-                                <button
-                                    onClick={() => setShowBulkAssign(true)}
-                                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all transform active:scale-95 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
-                                >
-                                    <Layers size={18} />
-                                    Gán vị trí hàng loạt
-                                </button>
+                                <>
+                                    <button
+                                        onClick={() => setShowBulkAssign(true)}
+                                        className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all transform active:scale-95 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
+                                    >
+                                        <Layers size={18} />
+                                        Vị trí hàng loạt
+                                    </button>
+                                    <button
+                                        onClick={() => setShowBulkAssignTag(true)}
+                                        className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all transform active:scale-95 bg-orange-50 hover:bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:hover:bg-orange-900/50 dark:text-orange-300 border border-orange-200 dark:border-orange-800"
+                                    >
+                                        <Tag size={18} />
+                                        Mã phụ hàng loạt
+                                    </button>
+                                </>
                             )}
                             <button
                                 onClick={toggleCreateForm}
@@ -289,6 +301,22 @@ export function LotPageManager() {
                     </div>
                 )}
             </div>
+
+            {showBulkAssign && (
+                <LotBulkAssignModal
+                    onClose={() => setShowBulkAssign(false)}
+                    onSuccess={fetchLots}
+                    fetchUnassignedLots={fetchUnassignedLotsForBulkAssign}
+                />
+            )}
+
+            {showBulkAssignTag && (
+                <LotBulkAssignTagModal
+                    onClose={() => setShowBulkAssignTag(false)}
+                    onSuccess={fetchLots}
+                    fetchUntaggedLots={fetchUntaggedLotsForBulkAssign}
+                />
+            )}
 
             {/* QR Code Modal */}
             {qrLot && (

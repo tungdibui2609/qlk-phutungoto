@@ -514,6 +514,103 @@ export function useLotManagement() {
         }
     }
 
+    async function fetchUntaggedLotsForBulkAssign(limit: number): Promise<Lot[]> {
+        if (!currentSystem?.code) return [];
+
+        try {
+            let selectQuery = `
+                *,
+                packaging_date,
+                warehouse_name,
+                images,
+                metadata,
+                lot_items (
+                    id,
+                    quantity,
+                    product_id,
+                    products (name, unit, sku, cost_price, internal_code, internal_name, product_code:id),
+                    unit
+                ),
+                suppliers (name),
+                qc_info (name),
+                lot_tags (tag, lot_item_id),
+                products (name, unit, sku, cost_price, internal_code, internal_name),
+                positions(id, code, zone_positions!left(zone_id))
+            `;
+
+            let query = supabase
+                .from('lots')
+                .select(selectQuery)
+                .eq('system_code', currentSystem.code)
+                .neq('status', 'hidden');
+
+            if (searchTerm) {
+                const term = `%${searchTerm}%`;
+                let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`, `internal_code.ilike.${term}`, `internal_name.ilike.${term}`];
+                const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(searchTerm);
+                if (isUUID) orConditionsProd.push(`id.eq.${searchTerm}`);
+
+                const { data: prods } = await supabase.from('products').select('id, name, sku').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
+                let prodIds = prods?.map(p => p.id) || [];
+
+                if (prods && prods.length > 0) {
+                    const sLower = searchTerm.toLowerCase();
+                    const exactMatches = prods.filter(p =>
+                        (p.sku && p.sku.toLowerCase() === sLower) ||
+                        (p.name && p.name.toLowerCase() === sLower) ||
+                        ((p as any).internal_code && (p as any).internal_code.toLowerCase() === sLower) ||
+                        ((p as any).internal_name && (p as any).internal_name.toLowerCase() === sLower)
+                    );
+                    if (exactMatches.length > 0) prodIds = exactMatches.map(p => p.id);
+                }
+
+                const { data: supps } = await supabase.from('suppliers').select('id').ilike('name', term).eq('system_code', currentSystem.code);
+                const suppIds = supps?.map(s => s.id) || [];
+
+                const { data: qcs } = await supabase.from('qc_info').select('id').ilike('name', term).eq('system_code', currentSystem.code);
+                const qcIds = qcs?.map(q => q.id) || [];
+
+                let itemLotIds: string[] = [];
+                if (prodIds.length > 0) {
+                    const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', prodIds);
+                    if (items) itemLotIds = items.map(i => i.lot_id);
+                }
+
+                const combinedLotIds = Array.from(new Set(itemLotIds)).slice(0, 300);
+                const safeSuppIds = suppIds.slice(0, 50);
+                const safeQcIds = qcIds.slice(0, 50);
+
+                let orConditions = [`code.ilike.${term}`, `notes.ilike.${term}`, `metadata->>extra_info.ilike.${term}`];
+                if (combinedLotIds.length > 0) orConditions.push(`id.in.(${combinedLotIds.join(',')})`);
+                if (safeSuppIds.length > 0) orConditions.push(`supplier_id.in.(${safeSuppIds.join(',')})`);
+                if (safeQcIds.length > 0) orConditions.push(`qc_id.in.(${safeQcIds.join(',')})`);
+
+                query = query.or(orConditions.join(','));
+            }
+
+            if (startDate && endDate) {
+                const end = new Date(endDate);
+                end.setHours(23, 59, 59, 999);
+                query = query.gte(dateFilterField, startDate).lte(dateFilterField, end.toISOString());
+            }
+
+            const { data } = await (query as any).order('created_at', { ascending: false });
+
+            let resultLots = ((data || []) as Lot[]).filter(l => !l.lot_tags || l.lot_tags.length === 0);
+
+            if (positionFilter === 'unassigned') {
+                resultLots = resultLots.filter(l => !l.positions || l.positions.length === 0);
+            } else if (positionFilter === 'assigned') {
+                resultLots = resultLots.filter(l => l.positions && l.positions.length > 0);
+            }
+
+            return resultLots.slice(0, limit);
+        } catch (err) {
+            console.error('Error in fetchUntaggedLotsForBulkAssign:', err);
+            throw err;
+        }
+    }
+
     async function handleDeleteLot(id: string) {
         if (!await showConfirm('Bạn có chắc chắn muốn xóa LOT này?')) return
 
@@ -590,6 +687,7 @@ export function useLotManagement() {
         // Actions
         fetchLots,
         fetchUnassignedLotsForBulkAssign,
+        fetchUntaggedLotsForBulkAssign,
         handleDeleteLot,
         handleToggleStar,
         isModuleEnabled: hasModule,
