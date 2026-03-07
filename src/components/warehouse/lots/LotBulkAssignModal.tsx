@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { X, Save, Layers } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, Save, Layers, CheckCircle2, ChevronRight, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
@@ -16,6 +16,10 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots }: 
     const { currentSystem } = useSystem()
     const [loading, setLoading] = useState(false)
     const [textInput, setTextInput] = useState('')
+    const [activeTab, setActiveTab] = useState<'manual' | 'auto'>('manual')
+    const [halls, setHalls] = useState<any[]>([])
+    const [loadingHalls, setLoadingHalls] = useState(false)
+    const [unassignedCount, setUnassignedCount] = useState(0)
 
     // Results state
     const [results, setResults] = useState<{
@@ -24,6 +28,150 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots }: 
         assigned: string[];
         unmatched: string[];
     } | null>(null);
+
+    useEffect(() => {
+        if (currentSystem?.code) {
+            fetchInitialData();
+        }
+    }, [currentSystem?.code]);
+
+    const fetchInitialData = async () => {
+        if (!currentSystem?.code) return;
+        setLoadingHalls(true);
+        try {
+            // 1. Fetch Halls
+            const { data: hallData } = await supabase
+                .from('zones')
+                .select('id, name, display_order')
+                .eq('system_type', currentSystem.code)
+                .eq('is_hall', true)
+                .order('display_order', { ascending: true })
+                .order('name', { ascending: true });
+
+            // 2. For each hall, count empty positions
+            // This is a bit expensive if many halls, but usually < 10.
+            const hallResults = await Promise.all((hallData || []).map(async (hall) => {
+                // Get descendant zones
+                const { data: allZones } = await supabase.from('zones').select('id, parent_id').eq('system_type', currentSystem.code);
+                const descIds = getDescendantIds(hall.id, allZones || []);
+
+                // Count empty positions in these zones
+                const { count } = await supabase
+                    .from('positions')
+                    .select('id, zone_positions!inner(zone_id)', { count: 'exact', head: true })
+                    .eq('system_type', currentSystem.code)
+                    .is('lot_id', null)
+                    .in('zone_positions.zone_id', descIds);
+
+                return { ...hall, emptyCount: count || 0 };
+            }));
+
+            // 3. Count Unassigned Lots
+            const { count: lotCount } = await (supabase.rpc as any)('get_unassigned_lots', { p_system_code: currentSystem.code })
+                .select('id', { count: 'exact', head: true });
+
+            setHalls(hallResults);
+            setUnassignedCount(lotCount || 0);
+        } catch (err) {
+            console.error('Error fetching initial data:', err);
+        } finally {
+            setLoadingHalls(false);
+        }
+    };
+
+    const getDescendantIds = (rootId: string, allZones: any[]) => {
+        const descIds = new Set<string>([rootId]);
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (const zone of allZones) {
+                if (zone.parent_id && descIds.has(zone.parent_id) && !descIds.has(zone.id)) {
+                    descIds.add(zone.id);
+                    changed = true;
+                }
+            }
+        }
+        return Array.from(descIds);
+    };
+
+    const handleAutoAssignHall = async (hall: any) => {
+        if (!currentSystem?.code) return;
+        if (hall.emptyCount === 0) {
+            showToast('Không có vị trí trống trong sảnh này.', 'warning');
+            return;
+        }
+        if (unassignedCount === 0) {
+            showToast('Không có LOT nào chưa gán vị trí.', 'warning');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            // 1. Get all descendant zones
+            const { data: allZones } = await supabase.from('zones').select('id, parent_id').eq('system_type', currentSystem.code);
+            const descIds = getDescendantIds(hall.id, allZones || []);
+
+            // 2. Fetch available positions
+            const { data: posData } = await supabase
+                .from('positions')
+                .select('id, code, zone_positions!inner(zone_id)')
+                .eq('system_type', currentSystem.code)
+                .is('lot_id', null)
+                .in('zone_positions.zone_id', descIds)
+                .order('code');
+
+            if (!posData || posData.length === 0) {
+                showToast('Không tìm thấy vị trí trống.', 'error');
+                return;
+            }
+
+            // Numeric sort in memory since Supabase JS client order() doesn't officially support 'numeric' option in all versions/types
+            posData.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }));
+
+            // 3. Fetch unassigned lots
+            const lotsToAssign = await fetchUnassignedLots(posData.length);
+            if (lotsToAssign.length === 0) {
+                showToast('Không có LOT phù hợp để gán.', 'warning');
+                return;
+            }
+
+            const actualCount = Math.min(posData.length, lotsToAssign.length);
+            const historyInserts = [];
+
+            for (let i = 0; i < actualCount; i++) {
+                const lot = lotsToAssign[i];
+                const pos = posData[i];
+
+                await supabase.from('positions').update({ lot_id: lot.id }).eq('id', pos.id);
+
+                historyInserts.push({
+                    system_code: currentSystem.code,
+                    action_type: 'assign_position',
+                    entity_type: 'lot',
+                    entity_id: lot.id,
+                    details: {
+                        position_code: pos.code,
+                        position_id: pos.id,
+                        auto_assign_hall: hall.name,
+                        bulk_assign: true
+                    }
+                });
+            }
+
+            if (historyInserts.length > 0) {
+                await (supabase as any).from('operation_history').insert(historyInserts);
+            }
+
+            showToast(`Gán thành công ${actualCount} LOT vào ${hall.name}!`, 'success');
+            onSuccess();
+            onClose();
+        } catch (err: any) {
+            console.error('Error in auto assign hall:', err);
+            showToast('Lỗi khi gán tự động: ' + err.message, 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleAssign = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -180,48 +328,134 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots }: 
                 </div>
 
                 {!results ? (
-                    <form onSubmit={handleAssign} className="p-4 space-y-4">
-                        <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 p-3 rounded-xl text-sm leading-relaxed border border-blue-100 dark:border-blue-800/50">
-                            <p className="font-semibold mb-1">Cách thức hoạt động:</p>
-                            <ul className="list-disc pl-5 space-y-1 opacity-90">
-                                <li>Nhập danh sách mã vị trí (cách nhau bởi xuống dòng, dấu phẩy, hoặc chấm phẩy).</li>
-                                <li>Hệ thống sẽ tự động tìm kiếm các LOT <b>chưa gán vị trí</b> (ưu tiên theo bộ lọc hiện tại) để gán lần lượt.</li>
-                                <li>Bỏ qua các vị trí không tồn tại hoặc đã được gán.</li>
-                            </ul>
+                    <div className="flex flex-col flex-1 overflow-hidden">
+                        {/* Tabs */}
+                        <div className="flex border-b border-slate-100 dark:border-slate-800">
+                            <button
+                                onClick={() => setActiveTab('manual')}
+                                className={`flex-1 py-3 text-sm font-bold transition-colors relative ${activeTab === 'manual'
+                                    ? 'text-orange-600'
+                                    : 'text-slate-500 hover:text-slate-700'
+                                    }`}
+                            >
+                                Nhập mã thủ công
+                                {activeTab === 'manual' && (
+                                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-600" />
+                                )}
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('auto')}
+                                className={`flex-1 py-3 text-sm font-bold transition-colors relative ${activeTab === 'auto'
+                                    ? 'text-orange-600'
+                                    : 'text-slate-500 hover:text-slate-700'
+                                    }`}
+                            >
+                                Gán sảnh tự động
+                                {activeTab === 'auto' && (
+                                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-600" />
+                                )}
+                            </button>
                         </div>
 
-                        <div>
-                            <label className="text-xs text-slate-500 font-medium mb-1 uppercase tracking-wider block">Danh sách mã vị trí</label>
-                            <textarea
-                                value={textInput}
-                                onChange={(e) => setTextInput(e.target.value)}
-                                placeholder="VD:&#10;A-1-1&#10;A-1-2&#10;A-1-3"
-                                className="w-full h-48 px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all resize-none shadow-inner text-sm font-mono placeholder:font-sans"
-                            />
-                            <div className="mt-1 flex justify-between text-xs text-slate-400">
-                                <span>Có thể copy từ file Excel và paste vào đây.</span>
-                                <span className="font-semibold">{textInput.split(/[\n,;\t]+/).filter(c => c.trim() !== '').length} mã đang nhập</span>
+                        {activeTab === 'manual' ? (
+                            <form onSubmit={handleAssign} className="p-4 space-y-4 overflow-y-auto">
+                                <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 p-3 rounded-xl text-sm leading-relaxed border border-blue-100 dark:border-blue-800/50">
+                                    <p className="font-semibold mb-1">Cách thức hoạt động:</p>
+                                    <ul className="list-disc pl-5 space-y-1 opacity-90">
+                                        <li>Nhập danh sách mã vị trí (cách nhau bởi xuống dòng, dấu phẩy, hoặc chấm phẩy).</li>
+                                        <li>Hệ thống sẽ tự động tìm kiếm các LOT <b>chưa gán vị trí</b> (ưu tiên theo bộ lọc hiện tại) để gán lần lượt.</li>
+                                        <li>Bỏ qua các vị trí không tồn tại hoặc đã được gán.</li>
+                                    </ul>
+                                </div>
+
+                                <div>
+                                    <label className="text-xs text-slate-500 font-medium mb-1 uppercase tracking-wider block">Danh sách mã vị trí</label>
+                                    <textarea
+                                        value={textInput}
+                                        onChange={(e) => setTextInput(e.target.value)}
+                                        placeholder="VD:&#10;A-1-1&#10;A-1-2&#10;A-1-3"
+                                        className="w-full h-48 px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all resize-none shadow-inner text-sm font-mono placeholder:font-sans"
+                                    />
+                                    <div className="mt-1 flex justify-between text-xs text-slate-400">
+                                        <span>Có thể copy từ file Excel và paste vào đây.</span>
+                                        <span className="font-semibold">{textInput.split(/[\n,;\t]+/).filter(c => c.trim() !== '').length} mã đang nhập</span>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
+                                    <button
+                                        type="button"
+                                        onClick={onClose}
+                                        className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium transition-colors"
+                                    >
+                                        Hủy
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={loading || textInput.trim() === ''}
+                                        className={`px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-medium shadow-lg shadow-orange-500/20 transition-all flex items-center gap-2 ${loading ? 'opacity-75 cursor-wait' : ''}`}
+                                    >
+                                        <Save size={16} />
+                                        {loading ? 'Đang xử lý...' : 'Thực hiện gán'}
+                                    </button>
+                                </div>
+                            </form>
+                        ) : (
+                            <div className="p-4 space-y-4 overflow-y-auto min-h-[400px]">
+                                <div className="bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-200 p-3 rounded-xl text-sm leading-relaxed border border-orange-100 dark:border-orange-800/50 flex items-start gap-3">
+                                    <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
+                                    <div>
+                                        <p className="font-semibold mb-1">Gán nhanh theo Sảnh</p>
+                                        <p className="opacity-90">Hệ thống sẽ tìm các vị trí trống thuộc Sảnh bạn chọn và gán tự động cho các LOT chưa có vị trí (đang có {unassignedCount} LOT chờ).</p>
+                                    </div>
+                                </div>
+
+                                {loadingHalls ? (
+                                    <div className="flex flex-col items-center justify-center py-12 text-slate-400 gap-3">
+                                        <Loader2 className="animate-spin" size={32} />
+                                        <p className="text-sm font-medium">Đang tải danh sách sảnh...</p>
+                                    </div>
+                                ) : halls.length === 0 ? (
+                                    <div className="text-center py-12 text-slate-400">
+                                        <p>Không tìm thấy sảnh nào trong hệ thống.</p>
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-3">
+                                        {halls.map(hall => (
+                                            <button
+                                                key={hall.id}
+                                                disabled={loading || hall.emptyCount === 0 || unassignedCount === 0}
+                                                onClick={() => handleAutoAssignHall(hall)}
+                                                className="group w-full flex items-center justify-between p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-orange-500 dark:hover:border-orange-500 hover:bg-orange-50/30 dark:hover:bg-orange-900/10 transition-all text-left disabled:opacity-50 disabled:grayscale disabled:hover:border-slate-200"
+                                            >
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 group-hover:bg-orange-100 group-hover:text-orange-600 transition-colors">
+                                                        <Layers size={20} />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="font-bold text-slate-800 dark:text-slate-100 group-hover:text-orange-700 dark:group-hover:text-orange-400 transition-colors">
+                                                            {hall.name}
+                                                        </h4>
+                                                        <p className="text-xs text-slate-500">
+                                                            {hall.emptyCount} vị trí đang trống
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    {hall.emptyCount > 0 && unassignedCount > 0 && (
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider bg-orange-100 dark:bg-orange-900/50 text-orange-600 px-2 py-0.5 rounded-full">
+                                                            Khả dụng
+                                                        </span>
+                                                    )}
+                                                    <ChevronRight size={18} className="text-slate-300 group-hover:translate-x-1 group-hover:text-orange-400 transition-all" />
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
-                        </div>
-
-                        <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
-                            <button
-                                type="button"
-                                onClick={onClose}
-                                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium transition-colors"
-                            >
-                                Hủy
-                            </button>
-                            <button
-                                type="submit"
-                                disabled={loading || textInput.trim() === ''}
-                                className={`px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-medium shadow-lg shadow-orange-500/20 transition-all flex items-center gap-2 ${loading ? 'opacity-75 cursor-wait' : ''}`}
-                            >
-                                <Save size={16} />
-                                {loading ? 'Đang xử lý...' : 'Thực hiện gán'}
-                            </button>
-                        </div>
-                    </form>
+                        )}
+                    </div>
                 ) : (
                     <div className="p-4 space-y-4">
                         <div className="text-center pb-2 border-b border-slate-100 dark:border-slate-800">
