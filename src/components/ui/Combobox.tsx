@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { ChevronDown, Check, Search, X } from 'lucide-react'
-import { normalizeSearchString } from '@/lib/searchUtils'
+import { normalizeSearchString, calculateSearchScore } from '@/lib/searchUtils'
 
 export interface ComboboxOption {
     value: string
@@ -66,50 +66,14 @@ export function Combobox({
     const filteredOptions = useMemo(() => {
         if (!searchTerm) return options
 
-        const lowerTerm = normalizeSearchString(searchTerm);
-        const unaccentedTerm = normalizeSearchString(searchTerm, true);
-
         return options
-            .filter(option => {
-                const label = normalizeSearchString(option.label || '');
-                const unaccentedLabel = normalizeSearchString(option.label || '', true);
-
-                const sku = normalizeSearchString(option.sku || option.code || '');
-                const unaccentedSku = normalizeSearchString(option.sku || option.code || '', true);
-
-                const originalSku = normalizeSearchString(option.originalSku || '');
-                const unaccentedOriginalSku = normalizeSearchString(option.originalSku || '', true);
-
-                const originalName = normalizeSearchString(option.originalName || '');
-                const unaccentedOriginalName = normalizeSearchString(option.originalName || '', true);
-
-                const labelMatch = label.includes(lowerTerm) || unaccentedLabel.includes(unaccentedTerm)
-                const skuMatch = sku.includes(lowerTerm) || unaccentedSku.includes(unaccentedTerm)
-                const originalSkuMatch = originalSku.includes(lowerTerm) || unaccentedOriginalSku.includes(unaccentedTerm)
-                const originalNameMatch = originalName.includes(lowerTerm) || unaccentedOriginalName.includes(unaccentedTerm)
-
-                return labelMatch || skuMatch || originalSkuMatch || originalNameMatch
-            })
-            .sort((a, b) => {
-                const aLabel = normalizeSearchString(a.label || '', true)
-                const bLabel = normalizeSearchString(b.label || '', true)
-                const aSku = normalizeSearchString(a.sku || a.code || '', true)
-                const bSku = normalizeSearchString(b.sku || b.code || '', true)
-
-                // 1. Exact SKU Match (Highest Priority)
-                if (aSku === unaccentedTerm && bSku !== unaccentedTerm) return -1
-                if (bSku === unaccentedTerm && aSku !== unaccentedTerm) return 1
-
-                // 2. SKU Starts With
-                if (aSku.startsWith(unaccentedTerm) && !bSku.startsWith(unaccentedTerm)) return -1
-                if (!aSku.startsWith(unaccentedTerm) && bSku.startsWith(unaccentedTerm)) return 1
-
-                // 3. Label Starts With
-                if (aLabel.startsWith(unaccentedTerm) && !bLabel.startsWith(unaccentedTerm)) return -1
-                if (!aLabel.startsWith(unaccentedTerm) && bLabel.startsWith(unaccentedTerm)) return 1
-
-                return 0
-            })
+            .map(option => ({
+                option,
+                score: calculateSearchScore(option, searchTerm)
+            }))
+            .filter(item => item.score > 0)
+            .sort((a, b) => b.score - a.score)
+            .map(item => item.option)
     }, [options, searchTerm])
 
     const handleSelect = (option: ComboboxOption) => {

@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
-import { matchSearch, normalizeSearchString } from '@/lib/searchUtils'
+import { matchSearch, normalizeSearchString, calculateSearchScore } from '@/lib/searchUtils'
 import { matchDateRange } from '@/lib/dateUtils'
 import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 
@@ -367,16 +367,8 @@ export function useLotManagement() {
                 let sortedLots = data as unknown as Lot[];
 
                 if (searchTerm) {
-                    const sLower = searchTerm.toLowerCase();
                     sortedLots.sort((a, b) => {
-                        const aExact = (a.code && a.code.toLowerCase() === sLower) ||
-                            a.lot_items?.some(i => (i.products?.sku && i.products.sku.toLowerCase() === sLower) || (i.products?.name && i.products.name.toLowerCase() === sLower) || (i.products?.internal_code && i.products.internal_code.toLowerCase() === sLower) || (i.products?.internal_name && i.products.internal_name.toLowerCase() === sLower));
-                        const bExact = (b.code && b.code.toLowerCase() === sLower) ||
-                            b.lot_items?.some(i => (i.products?.sku && i.products.sku.toLowerCase() === sLower) || (i.products?.name && i.products.name.toLowerCase() === sLower) || (i.products?.internal_code && i.products.internal_code.toLowerCase() === sLower) || (i.products?.internal_name && i.products.internal_name.toLowerCase() === sLower));
-
-                        if (aExact && !bExact) return -1;
-                        if (!aExact && bExact) return 1;
-                        return 0;
+                        return calculateSearchScore(b, searchTerm) - calculateSearchScore(a, searchTerm)
                     });
                 }
 
@@ -518,16 +510,7 @@ export function useLotManagement() {
             let resultLots = (data || []) as unknown as Lot[];
 
             if (searchTerm) {
-                const sLower = searchTerm.toLowerCase();
-                resultLots.sort((a, b) => {
-                    const aExact = (a.code && a.code.toLowerCase() === sLower) ||
-                        a.lot_items?.some(i => (i.products?.sku && i.products.sku.toLowerCase() === sLower) || (i.products?.name && i.products.name.toLowerCase() === sLower) || (i.products?.internal_code && i.products.internal_code.toLowerCase() === sLower) || (i.products?.internal_name && i.products.internal_name.toLowerCase() === sLower));
-                    const bExact = (b.code && b.code.toLowerCase() === sLower) ||
-                        b.lot_items?.some(i => (i.products?.sku && i.products.sku.toLowerCase() === sLower) || (i.products?.name && i.products.name.toLowerCase() === sLower) || (i.products?.internal_code && i.products.internal_code.toLowerCase() === sLower) || (i.products?.internal_name && i.products.internal_name.toLowerCase() === sLower));
-                    if (aExact && !bExact) return -1;
-                    if (!aExact && bExact) return 1;
-                    return 0;
-                });
+                resultLots.sort((a, b) => calculateSearchScore(b, searchTerm) - calculateSearchScore(a, searchTerm));
             }
 
             return resultLots;

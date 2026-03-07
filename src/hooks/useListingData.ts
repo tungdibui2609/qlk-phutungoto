@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
-import { matchSearch } from '@/lib/searchUtils'
+import { matchSearch, calculateSearchScore } from '@/lib/searchUtils'
 
 interface UseListingDataOptions<T> {
     orderBy?: { column: keyof T; ascending?: boolean }
@@ -56,7 +56,7 @@ export function useListingData<T extends { id: string; is_active?: boolean | nul
     }, [fetchData])
 
     const filteredData = useMemo(() => {
-        return data.filter(item => {
+        const filtered = data.filter(item => {
             // Search filter
             const matchesSearch = matchSearch(item, searchTerm)
 
@@ -66,6 +66,15 @@ export function useListingData<T extends { id: string; is_active?: boolean | nul
                 (statusFilter === 'inactive' && item.is_active === false)
 
             return matchesSearch && matchesStatus
+        })
+
+        if (!searchTerm) return filtered
+
+        // Sort by relevance score
+        return [...filtered].sort((a, b) => {
+            const scoreA = calculateSearchScore(a, searchTerm)
+            const scoreB = calculateSearchScore(b, searchTerm)
+            return scoreB - scoreA
         })
     }, [data, searchTerm, statusFilter])
 
