@@ -114,6 +114,7 @@ const menuItems: MenuItem[] = [
         icon: ClipboardCheck,
         children: [
             { id: 'export_order', name: 'Lệnh xuất kho', href: '/work/export-order', icon: ArrowUpFromLine, requiredModule: 'work_export_order' },
+            { id: 'internal_inventory', name: 'Kiểm kê nội bộ', href: '/work/inventory', icon: ClipboardCheck },
         ]
     },
     {

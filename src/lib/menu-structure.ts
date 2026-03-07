@@ -104,6 +104,7 @@ export const MENU_STRUCTURE: MenuItemConfig[] = [
         icon: ClipboardCheck,
         children: [
             { id: 'export_order', name: 'Lệnh xuất kho', icon: ArrowUpFromLine },
+            { id: 'internal_inventory', name: 'Kiểm kê nội bộ', icon: ClipboardCheck },
         ]
     },
     {

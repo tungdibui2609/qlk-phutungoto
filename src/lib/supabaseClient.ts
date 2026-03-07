@@ -467,6 +467,116 @@ type RolesTable = {
     Relationships: []
 }
 
+type InternalInventorySessionsTable = {
+    Row: {
+        id: string
+        name: string
+        status: 'active' | 'completed' | 'cancelled'
+        warehouse_id: string | null
+        system_code: string
+        company_id: string | null
+        created_by: string | null
+        created_at: string
+        completed_at: string | null
+        note: string | null
+    }
+    Insert: {
+        id?: string
+        name: string
+        status?: 'active' | 'completed' | 'cancelled'
+        warehouse_id?: string | null
+        system_code: string
+        company_id?: string | null
+        created_by?: string | null
+        created_at?: string
+        completed_at?: string | null
+        note?: string | null
+    }
+    Update: {
+        id?: string
+        name?: string
+        status?: 'active' | 'completed' | 'cancelled'
+        warehouse_id?: string | null
+        system_code?: string
+        company_id?: string | null
+        created_by?: string | null
+        created_at?: string
+        completed_at?: string | null
+        note?: string | null
+    }
+    Relationships: [
+        {
+            foreignKeyName: "iis_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+        },
+        {
+            foreignKeyName: "iis_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+        }
+    ]
+}
+
+type InternalInventoryItemsTable = {
+    Row: {
+        id: string
+        session_id: string
+        position_id: string
+        zone_id: string | null
+        checked: boolean
+        note: string | null
+        checked_by: string | null
+        checked_at: string | null
+        lot_id_snapshot: string | null
+        created_at: string
+    }
+    Insert: {
+        id?: string
+        session_id: string
+        position_id: string
+        zone_id?: string | null
+        checked?: boolean
+        note?: string | null
+        checked_by?: string | null
+        checked_at?: string | null
+        lot_id_snapshot?: string | null
+        created_at?: string
+    }
+    Update: {
+        id?: string
+        session_id?: string
+        position_id?: string
+        zone_id?: string | null
+        checked?: boolean
+        note?: string | null
+        checked_by?: string | null
+        checked_at?: string | null
+        lot_id_snapshot?: string | null
+        created_at?: string
+    }
+    Relationships: [
+        {
+            foreignKeyName: "internal_inventory_items_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "internal_inventory_sessions"
+            referencedColumns: ["id"]
+        },
+        {
+            foreignKeyName: "iii_checked_by_fkey"
+            columns: ["checked_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+        }
+    ]
+}
+
 type UserProfilesTable = {
     Row: {
         id: string
@@ -536,6 +646,8 @@ type TypedTables = Database['public']['Tables'] & {
     construction_members: ConstructionMembersTable
     user_profiles: UserProfilesTable
     roles: RolesTable
+    internal_inventory_sessions: InternalInventorySessionsTable
+    internal_inventory_items: InternalInventoryItemsTable
 }
 
 // Manually extend the Database type
