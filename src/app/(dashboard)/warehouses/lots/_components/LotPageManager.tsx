@@ -305,8 +305,12 @@ export function LotPageManager() {
             {showBulkAssign && (
                 <LotBulkAssignModal
                     onClose={() => setShowBulkAssign(false)}
-                    onSuccess={fetchLots}
+                    onSuccess={(close = true) => {
+                        if (close) setShowBulkAssign(false);
+                        fetchLots();
+                    }}
                     fetchUnassignedLots={fetchUnassignedLotsForBulkAssign}
+                    initialUnassignedCount={totalLots}
                 />
             )}
 
@@ -410,16 +414,6 @@ export function LotPageManager() {
                 />
             )}
 
-            {showBulkAssign && (
-                <LotBulkAssignModal
-                    onClose={() => setShowBulkAssign(false)}
-                    onSuccess={() => {
-                        setShowBulkAssign(false);
-                        fetchLots();
-                    }}
-                    fetchUnassignedLots={fetchUnassignedLotsForBulkAssign}
-                />
-            )}
         </section>
     )
 }

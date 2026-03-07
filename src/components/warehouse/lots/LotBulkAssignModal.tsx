@@ -7,11 +7,12 @@ import { useSystem } from '@/contexts/SystemContext'
 
 interface LotBulkAssignModalProps {
     onClose: () => void
-    onSuccess: () => void
+    onSuccess: (close?: boolean) => void
     fetchUnassignedLots: (limit: number) => Promise<Lot[]>
+    initialUnassignedCount?: number
 }
 
-export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots }: LotBulkAssignModalProps) {
+export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, initialUnassignedCount }: LotBulkAssignModalProps) {
     const { showToast } = useToast()
     const { currentSystem } = useSystem()
     const [loading, setLoading] = useState(false)
@@ -19,7 +20,16 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots }: 
     const [activeTab, setActiveTab] = useState<'manual' | 'auto'>('manual')
     const [halls, setHalls] = useState<any[]>([])
     const [loadingHalls, setLoadingHalls] = useState(false)
-    const [unassignedCount, setUnassignedCount] = useState(0)
+    const [loadingCount, setLoadingCount] = useState(false)
+    const [unassignedCount, setUnassignedCount] = useState(initialUnassignedCount ?? 0)
+    const [expandedWarehouse, setExpandedWarehouse] = useState<string | null>(null)
+
+    // Sync with parent count if it changes
+    useEffect(() => {
+        if (typeof initialUnassignedCount === 'number') {
+            setUnassignedCount(initialUnassignedCount);
+        }
+    }, [initialUnassignedCount]);
 
     // Results state
     const [results, setResults] = useState<{
@@ -39,23 +49,29 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots }: 
         if (!currentSystem?.code) return;
         setLoadingHalls(true);
         try {
-            // 1. Fetch Halls with parent info
+            // 1. Fetch all zones to resolve names/hierarchy
+            const { data: allZonesData } = await supabase
+                .from('zones')
+                .select('id, name, parent_id')
+                .eq('system_type', currentSystem.code);
+
+            const zoneMap = new Map();
+            (allZonesData || []).forEach(z => zoneMap.set(z.id, z));
+
+            // 2. Fetch Halls
             const { data: hallData } = await supabase
                 .from('zones')
-                .select('id, name, display_order, parent_id, parent:zones!parent_id(name)')
+                .select('id, name, display_order, parent_id')
                 .eq('system_type', currentSystem.code)
                 .eq('is_hall', true)
                 .order('display_order', { ascending: true })
                 .order('name', { ascending: true });
 
-            // 2. For each hall, count empty positions
-            // This is a bit expensive if many halls, but usually < 10.
+            // 3. For each hall, count empty positions and resolve parent
             const hallResults = await Promise.all((hallData || []).map(async (hall) => {
-                // Get descendant zones
-                const { data: allZones } = await supabase.from('zones').select('id, parent_id').eq('system_type', currentSystem.code);
-                const descIds = getDescendantIds(hall.id, allZones || []);
+                const descIds = getDescendantIds(hall.id, allZonesData || []);
 
-                // Count empty positions in these zones
+                // Count empty positions
                 const { count } = await supabase
                     .from('positions')
                     .select('id, zone_positions!inner(zone_id)', { count: 'exact', head: true })
@@ -63,15 +79,50 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots }: 
                     .is('lot_id', null)
                     .in('zone_positions.zone_id', descIds);
 
-                return { ...hall, emptyCount: count || 0, parentName: (hall as any).parent?.name || '' };
+                // Build parent name path (at least one level up)
+                let parentName = '';
+                if (hall.parent_id) {
+                    const parentZone = zoneMap.get(hall.parent_id);
+                    if (parentZone) {
+                        parentName = parentZone.name;
+                        // Optional: go one more level up if needed
+                        if (parentZone.parent_id) {
+                            const grandParent = zoneMap.get(parentZone.parent_id);
+                            if (grandParent) {
+                                parentName = `${grandParent.name} > ${parentName}`;
+                            }
+                        }
+                    }
+                }
+
+                return {
+                    ...hall,
+                    emptyCount: count || 0,
+                    parentName: parentName || currentSystem.name // Fallback to system name
+                };
             }));
 
-            // 3. Count Unassigned Lots
-            const { count: lotCount } = await (supabase.rpc as any)('get_unassigned_lots', { p_system_code: currentSystem.code })
-                .select('id', { count: 'exact', head: true });
+            // 4. Count Unassigned Lots (Fresh fetch)
+            setLoadingCount(true);
+            try {
+                // Use the RPC but with a simpler select to ensure count works
+                const { count: lotCount, error: countError } = await (supabase.rpc as any)('get_unassigned_lots', { p_system_code: currentSystem.code })
+                    .select('id', { count: 'exact' });
+
+                if (countError) {
+                    console.error('Count error from RPC:', countError);
+                    // Fallback to initialUnassignedCount if it exists, otherwise 0
+                    if (typeof initialUnassignedCount !== 'number') setUnassignedCount(0);
+                } else if (lotCount !== null) {
+                    setUnassignedCount(prev => Math.max(prev, lotCount));
+                }
+            } catch (err) {
+                console.error('Error in count fetch:', err);
+            } finally {
+                setLoadingCount(false);
+            }
 
             setHalls(hallResults);
-            setUnassignedCount(lotCount || 0);
         } catch (err) {
             console.error('Error fetching initial data:', err);
         } finally {
@@ -302,7 +353,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots }: 
             }
 
             // Still call onSuccess to refresh the parent list, but keep modal open to show results
-            onSuccess();
+            onSuccess(false);
         } catch (err: any) {
             console.error('Error in bulk assign:', err);
             showToast('Lỗi khi gán hàng loạt: ' + err.message, 'error');
@@ -406,7 +457,10 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots }: 
                                     <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
                                     <div>
                                         <p className="font-semibold mb-1">Gán nhanh theo Sảnh</p>
-                                        <p className="opacity-90">Hệ thống sẽ tìm các vị trí trống thuộc Sảnh bạn chọn và gán tự động cho các LOT chưa có vị trí (đang có {unassignedCount} LOT chờ).</p>
+                                        <p className="opacity-90">
+                                            Hệ thống sẽ tìm các vị trí trống thuộc Sảnh bạn chọn và gán tự động cho các LOT chưa có vị trí
+                                            (đang có {loadingCount ? '...' : (unassignedCount ?? initialUnassignedCount ?? 0)} LOT chờ).
+                                        </p>
                                     </div>
                                 </div>
 
@@ -420,44 +474,74 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots }: 
                                         <p>Không tìm thấy sảnh nào trong hệ thống.</p>
                                     </div>
                                 ) : (
-                                    <div className="grid gap-3">
-                                        {halls.map(hall => (
-                                            <button
-                                                key={hall.id}
-                                                disabled={loading || hall.emptyCount === 0 || unassignedCount === 0}
-                                                onClick={() => handleAutoAssignHall(hall)}
-                                                className="group w-full flex items-center justify-between p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/40 hover:border-orange-500/50 dark:hover:border-orange-500/50 hover:bg-orange-50/50 dark:hover:bg-orange-900/20 transition-all text-left disabled:opacity-50 disabled:grayscale disabled:hover:border-slate-100"
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-9 h-9 rounded-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 flex items-center justify-center text-slate-400 group-hover:bg-orange-100 group-hover:text-orange-600 transition-colors shadow-sm">
-                                                        <Layers size={18} />
-                                                    </div>
-                                                    <div>
-                                                        <div className="flex items-center gap-1.5 mb-0.5">
-                                                            {hall.parentName && (
-                                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
-                                                                    {hall.parentName}
-                                                                </span>
-                                                            )}
-                                                            {hall.parentName && <ChevronRight size={10} className="text-slate-300" />}
-                                                            <h4 className="font-bold text-slate-800 dark:text-slate-100 group-hover:text-orange-700 dark:group-hover:text-orange-400 transition-colors text-sm">
-                                                                {hall.name}
-                                                            </h4>
+                                    <div className="space-y-3">
+                                        {Object.entries(
+                                            halls.reduce((acc: any, hall) => {
+                                                const group = hall.parentName || 'Khác';
+                                                if (!acc[group]) acc[group] = [];
+                                                acc[group].push(hall);
+                                                return acc;
+                                            }, {})
+                                        ).map(([warehouse, warehouseHalls]: [string, any]) => (
+                                            <div key={warehouse} className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-900/50 shadow-sm">
+                                                <button
+                                                    onClick={() => setExpandedWarehouse(expandedWarehouse === warehouse ? null : warehouse)}
+                                                    className="w-full flex items-center justify-between p-4 bg-slate-50/50 dark:bg-slate-800/30 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border-b border-slate-100 dark:border-slate-800"
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                                                            <Layers size={18} />
                                                         </div>
-                                                        <p className="text-[11px] font-medium text-slate-500">
-                                                            {hall.emptyCount} vị trí đang trống
-                                                        </p>
+                                                        <h4 className="font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-tight">
+                                                            {warehouse}
+                                                        </h4>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[10px] font-bold text-slate-400 bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded-full">
+                                                            {warehouseHalls.length} Sảnh
+                                                        </span>
+                                                        <ChevronRight
+                                                            size={18}
+                                                            className={`text-slate-400 transition-transform duration-200 ${expandedWarehouse === warehouse ? 'rotate-90' : ''}`}
+                                                        />
+                                                    </div>
+                                                </button>
+
+                                                <div className={`overflow-hidden transition-all duration-300 ${expandedWarehouse === warehouse ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                                                    <div className="p-3 grid gap-2">
+                                                        {warehouseHalls.map((hall: any) => (
+                                                            <button
+                                                                key={hall.id}
+                                                                disabled={loading || hall.emptyCount === 0 || unassignedCount === 0}
+                                                                onClick={() => handleAutoAssignHall(hall)}
+                                                                className="group w-full flex items-center justify-between p-3 rounded-xl border border-transparent hover:border-orange-500/50 bg-slate-50/50 dark:bg-slate-800/20 hover:bg-orange-50/50 dark:hover:bg-orange-900/10 transition-all text-left disabled:opacity-50 disabled:grayscale"
+                                                            >
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 flex items-center justify-center text-slate-400 group-hover:text-orange-600 transition-colors">
+                                                                        <Layers size={14} />
+                                                                    </div>
+                                                                    <div>
+                                                                        <h5 className="font-bold text-slate-700 dark:text-slate-300 group-hover:text-orange-700 dark:group-hover:text-orange-400 transition-colors text-sm">
+                                                                            {hall.name}
+                                                                        </h5>
+                                                                        <p className="text-[10px] font-medium text-slate-500">
+                                                                            {hall.emptyCount} vị trí đang trống
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-2">
+                                                                    {hall.emptyCount > 0 && unassignedCount > 0 && (
+                                                                        <span className="text-[8px] font-black uppercase tracking-wider bg-orange-100 dark:bg-orange-900/50 text-orange-600 px-1.5 py-0.5 rounded">
+                                                                            Khả dụng
+                                                                        </span>
+                                                                    )}
+                                                                    <ChevronRight size={14} className="text-slate-300 group-hover:translate-x-1 group-hover:text-orange-400 transition-all" />
+                                                                </div>
+                                                            </button>
+                                                        ))}
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    {hall.emptyCount > 0 && unassignedCount > 0 && (
-                                                        <span className="text-[9px] font-black uppercase tracking-wider bg-orange-100 dark:bg-orange-900/50 text-orange-600 px-2 py-0.5 rounded-md">
-                                                            Khả dụng
-                                                        </span>
-                                                    )}
-                                                    <ChevronRight size={16} className="text-slate-300 group-hover:translate-x-1 group-hover:text-orange-400 transition-all" />
-                                                </div>
-                                            </button>
+                                            </div>
                                         ))}
                                     </div>
                                 )}
