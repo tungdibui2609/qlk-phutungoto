@@ -43,6 +43,7 @@ export function useLotManagement() {
     const [page, setPage] = useState(0)
     const [pageSize, setPageSize] = useState(21)
     const [totalLots, setTotalLots] = useState(0)
+    const [unassignedTotal, setUnassignedTotal] = useState(0)
 
     const [searchTerm, setSearchTerm] = useState('')
     const [positionFilter, setPositionFilter] = useState<'all' | 'assigned' | 'unassigned'>('all')
@@ -372,6 +373,19 @@ export function useLotManagement() {
 
                 setLots(sortedLots)
                 setTotalLots(count || 0)
+
+                // Also fetch a separate count for unassigned if not currently filtered by unassigned
+                if (positionFilter === 'unassigned') {
+                    setUnassignedTotal(count || 0)
+                } else {
+                    // Quick count for unassigned only using robust join logic
+                    const { count: unassignedCount } = await supabase.from('lots')
+                        .select('id, positions!left(id)', { count: 'exact', head: true })
+                        .eq('system_code', currentSystem.code)
+                        .is('positions', null)
+                        .neq('status', 'hidden');
+                    setUnassignedTotal(unassignedCount || 0)
+                }
             }
         } catch (err: any) {
             console.error('Error in fetchLots:', err)
@@ -674,6 +688,7 @@ export function useLotManagement() {
         pageSize,
         setPageSize,
         totalLots,
+        unassignedTotal,
 
         // Common Data
         products,

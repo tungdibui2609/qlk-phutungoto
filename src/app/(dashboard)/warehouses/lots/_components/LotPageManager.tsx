@@ -61,6 +61,7 @@ export function LotPageManager() {
         setPage,
         pageSize,
         totalLots,
+        unassignedTotal,
         // FIFO
         isFifoAvailable,
         isFifoActive,
@@ -310,7 +311,7 @@ export function LotPageManager() {
                         fetchLots();
                     }}
                     fetchUnassignedLots={fetchUnassignedLotsForBulkAssign}
-                    initialUnassignedCount={totalLots}
+                    initialUnassignedCount={unassignedTotal}
                 />
             )}
 

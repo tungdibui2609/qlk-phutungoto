@@ -102,17 +102,19 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                 };
             }));
 
-            // 4. Count Unassigned Lots (Fresh fetch)
+            // 4. Count Unassigned Lots (Fresh fetch for verification)
             setLoadingCount(true);
             try {
-                // Use the RPC but with a simpler select to ensure count works
-                const { count: lotCount, error: countError } = await (supabase.rpc as any)('get_unassigned_lots', { p_system_code: currentSystem.code })
-                    .select('id', { count: 'exact' });
+                // Use robust join logic for fresh verification count
+                const { count: lotCount, error: countError } = await supabase.from('lots')
+                    .select('id, positions!left(id)', { count: 'exact', head: true })
+                    .eq('system_code', currentSystem.code)
+                    .is('positions', null)
+                    .neq('status', 'hidden');
 
                 if (countError) {
-                    console.error('Count error from RPC:', countError);
-                    // Fallback to initialUnassignedCount if it exists, otherwise 0
-                    if (typeof initialUnassignedCount !== 'number') setUnassignedCount(0);
+                    console.error('Count error from robust query:', countError);
+                    // Keep using initialUnassignedCount
                 } else if (lotCount !== null) {
                     setUnassignedCount(prev => Math.max(prev, lotCount));
                 }
