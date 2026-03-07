@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { ChevronDown, Check, Search, X } from 'lucide-react'
+import { normalizeSearchString } from '@/lib/searchUtils'
 
 export interface ComboboxOption {
     value: string
@@ -64,44 +65,49 @@ export function Combobox({
     // Filter and Sort options based on search term
     const filteredOptions = useMemo(() => {
         if (!searchTerm) return options
-        const lowerTerm = searchTerm.toLowerCase().trim()
+
+        const lowerTerm = normalizeSearchString(searchTerm);
+        const unaccentedTerm = normalizeSearchString(searchTerm, true);
 
         return options
             .filter(option => {
-                const labelMatch = option.label?.toLowerCase().includes(lowerTerm)
-                const skuMatch = option.sku?.toLowerCase().includes(lowerTerm)
-                const codeMatch = option.code?.toLowerCase().includes(lowerTerm)
-                const originalSkuMatch = option.originalSku?.toLowerCase().includes(lowerTerm)
-                const originalNameMatch = option.originalName?.toLowerCase().includes(lowerTerm)
-                return labelMatch || skuMatch || codeMatch || originalSkuMatch || originalNameMatch
+                const label = normalizeSearchString(option.label || '');
+                const unaccentedLabel = normalizeSearchString(option.label || '', true);
+
+                const sku = normalizeSearchString(option.sku || option.code || '');
+                const unaccentedSku = normalizeSearchString(option.sku || option.code || '', true);
+
+                const originalSku = normalizeSearchString(option.originalSku || '');
+                const unaccentedOriginalSku = normalizeSearchString(option.originalSku || '', true);
+
+                const originalName = normalizeSearchString(option.originalName || '');
+                const unaccentedOriginalName = normalizeSearchString(option.originalName || '', true);
+
+                const labelMatch = label.includes(lowerTerm) || unaccentedLabel.includes(unaccentedTerm)
+                const skuMatch = sku.includes(lowerTerm) || unaccentedSku.includes(unaccentedTerm)
+                const originalSkuMatch = originalSku.includes(lowerTerm) || unaccentedOriginalSku.includes(unaccentedTerm)
+                const originalNameMatch = originalName.includes(lowerTerm) || unaccentedOriginalName.includes(unaccentedTerm)
+
+                return labelMatch || skuMatch || originalSkuMatch || originalNameMatch
             })
             .sort((a, b) => {
-                const aLabel = a.label?.toLowerCase() || ''
-                const bLabel = b.label?.toLowerCase() || ''
-                const aSku = a.sku?.toLowerCase() || a.code?.toLowerCase() || ''
-                const bSku = b.sku?.toLowerCase() || b.code?.toLowerCase() || ''
-                const aOriginalSku = a.originalSku?.toLowerCase() || ''
-                const bOriginalSku = b.originalSku?.toLowerCase() || ''
-                const aOriginalName = a.originalName?.toLowerCase() || ''
-                const bOriginalName = b.originalName?.toLowerCase() || ''
+                const aLabel = normalizeSearchString(a.label || '', true)
+                const bLabel = normalizeSearchString(b.label || '', true)
+                const aSku = normalizeSearchString(a.sku || a.code || '', true)
+                const bSku = normalizeSearchString(b.sku || b.code || '', true)
 
                 // 1. Exact SKU Match (Highest Priority)
-                if ((aSku === lowerTerm || aOriginalSku === lowerTerm) && (bSku !== lowerTerm && bOriginalSku !== lowerTerm)) return -1
-                if ((bSku === lowerTerm || bOriginalSku === lowerTerm) && (aSku !== lowerTerm && aOriginalSku !== lowerTerm)) return 1
+                if (aSku === unaccentedTerm && bSku !== unaccentedTerm) return -1
+                if (bSku === unaccentedTerm && aSku !== unaccentedTerm) return 1
 
                 // 2. SKU Starts With
-                const aSkuStart = aSku.startsWith(lowerTerm) || aOriginalSku.startsWith(lowerTerm)
-                const bSkuStart = bSku.startsWith(lowerTerm) || bOriginalSku.startsWith(lowerTerm)
-                if (aSkuStart && !bSkuStart) return -1
-                if (!aSkuStart && bSkuStart) return 1
+                if (aSku.startsWith(unaccentedTerm) && !bSku.startsWith(unaccentedTerm)) return -1
+                if (!aSku.startsWith(unaccentedTerm) && bSku.startsWith(unaccentedTerm)) return 1
 
                 // 3. Label Starts With
-                const aLabelStart = aLabel.startsWith(lowerTerm) || aOriginalName.startsWith(lowerTerm)
-                const bLabelStart = bLabel.startsWith(lowerTerm) || bOriginalName.startsWith(lowerTerm)
-                if (aLabelStart && !bLabelStart) return -1
-                if (!aLabelStart && bLabelStart) return 1
+                if (aLabel.startsWith(unaccentedTerm) && !bLabel.startsWith(unaccentedTerm)) return -1
+                if (!aLabel.startsWith(unaccentedTerm) && bLabel.startsWith(unaccentedTerm)) return 1
 
-                // 4. Fallback to original order (or name length for relevance)
                 return 0
             })
     }, [options, searchTerm])

@@ -21,9 +21,15 @@ export default async function PublicTracePage({ params, searchParams }: PageProp
     let query = supabaseAdmin
         .from('lots')
         .select(`
+            id,
             code,
             packaging_date,
-            products (name, sku, unit, image_url, description),
+            lot_items (
+                quantity,
+                unit,
+                products (name, sku, unit, image_url, description)
+            ),
+            lot_tags (tag),
             suppliers (name, address),
             qc_info (name, description),
             system_code,
@@ -71,7 +77,10 @@ export default async function PublicTracePage({ params, searchParams }: PageProp
         )
     }
 
-    const product = lot.products as any
+    const items = (lot.lot_items as any[]) || []
+    const firstItem = items[0]
+    const product = firstItem?.products
+    const tags = (lot.lot_tags as any[])?.map(t => t.tag) || []
     const supplier = lot.suppliers as any
 
     return (
@@ -108,11 +117,36 @@ export default async function PublicTracePage({ params, searchParams }: PageProp
                             </div>
                         )}
 
-                        <h1 className="text-2xl font-bold text-slate-900 leading-tight mb-2">{product?.name || 'Sản phẩm không tên'}</h1>
-                        <p className="text-slate-500">{product?.sku}</p>
+                        <h1 className="text-2xl font-bold text-slate-900 leading-tight mb-2">
+                            {product?.name || (items.length > 1 ? 'Nhiều sản phẩm' : 'Sản phẩm không tên')}
+                        </h1>
+                        <p className="text-slate-500 font-mono text-sm">{product?.sku}</p>
+
+                        {tags.length > 0 && (
+                            <div className="flex flex-wrap justify-center gap-2 mt-4">
+                                {tags.map((tag, i) => (
+                                    <span key={i} className="text-[10px] px-2 py-0.5 font-bold border border-slate-200 rounded-full bg-slate-50 text-slate-500 uppercase">
+                                        #{tag}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     <div className="p-8 space-y-6">
+
+                        {/* Product Info Table-like look for weight */}
+                        <div className="bg-slate-50/50 rounded-2xl p-5 space-y-4">
+                            <div className="flex justify-between items-center">
+                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Khối lượng</span>
+                                <span className="text-lg font-black text-slate-900">
+                                    {firstItem?.quantity || '--'} {firstItem?.unit || product?.unit || ''}
+                                </span>
+                            </div>
+                            {items.length > 1 && (
+                                <p className="text-[10px] text-slate-400 text-right italic font-medium">* Tổng cộng {items.length} mặt hàng trong lô này</p>
+                            )}
+                        </div>
 
                         <div className="flex items-start gap-4">
                             <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
@@ -138,7 +172,15 @@ export default async function PublicTracePage({ params, searchParams }: PageProp
                                 </div>
                             </div>
 
-                            {/* REMOVED: Expiry date column does not exist in DB */}
+                            <div className="flex items-start gap-3">
+                                <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                                    <Package size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Mã sản phẩm</h3>
+                                    <p className="font-bold text-slate-900">{product?.sku || '---'}</p>
+                                </div>
+                            </div>
                         </div>
 
                     </div>

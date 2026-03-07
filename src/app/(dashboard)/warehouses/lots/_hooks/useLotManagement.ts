@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
-import { matchSearch } from '@/lib/searchUtils'
+import { matchSearch, normalizeSearchString } from '@/lib/searchUtils'
 import { matchDateRange } from '@/lib/dateUtils'
 import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 
@@ -161,31 +161,31 @@ export function useLotManagement() {
         try {
             // 1. Dynamic Select Query Builder
             let selectQuery = `
-                *,
-                packaging_date,
-                warehouse_name,
-                images,
-                metadata,
-                lot_items (
-                    id,
-                    quantity,
-                    product_id,
-                    products (
-                        name,
-                        unit,
-                        sku,
-                        cost_price,
-                        internal_code,
-                        internal_name,
-                        product_code:id
-                    ),
-                    unit
-                ),
-                suppliers (name),
-                qc_info (name),
-                lot_tags (tag, lot_item_id),
-                products (name, unit, sku, cost_price, internal_code, internal_name)
-            `
+    *,
+    packaging_date,
+    warehouse_name,
+    images,
+    metadata,
+    lot_items(
+        id,
+        quantity,
+        product_id,
+        products(
+            name,
+            unit,
+            sku,
+            cost_price,
+            internal_code,
+            internal_name,
+            product_code: id
+        ),
+        unit
+    ),
+    suppliers(name),
+    qc_info(name),
+    lot_tags(tag, lot_item_id),
+    products(name, unit, sku, cost_price, internal_code, internal_name)
+        `
 
             let query: any;
 
@@ -224,7 +224,8 @@ export function useLotManagement() {
 
             // 1. Search Term Logic (Deep Search)
             if (searchTerm) {
-                const term = `%${searchTerm}%`
+                const normalizedTerm = normalizeSearchString(searchTerm)
+                const term = `%${normalizedTerm}%`
                 let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`, `internal_code.ilike.${term}`, `internal_name.ilike.${term}`]
 
                 // Safe check if searchTerm is a UUID to search in 'id' column without crashing postgres
@@ -234,18 +235,26 @@ export function useLotManagement() {
                 }
 
                 // Find products matching name, sku, or valid UUID id
-                const { data: prods } = await supabase.from('products').select('id, name, sku').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code)
+                const { data: prods } = await supabase.from('products').select('id, name, sku, internal_code, internal_name').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code)
                 let prodIds = prods?.map(p => p.id) || []
 
                 // Prioritize exact matches
                 if (prods && prods.length > 0) {
-                    const sLower = searchTerm.toLowerCase();
-                    const exactMatches = prods.filter(p =>
-                        (p.sku && p.sku.toLowerCase() === sLower) ||
-                        (p.name && p.name.toLowerCase() === sLower) ||
-                        ((p as any).internal_code && (p as any).internal_code.toLowerCase() === sLower) ||
-                        ((p as any).internal_name && (p as any).internal_name.toLowerCase() === sLower)
-                    );
+                    const sLower = normalizedTerm.toLowerCase();
+                    const unaccentedTerm = normalizeSearchString(searchTerm, true);
+
+                    const exactMatches = prods.filter(p => {
+                        const pName = normalizeSearchString(p.name || '')
+                        const pSku = normalizeSearchString(p.sku || '')
+                        const pIntName = normalizeSearchString(p.internal_name || '')
+                        const pIntCode = normalizeSearchString(p.internal_code || '')
+
+                        const uName = normalizeSearchString(p.name || '', true)
+                        const uSku = normalizeSearchString(p.sku || '', true)
+
+                        return pSku === sLower || pName === sLower || pIntCode === sLower || pIntName === sLower ||
+                            uSku === unaccentedTerm || uName === unaccentedTerm
+                    });
                     if (exactMatches.length > 0) {
                         prodIds = exactMatches.map(p => p.id);
                     }
@@ -399,33 +408,33 @@ export function useLotManagement() {
 
         try {
             let selectQuery = `
-                *,
-                packaging_date,
-                warehouse_name,
-                images,
-                metadata,
-                lot_items (
-                    id,
-                    quantity,
-                    product_id,
-                    products (name, unit, sku, cost_price, internal_code, internal_name, product_code:id),
-                    unit
-                ),
-                suppliers (name),
-                qc_info (name),
-                lot_tags (tag, lot_item_id),
-                products (name, unit, sku, cost_price, internal_code, internal_name),
-                positions(id, code, zone_positions!left(zone_id))
-            `;
+    *,
+    packaging_date,
+    warehouse_name,
+    images,
+    metadata,
+    lot_items(
+        id,
+        quantity,
+        product_id,
+        products(name, unit, sku, cost_price, internal_code, internal_name, product_code: id),
+        unit
+    ),
+    suppliers(name),
+    qc_info(name),
+    lot_tags(tag, lot_item_id),
+    products(name, unit, sku, cost_price, internal_code, internal_name),
+    positions(id, code, zone_positions!left(zone_id))
+        `;
 
             let query = (supabase.rpc as any)('get_unassigned_lots', { p_system_code: currentSystem.code })
                 .select(selectQuery);
 
             if (searchTerm) {
-                const term = `%${searchTerm}%`;
-                let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`, `internal_code.ilike.${term}`, `internal_name.ilike.${term}`];
+                const term = `% ${searchTerm}% `;
+                let orConditionsProd = [`name.ilike.${term} `, `sku.ilike.${term} `, `internal_code.ilike.${term} `, `internal_name.ilike.${term} `];
                 const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(searchTerm);
-                if (isUUID) orConditionsProd.push(`id.eq.${searchTerm}`);
+                if (isUUID) orConditionsProd.push(`id.eq.${searchTerm} `);
 
                 const { data: prods } = await supabase.from('products').select('id, name, sku').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
                 let prodIds = prods?.map(p => p.id) || [];
@@ -460,7 +469,7 @@ export function useLotManagement() {
                 const safeSuppIds = suppIds.slice(0, 50);
                 const safeQcIds = qcIds.slice(0, 50);
 
-                let orConditions = [`code.ilike.${term}`, `notes.ilike.${term}`, `metadata->>extra_info.ilike.${term}`];
+                let orConditions = [`code.ilike.${term} `, `notes.ilike.${term} `, `metadata ->> extra_info.ilike.${term} `];
                 if (combinedLotIds.length > 0) orConditions.push(`id.in.(${combinedLotIds.join(',')})`);
                 if (safeSuppIds.length > 0) orConditions.push(`supplier_id.in.(${safeSuppIds.join(',')})`);
                 if (safeQcIds.length > 0) orConditions.push(`qc_id.in.(${safeQcIds.join(',')})`);
@@ -533,24 +542,24 @@ export function useLotManagement() {
 
         try {
             let selectQuery = `
-                *,
-                packaging_date,
-                warehouse_name,
-                images,
-                metadata,
-                lot_items (
-                    id,
-                    quantity,
-                    product_id,
-                    products (name, unit, sku, cost_price, internal_code, internal_name, product_code:id),
-                    unit
-                ),
-                suppliers (name),
-                qc_info (name),
-                lot_tags (tag, lot_item_id),
-                products (name, unit, sku, cost_price, internal_code, internal_name),
-                positions(id, code, zone_positions!left(zone_id))
-            `;
+    *,
+    packaging_date,
+    warehouse_name,
+    images,
+    metadata,
+    lot_items(
+        id,
+        quantity,
+        product_id,
+        products(name, unit, sku, cost_price, internal_code, internal_name, product_code: id),
+        unit
+    ),
+    suppliers(name),
+    qc_info(name),
+    lot_tags(tag, lot_item_id),
+    products(name, unit, sku, cost_price, internal_code, internal_name),
+    positions(id, code, zone_positions!left(zone_id))
+        `;
 
             let query = supabase
                 .from('lots')
@@ -559,10 +568,10 @@ export function useLotManagement() {
                 .neq('status', 'hidden');
 
             if (searchTerm) {
-                const term = `%${searchTerm}%`;
-                let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`, `internal_code.ilike.${term}`, `internal_name.ilike.${term}`];
+                const term = `% ${searchTerm}% `;
+                let orConditionsProd = [`name.ilike.${term} `, `sku.ilike.${term} `, `internal_code.ilike.${term} `, `internal_name.ilike.${term} `];
                 const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(searchTerm);
-                if (isUUID) orConditionsProd.push(`id.eq.${searchTerm}`);
+                if (isUUID) orConditionsProd.push(`id.eq.${searchTerm} `);
 
                 const { data: prods } = await supabase.from('products').select('id, name, sku').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
                 let prodIds = prods?.map(p => p.id) || [];
@@ -594,7 +603,7 @@ export function useLotManagement() {
                 const safeSuppIds = suppIds.slice(0, 50);
                 const safeQcIds = qcIds.slice(0, 50);
 
-                let orConditions = [`code.ilike.${term}`, `notes.ilike.${term}`, `metadata->>extra_info.ilike.${term}`];
+                let orConditions = [`code.ilike.${term} `, `notes.ilike.${term} `, `metadata ->> extra_info.ilike.${term} `];
                 if (combinedLotIds.length > 0) orConditions.push(`id.in.(${combinedLotIds.join(',')})`);
                 if (safeSuppIds.length > 0) orConditions.push(`supplier_id.in.(${safeSuppIds.join(',')})`);
                 if (safeQcIds.length > 0) orConditions.push(`qc_id.in.(${safeQcIds.join(',')})`);
@@ -618,7 +627,7 @@ export function useLotManagement() {
                 throw error;
             }
 
-            console.log(`[BulkTag] Fetched ${data?.length || 0} lots for system ${currentSystem.code}. Target limit: ${limit}`);
+            console.log(`[BulkTag] Fetched ${data?.length || 0} lots for system ${currentSystem.code}.Target limit: ${limit} `);
             let resultLots = ((data || []) as Lot[]).filter(l => !l.lot_tags || l.lot_tags.length === 0);
             console.log(`[BulkTag] Found ${resultLots.length} untagged lots after filtering.`);
 
