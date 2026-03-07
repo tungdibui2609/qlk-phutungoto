@@ -33,7 +33,6 @@ const translations = {
         quality_desc: 'Đạt chuẩn xuất khẩu',
         more_items: 'Tổng cộng {count} mặt hàng trong lô này',
         not_found: 'Sản phẩm không tên',
-        powered_by: 'Phát triển bởi AnyWarehouse Technology',
         sections: {
             info: 'Thông tin chung',
             supplier: 'Nguồn gốc',
@@ -55,7 +54,6 @@ const translations = {
         quality_desc: 'Export Standard Certified',
         more_items: 'Total {count} items in this lot',
         not_found: 'Unnamed Product',
-        powered_by: 'Powered by AnyWarehouse Technology',
         sections: {
             info: 'General Info',
             supplier: 'Origin',
@@ -77,7 +75,6 @@ const translations = {
         quality_desc: '出口标准认证',
         more_items: '该批次共有 {count} 件物品',
         not_found: '未命名产品',
-        powered_by: '由 AnyWarehouse Technology 提供技术支持',
         sections: {
             info: '基本信息',
             supplier: '来源',
@@ -99,7 +96,6 @@ const translations = {
         quality_desc: '輸出基準認定済み',
         more_items: 'このロットには合計 {count} 個のアイテムがあります',
         not_found: '未設定の製品',
-        powered_by: 'AnyWarehouse Technology 提供',
         sections: {
             info: '基本情報',
             supplier: '原産地',
@@ -141,8 +137,8 @@ export default function TraceView({ lot, companyInfo }: TraceViewProps) {
                                 key={l.code}
                                 onClick={() => setLang(l.code as Language)}
                                 className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap border-2 ${lang === l.code
-                                        ? 'bg-orange-600 text-white border-orange-600 shadow-lg shadow-orange-600/30 scale-105'
-                                        : 'bg-white text-slate-600 hover:bg-slate-50 border-slate-100'
+                                    ? 'bg-orange-600 text-white border-orange-600 shadow-lg shadow-orange-600/30 scale-105'
+                                    : 'bg-white text-slate-600 hover:bg-slate-50 border-slate-100'
                                     }`}
                             >
                                 <span className="text-lg leading-none">{l.flag}</span>
@@ -334,9 +330,6 @@ export default function TraceView({ lot, companyInfo }: TraceViewProps) {
 
                 {/* FOOTER */}
                 <div className="flex flex-col items-center gap-6 pt-10">
-                    <p className="text-center text-[10px] font-black text-slate-300 uppercase tracking-[0.4em]">
-                        {t.powered_by}
-                    </p>
                     <div className="flex gap-4">
                         <div className="w-8 h-8 rounded-full bg-slate-200/50" />
                         <div className="w-8 h-8 rounded-full bg-slate-200/50" />
