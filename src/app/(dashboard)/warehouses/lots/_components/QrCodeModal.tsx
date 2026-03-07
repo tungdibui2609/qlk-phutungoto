@@ -1,4 +1,4 @@
-import { X, Printer, Copy, Check, Cloud } from 'lucide-react'
+import { X, Printer, Copy, Check, Cloud, Minus, Plus } from 'lucide-react'
 import QRCode from "react-qr-code"
 import { useState } from 'react'
 import { Lot } from '../_hooks/useLotManagement'
@@ -17,6 +17,7 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
     const { showToast } = useToast()
     const [copied, setCopied] = useState(false)
     const [isPrinting, setIsPrinting] = useState(false)
+    const [printQuantity, setPrintQuantity] = useState(1)
     const { profile } = useUser()
     const { hasModule, currentSystem } = useSystem()
     const showInternal = hasModule('internal_products')
@@ -93,25 +94,13 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
                 }
             }
 
-            // Check if there is already a pending job for this lot in this system
-            const { data: existingJobs } = await (supabase as any).from('print_queue')
-                .select('id')
-                .eq('lot_id', lot.id)
-                .eq('system_id', currentSystem?.id)
-                .eq('status', 'pending')
-                .limit(1)
-
-            if (existingJobs && existingJobs.length > 0) {
-                showToast("Mã LOT này đã có trong hàng đợi in rồi ạ!", 'info')
-                return
-            }
-
             const printData = {
                 lot_code: lot.code,
                 scan_url: scanUrl,
                 company_prefix: companyPrefix,
                 supplier: lot.suppliers?.name || 'N/A',
                 work_area_name: workArea?.name || '',
+                label_quantity: printQuantity,
                 products: lot.lot_items?.map(item => ({
                     name: item.products?.name || 'SP',
                     internal_name: item.products?.internal_name || '',
@@ -137,7 +126,7 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
 
             if (error) throw error
 
-            showToast("Đã gửi lệnh in đến trạm in từ xa", 'success')
+            showToast(`Đã gửi lệnh in (${printQuantity} tem) đến trạm in từ xa`, 'success')
         } catch (error: any) {
             console.error('Remote print error:', error)
             showToast(`Lỗi in từ xa: ${error.message || 'Không xác định'}`, 'error')
@@ -179,7 +168,30 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
                         </div>
                     </div>
 
-
+                    {/* Quantity Selector */}
+                    <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl p-4 border border-zinc-100 dark:border-zinc-800/50">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-3 text-center">
+                            Số lượng tem cần in
+                        </p>
+                        <div className="flex items-center justify-center gap-6">
+                            <button
+                                onClick={() => setPrintQuantity(prev => Math.max(1, prev - 1))}
+                                className="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 shadow-sm active:scale-90 transition-transform"
+                                disabled={printQuantity <= 1}
+                            >
+                                <Minus size={18} />
+                            </button>
+                            <span className="text-3xl font-black text-zinc-900 dark:text-white tabular-nums min-w-[3rem] text-center">
+                                {printQuantity}
+                            </span>
+                            <button
+                                onClick={() => setPrintQuantity(prev => prev + 1)}
+                                className="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 shadow-sm active:scale-90 transition-transform"
+                            >
+                                <Plus size={18} />
+                            </button>
+                        </div>
+                    </div>
 
                     <div className="w-full flex flex-col gap-3">
                         <button

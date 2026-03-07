@@ -23,6 +23,7 @@ interface PrintJob {
         scan_url: string
         product_name: string
         quantity: number
+        label_quantity?: number
         unit: string
         products: any[]
         company_prefix?: string
@@ -364,9 +365,11 @@ function PrintStationContent() {
             {/* --- Dedicated Print Container (Hidden in UI) --- */}
             {lastPrinted && (
                 <div id="print-label-container" className="hidden print:block fixed inset-0 z-[9999] bg-white text-black">
-                    <div className="w-[90mm] h-[60mm] bg-white overflow-hidden p-0 m-0">
-                        <LabelCard job={lastPrinted} showBorder={false} />
-                    </div>
+                    {Array.from({ length: lastPrinted.print_data.label_quantity || 1 }).map((_, i) => (
+                        <div key={i} className="w-[90mm] h-[60mm] bg-white overflow-hidden p-0 m-0" style={{ pageBreakAfter: 'always' }}>
+                            <LabelCard job={lastPrinted} showBorder={false} />
+                        </div>
+                    ))}
                 </div>
             )}
 
