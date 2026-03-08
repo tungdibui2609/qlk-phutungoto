@@ -1080,7 +1080,7 @@ function InboundPrintContent() {
                         max-width: 210mm !important;
                         min-width: 210mm !important;
                         margin: 0 !important;
-                        padding: 5mm !important;
+                        padding: 2mm 20mm 5mm 5mm !important;
                         box-sizing: border-box !important;
                         box-shadow: none !important;
                         border: none !important;
@@ -1101,7 +1101,7 @@ function InboundPrintContent() {
                         font-size: 11px !important;
                     }
                     #print-ready #print-header-title {
-                        margin-right: 0 !important;
+                        margin-right: 5mm !important; /* Shift left to center on paper */
                     }
                     
                     /* Info section compact */
@@ -1157,7 +1157,7 @@ function InboundPrintContent() {
                         break-inside: avoid !important;
                         gap: 1px !important;
                         margin-top: 2px !important;
-                        padding-right: 0 !important;
+                        padding-right: 15mm !important; /* Shift to left */
                     }
                     #print-ready .pb-6, #print-ready .pb-10 {
                         padding-bottom: 0px !important;
