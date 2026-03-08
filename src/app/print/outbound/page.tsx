@@ -503,7 +503,14 @@ function OutboundPrintContent() {
                     @media print {
                         @page {
                             size: 210mm 148mm;
-                            margin: 5mm 10mm 5mm 10mm;
+                            margin: 5mm 5mm 5mm 5mm;
+                        }
+                        body, html {
+                            height: 148mm;
+                            overflow: hidden;
+                        }
+                        #print-ready {
+                            max-height: 138mm;
                         }
                     }
                 `}} />
@@ -950,7 +957,7 @@ function OutboundPrintContent() {
                 </table>
             </div>
 
-            <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-0' : 'print:mt-4'} text-sm space-y-1 ${printSize === 'A5' ? 'mb-0' : 'mb-2'}`}>
+            <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-0 pb-1' : 'print:mt-4'} text-sm space-y-1 ${printSize === 'A5' ? 'mb-0' : 'mb-2'}`}>
                 {!isInternal && hasModule('outbound_financials') && (
                     <div className="flex items-center">
                         <span className="shrink-0">- Tổng số tiền (viết bằng chữ):</span>
@@ -975,7 +982,7 @@ function OutboundPrintContent() {
                 )}
             </div>
 
-            <div className={`mt-0 ${printSize === 'A5' ? 'print:mt-2' : 'print:-mt-1'} signature-grid grid ${printSize === 'A5' ? 'grid-cols-5' : 'grid-cols-[1fr_1fr_1fr_1fr_1.4fr]'} ${printSize === 'A5' ? 'gap-0.5' : 'gap-3'} text-center text-sm items-end ${printSize === 'A5' ? 'print:break-inside-avoid' : ''}`}>
+            <div className={`mt-0 ${printSize === 'A5' ? 'print:mt-1 print:pb-0' : 'print:-mt-1'} signature-grid grid ${printSize === 'A5' ? 'grid-cols-5' : 'grid-cols-[1fr_1fr_1fr_1fr_1.4fr]'} ${printSize === 'A5' ? 'gap-0.5' : 'gap-3'} text-center text-sm items-end ${printSize === 'A5' ? 'print:break-inside-avoid' : ''}`}>
                 {/* 1. Ngày tháng năm row */}
                 <div className="invisible">Ngày ... tháng ... năm ...</div>
                 <div className="invisible">Ngày ... tháng ... năm ...</div>

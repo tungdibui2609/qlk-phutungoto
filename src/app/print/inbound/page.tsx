@@ -497,7 +497,14 @@ function InboundPrintContent() {
                     @media print {
                         @page {
                             size: 210mm 148mm;
-                            margin: 5mm 10mm 5mm 10mm;
+                            margin: 5mm 5mm 5mm 5mm;
+                        }
+                        body, html {
+                            height: 148mm;
+                            overflow: hidden;
+                        }
+                        #print-ready {
+                            max-height: 138mm;
                         }
                     }
                 `}} />
@@ -604,7 +611,7 @@ function InboundPrintContent() {
                 </div>
             </div>
 
-            <div className={`mt-6 ${printSize === 'A5' ? 'print:mt-0' : 'print:mt-1'} space-y-2 ${printSize === 'A5' ? 'print:space-y-0.5' : 'print:space-y-0'} text-sm ${printSize === 'A5' ? 'print:text-[10.5px]' : ''}`}>
+            <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-1 pb-1' : 'print:mt-8 pb-16'} space-y-2 ${printSize === 'A5' ? 'print:space-y-0' : 'print:space-y-0'} text-sm ${printSize === 'A5' ? 'print:text-[10.5px]' : ''}`}>
                 <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
                     <span className="text-gray-600 shrink-0">- Họ tên người giao:</span>
                     <EditableText
@@ -996,7 +1003,7 @@ function InboundPrintContent() {
                 )}
             </div>
 
-            <div className={`mt-0 ${printSize === 'A5' ? 'print:-mt-2' : 'print:-mt-1'} signature-grid grid grid-cols-3 ${printSize === 'A5' ? 'gap-1' : 'gap-4'} text-center text-sm ${printSize === 'A5' ? 'print:break-inside-avoid' : ''}`}>
+            <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-2 print:pb-0' : 'print:mt-10 mb-8'} signature-grid grid grid-cols-3 gap-6 text-center text-sm items-end ${printSize === 'A5' ? 'print:break-inside-avoid' : ''}`}>
                 <div>
                     <div className="text-sm italic text-center mb-1 invisible">
                         Ngày ... tháng ... năm ...
