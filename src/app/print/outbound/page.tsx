@@ -478,7 +478,7 @@ function OutboundPrintContent() {
     }
 
     return (
-        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('outbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 max-w-4xl mx-auto bg-white text-black text-[13px] ${printSize === 'A5' ? 'print-a5-super-compact' : 'print:text-[12px]'} leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
+        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('outbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 max-w-4xl mx-auto bg-white text-black text-[13px] ${printSize === 'A5' ? 'print:text-[11px]' : 'print:text-[12px]'} leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
             {isCapturing && (
                 <style dangerouslySetInnerHTML={{
                     __html: `
@@ -494,6 +494,28 @@ function OutboundPrintContent() {
                     }
                     input, textarea {
                         display: none !important;
+                    }
+                `}} />
+            )}
+            {printSize === 'A5' && !isCapturing && (
+                <style dangerouslySetInnerHTML={{
+                    __html: `
+                    @media print {
+                        @page {
+                            size: A5 portrait;
+                            margin: 10mm 15mm 10mm 15mm;
+                        }
+                    }
+                `}} />
+            )}
+            {printSize === 'A4' && !isCapturing && (
+                <style dangerouslySetInnerHTML={{
+                    __html: `
+                    @media print {
+                        @page {
+                            size: A4 portrait;
+                            margin: 15mm 15mm 15mm 15mm;
+                        }
                     }
                 `}} />
             )}
