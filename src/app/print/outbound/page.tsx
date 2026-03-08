@@ -1067,17 +1067,20 @@ function OutboundPrintContent() {
                         font-size: 10px !important;
                         line-height: 1.1 !important;
                     }
-                    #print-ready * {
-                        line-height: 1.1 !important;
+                    #print-ready #print-header-top * {
+                        line-height: 1.3 !important;
                     }
                     #print-ready h1 {
                         font-size: 14px !important;
                         margin-top: 0px !important;
-                        margin-bottom: 2px !important;
+                        margin-bottom: 4px !important;
+                        line-height: 1.4 !important;
                     }
                     #print-ready h1 + div,
                     #print-ready h1 + div + div {
                         font-size: 11px !important;
+                        line-height: 1.3 !important;
+                        margin-bottom: 2px !important;
                     }
                     #print-ready #print-header-title {
                         margin-right: 5mm !important; /* Shift left to center on paper */
@@ -1134,9 +1137,15 @@ function OutboundPrintContent() {
                     #print-ready .signature-grid {
                         page-break-inside: avoid !important;
                         break-inside: avoid !important;
-                        gap: 1px !important;
+                        gap: 1mm !important;
                         margin-top: 2px !important;
-                        padding-right: 15mm !important; /* Shift to left */
+                        padding-right: 0 !important;
+                        display: grid !important;
+                        grid-template-columns: repeat(5, 1fr) !important;
+                        width: 100% !important;
+                    }
+                    #print-ready .signature-grid .font-semibold {
+                        font-size: 10.5px !important;
                     }
                     #print-ready .pb-6, #print-ready .pb-10 {
                         padding-bottom: 0px !important;
