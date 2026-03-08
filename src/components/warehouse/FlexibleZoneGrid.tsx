@@ -140,7 +140,7 @@ const MemoizedPositionCell = React.memo<{
                                 </div>
                             </div>
 
-                            {lotDetail ? (
+                            {lotDetail && isOccupied ? (
                                 <div className="flex flex-col items-center w-full flex-1 min-h-0 gap-0.5 mt-0.5">
                                     <div className={`${isGrouped ? 'text-[8px]' : 'text-[10px]'} font-bold leading-tight w-full text-center shrink-0 ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'} ${isGrouped ? 'break-all' : 'truncate'}`}>
                                         {lotDetail.code}

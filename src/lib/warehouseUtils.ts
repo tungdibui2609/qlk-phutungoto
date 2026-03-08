@@ -15,7 +15,7 @@ export function groupWarehouseData(zones: Zone[], positions: PositionWithZone[])
     // 1. Build lookup maps
     const parentToChildren = new Map<string, Zone[]>()
     zones.forEach(z => {
-        if (z.parent_id) {
+        if (z.parent_id && z.parent_id !== '') {
             const list = parentToChildren.get(z.parent_id) || []
             list.push(z)
             parentToChildren.set(z.parent_id, list)
@@ -41,12 +41,14 @@ export function groupWarehouseData(zones: Zone[], positions: PositionWithZone[])
         const children = getChildren(zone.id)
         if (children.length === 0) return
 
-        // Should we group the children of this zone? (Containers like Dãy, Sảnh...)
-        const isGroupingContainer = /DÃY|SẢNH|KỆ|KHU|SÀNH/i.test(zone.name)
+        // Should we group the children of this zone? (Containers like Dãy, Sảnh, Kệ, Khu...)
+        // Using a more robust regex for Vietnamese characters
+        const isGroupingContainer = /D[ÃãYy]|S[Ảả]nh|K[Ệệ]|KHU|S[Àà]NH|CH[Ũũ]|PH[Òò]NG/i.test(zone.name) || zone.name.toUpperCase().includes('DÃY')
 
         if (isGroupingContainer) {
             const binGroups: Record<string, Zone[]> = {}
             children.forEach(c => {
+                // Extract numeric suffix or standard pattern like A01, B01 -> 01
                 const match = c.name.match(/\d+$/)
                 const suffix = match ? match[0] : c.name
                 binGroups[suffix] = binGroups[suffix] || []
@@ -54,14 +56,18 @@ export function groupWarehouseData(zones: Zone[], positions: PositionWithZone[])
             })
 
             Object.entries(binGroups).forEach(([suffix, members]) => {
-                if (members.length > 1) {
+                // Modified: Group if multiple members OR if the name looks like a bin (Ô A01, etc.)
+                // This ensures "Ô A01" becomes "Ô 01" even if it's the only one for consistency
+                const isBinPattern = members[0].name.toUpperCase().startsWith('Ô ') || members.length > 1
+
+                if (isBinPattern) {
                     // MERGE BIN CASE: Create a virtual bin ("Ô suffix")
                     const vBinId = `v-bin-${zone.id}-${suffix}`
                     finalZones.push({
                         ...members[0],
                         id: vBinId,
                         parent_id: zone.id,
-                        name: `Ô ${suffix}`,
+                        name: members.length > 1 || !members[0].name.startsWith('Ô ') ? `Ô ${suffix}` : members[0].name,
                         code: `G${suffix}`
                     })
 
@@ -106,7 +112,7 @@ export function groupWarehouseData(zones: Zone[], positions: PositionWithZone[])
     }
 
     // Process from roots
-    const roots = zones.filter(z => !z.parent_id)
+    const roots = zones.filter(z => !z.parent_id || z.parent_id === '')
     roots.forEach(processZoneRecursively)
 
     // Safety: any zones missed by recursion
