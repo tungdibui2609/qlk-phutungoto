@@ -322,39 +322,44 @@ function WarehouseMapContent() {
         if (!await showConfirm(`Bạn có chắc chắn muốn xóa ${lotIds.length} LOT đã chọn?`)) return
 
         try {
-            // 1. Clear lot_id in positions (Reference)
-            const { error: posError } = await supabase
-                .from('positions')
-                .update({ lot_id: null })
-                .in('lot_id', lotIds)
+            const chunkSize = 500;
+            for (let i = 0; i < lotIds.length; i += chunkSize) {
+                const chunk = lotIds.slice(i, i + chunkSize);
 
-            if (posError) throw posError
+                // 1. Clear lot_id in positions (Reference)
+                const { error: posError } = await supabase
+                    .from('positions')
+                    .update({ lot_id: null })
+                    .in('lot_id', chunk)
 
-            // 2. Delete lot_tags (Child)
-            const { error: tagError } = await supabase
-                .from('lot_tags')
-                .delete()
-                .in('lot_id', lotIds)
+                if (posError) throw posError
 
-            if (tagError) {
-                console.warn('Could not delete all tags, continuing...', tagError)
+                // 2. Delete lot_tags (Child)
+                const { error: tagError } = await supabase
+                    .from('lot_tags')
+                    .delete()
+                    .in('lot_id', chunk)
+
+                if (tagError) {
+                    console.warn('Could not delete all tags, continuing...', tagError)
+                }
+
+                // 3. Delete lot_items (Child)
+                const { error: itemError } = await supabase
+                    .from('lot_items')
+                    .delete()
+                    .in('lot_id', chunk)
+
+                if (itemError) throw itemError
+
+                // 4. Finally delete lots (Owner)
+                const { error: lotError } = await supabase
+                    .from('lots')
+                    .delete()
+                    .in('id', chunk)
+
+                if (lotError) throw lotError
             }
-
-            // 3. Delete lot_items (Child)
-            const { error: itemError } = await supabase
-                .from('lot_items')
-                .delete()
-                .in('lot_id', lotIds)
-
-            if (itemError) throw itemError
-
-            // 4. Finally delete lots (Owner)
-            const { error: lotError } = await supabase
-                .from('lots')
-                .delete()
-                .in('id', lotIds)
-
-            if (lotError) throw lotError
 
             showToast(`Đã xóa ${lotIds.length} LOT thành công`, 'success')
 
@@ -424,11 +429,19 @@ function WarehouseMapContent() {
 
         // DB Updates
         try {
-            const updatePromises = updates.map(u =>
-                supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id)
-            )
-            const results = await Promise.all(updatePromises)
-            const hasError = results.some(r => r.error)
+            const chunkSize = 500;
+            let hasError = false;
+
+            for (let i = 0; i < updates.length; i += chunkSize) {
+                const chunk = updates.slice(i, i + chunkSize);
+                const updatePromises = chunk.map(u =>
+                    supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id)
+                )
+                const results = await Promise.all(updatePromises)
+                if (results.some(r => r.error)) {
+                    hasError = true;
+                }
+            }
 
             if (hasError) {
                 showToast('Chuyển kho có lỗi xảy ra. Đang làm mới dữ liệu.', 'warning')
@@ -496,11 +509,19 @@ function WarehouseMapContent() {
 
         // DB Updates
         try {
-            const updatePromises = updates.map(u =>
-                supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id)
-            )
-            const results = await Promise.all(updatePromises)
-            const hasError = results.some(r => r.error)
+            const chunkSize = 500;
+            let hasError = false;
+
+            for (let i = 0; i < updates.length; i += chunkSize) {
+                const chunk = updates.slice(i, i + chunkSize);
+                const updatePromises = chunk.map(u =>
+                    supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id)
+                )
+                const results = await Promise.all(updatePromises)
+                if (results.some(r => r.error)) {
+                    hasError = true;
+                }
+            }
 
             if (hasError) {
                 showToast('Di chuyển có lỗi xảy ra. Đang làm mới dữ liệu.', 'warning')

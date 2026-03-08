@@ -246,6 +246,7 @@ interface FlexibleZoneGridProps {
     onUpdateCollapsedZones?: (setter: (prev: Set<string>) => Set<string>) => void
     onToggleCollapse: (zoneId: string) => void
     onPositionSelect?: (positionIds: string | string[]) => void
+    onBulkSelect?: (positionIds: string[], shouldSelect: boolean) => void
     onViewDetails?: (lotId: string) => void
     onPositionMenu?: (pos: any, e: React.MouseEvent) => void
     onConfigureZone?: (zone: Zone) => void
@@ -271,6 +272,7 @@ export default function FlexibleZoneGrid({
     onUpdateCollapsedZones,
     onToggleCollapse,
     onPositionSelect,
+    onBulkSelect,
     onViewDetails,
     onPositionMenu,
     onConfigureZone,
@@ -424,6 +426,38 @@ export default function FlexibleZoneGrid({
 
         const currentBreadcrumb = [...breadcrumb, zone.name]
 
+        // --- Select All Logic ---
+        // Exclude virtual/empty positions from being selectable if not in assignment mode
+        const selectablePositions = isAssignmentMode
+            ? zone.positions
+            : zone.positions.filter(p => occupiedIds.has(p.id))
+
+        // Find all selectable IDs in this zone + descendants
+        const allSelectableDescendantIds: string[] = []
+
+        // Quick extraction to get all positions in descendant zones
+        const exploreSelectableIds = (z: typeof zone) => {
+            const zSelectable = isAssignmentMode
+                ? z.positions.map(p => p.id)
+                : z.positions.filter(p => occupiedIds.has(p.id)).map(p => p.id)
+            allSelectableDescendantIds.push(...zSelectable)
+            z.children.forEach(child => exploreSelectableIds(child as any))
+        }
+        exploreSelectableIds(zone)
+
+        const selectedCount = allSelectableDescendantIds.filter(id => selectedPositionIds.has(id)).length
+        const totalSelectableCount = allSelectableDescendantIds.length
+
+        const isAllSelected = totalSelectableCount > 0 && selectedCount === totalSelectableCount
+        const isIndeterminate = selectedCount > 0 && selectedCount < totalSelectableCount
+
+        const handleZoneCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+            if (!onBulkSelect || totalSelectableCount === 0) return
+            e.stopPropagation()
+            onBulkSelect(allSelectableDescendantIds, e.target.checked)
+        }
+        // -----------------------
+
         if (displayType === 'hidden') {
             if (isDesignMode) {
                 return (
@@ -520,21 +554,37 @@ export default function FlexibleZoneGrid({
                                     style={{ backgroundColor: headerTextColor || (headerColor ? 'rgba(255,255,255,0.8)' : '#22c55e') }}
                                 />
                                 <div>
-                                    <h2
-                                        className={`font-bold tracking-tight ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-sm' : 'text-lg'}`}
-                                        style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
-                                    >
-                                        {isLevelUnderBin
-                                            ? `${currentBreadcrumb.join(' • ')} | ${totalPositions} vị trí`
-                                            : (isMobile || isGrouped ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • '))
-                                        }
-                                    </h2>
+                                    <div className="flex items-center gap-2">
+                                        {!isAssignmentMode && totalSelectableCount > 0 && onBulkSelect && (
+                                            <div className="flex items-center justify-center shrink-0" onClick={e => e.stopPropagation()}>
+                                                <input
+                                                    type="checkbox"
+                                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                    checked={isAllSelected}
+                                                    ref={el => {
+                                                        if (el) el.indeterminate = isIndeterminate
+                                                    }}
+                                                    onChange={handleZoneCheckboxChange}
+                                                    title={`Chọn tất cả ${totalSelectableCount} vị trí có hàng`}
+                                                />
+                                            </div>
+                                        )}
+                                        <h2
+                                            className={`font-bold tracking-tight ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-sm' : 'text-lg'}`}
+                                            style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
+                                        >
+                                            {isLevelUnderBin
+                                                ? `${currentBreadcrumb.join(' • ')} | ${totalPositions} vị trí`
+                                                : (isMobile || isGrouped ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • '))
+                                            }
+                                        </h2>
+                                    </div>
                                     {!isLevelUnderBin && totalPositions > 0 && (
                                         <p
                                             className="text-xs"
                                             style={{ color: headerTextColor ? `${headerTextColor}cc` : (headerColor ? 'rgba(255,255,255,0.8)' : undefined) }}
                                         >
-                                            {totalPositions} vị trí
+                                            {totalPositions} ô / <span className="font-semibold text-blue-100">{totalSelectableCount} có hàng</span>
                                         </p>
                                     )}
                                 </div>
@@ -696,21 +746,37 @@ export default function FlexibleZoneGrid({
                                     style={{ backgroundColor: headerTextColor || (headerColor ? 'rgba(255,255,255,0.8)' : '#22c55e') }}
                                 />
                                 <div>
-                                    <h2
-                                        className={`font-bold tracking-tight ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-sm' : 'text-lg'}`}
-                                        style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
-                                    >
-                                        {isLevelUnderBin
-                                            ? `${currentBreadcrumb.join(' • ')} | ${totalPositions} vị trí`
-                                            : (isMobile || isGrouped ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • '))
-                                        }
-                                    </h2>
+                                    <div className="flex items-center gap-2">
+                                        {!isAssignmentMode && totalSelectableCount > 0 && onBulkSelect && (
+                                            <div className="flex items-center justify-center shrink-0" onClick={e => e.stopPropagation()}>
+                                                <input
+                                                    type="checkbox"
+                                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                    checked={isAllSelected}
+                                                    ref={el => {
+                                                        if (el) el.indeterminate = isIndeterminate
+                                                    }}
+                                                    onChange={handleZoneCheckboxChange}
+                                                    title={`Chọn tất cả ${totalSelectableCount} vị trí có hàng`}
+                                                />
+                                            </div>
+                                        )}
+                                        <h2
+                                            className={`font-bold tracking-tight ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-sm' : 'text-lg'}`}
+                                            style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
+                                        >
+                                            {isLevelUnderBin
+                                                ? `${currentBreadcrumb.join(' • ')} | ${totalPositions} vị trí`
+                                                : (isMobile || isGrouped ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • '))
+                                            }
+                                        </h2>
+                                    </div>
                                     {!isLevelUnderBin && totalPositions > 0 && (
                                         <p
                                             className="text-xs"
                                             style={{ color: headerTextColor ? `${headerTextColor}cc` : (headerColor ? 'rgba(255,255,255,0.8)' : undefined) }}
                                         >
-                                            {totalPositions} vị trí
+                                            {totalPositions} ô / <span className="font-semibold text-blue-100">{totalSelectableCount} có hàng</span>
                                         </p>
                                     )}
                                 </div>
