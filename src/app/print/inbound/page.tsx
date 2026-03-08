@@ -595,7 +595,7 @@ function InboundPrintContent() {
                 </div>
             </div>
 
-            <div className={`mt-1 ${printSize === 'A5' ? 'print:mt-0 pb-0.5' : 'print:mt-8 pb-16'} space-y-2 ${printSize === 'A5' ? 'print:space-y-0' : 'print:space-y-0'} text-sm`}>
+            <div className={`mt-1 ${printSize === 'A5' ? 'print:mt-0 pb-0.5' : 'print:mt-8 pb-16'} space-y-2 text-sm`}>
                 <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
                     <span className="text-gray-600 shrink-0">- Họ tên người giao:</span>
                     <EditableText
@@ -856,7 +856,7 @@ function InboundPrintContent() {
                                             isSnapshot={isSnapshotMode}
                                         />
                                     </td>
-                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>{item.unit || '-'}</td>
+                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>{(item.unit || '-').split('(')[0].trim()}</td>
                                     {hasModule('inbound_financials') && (
                                         <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>
                                             <EditableText
@@ -1043,7 +1043,7 @@ function InboundPrintContent() {
                     </div>
                 </div>
                 <div>
-                    <div className={`text-sm italic text-center mb-1 ${printSize === 'A5' ? 'print:pr-8' : ''}`}>
+                    <div className={`text-sm italic text-right mb-1 ${printSize === 'A5' ? 'print:pr-10' : ''}`}>
                         <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
                             Ngày
                             <input
@@ -1099,6 +1099,7 @@ function InboundPrintContent() {
             <style jsx global>{`
                 @media print {
                     @page {
+                        size: A5 landscape !important;
                         margin: 0 !important;
                     }
                     html, body {
@@ -1114,47 +1115,69 @@ function InboundPrintContent() {
                         max-width: 210mm !important;
                         min-width: 210mm !important;
                         margin: 0 !important;
-                        padding: 2mm 5mm !important;
+                        padding: 2mm 5mm 5mm 5mm !important;
                         box-sizing: border-box !important;
                         box-shadow: none !important;
                         border: none !important;
                         overflow: hidden !important;
-                        font-size: 8.5px !important;
+                        font-size: 10px !important;
                         line-height: 1.1 !important;
                     }
                     #print-ready * {
                         line-height: 1.1 !important;
                     }
                     #print-ready h1 {
-                        font-size: 13px !important;
+                        font-size: 16px !important;
                         margin-top: 0px !important;
                         margin-bottom: 2px !important;
                     }
                     
                     /* Info section compact */
-                    #print-ready .space-y-2 {
-                        gap: 0px !important;
+                    #print-ready div.space-y-2 {
+                        display: flex !important;
+                        flex-direction: column !important;
+                        gap: 2px !important;
+                        font-size: 11.5px !important;
+                    }
+                    #print-ready .space-y-2 > * {
+                        margin-top: 0 !important;
                     }
 
                     /* Table: fill full width */
                     #print-ready table {
                         width: 100% !important;
-                        table-layout: auto !important;
+                        table-layout: fixed !important;
                     }
+                    #print-ready table th:nth-child(1), #print-ready table td:nth-child(1) { width: 8mm !important; } /* STT */
+                    #print-ready table th:nth-child(2), #print-ready table td:nth-child(2) { width: 60mm !important; } /* Cột B - Tên SP (Giảm thêm) */
+                    #print-ready table th:nth-child(3), #print-ready table td:nth-child(3) { width: 25mm !important; } /* Quy cách */
+                    #print-ready table th:nth-child(4), #print-ready table td:nth-child(4) { width: 15mm !important; } /* Đơn vị */
+                    #print-ready table th:nth-child(5), #print-ready table td:nth-child(5) { width: 25mm !important; } /* Số lượng/Thực xuất 1 */
+                    #print-ready table th:nth-child(6), #print-ready table td:nth-child(6) { width: 25mm !important; } /* Quy đổi 2 */
+                    #print-ready table th:nth-child(7), #print-ready table td:nth-child(7) { width: auto !important; } /* Ghi chú 3 */
                     /* Remove ALL fixed Tailwind width classes on table cells */
+                    #print-ready table th {
+                        font-size: 11px !important;
+                        font-weight: bold !important;
+                        padding: 5px 3px !important;
+                    }
+                    #print-ready table td {
+                        font-size: 10px !important;
+                        padding: 5px 3px !important;
+                    }
                     #print-ready table th,
                     #print-ready table td {
                         width: auto !important;
                         min-width: 0 !important;
                         max-width: none !important;
-                        padding: 1px 3px !important;
-                        font-size: 8px !important;
                         word-break: break-word !important;
                         overflow-wrap: break-word !important;
                     }
                     #print-ready .print-total-row td {
-                        padding-top: 2px !important;
-                        padding-bottom: 2px !important;
+                        padding-top: 8px !important;
+                        padding-bottom: 8px !important;
+                        font-weight: bold !important;
+                        font-size: 11px !important;
                     }
                     
                     /* Signature section compact */
@@ -1169,7 +1192,8 @@ function InboundPrintContent() {
                         display: none !important;
                     }
                     #print-ready .signature-grid .print\:pt-3 {
-                        padding-top: 2px !important;
+                        padding-top: 15px !important;
+                        height: 85px !important; /* Adjusted to lift name up */
                     }
                     #print-ready .signature-grid .text-xs {
                         display: none !important;
