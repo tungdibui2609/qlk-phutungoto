@@ -438,14 +438,26 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                                                             {(() => {
                                                                 if (!item.quantity || !item.unit || !item.products) return '-'
 
+                                                                const normalize = (s: string | undefined | null) =>
+                                                                    s ? s.normalize('NFC').toLowerCase().trim() : ''
+
+                                                                const normItemUnit = normalize(item.unit)
+                                                                const normBaseUnit = normalize(item.products.unit)
+                                                                const normTarget = normalize(targetUnit)
+
                                                                 // 1. Convert to base
                                                                 let baseQty = 0
-                                                                if (item.unit === item.products.unit) {
+                                                                if (normItemUnit === normBaseUnit) {
                                                                     baseQty = item.quantity
                                                                 } else {
                                                                     const uConfig = item.products.product_units?.find(pu => {
-                                                                        const uName = units.find(u => u.id === pu.unit_id)?.name
-                                                                        return uName === item.unit
+                                                                        const u = units.find(unit => unit.id === pu.unit_id)
+                                                                        if (!u) return false
+                                                                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                                                        const labelStr = isBase
+                                                                            ? u.name
+                                                                            : `${u.name} (${pu.conversion_rate} ${item.products?.unit || 'Cơ bản'})`
+                                                                        return normalize(labelStr) === normItemUnit || normalize(u.name) === normItemUnit
                                                                     })
                                                                     if (uConfig) {
                                                                         baseQty = item.quantity * uConfig.conversion_rate
@@ -455,13 +467,18 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                                                                 }
 
                                                                 // 2. Convert to target
-                                                                if (targetUnit === item.products.unit) {
+                                                                if (normTarget === normBaseUnit) {
                                                                     return formatQuantityFull(baseQty)
                                                                 }
 
                                                                 const targetConfig = item.products.product_units?.find(pu => {
-                                                                    const uName = units.find(u => u.id === pu.unit_id)?.name
-                                                                    return uName === targetUnit
+                                                                    const u = units.find(unit => unit.id === pu.unit_id)
+                                                                    if (!u) return false
+                                                                    const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                                                    const labelStr = isBase
+                                                                        ? u.name
+                                                                        : `${u.name} (${pu.conversion_rate} ${item.products?.unit || 'Cơ bản'})`
+                                                                    return normalize(labelStr) === normTarget || normalize(u.name) === normTarget
                                                                 })
 
                                                                 if (targetConfig) {
@@ -541,26 +558,42 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                                                     {hasModule('outbound_conversion') && targetUnit && (
                                                         <td className="px-4 py-3 text-center text-orange-600">
                                                             {formatQuantityFull(items.reduce((sum, item) => {
-                                                                if (!item.quantity || !item.unit) return sum
-                                                                const product = item.products
-                                                                if (!product) return sum
+                                                                if (!item.quantity || !item.unit || !item.products) return sum
+
+                                                                const normalize = (s: string | undefined | null) =>
+                                                                    s ? s.normalize('NFC').toLowerCase().trim() : ''
+
+                                                                const normItemUnit = normalize(item.unit)
+                                                                const normBaseUnit = normalize(item.products.unit)
+                                                                const normTarget = normalize(targetUnit)
 
                                                                 let baseQty = 0
-                                                                if (item.unit === product.unit) {
+                                                                if (normItemUnit === normBaseUnit) {
                                                                     baseQty = item.quantity
                                                                 } else {
-                                                                    const uConfig = product.product_units?.find(pu => {
-                                                                        const uName = units.find(u => u.id === pu.unit_id)?.name
-                                                                        return uName === item.unit
+                                                                    const uConfig = item.products.product_units?.find(pu => {
+                                                                        const u = units.find(unit => unit.id === pu.unit_id)
+                                                                        if (!u) return false
+                                                                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                                                        const labelStr = isBase
+                                                                            ? u.name
+                                                                            : `${u.name} (${pu.conversion_rate} ${item.products?.unit || 'Cơ bản'})`
+                                                                        return normalize(labelStr) === normItemUnit || normalize(u.name) === normItemUnit
                                                                     })
                                                                     if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
+                                                                    else return sum
                                                                 }
 
-                                                                if (targetUnit === product.unit) return sum + baseQty
+                                                                if (normTarget === normBaseUnit) return sum + baseQty
 
-                                                                const targetConfig = product.product_units?.find(pu => {
-                                                                    const uName = units.find(u => u.id === pu.unit_id)?.name
-                                                                    return uName === targetUnit
+                                                                const targetConfig = item.products.product_units?.find(pu => {
+                                                                    const u = units.find(unit => unit.id === pu.unit_id)
+                                                                    if (!u) return false
+                                                                    const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                                                    const labelStr = isBase
+                                                                        ? u.name
+                                                                        : `${u.name} (${pu.conversion_rate} ${item.products?.unit || 'Cơ bản'})`
+                                                                    return normalize(labelStr) === normTarget || normalize(u.name) === normTarget
                                                                 })
 
                                                                 if (targetConfig) return sum + (baseQty / targetConfig.conversion_rate)

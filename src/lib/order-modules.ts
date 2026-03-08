@@ -80,7 +80,8 @@ export const INBOUND_MODULES: OrderModule[] = [
         name: 'Quy đổi đơn vị',
         description: 'Hiển thị cột quy đổi số lượng theo đơn vị đích (VD: Thùng -> Kg)',
         icon: ArrowRightLeft,
-        type: 'inbound'
+        type: 'inbound',
+        is_basic: true
     }
 ]
 
@@ -154,7 +155,8 @@ export const OUTBOUND_MODULES: OrderModule[] = [
         name: 'Quy đổi đơn vị',
         description: 'Hiển thị cột quy đổi số lượng theo đơn vị đích (VD: Thùng -> Kg)',
         icon: ArrowRightLeft,
-        type: 'outbound'
+        type: 'outbound',
+        is_basic: true
     }
 ]
 

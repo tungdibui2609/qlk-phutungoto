@@ -3,16 +3,14 @@
 export type UnitNameMap = Map<string, string>; // name (lowercase) -> id
 export type ConversionMap = Map<string, Map<string, number>>; // productId -> unitId -> rate
 
+// Helper to normalize and clean unit names for comparison
+const normalizeUnit = (s: string | null | undefined) => {
+    if (!s) return '';
+    return s.normalize('NFC').toLowerCase().trim();
+};
+
 /**
  * Converts a quantity from a specific unit to the base unit amount.
- *
- * @param productId - The ID of the product.
- * @param unitName - The name of the current unit.
- * @param qty - The quantity to convert.
- * @param baseUnitName - The name of the product's base unit.
- * @param unitNameMap - Map of unit names to unit IDs.
- * @param conversionMap - Map of conversion rates (productId -> unitId -> rate).
- * @returns The quantity converted to the base unit.
  */
 export function toBaseAmount(
     productId: string | null,
@@ -24,11 +22,22 @@ export function toBaseAmount(
 ): number {
     if (!productId || !unitName || !baseUnitName) return qty;
 
+    const normInput = normalizeUnit(unitName);
+    const normBase = normalizeUnit(baseUnitName);
+
     // If unit is Base Unit, return qty
-    if (unitName.toLowerCase() === baseUnitName.toLowerCase()) return qty;
+    if (normInput === normBase) return qty;
 
     // Look up unit ID
-    const uid = unitNameMap.get(unitName.toLowerCase());
+    // Step 1: Exact match (e.g. "thùng")
+    let uid = unitNameMap.get(normInput);
+
+    // Step 2: If no exact match, try stripping parentheses (e.g. "thùng (20 kg)" -> "thùng")
+    if (!uid) {
+        const stripped = normInput.replace(/\s*\([^)]*\)/g, '');
+        uid = unitNameMap.get(stripped);
+    }
+
     if (!uid) return qty;
 
     // Look up rate
@@ -64,13 +73,12 @@ export function getBaseToKgRate(
     if (!productId || !baseUnitName) return null;
 
     const kgNames = ['kg', 'kilogram', 'ki-lo-gam', 'kgs'];
+    const normBase = normalizeUnit(baseUnitName);
 
     // Check Base Unit
-    if (kgNames.includes(baseUnitName.toLowerCase())) return 1;
+    if (kgNames.includes(normBase)) return 1;
 
     // Check Product Units for a KG entry
-    // Table stores: 1 Alt = rate * Base.
-    // So if Alt is KG: 1 KG = rate * Base. -> 1 Base = 1/rate KG.
     const rates = conversionMap.get(productId);
     if (!rates) return null;
 
@@ -109,16 +117,21 @@ export function convertUnit(
     conversionMap: ConversionMap
 ): number {
     if (!productId || !fromUnitName || !toUnitName || !baseUnitName) return qty;
-    if (fromUnitName.toLowerCase() === toUnitName.toLowerCase()) return qty;
+
+    const normFrom = normalizeUnit(fromUnitName);
+    const normTo = normalizeUnit(toUnitName);
+    const normBase = normalizeUnit(baseUnitName);
+
+    if (normFrom === normTo) return qty;
 
     // 1. Convert from source unit to base unit
     const qtyBase = toBaseAmount(productId, fromUnitName, qty, baseUnitName, unitNameMap, conversionMap);
 
     // 2. If target is base unit, we are done
-    if (toUnitName.toLowerCase() === baseUnitName.toLowerCase()) return qtyBase;
+    if (normTo === normBase) return qtyBase;
 
     // 3. Convert from base unit to target unit
-    const toUnitId = unitNameMap.get(toUnitName.toLowerCase());
+    const toUnitId = unitNameMap.get(normTo);
     if (!toUnitId) return qtyBase; // Fallback to base unit amount if target unit ID unknown
 
     const rates = conversionMap.get(productId);

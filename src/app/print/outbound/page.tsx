@@ -380,29 +380,37 @@ function OutboundPrintContent() {
             let convertedQtyValue: any = '-'
             if (hasModule('outbound_conversion') && targetUnit && item.products) {
                 const product = item.products as any
-                let baseQty = 0
-                const normalizeLocal = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
-                const itemUnit = normalizeLocal(item.unit)
-                const prodUnit = normalizeLocal(product.unit)
-                const tgtUnit = normalizeLocal(targetUnit)
+                const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
+                const normItemUnit = normalize(item.unit)
+                const normBaseUnit = normalize(product.unit)
+                const normTarget = normalize(targetUnit)
 
-                if (itemUnit === prodUnit) baseQty = item.quantity
+                let baseQty = 0
+                if (normItemUnit === normBaseUnit) baseQty = item.quantity
                 else {
                     const uConfig = product.product_units?.find((pu: any) => {
                         if (!pu.unit_id) return false
-                        const mapVal = normalizeLocal(unitsMap[pu.unit_id])
-                        return mapVal === itemUnit
+                        const uName = unitsMap[pu.unit_id]
+                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                        const labelStr = isBase
+                            ? uName
+                            : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
+                        return normalize(labelStr) === normItemUnit || normalize(uName) === normItemUnit
                     })
                     if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
                 }
 
-                if (tgtUnit === prodUnit) {
+                if (normTarget === normBaseUnit) {
                     if (baseQty > 0) convertedQtyValue = baseQty
                 } else {
                     const targetConfig = product.product_units?.find((pu: any) => {
                         if (!pu.unit_id) return false
-                        const mapVal = normalizeLocal(unitsMap[pu.unit_id])
-                        return mapVal === tgtUnit
+                        const uName = unitsMap[pu.unit_id]
+                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                        const labelStr = isBase
+                            ? uName
+                            : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
+                        return normalize(labelStr) === normTarget || normalize(uName) === normTarget
                     })
                     if (targetConfig) convertedQtyValue = baseQty / targetConfig.conversion_rate
                 }
@@ -743,38 +751,45 @@ function OutboundPrintContent() {
                             let convertedQty: string | number = '-'
                             if (hasModule('outbound_conversion') && targetUnit && item.products) {
                                 const product = item.products as any
-                                let baseQty = 0
-
                                 const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
-                                const itemUnit = normalize(item.unit)
-                                const prodUnit = normalize(product.unit)
-                                const tgtUnit = normalize(targetUnit)
+                                const normItemUnit = normalize(item.unit)
+                                const normBaseUnit = normalize(product.unit)
+                                const normTarget = normalize(targetUnit)
 
-                                if (itemUnit === prodUnit) {
+                                let baseQty = 0
+                                if (normItemUnit === normBaseUnit) {
                                     baseQty = item.quantity
                                 } else {
                                     const uConfig = product.product_units?.find((pu: any) => {
                                         if (!pu.unit_id) return false
-                                        const mapVal = normalize(unitsMap[pu.unit_id])
-                                        return mapVal === itemUnit
+                                        const uName = unitsMap[pu.unit_id]
+                                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                        const labelStr = isBase
+                                            ? uName
+                                            : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
+                                        return normalize(labelStr) === normItemUnit || normalize(uName) === normItemUnit
                                     })
                                     if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
                                 }
 
-                                if (tgtUnit === prodUnit) {
+                                if (normTarget === normBaseUnit) {
                                     if (baseQty > 0) convertedQty = baseQty
                                 } else {
                                     const targetConfig = product.product_units?.find((pu: any) => {
                                         if (!pu.unit_id) return false
-                                        const mapVal = normalize(unitsMap[pu.unit_id])
-                                        return mapVal === tgtUnit
+                                        const uName = unitsMap[pu.unit_id]
+                                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                        const labelStr = isBase
+                                            ? uName
+                                            : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
+                                        return normalize(labelStr) === normTarget || normalize(uName) === normTarget
                                     })
                                     if (targetConfig) convertedQty = baseQty / targetConfig.conversion_rate
                                 }
+                            }
 
-                                if (typeof convertedQty === 'number') {
-                                    convertedQty = formatQuantityFull(convertedQty)
-                                }
+                            if (typeof convertedQty === 'number') {
+                                convertedQty = formatQuantityFull(convertedQty)
                             }
 
                             // Calculate names and skus based on toggle
@@ -1044,7 +1059,7 @@ function OutboundPrintContent() {
                         max-width: 210mm !important;
                         min-width: 210mm !important;
                         margin: 0 !important;
-                        padding: 2mm 20mm 5mm 15mm !important;
+                        padding: 5mm !important;
                         box-sizing: border-box !important;
                         box-shadow: none !important;
                         border: none !important;
@@ -1065,7 +1080,7 @@ function OutboundPrintContent() {
                         font-size: 11px !important;
                     }
                     #print-ready #print-header-title {
-                        margin-right: 5mm !important; /* Shift left to center on paper */
+                        margin-right: 0 !important;
                     }
                     
                     /* Info section compact */
@@ -1121,7 +1136,7 @@ function OutboundPrintContent() {
                         break-inside: avoid !important;
                         gap: 1px !important;
                         margin-top: 2px !important;
-                        padding-right: 15mm !important; /* Shift to left */
+                        padding-right: 0 !important;
                     }
                     #print-ready .pb-6, #print-ready .pb-10 {
                         padding-bottom: 0px !important;

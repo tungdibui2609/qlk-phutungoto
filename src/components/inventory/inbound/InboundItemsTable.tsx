@@ -143,7 +143,6 @@ export function InboundItemsTable({
                                     </div>
                                 </td>
 
-                                {/* Conversion Logic (Simplified display) */}
                                 {hasModule('inbound_conversion') && targetUnit && (
                                     <td className="px-4 py-3 text-center font-medium text-orange-600">
                                         {(() => {
@@ -151,9 +150,15 @@ export function InboundItemsTable({
                                             const product = products.find(p => p.id === item.productId)
                                             if (!product) return '-'
 
+                                            const normalize = (s: string | undefined | null) =>
+                                                s ? s.normalize('NFC').toLowerCase().trim() : ''
+
                                             const getRate = (unitName: string) => {
                                                 if (!product) return 1
-                                                if (product.unit && unitName.toLowerCase() === product.unit.toLowerCase()) return 1
+                                                const normInput = normalize(unitName)
+                                                const normBase = normalize(product.unit)
+
+                                                if (normBase && normInput === normBase) return 1
 
                                                 if (product.product_units) {
                                                     for (const pu of product.product_units) {
@@ -164,15 +169,15 @@ export function InboundItemsTable({
                                                                 ? u.name
                                                                 : `${u.name} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
 
-                                                            if (labelStr.toLowerCase() === unitName.toLowerCase()) {
+                                                            if (normalize(labelStr) === normInput) {
                                                                 return pu.conversion_rate || 1
                                                             }
                                                         }
                                                     }
-                                                    // Fallback for legacy format
+                                                    // Fallback for simple unit name match
                                                     for (const pu of product.product_units) {
                                                         const u = units.find(unit => unit.id === pu.unit_id)
-                                                        if (u && u.name.toLowerCase() === unitName.toLowerCase()) {
+                                                        if (u && normalize(u.name) === normInput) {
                                                             return pu.conversion_rate || 1
                                                         }
                                                     }
@@ -180,19 +185,17 @@ export function InboundItemsTable({
                                                 return 1
                                             }
 
+                                            const normTarget = normalize(targetUnit)
+                                            const normItemUnit = normalize(item.unit)
+                                            const normBaseUnit = normalize(product.unit)
+
                                             const sourceRate = getRate(item.unit)
                                             const targetRate = getRate(targetUnit)
 
-                                            // Avoid misleading 1:1 if lookup failed
-                                            const itemUnitName = item.unit.toLowerCase()
-                                            const targetUnitName = targetUnit.toLowerCase()
-                                            const baseUnitName = (product.unit || '').toLowerCase()
-
-                                            // If both are 1, but neither matches base unit, and they are different units -> specific conversion likely missing
                                             if (sourceRate === 1 && targetRate === 1
-                                                && itemUnitName !== baseUnitName
-                                                && targetUnitName !== baseUnitName
-                                                && itemUnitName !== targetUnitName) {
+                                                && normItemUnit !== normBaseUnit
+                                                && normTarget !== normBaseUnit
+                                                && normItemUnit !== normTarget) {
                                                 return '-'
                                             }
 
@@ -344,9 +347,15 @@ export function InboundItemsTable({
                                         const product = products.find(p => p.id === item.productId)
                                         if (!product) return '-'
 
+                                        const normalize = (s: string | undefined | null) =>
+                                            s ? s.normalize('NFC').toLowerCase().trim() : ''
+
                                         const getRate = (unitName: string) => {
                                             if (!product) return 1
-                                            if (product.unit && unitName.toLowerCase() === product.unit.toLowerCase()) return 1
+                                            const normInput = normalize(unitName)
+                                            const normBase = normalize(product.unit)
+
+                                            if (normBase && normInput === normBase) return 1
 
                                             if (product.product_units) {
                                                 for (const pu of product.product_units) {
@@ -357,15 +366,14 @@ export function InboundItemsTable({
                                                             ? u.name
                                                             : `${u.name} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
 
-                                                        if (labelStr.toLowerCase() === unitName.toLowerCase()) {
+                                                        if (normalize(labelStr) === normInput) {
                                                             return pu.conversion_rate || 1
                                                         }
                                                     }
                                                 }
-                                                // Fallback
                                                 for (const pu of product.product_units) {
                                                     const u = units.find(unit => unit.id === pu.unit_id)
-                                                    if (u && u.name.toLowerCase() === unitName.toLowerCase()) {
+                                                    if (u && normalize(u.name) === normInput) {
                                                         return pu.conversion_rate || 1
                                                     }
                                                 }
@@ -373,17 +381,17 @@ export function InboundItemsTable({
                                             return 1
                                         }
 
+                                        const normTarget = normalize(targetUnit)
+                                        const normItemUnit = normalize(item.unit)
+                                        const normBaseUnit = normalize(product.unit)
+
                                         const sourceRate = getRate(item.unit)
                                         const targetRate = getRate(targetUnit)
 
-                                        const itemUnitName = item.unit.toLowerCase()
-                                        const targetUnitName = targetUnit.toLowerCase()
-                                        const baseUnitName = (product.unit || '').toLowerCase()
-
                                         if (sourceRate === 1 && targetRate === 1
-                                            && itemUnitName !== baseUnitName
-                                            && targetUnitName !== baseUnitName
-                                            && itemUnitName !== targetUnitName) {
+                                            && normItemUnit !== normBaseUnit
+                                            && normTarget !== normBaseUnit
+                                            && normItemUnit !== normTarget) {
                                             return '-'
                                         }
 
