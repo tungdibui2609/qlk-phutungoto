@@ -1,10 +1,11 @@
 'use client'
 
 import React from 'react'
-import { Boxes, X, Calendar, Package, Factory, MapPin, Truck, ShieldCheck, Layers, Info, Maximize2, QrCode as QrIcon, History } from 'lucide-react'
+import { Boxes, X, Calendar, Package, Factory, MapPin, Truck, ShieldCheck, Layers, Info, Maximize2, QrCode as QrIcon, History, Trash2 } from 'lucide-react'
 import { LotMergeHistoryModal } from './LotMergeHistoryModal'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
+import Protected from '@/components/auth/Protected'
 
 
 
@@ -12,10 +13,11 @@ interface LotDetailsModalProps {
     lot: Lot | null
     onClose: () => void
     onOpenQr: (lot: Lot) => void
+    onDelete?: (id: string) => void
     isModuleEnabled: (moduleId: string) => boolean
 }
 
-export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, onOpenQr, isModuleEnabled }) => {
+export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, onOpenQr, onDelete, isModuleEnabled }) => {
     const [historyData, setHistoryData] = React.useState<any>(null)
     const [isHighlighting, setIsHighlighting] = React.useState(false)
     const [selectedImage, setSelectedImage] = React.useState<string | null>(null)
@@ -324,7 +326,20 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3">
+                <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center gap-3">
+                    <div className="flex gap-2">
+                        {onDelete && (
+                            <Protected permission="lot.manage">
+                                <button
+                                    onClick={() => lot?.id && onDelete(lot.id)}
+                                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                >
+                                    <Trash2 size={18} />
+                                    <span>Xóa LOT</span>
+                                </button>
+                            </Protected>
+                        )}
+                    </div>
                     <button
                         onClick={onClose}
                         className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"

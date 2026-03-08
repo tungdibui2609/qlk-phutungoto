@@ -627,8 +627,8 @@ export function useLotManagement() {
         }
     }
 
-    async function handleDeleteLot(id: string) {
-        if (!await showConfirm('Bạn có chắc chắn muốn xóa LOT này?')) return
+    async function handleDeleteLot(id: string): Promise<boolean> {
+        if (!await showConfirm('Bạn có chắc chắn muốn xóa LOT này?')) return false
 
         const { error } = await supabase
             .from('lots')
@@ -637,6 +637,7 @@ export function useLotManagement() {
 
         if (error) {
             showToast('Lỗi xóa LOT: ' + error.message, 'error')
+            return false
         } else {
             // Clear position references immediately
             await supabase.from('positions').update({ lot_id: null }).eq('lot_id', id)
@@ -644,6 +645,7 @@ export function useLotManagement() {
             showToast('Đã xóa LOT thành công', 'success')
             // refetch for correct pagination
             fetchLots(false)
+            return true
         }
     }
 

@@ -109,6 +109,15 @@ export function LotPageManager() {
         setEditingLot(null)
     }
 
+    const handleDelete = async (id: string) => {
+        const success = await handleDeleteLot(id)
+        if (success !== false) {
+            setViewingLot(null)
+            setShowCreateForm(false)
+            setEditingLot(null)
+        }
+    }
+
     // Handlers for new actions
     const handleMerge = (lot: Lot) => {
         setMergingLot(lot)
@@ -191,6 +200,7 @@ export function LotPageManager() {
                 editingLot={editingLot}
                 onClose={() => setShowCreateForm(false)}
                 onSuccess={handleSuccess}
+                onDelete={handleDelete}
                 products={products}
                 suppliers={suppliers}
                 qcList={qcList}
@@ -251,7 +261,7 @@ export function LotPageManager() {
                     isModuleEnabled={isModuleEnabled}
                     isUtilityEnabled={isUtilityEnabled}
                     onEdit={handleEdit}
-                    onDelete={handleDeleteLot}
+                    onDelete={handleDelete}
                     onView={setViewingLot}
                     onToggleStar={handleToggleStar}
                     onQr={setQrLot}
@@ -339,6 +349,7 @@ export function LotPageManager() {
                     setQrLot(lot as any);
                     setViewingLot(null);
                 }}
+                onDelete={handleDelete}
                 isModuleEnabled={isModuleEnabled}
             />
 
