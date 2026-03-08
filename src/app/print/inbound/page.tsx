@@ -739,16 +739,6 @@ function InboundPrintContent() {
                             <th colSpan={hasModule('inbound_conversion') && targetUnit ? (hasModule('inbound_financials') ? 3 : 2) : (hasModule('inbound_financials') ? 2 : 1)} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center`}>Số lượng</th>
                             {!isInternal && hasModule('inbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-24`}>Đơn giá</th>}
                             {!isInternal && hasModule('inbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-28`}>Thành tiền</th>}
-                            {isInternal && (
-                                <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-16">
-                                    <EditableText
-                                        value={editNoteTitle}
-                                        onChange={setEditNoteTitle}
-                                        className="text-center font-bold min-w-0 w-full"
-                                        isSnapshot={isSnapshotMode}
-                                    />
-                                </th>
-                            )}
                         </tr>
                         <tr className="bg-gray-100">
                             {hasModule('inbound_financials') && <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-20 align-top`}>Theo CT</th>}
@@ -769,7 +759,6 @@ function InboundPrintContent() {
                             )}
                             {!isInternal && hasModule('inbound_financials') && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('inbound_conversion') && targetUnit ? '4' : '3'}</th>}
                             {!isInternal && hasModule('inbound_financials') && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('inbound_conversion') && targetUnit ? '5' : '4'}</th>}
-                            {isInternal && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('inbound_conversion') && targetUnit ? (hasModule('inbound_financials') ? '4' : '3') : (hasModule('inbound_financials') ? '3' : '2')}</th>}
                         </tr>
                     </thead>
                     <tbody>
@@ -883,16 +872,6 @@ function InboundPrintContent() {
                                     {!isInternal && hasModule('inbound_financials') && (
                                         <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-right uppercase`}>
                                             {totalPrice > 0 ? totalPrice.toLocaleString('vi-VN') : '-'}
-                                        </td>
-                                    )}
-                                    {isInternal && (
-                                        <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-xs text-gray-600`}>
-                                            <EditableText
-                                                value={editItemNotes[item.id] !== undefined ? editItemNotes[item.id] : (item.note || '')}
-                                                onChange={(val: string) => setEditItemNotes(prev => ({ ...prev, [item.id]: val }))}
-                                                className="w-full min-w-0"
-                                                isSnapshot={isSnapshotMode}
-                                            />
                                         </td>
                                     )}
                                 </tr>
@@ -1043,34 +1022,6 @@ function InboundPrintContent() {
                     </div>
                 </div>
                 <div>
-                    <div className={`text-sm italic text-right mb-1 ${printSize === 'A5' ? 'print:pr-10' : ''}`}>
-                        <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
-                            Ngày
-                            <input
-                                type="text"
-                                value={signDay}
-                                onChange={(e) => setSignDay(e.target.value)}
-                                className="w-8 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-1 font-bold"
-                            />
-                            tháng
-                            <input
-                                type="text"
-                                value={signMonth}
-                                onChange={(e) => setSignMonth(e.target.value)}
-                                className="w-8 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-1 font-bold"
-                            />
-                            năm
-                            <input
-                                type="text"
-                                value={signYear}
-                                onChange={(e) => setSignYear(e.target.value)}
-                                className="w-12 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-1 font-bold"
-                            />
-                        </span>
-                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>
-                            Ngày {signDay || '\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0'} tháng {signMonth || '\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0'} năm {signYear || ''}
-                        </span>
-                    </div>
                     <div className="font-semibold">
                         <input
                             type="text"
@@ -1115,7 +1066,7 @@ function InboundPrintContent() {
                         max-width: 210mm !important;
                         min-width: 210mm !important;
                         margin: 0 !important;
-                        padding: 2mm 5mm 5mm 5mm !important;
+                        padding: 2mm 10mm 5mm 5mm !important;
                         box-sizing: border-box !important;
                         box-shadow: none !important;
                         border: none !important;
@@ -1127,9 +1078,13 @@ function InboundPrintContent() {
                         line-height: 1.1 !important;
                     }
                     #print-ready h1 {
-                        font-size: 16px !important;
+                        font-size: 14px !important;
                         margin-top: 0px !important;
                         margin-bottom: 2px !important;
+                    }
+                    #print-ready h1 + div,
+                    #print-ready h1 + div + div {
+                        font-size: 11px !important;
                     }
                     
                     /* Info section compact */
@@ -1149,12 +1104,11 @@ function InboundPrintContent() {
                         table-layout: fixed !important;
                     }
                     #print-ready table th:nth-child(1), #print-ready table td:nth-child(1) { width: 8mm !important; } /* STT */
-                    #print-ready table th:nth-child(2), #print-ready table td:nth-child(2) { width: 60mm !important; } /* Cột B - Tên SP (Giảm thêm) */
+                    #print-ready table th:nth-child(2), #print-ready table td:nth-child(2) { width: 65mm !important; } /* Tên SP (Điều chỉnh lại để nhường chỗ cho Số lượng) */
                     #print-ready table th:nth-child(3), #print-ready table td:nth-child(3) { width: 25mm !important; } /* Quy cách */
                     #print-ready table th:nth-child(4), #print-ready table td:nth-child(4) { width: 15mm !important; } /* Đơn vị */
-                    #print-ready table th:nth-child(5), #print-ready table td:nth-child(5) { width: 25mm !important; } /* Số lượng/Thực xuất 1 */
-                    #print-ready table th:nth-child(6), #print-ready table td:nth-child(6) { width: 25mm !important; } /* Quy đổi 2 */
-                    #print-ready table th:nth-child(7), #print-ready table td:nth-child(7) { width: auto !important; } /* Ghi chú 3 */
+                    #print-ready table th:nth-child(5), #print-ready table td:nth-child(5) { width: 35mm !important; } /* Số lượng (Tăng độ rộng) */
+                    #print-ready table th:nth-child(6), #print-ready table td:nth-child(6) { width: 35mm !important; } /* Quy đổi (Tăng độ rộng) */
                     /* Remove ALL fixed Tailwind width classes on table cells */
                     #print-ready table th {
                         font-size: 11px !important;
@@ -1186,6 +1140,7 @@ function InboundPrintContent() {
                         break-inside: avoid !important;
                         gap: 1px !important;
                         margin-top: 2px !important;
+                        padding-right: 15mm !important; /* Shift to left */
                     }
                     #print-ready .pb-6, #print-ready .pb-10 {
                         padding-bottom: 0px !important;

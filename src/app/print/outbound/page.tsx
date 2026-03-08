@@ -650,16 +650,6 @@ function OutboundPrintContent() {
                         <span className={`hidden print:inline ml-2 flex-1 font-bold break-words whitespace-normal ${isSnapshotMode ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
                     </div>
                 </div>
-                <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
-                    <span className="text-gray-600 shrink-0 mt-0.5">- Ghi chú:</span>
-                    <input
-                        type="text"
-                        value={editNote}
-                        onChange={(e) => setEditNote(e.target.value)}
-                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
-                    />
-                    <span className={`hidden print:inline ml-2 flex-1 font-bold break-words whitespace-normal ${isSnapshotMode ? 'inline' : ''}`}>{editNote || '\u00A0'}</span>
-                </div>
                 <div className={`flex items-center gap-6 ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
                     <div className="flex items-center">
                         <span className="text-gray-600 shrink-0">- Biển số xe:</span>
@@ -692,6 +682,16 @@ function OutboundPrintContent() {
                         <span className={`hidden print:inline ml-2 min-w-[50px] font-bold ${isSnapshotMode ? 'inline' : ''}`}>{editSealNumber || '\u00A0'}</span>
                     </div>
                 </div>
+                <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
+                    <span className="text-gray-600 shrink-0 mt-0.5">- Ghi chú:</span>
+                    <input
+                        type="text"
+                        value={editNote}
+                        onChange={(e) => setEditNote(e.target.value)}
+                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                    />
+                    <span className={`hidden print:inline ml-2 flex-1 font-bold break-words whitespace-normal ${isSnapshotMode ? 'inline' : ''}`}>{editNote || '\u00A0'}</span>
+                </div>
             </div>
 
             <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-0.5' : 'print:mt-1'} w-full`}>
@@ -712,16 +712,6 @@ function OutboundPrintContent() {
                             <th colSpan={hasModule('outbound_conversion') && targetUnit ? (hasModule('outbound_financials') ? 3 : 2) : (hasModule('outbound_financials') ? 2 : 1)} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center`}>Số lượng</th>
                             {!isInternal && hasModule('outbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-24`}>Đơn giá</th>}
                             {!isInternal && hasModule('outbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-28`}>Thành tiền</th>}
-                            {isInternal && (
-                                <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-16">
-                                    <EditableText
-                                        value={editNoteTitle}
-                                        onChange={setEditNoteTitle}
-                                        className="text-center font-bold min-w-0 w-full"
-                                        isSnapshot={isSnapshotMode}
-                                    />
-                                </th>
-                            )}
                         </tr>
                         <tr className="bg-gray-100">
                             {hasModule('outbound_financials') && <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-20 align-top`}>Yêu cầu</th>}
@@ -742,7 +732,6 @@ function OutboundPrintContent() {
                             )}
                             {!isInternal && hasModule('outbound_financials') && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('outbound_conversion') && targetUnit ? '4' : '3'}</th>}
                             {!isInternal && hasModule('outbound_financials') && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('outbound_conversion') && targetUnit ? '5' : '4'}</th>}
-                            {isInternal && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('outbound_conversion') && targetUnit ? (hasModule('outbound_financials') ? '4' : '3') : (hasModule('outbound_financials') ? '3' : '2')}</th>}
                         </tr>
                     </thead>
                     <tbody>
@@ -856,16 +845,6 @@ function OutboundPrintContent() {
                                             {totalPrice > 0 ? totalPrice.toLocaleString('vi-VN') : '-'}
                                         </td>
                                     )}
-                                    {isInternal && (
-                                        <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-xs text-gray-600`}>
-                                            <EditableText
-                                                value={editItemNotes[item.id] !== undefined ? editItemNotes[item.id] : (item.note || '')}
-                                                onChange={(val: string) => setEditItemNotes(prev => ({ ...prev, [item.id]: val }))}
-                                                className="w-full min-w-0"
-                                                isSnapshot={isSnapshotMode}
-                                            />
-                                        </td>
-                                    )}
                                 </tr>
                             )
                         })}
@@ -935,7 +914,6 @@ function OutboundPrintContent() {
                                     {items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0).toLocaleString('vi-VN')}
                                 </td>
                             )}
-                            {isInternal && <td className="border border-gray-400 px-2 py-1.5 text-center"></td>}
                         </tr>
                     </tbody>
                 </table>
@@ -967,26 +945,6 @@ function OutboundPrintContent() {
             </div>
 
             <div className={`mt-0 ${printSize === 'A5' ? 'print:mt-1 print:pb-0' : 'print:-mt-1'} signature-grid grid ${printSize === 'A5' ? 'grid-cols-5' : 'grid-cols-[1fr_1fr_1fr_1fr_1.4fr]'} ${printSize === 'A5' ? 'gap-0.5' : 'gap-3'} text-center text-sm items-end ${printSize === 'A5' ? 'print:break-inside-avoid' : ''}`}>
-                {/* 1. Ngày tháng năm row */}
-                <div className="invisible">Ngày ... tháng ... năm ...</div>
-                <div className="invisible">Ngày ... tháng ... năm ...</div>
-                <div className="invisible">Ngày ... tháng ... năm ...</div>
-                <div className={`col-span-2 text-sm italic text-right whitespace-nowrap pr-8`}>
-                    <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
-                        Ngày
-                        <input type="text" value={signDay} onChange={(e) => setSignDay(e.target.value)}
-                            className="w-5 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-0.5 font-bold" />
-                        tháng
-                        <input type="text" value={signMonth} onChange={(e) => setSignMonth(e.target.value)}
-                            className="w-5 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-0.5 font-bold" />
-                        năm
-                        <input type="text" value={signYear} onChange={(e) => setSignYear(e.target.value)}
-                            className="w-11 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 mx-0.5 font-bold" />
-                    </span>
-                    <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>
-                        Ngày {signDay || '\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0'} tháng {signMonth || '\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0'} năm {signYear || ''}
-                    </span>
-                </div>
 
                 {/* 2. Chức danh row */}
                 <div className="font-semibold print:pt-3">
@@ -1086,7 +1044,7 @@ function OutboundPrintContent() {
                         max-width: 210mm !important;
                         min-width: 210mm !important;
                         margin: 0 !important;
-                        padding: 2mm 5mm 5mm 5mm !important;
+                        padding: 2mm 10mm 5mm 5mm !important;
                         box-sizing: border-box !important;
                         box-shadow: none !important;
                         border: none !important;
@@ -1098,9 +1056,13 @@ function OutboundPrintContent() {
                         line-height: 1.1 !important;
                     }
                     #print-ready h1 {
-                        font-size: 16px !important;
+                        font-size: 14px !important;
                         margin-top: 0px !important;
                         margin-bottom: 2px !important;
+                    }
+                    #print-ready h1 + div,
+                    #print-ready h1 + div + div {
+                        font-size: 11px !important;
                     }
                     
                     /* Info section compact */
@@ -1120,12 +1082,11 @@ function OutboundPrintContent() {
                         table-layout: fixed !important; /* Switch to fixed to control column widths */
                     }
                     #print-ready table th:nth-child(1), #print-ready table td:nth-child(1) { width: 8mm !important; } /* STT */
-                    #print-ready table th:nth-child(2), #print-ready table td:nth-child(2) { width: 60mm !important; } /* Cột B - Tên SP (Giảm thêm) */
+                    #print-ready table th:nth-child(2), #print-ready table td:nth-child(2) { width: 65mm !important; } /* Tên SP (Điều chỉnh lại để nhường chỗ cho Số lượng) */
                     #print-ready table th:nth-child(3), #print-ready table td:nth-child(3) { width: 25mm !important; } /* Quy cách */
                     #print-ready table th:nth-child(4), #print-ready table td:nth-child(4) { width: 15mm !important; } /* Đơn vị */
-                    #print-ready table th:nth-child(5), #print-ready table td:nth-child(5) { width: 25mm !important; } /* Số lượng/Thực xuất 1 */
-                    #print-ready table th:nth-child(6), #print-ready table td:nth-child(6) { width: 25mm !important; } /* Quy đổi 2 */
-                    #print-ready table th:nth-child(7), #print-ready table td:nth-child(7) { width: auto !important; } /* Ghi chú 3 */
+                    #print-ready table th:nth-child(5), #print-ready table td:nth-child(5) { width: 35mm !important; } /* Số lượng (Tăng độ rộng) */
+                    #print-ready table th:nth-child(6), #print-ready table td:nth-child(6) { width: 35mm !important; } /* Quy đổi (Tăng độ rộng) */
                     /* Remove ALL fixed Tailwind width classes on table cells */
                     #print-ready table th {
                         font-size: 11px !important;
@@ -1157,6 +1118,7 @@ function OutboundPrintContent() {
                         break-inside: avoid !important;
                         gap: 1px !important;
                         margin-top: 2px !important;
+                        padding-right: 15mm !important; /* Shift to left */
                     }
                     #print-ready .pb-6, #print-ready .pb-10 {
                         padding-bottom: 0px !important;
