@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabaseClient'
 import ProductForm from '@/components/inventory/ProductForm'
 import { Database } from '@/lib/database.types'
 import { Loader2 } from 'lucide-react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, usePathname, useRouter } from 'next/navigation'
 
 type Product = Database['public']['Tables']['products']['Row']
 
@@ -13,6 +13,15 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     const { id } = use(params)
     const searchParams = useSearchParams()
     const isViewMode = searchParams.get('view') === 'true'
+    const pathname = usePathname()
+    const router = useRouter()
+    const isSanxuat = pathname?.startsWith('/sanxuat') || false
+
+    useEffect(() => {
+        if (isSanxuat) {
+            router.push('/sanxuat/products')
+        }
+    }, [isSanxuat, router])
 
     const [product, setProduct] = useState<Product | null>(null)
     const [loading, setLoading] = useState(true)

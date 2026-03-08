@@ -1,7 +1,7 @@
 import { MapPin, Layers, Truck, ShieldCheck, Info, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy } from 'lucide-react'
 import { useState } from 'react'
 import { Lot } from '../_hooks/useLotManagement'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { LotMergeHistoryModal } from '@/components/warehouse/lots/LotMergeHistoryModal'
 import Protected from '@/components/auth/Protected'
@@ -25,10 +25,12 @@ interface LotCardProps {
 
 export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone, onAssignLocation }: LotCardProps) {
     const router = useRouter()
+    const pathname = usePathname()
     const [isExpanded, setIsExpanded] = useState(false)
     const [historyData, setHistoryData] = useState<any>(null)
     const [isHighlighting, setIsHighlighting] = useState(false)
     const showInternal = isModuleEnabled('internal_products')
+    const isSanxuat = pathname.startsWith('/sanxuat')
 
     // Trigger highlight when positions change
     const positionsHash = JSON.stringify(lot.positions || [])
@@ -126,8 +128,12 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                     </div>
                     {lot.positions && lot.positions.length > 0 ? (
                         <button
-                            onClick={() => onAssignLocation ? onAssignLocation(lot) : router.push(`/warehouses/map?assignLotId=${lot.id}`)}
-                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-[10px] font-bold border border-orange-200 dark:border-orange-800 hover:bg-orange-200 dark:hover:bg-orange-900/60 transition-colors shadow-sm"
+                            onClick={() => {
+                                if (!isSanxuat) {
+                                    onAssignLocation ? onAssignLocation(lot) : router.push(`/warehouses/map?assignLotId=${lot.id}`)
+                                }
+                            }}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-[10px] font-bold border border-orange-200 dark:border-orange-800 ${!isSanxuat ? 'hover:bg-orange-200 dark:hover:bg-orange-900/60 cursor-pointer' : 'opacity-70 cursor-default'} transition-colors shadow-sm`}
                         >
                             <MapPin size={12} />
                             {lot.positions[0].code}
@@ -135,8 +141,12 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                         </button>
                     ) : (
                         <button
-                            onClick={() => onAssignLocation ? onAssignLocation(lot) : router.push(`/warehouses/map?assignLotId=${lot.id}`)}
-                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white dark:bg-zinc-800 text-zinc-400 text-[10px] font-bold border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
+                            onClick={() => {
+                                if (!isSanxuat) {
+                                    onAssignLocation ? onAssignLocation(lot) : router.push(`/warehouses/map?assignLotId=${lot.id}`)
+                                }
+                            }}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white dark:bg-zinc-800 text-zinc-400 text-[10px] font-bold border border-zinc-200 dark:border-zinc-700 ${!isSanxuat ? 'hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer' : 'opacity-70 cursor-default'} transition-colors`}
                         >
                             <MapPin size={12} />
                             Chưa gán
@@ -415,34 +425,38 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                         >
                             <Tag size={16} />
                         </button>
-                        <button
-                            onClick={() => onMerge?.(lot)}
-                            className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all border border-transparent"
-                            title="Gộp Lot"
-                        >
-                            <Combine size={16} />
-                        </button>
-                        <button
-                            onClick={() => onSplit?.(lot)}
-                            className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all border border-transparent"
-                            title="Tách Lot"
-                        >
-                            <Split size={16} />
-                        </button>
-                        <button
-                            onClick={() => onExport?.(lot)}
-                            className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all border border-transparent"
-                            title="Xuất Lot"
-                        >
-                            <ArrowUpRight size={16} />
-                        </button>
-                        <button
-                            onClick={() => onBulkClone?.(lot)}
-                            className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all border border-transparent"
-                            title="Nhân bản Lot"
-                        >
-                            <Copy size={16} />
-                        </button>
+                        {!isSanxuat && (
+                            <>
+                                <button
+                                    onClick={() => onMerge?.(lot)}
+                                    className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all border border-transparent"
+                                    title="Gộp Lot"
+                                >
+                                    <Combine size={16} />
+                                </button>
+                                <button
+                                    onClick={() => onSplit?.(lot)}
+                                    className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all border border-transparent"
+                                    title="Tách Lot"
+                                >
+                                    <Split size={16} />
+                                </button>
+                                <button
+                                    onClick={() => onExport?.(lot)}
+                                    className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all border border-transparent"
+                                    title="Xuất Lot"
+                                >
+                                    <ArrowUpRight size={16} />
+                                </button>
+                                <button
+                                    onClick={() => onBulkClone?.(lot)}
+                                    className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all border border-transparent"
+                                    title="Nhân bản Lot"
+                                >
+                                    <Copy size={16} />
+                                </button>
+                            </>
+                        )}
                     </Protected>
                 </div>
 
@@ -455,20 +469,24 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                         <Eye size={16} />
                     </button>
                     <Protected permission="lot.manage">
-                        <button
-                            onClick={() => onEdit(lot)}
-                            className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
-                            title="Sửa"
-                        >
-                            <Edit size={16} />
-                        </button>
-                        <button
-                            onClick={() => onDelete(lot.id)}
-                            className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                            title="Xóa"
-                        >
-                            <Trash2 size={16} />
-                        </button>
+                        {!isSanxuat && (
+                            <button
+                                onClick={() => onEdit(lot)}
+                                className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+                                title="Sửa"
+                            >
+                                <Edit size={16} />
+                            </button>
+                        )}
+                        {!isSanxuat && (
+                            <button
+                                onClick={() => onDelete(lot.id)}
+                                className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                title="Xóa"
+                            >
+                                <Trash2 size={16} />
+                            </button>
+                        )}
                     </Protected>
                 </div>
             </div>

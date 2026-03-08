@@ -124,6 +124,12 @@ const MemoizedPositionCard = React.memo(function PositionCard({
                             </div>
                         </>
                     ) : null}
+                    {/* Secondary Codes (Mã phụ) */}
+                    {lot.tags && lot.tags.length > 0 && (
+                        <div className="text-[8px] text-purple-600 dark:text-purple-400 font-semibold text-center truncate border-t border-slate-100 dark:border-slate-700/50 pt-0.5 mt-0.5" title={lot.tags.join(', ')}>
+                            {lot.tags.join(', ')}
+                        </div>
+                    )}
                 </div>
             ) : (
                 <div className="text-slate-400 italic mt-auto text-[10px] text-center mb-auto pt-2">Trống</div>

@@ -8,12 +8,15 @@ import PageHeader from '@/components/ui/PageHeader'
 import EmptyState from '@/components/ui/EmptyState'
 import { useListingData } from '@/hooks/useListingData'
 import InternalProductModal from '@/components/inventory/internal-products/InternalProductModal'
+import { usePathname } from 'next/navigation'
 
 type Product = Database['public']['Tables']['products']['Row']
 
 export default function InternalProductsPage() {
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
     const [isModalOpen, setIsModalOpen] = useState(false)
+    const pathname = usePathname()
+    const isSanxuat = pathname?.startsWith('/sanxuat') || false
 
     const {
         filteredData: products,
@@ -91,8 +94,10 @@ export default function InternalProductsPage() {
                                     return (
                                         <tr
                                             key={item.id}
-                                            onClick={() => handleEdit(item)}
-                                            className="group border-b border-stone-100 hover:bg-indigo-50/30 transition-colors cursor-pointer"
+                                            onClick={() => {
+                                                if (!isSanxuat) handleEdit(item)
+                                            }}
+                                            className={`group border-b border-stone-100 transition-colors ${!isSanxuat ? 'hover:bg-indigo-50/30 cursor-pointer' : 'hover:bg-stone-50/30'}`}
                                         >
                                             <td className="p-5 text-stone-400 text-xs font-black">
                                                 {(index + 1).toString().padStart(2, '0')}
@@ -128,13 +133,15 @@ export default function InternalProductsPage() {
                                             </td>
                                             <td className="p-5 text-right flex justify-end">
                                                 <Protected permission="product.manage">
-                                                    <button
-                                                        onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleEdit(item); }}
-                                                        className="p-2.5 rounded-xl bg-white text-stone-400 hover:text-indigo-600 hover:bg-indigo-50 hover:shadow-sm border border-stone-100 hover:border-indigo-100 transition-all font-bold opacity-0 group-hover:opacity-100"
-                                                        title="Cập nhật mã nội bộ"
-                                                    >
-                                                        <Edit2 size={18} />
-                                                    </button>
+                                                    {!isSanxuat && (
+                                                        <button
+                                                            onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleEdit(item); }}
+                                                            className="p-2.5 rounded-xl bg-white text-stone-400 hover:text-indigo-600 hover:bg-indigo-50 hover:shadow-sm border border-stone-100 hover:border-indigo-100 transition-all font-bold opacity-0 group-hover:opacity-100"
+                                                            title="Cập nhật mã nội bộ"
+                                                        >
+                                                            <Edit2 size={18} />
+                                                        </button>
+                                                    )}
                                                 </Protected>
                                             </td>
                                         </tr>

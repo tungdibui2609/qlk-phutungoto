@@ -28,25 +28,21 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
         let result = positions
 
         // Filter by search term
+        // Supports:
+        //   - Space: multiple position codes (OR) e.g. "K1D1A01T301 K1D1B02T401"
+        //   - Semicolon (;): multiple product/SKU queries (OR) e.g. "xoài;chanh"
+        //   - Ampersand (&): product + tag condition (AND) e.g. "xoài&keo vàng"
         if (searchTerm) {
-            const term = searchTerm.toLowerCase().trim()
-            if (term) {
-                result = result.filter(p => {
-                    // 1. Position Code Match
+            const trimmed = searchTerm.trim()
+            if (trimmed) {
+                // Helper: match position code, lot code, product, supplier, qc, tags (everything)
+                const matchesAll = (p: PositionWithZone, term: string): boolean => {
                     if (p.code.toLowerCase().includes(term)) return true
-
                     const lot = p.lot_id ? lotInfo[p.lot_id] : null
                     if (!lot) return false
-
-                    // 2. Targeted Lot Fields Search
-                    // Lot Code
                     if (lot.code && lot.code.toLowerCase().includes(term)) return true
-
-                    // Supplier & QC
                     if (lot.supplier_name && lot.supplier_name.toLowerCase().includes(term)) return true
                     if (lot.qc_name && lot.qc_name.toLowerCase().includes(term)) return true
-
-                    // Items (Products, SKUs, Tags)
                     if (lot.items && Array.isArray(lot.items)) {
                         for (const item of lot.items) {
                             if (item.product_name && item.product_name.toLowerCase().includes(term)) return true
@@ -58,17 +54,87 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
                             }
                         }
                     }
-
-                    // Fallback for single product structure if items array missing/empty
                     if (lot.products) {
                         if (lot.products.name && lot.products.name.toLowerCase().includes(term)) return true
                         if (lot.products.internal_name && lot.products.internal_name.toLowerCase().includes(term)) return true
                         if (lot.products.sku && lot.products.sku.toLowerCase().includes(term)) return true
                         if (lot.products.internal_code && lot.products.internal_code.toLowerCase().includes(term)) return true
                     }
-
                     return false
-                })
+                }
+
+                // Helper: match only product-related fields (name, SKU, internal code, lot code, position code)
+                const matchesProduct = (p: PositionWithZone, term: string): boolean => {
+                    if (p.code.toLowerCase().includes(term)) return true
+                    const lot = p.lot_id ? lotInfo[p.lot_id] : null
+                    if (!lot) return false
+                    if (lot.code && lot.code.toLowerCase().includes(term)) return true
+                    if (lot.supplier_name && lot.supplier_name.toLowerCase().includes(term)) return true
+                    if (lot.qc_name && lot.qc_name.toLowerCase().includes(term)) return true
+                    if (lot.items && Array.isArray(lot.items)) {
+                        for (const item of lot.items) {
+                            if (item.product_name && item.product_name.toLowerCase().includes(term)) return true
+                            if (item.internal_name && item.internal_name.toLowerCase().includes(term)) return true
+                            if (item.sku && item.sku.toLowerCase().includes(term)) return true
+                            if (item.internal_code && item.internal_code.toLowerCase().includes(term)) return true
+                        }
+                    }
+                    if (lot.products) {
+                        if (lot.products.name && lot.products.name.toLowerCase().includes(term)) return true
+                        if (lot.products.internal_name && lot.products.internal_name.toLowerCase().includes(term)) return true
+                        if (lot.products.sku && lot.products.sku.toLowerCase().includes(term)) return true
+                        if (lot.products.internal_code && lot.products.internal_code.toLowerCase().includes(term)) return true
+                    }
+                    return false
+                }
+
+                // Helper: match only tags (mã phụ)
+                const matchesTag = (p: PositionWithZone, term: string): boolean => {
+                    const lot = p.lot_id ? lotInfo[p.lot_id] : null
+                    if (!lot) return false
+                    if (lot.tags && Array.isArray(lot.tags)) {
+                        if (lot.tags.some((t: string) => t.toLowerCase().includes(term))) return true
+                    }
+                    if (lot.items && Array.isArray(lot.items)) {
+                        for (const item of lot.items) {
+                            if (item.tags && Array.isArray(item.tags)) {
+                                if (item.tags.some((t: string) => t.toLowerCase().includes(term))) return true
+                            }
+                        }
+                    }
+                    return false
+                }
+
+                // Determine search mode based on separators present
+                const hasSemicolon = trimmed.includes(';')
+                const hasAmpersand = trimmed.includes('&')
+
+                if (hasSemicolon || hasAmpersand) {
+                    // Advanced mode: split by ";" for OR groups
+                    const queries = trimmed.split(';').map(q => q.trim()).filter(Boolean)
+
+                    result = result.filter(p => {
+                        return queries.some(query => {
+                            // Check for "&" (AND: product & tag)
+                            if (query.includes('&')) {
+                                const parts = query.split('&').map(s => s.trim().toLowerCase())
+                                const productTerm = parts[0]
+                                const tagTerm = parts.slice(1).join('&')
+                                if (!productTerm && !tagTerm) return false
+                                const productMatch = productTerm ? matchesProduct(p, productTerm) : true
+                                const tagMatch = tagTerm ? matchesTag(p, tagTerm) : true
+                                return productMatch && tagMatch
+                            }
+                            // Plain term (no &), match everything
+                            const term = query.toLowerCase()
+                            return matchesAll(p, term)
+                        })
+                    })
+                } else {
+                    // Simple mode: space-separated terms (OR for position codes)
+                    const rawTerms = trimmed.toLowerCase().split(/\s+/).filter(Boolean)
+                    result = result.filter(p => rawTerms.some(term => matchesAll(p, term)))
+                }
             }
         }
 

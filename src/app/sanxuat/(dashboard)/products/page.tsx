@@ -14,11 +14,10 @@ import PageHeader from '@/components/ui/PageHeader'
 import EmptyState from '@/components/ui/EmptyState'
 import { useListingData } from '@/hooks/useListingData'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 
 type Product = Database['public']['Tables']['products']['Row']
 
-export default function InventoryPage() {
+export default function SanxuatProductsPage() {
     const { showToast, showConfirm } = useToast()
     const [categories, setCategories] = useState<any[]>([])
     const [selectedCategory, setSelectedCategory] = useState<string>('all')
@@ -26,10 +25,7 @@ export default function InventoryPage() {
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
     const [isModalOpen, setIsModalOpen] = useState(false)
-    const pathname = usePathname()
-    const isSanxuat = pathname.startsWith('/sanxuat')
 
-    // Load Units dictionary & Categories
     useEffect(() => {
         async function fetchCommonData() {
             const [unitsRes, catsRes] = await Promise.all([
@@ -89,16 +85,15 @@ export default function InventoryPage() {
     return (
         <div className="space-y-6">
             <PageHeader
-                title="Sản phẩm"
-                subtitle="Products"
-                description="Quản lý danh mục và thông tin linh kiện, phụ tùng"
+                title="Sản phẩm dùng chung"
+                subtitle="Products DB"
+                description="Danh sách sản phẩm lưu trữ trên toàn hệ thống"
                 icon={Package}
-                actionLink={!isSanxuat ? "/products/new" : undefined}
-                actionText={!isSanxuat ? "Thêm Sản phẩm" : undefined}
+                actionLink="/sanxuat/products/new"
+                actionText="Thêm Sản phẩm"
                 permission="product.manage"
             />
 
-            {/* FILTERS & SEARCH */}
             <div className="bg-white p-5 rounded-[24px] flex flex-col sm:flex-row gap-4 border border-stone-200 shadow-sm">
                 <div className="relative flex-1">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={20} />
@@ -107,7 +102,7 @@ export default function InventoryPage() {
                         placeholder="Tìm kiếm theo Tên, SKU, Mã phụ tùng..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-12 pr-4 py-3 rounded-2xl bg-stone-50 border border-stone-200 text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-100 transition-all font-medium"
+                        className="w-full pl-12 pr-4 py-3 rounded-2xl bg-stone-50 border border-stone-200 text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 transition-all font-medium"
                     />
                 </div>
 
@@ -118,7 +113,7 @@ export default function InventoryPage() {
                     <select
                         value={selectedCategory}
                         onChange={(e) => setSelectedCategory(e.target.value)}
-                        className="w-full pl-10 pr-8 py-3 rounded-2xl bg-stone-50 border border-stone-200 text-stone-800 focus:outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-100 transition-all font-bold appearance-none cursor-pointer"
+                        className="w-full pl-10 pr-8 py-3 rounded-2xl bg-stone-50 border border-stone-200 text-stone-800 focus:outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 transition-all font-bold appearance-none cursor-pointer"
                     >
                         <option value="all">Tất cả danh mục</option>
                         {categories.map(c => (
@@ -133,7 +128,6 @@ export default function InventoryPage() {
                 </div>
             </div>
 
-            {/* TABLE (Desktop) */}
             <div className="hidden md:block bg-white rounded-[32px] overflow-hidden border border-stone-200 shadow-sm">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
@@ -149,7 +143,7 @@ export default function InventoryPage() {
                             {loading ? (
                                 <tr>
                                     <td colSpan={4} className="p-20 text-center">
-                                        <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                                        <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
                                         <p className="text-stone-400 font-bold uppercase tracking-widest text-xs">Đang tải...</p>
                                     </td>
                                 </tr>
@@ -159,7 +153,7 @@ export default function InventoryPage() {
                                         <EmptyState
                                             icon={Package}
                                             title="Không tìm thấy sản phẩm"
-                                            description={searchTerm || selectedCategory !== 'all' ? `Không có kết quả nào phù hợp` : "Hãy bắt đầu thêm sản phẩm của bạn."}
+                                            description={searchTerm || selectedCategory !== 'all' ? `Không có kết quả nào phù hợp` : "Chưa có dữ liệu sản phẩm"}
                                         />
                                     </td>
                                 </tr>
@@ -168,7 +162,7 @@ export default function InventoryPage() {
                                     <tr
                                         key={item.id}
                                         onClick={() => handleViewProduct(item)}
-                                        className="group border-b border-stone-100 hover:bg-orange-50/30 transition-colors cursor-pointer"
+                                        className="group border-b border-stone-100 hover:bg-emerald-50/50 transition-colors cursor-pointer"
                                     >
                                         <td className="p-5 text-stone-400 text-xs font-black">
                                             {(index + 1).toString().padStart(2, '0')}
@@ -190,7 +184,7 @@ export default function InventoryPage() {
                                                 <div>
                                                     <p className="font-bold text-stone-800 text-base line-clamp-1">{item.name}</p>
                                                     <div className="flex gap-2 mt-2 flex-wrap">
-                                                        <span className="text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-orange-100 text-orange-700 border border-orange-200 shadow-sm shadow-orange-500/5">
+                                                        <span className="text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-emerald-100 text-emerald-700 border border-emerald-200">
                                                             {item.sku}
                                                         </span>
                                                         {item.part_number && (
@@ -221,29 +215,25 @@ export default function InventoryPage() {
                                             <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <button
                                                     onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleViewProduct(item); }}
-                                                    className="p-2.5 rounded-xl bg-white text-stone-400 hover:text-blue-600 hover:shadow-sm border border-stone-100 hover:border-blue-100 transition-all font-bold"
+                                                    className="p-2.5 rounded-xl bg-white text-stone-400 hover:text-emerald-600 hover:shadow-sm border border-stone-100 hover:border-emerald-100 transition-all font-bold"
                                                     title="Xem chi tiết"
                                                 >
                                                     <Eye size={18} />
                                                 </button>
                                                 <Protected permission="product.manage">
-                                                    {!isSanxuat && (
-                                                        <Link
-                                                            href={`/products/${item.id}`}
-                                                            className="p-2.5 rounded-xl bg-white text-stone-400 hover:text-orange-600 hover:shadow-sm border border-stone-100 hover:border-orange-100 transition-all font-bold"
-                                                            onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                                                        >
-                                                            <Edit size={18} />
-                                                        </Link>
-                                                    )}
-                                                    {!isSanxuat && (
-                                                        <button
-                                                            onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleDelete(item.id); }}
-                                                            className="p-2.5 rounded-xl bg-white text-stone-400 hover:text-red-600 hover:shadow-sm border border-stone-100 hover:border-red-100 transition-all font-bold"
-                                                        >
-                                                            <Trash2 size={18} />
-                                                        </button>
-                                                    )}
+                                                    <Link
+                                                        href={`/sanxuat/products/${item.id}`}
+                                                        className="p-2.5 rounded-xl bg-white text-stone-400 hover:text-emerald-600 hover:shadow-sm border border-stone-100 hover:border-emerald-100 transition-all font-bold"
+                                                        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                                                    >
+                                                        <Edit size={18} />
+                                                    </Link>
+                                                    <button
+                                                        onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleDelete(item.id); }}
+                                                        className="p-2.5 rounded-xl bg-white text-stone-400 hover:text-red-600 hover:shadow-sm border border-stone-100 hover:border-red-100 transition-all font-bold"
+                                                    >
+                                                        <Trash2 size={18} />
+                                                    </button>
                                                 </Protected>
                                             </div>
                                         </td>
@@ -258,26 +248,20 @@ export default function InventoryPage() {
                     <div className="text-[11px] font-black uppercase tracking-widest text-stone-400 bg-stone-100 px-3 py-1 rounded-full">
                         {displayedProducts.length} Kết quả
                     </div>
-                    <div className="flex gap-2">
-                        <button className="px-5 py-2 rounded-xl bg-white text-stone-300 border border-stone-200 text-xs font-bold uppercase cursor-not-allowed" disabled>Trước</button>
-                        <button className="px-5 py-2 rounded-xl bg-white text-stone-300 border border-stone-200 text-xs font-bold uppercase cursor-not-allowed" disabled>Sau</button>
-                    </div>
                 </div>
             </div>
 
-            {/* LIST (Mobile) */}
             <div className="md:hidden">
                 {loading ? (
                     <div className="p-20 text-center">
-                        <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                        <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
                     </div>
                 ) : (
                     <MobileProductList
                         products={displayedProducts}
                         unitsMap={unitsMap}
                         onView={handleViewProduct}
-                        onDelete={!isSanxuat ? handleDelete : () => { }}
-                        showActions={!isSanxuat} // We might need to handle this inside MobileProductList if it isn't a prop
+                        onDelete={handleDelete}
                     />
                 )}
             </div>

@@ -144,6 +144,8 @@ export async function middleware(request: NextRequest) {
     const IS_ADMIN_ROUTE = path.startsWith('/admin')
     const IS_LOGIN_PAGE = path === '/login'
     const IS_ADMIN_LOGIN_PAGE = path === '/admin/login' // Updated path
+    const IS_SANXUAT_ROUTE = path.startsWith('/sanxuat')
+    const IS_SANXUAT_LOGIN_PAGE = path === '/sanxuat/login'
 
     // Skip static assets and internal next paths
     if (path.startsWith('/_next') || path.startsWith('/static') || path.includes('.')) {
@@ -160,13 +162,15 @@ export async function middleware(request: NextRequest) {
     if (!user) {
         // Allow public routes
         const isSilentPrint = path === '/warehouses/lots/print-station' && url.searchParams.get('silent') === 'true'
-        if (IS_LOGIN_PAGE || IS_ADMIN_LOGIN_PAGE || path.startsWith('/print') || path.startsWith('/api/') || path.startsWith('/public') || isSilentPrint) {
+        if (IS_LOGIN_PAGE || IS_ADMIN_LOGIN_PAGE || IS_SANXUAT_LOGIN_PAGE || path.startsWith('/print') || path.startsWith('/api/') || path.startsWith('/public') || isSilentPrint) {
             return response
         }
 
         // Redirect based on target
         if (IS_ADMIN_ROUTE) {
             url.pathname = '/admin/login' // Redirect to new Admin Login
+        } else if (IS_SANXUAT_ROUTE) {
+            url.pathname = '/sanxuat/login'
         } else {
             url.pathname = '/login'
         }
@@ -186,6 +190,11 @@ export async function middleware(request: NextRequest) {
             } else {
                 url.pathname = '/select-system'
             }
+            return NextResponse.redirect(url)
+        }
+
+        if (IS_SANXUAT_LOGIN_PAGE && !hasErrorParam) {
+            url.pathname = '/sanxuat/dashboard'
             return NextResponse.redirect(url)
         }
 

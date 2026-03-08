@@ -10,13 +10,15 @@ interface MobileProductListProps {
     unitsMap: Record<string, string>;
     onView: (product: ProductWithCategory) => void;
     onDelete: (id: string) => void;
+    showActions?: boolean;
 }
 
 export default function MobileProductList({
     products,
     unitsMap,
     onView,
-    onDelete
+    onDelete,
+    showActions = true
 }: MobileProductListProps) {
     if (products.length === 0) {
         return (
@@ -38,7 +40,7 @@ export default function MobileProductList({
                     <div className="flex p-4 gap-4">
                         {/* Image */}
                         <div className="w-20 h-20 rounded-lg bg-stone-100 flex-shrink-0 flex items-center justify-center overflow-hidden border border-stone-100">
-                             {getProductDisplayImage(item) ? (
+                            {getProductDisplayImage(item) ? (
                                 <img
                                     src={getProductDisplayImage(item)!}
                                     alt={item.name}
@@ -76,7 +78,7 @@ export default function MobileProductList({
                     {/* Units Section */}
                     {(item.unit || (item.product_units && item.product_units.length > 0)) && (
                         <div className="px-4 pb-3 flex flex-wrap gap-1.5">
-                             {item.unit && (
+                            {item.unit && (
                                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
                                     1 {item.unit}
                                 </span>
@@ -102,29 +104,33 @@ export default function MobileProductList({
                             <span className="ml-2 text-xs font-medium">Xem</span>
                         </button>
 
-                        <Link
-                            href={`/products/${item.id}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="flex-1 py-3 flex items-center justify-center text-blue-600 hover:bg-blue-50 active:bg-blue-100"
-                        >
-                            <Edit size={16} />
-                            <span className="ml-2 text-xs font-medium">Sửa</span>
-                        </Link>
-
-                        <Protected permission="product.delete">
-                             <div className="flex-1 flex">
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onDelete(item.id);
-                                    }}
-                                    className="flex-1 py-3 flex items-center justify-center text-red-600 hover:bg-red-50 active:bg-red-100"
+                        {showActions && (
+                            <>
+                                <Link
+                                    href={`/products/${item.id}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="flex-1 py-3 flex items-center justify-center text-blue-600 hover:bg-blue-50 active:bg-blue-100"
                                 >
-                                    <Trash2 size={16} />
-                                    <span className="ml-2 text-xs font-medium">Xóa</span>
-                                </button>
-                             </div>
-                        </Protected>
+                                    <Edit size={16} />
+                                    <span className="ml-2 text-xs font-medium">Sửa</span>
+                                </Link>
+
+                                <Protected permission="product.delete">
+                                    <div className="flex-1 flex">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onDelete(item.id);
+                                            }}
+                                            className="flex-1 py-3 flex items-center justify-center text-red-600 hover:bg-red-50 active:bg-red-100"
+                                        >
+                                            <Trash2 size={16} />
+                                            <span className="ml-2 text-xs font-medium">Xóa</span>
+                                        </button>
+                                    </div>
+                                </Protected>
+                            </>
+                        )}
                     </div>
                 </div>
             ))}

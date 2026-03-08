@@ -1,12 +1,13 @@
 'use client'
 
-import React from 'react'
-import { Boxes, X, Calendar, Package, Factory, MapPin, Truck, ShieldCheck, Layers, Info, Maximize2, QrCode as QrIcon, History, Trash2 } from 'lucide-react'
+import React, { useState } from 'react'
+import { Boxes, X, Calendar, Package, Factory, MapPin, Truck, ShieldCheck, Layers, Info, Maximize2, QrCode as QrIcon, History, Trash2, Edit } from 'lucide-react'
+import { useRouter, usePathname } from 'next/navigation'
 import { LotMergeHistoryModal } from './LotMergeHistoryModal'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import Protected from '@/components/auth/Protected'
-
+import { useUser } from '@/contexts/UserContext'
 
 
 interface LotDetailsModalProps {
@@ -18,8 +19,14 @@ interface LotDetailsModalProps {
 }
 
 export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, onOpenQr, onDelete, isModuleEnabled }) => {
+    const router = useRouter()
+    const pathname = usePathname()
+    const { profile } = useUser() // Assuming useUser provides a profile
+    const isSanxuat = pathname?.startsWith('/sanxuat') || false
+
     const [historyData, setHistoryData] = React.useState<any>(null)
     const [isHighlighting, setIsHighlighting] = React.useState(false)
+    const [isEditing, setIsEditing] = useState(false) // Added from diff
     const [selectedImage, setSelectedImage] = React.useState<string | null>(null)
 
     // Trigger highlight when positions change
@@ -36,6 +43,12 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
     }, [positionsHash, lot, lastPositionsHash])
 
     if (!lot) return null
+
+    const handleDelete = () => {
+        if (lot?.id && onDelete) {
+            onDelete(lot.id);
+        }
+    };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
