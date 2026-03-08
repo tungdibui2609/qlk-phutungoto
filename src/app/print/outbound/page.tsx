@@ -478,7 +478,7 @@ function OutboundPrintContent() {
     }
 
     return (
-        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('outbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 max-w-4xl mx-auto bg-white text-black text-[13px] ${printSize === 'A5' ? 'print:text-[11px]' : 'print:text-[12px]'} leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
+        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('outbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 max-w-4xl mx-auto bg-white text-black text-[13px] print:text-[13px] leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
             {isCapturing && (
                 <style dangerouslySetInnerHTML={{
                     __html: `
@@ -506,11 +506,15 @@ function OutboundPrintContent() {
                             margin: 5mm 5mm 5mm 5mm;
                         }
                         body, html {
+                            margin: 0 !important;
+                            padding: 0 !important;
                             height: 148mm;
                             overflow: hidden;
                         }
                         #print-ready {
-                            max-height: 138mm;
+                            height: 138mm;
+                            overflow: hidden;
+                            margin: 0 auto;
                         }
                     }
                 `}} />
@@ -549,8 +553,8 @@ function OutboundPrintContent() {
             />
 
             {/* Title */}
-            <div className={`relative text-center ${printSize === 'A5' ? 'mt-0 mb-0' : 'mt-4 mb-1'}`}>
-                <h1 className={`${printSize === 'A5' ? 'text-sm' : 'text-xl'} font-bold tracking-wide`} style={{ fontFamily: "'Times New Roman', Times, serif" }}>
+            <div className={`relative text-center ${printSize === 'A5' ? 'mt-2 mb-1' : 'mt-4 mb-1'}`}>
+                <h1 className={`${printSize === 'A5' ? 'text-lg' : 'text-xl'} font-bold tracking-wide`} style={{ fontFamily: "'Times New Roman', Times, serif" }}>
                     PHIẾU XUẤT KHO
                 </h1>
 
@@ -617,7 +621,7 @@ function OutboundPrintContent() {
                 </div>
             </div>
 
-            <div className={`mt-6 ${printSize === 'A5' ? 'print:mt-0' : 'print:mt-1'} space-y-2 ${printSize === 'A5' ? 'print:space-y-0' : 'print:space-y-0'} text-sm ${printSize === 'A5' ? 'print:text-[9px]' : ''}`}>
+            <div className={`mt-4 ${printSize === 'A5' ? 'print:mt-2 pb-1' : 'print:mt-4'} space-y-2 ${printSize === 'A5' ? 'print:space-y-0.5' : 'print:space-y-0'} text-sm`}>
                 <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
                     <span className="text-gray-600 shrink-0">- Họ tên người nhận hàng:</span>
                     <EditableText
@@ -710,7 +714,7 @@ function OutboundPrintContent() {
                 </div>
             </div>
 
-            <div className="mt-6 print:mt-2">
+            <div className={`mt-6 ${printSize === 'A5' ? 'print:mt-2' : 'print:mt-1'}`}>
                 <table className="w-full border-collapse text-sm">
                     <thead>
                         <tr className="bg-gray-100">
@@ -833,7 +837,7 @@ function OutboundPrintContent() {
 
                             return (
                                 <tr key={item.id} className="hover:bg-gray-50 font-bold">
-                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-center`}>{index + 1}</td>
+                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>{index + 1}</td>
                                     <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'}`}>{displayName}</td>
                                     <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-center`}>
                                         <EditableText
@@ -843,9 +847,9 @@ function OutboundPrintContent() {
                                             isSnapshot={isSnapshotMode}
                                         />
                                     </td>
-                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-center`}>{item.unit || '-'}</td>
+                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>{item.unit || '-'}</td>
                                     {hasModule('outbound_financials') && (
-                                        <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-center`}>
+                                        <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>
                                             <EditableText
                                                 value={docQuantities[item.id] !== undefined ? docQuantities[item.id] : (item.document_quantity || item.quantity).toString()}
                                                 onChange={(val) => setDocQuantities(prev => ({ ...prev, [item.id]: val }))}
@@ -854,7 +858,7 @@ function OutboundPrintContent() {
                                             />
                                         </td>
                                     )}
-                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-center`}>
+                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>
                                         {formatQuantityFull(item.quantity)}
                                     </td>
                                     {hasModule('outbound_conversion') && targetUnit && (

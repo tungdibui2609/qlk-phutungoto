@@ -472,7 +472,7 @@ function InboundPrintContent() {
     }
 
     return (
-        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('inbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 max-w-4xl mx-auto bg-white text-black text-[13px] ${printSize === 'A5' ? 'print:text-[11px]' : 'print:text-[12px]'} leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
+        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('inbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 max-w-4xl mx-auto bg-white text-black text-[13px] print:text-[13px] leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
             {isCapturing && (
                 <style dangerouslySetInnerHTML={{
                     __html: `
@@ -500,11 +500,15 @@ function InboundPrintContent() {
                             margin: 5mm 5mm 5mm 5mm;
                         }
                         body, html {
+                            margin: 0 !important;
+                            padding: 0 !important;
                             height: 148mm;
                             overflow: hidden;
                         }
                         #print-ready {
-                            max-height: 138mm;
+                            height: 138mm;
+                            overflow: hidden;
+                            margin: 0 auto;
                         }
                     }
                 `}} />
@@ -543,8 +547,8 @@ function InboundPrintContent() {
             />
 
             {/* Title */}
-            <div className={`relative text-center ${printSize === 'A5' ? '-mt-1 mb-0' : 'mt-4 mb-1'}`}>
-                <h1 className={`${printSize === 'A5' ? 'text-base' : 'text-xl'} font-bold tracking-wide`} style={{ fontFamily: "'Times New Roman', Times, serif" }}>
+            <div className={`relative text-center ${printSize === 'A5' ? 'mt-2 mb-1' : 'mt-4 mb-2'}`}>
+                <h1 className={`${printSize === 'A5' ? 'text-lg' : 'text-xl'} font-bold tracking-wide`} style={{ fontFamily: "'Times New Roman', Times, serif" }}>
                     PHIẾU NHẬP KHO
                 </h1>
 
@@ -611,7 +615,7 @@ function InboundPrintContent() {
                 </div>
             </div>
 
-            <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-1 pb-1' : 'print:mt-8 pb-16'} space-y-2 ${printSize === 'A5' ? 'print:space-y-0' : 'print:space-y-0'} text-sm ${printSize === 'A5' ? 'print:text-[10.5px]' : ''}`}>
+            <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-1 pb-1' : 'print:mt-8 pb-16'} space-y-2 ${printSize === 'A5' ? 'print:space-y-0.5' : 'print:space-y-0'} text-sm`}>
                 <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
                     <span className="text-gray-600 shrink-0">- Họ tên người giao:</span>
                     <EditableText
