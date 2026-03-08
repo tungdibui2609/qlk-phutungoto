@@ -995,7 +995,7 @@ function InboundPrintContent() {
                     </div>
                     <div className={`text-xs text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
                     <div className={`text-xs text-gray-500 italic invisible ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Hoặc bộ phận có nhu cầu nhập)</div>
-                    <div className={`${printSize === 'A5' ? 'print:h-1' : 'print:h-8'}`}></div>
+                    <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-8'}`}></div>
                     <div className="mt-1">
                         <input
                             type="text"
@@ -1022,7 +1022,7 @@ function InboundPrintContent() {
                     </div>
                     <div className={`text-xs text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
                     <div className={`text-xs text-gray-500 italic invisible ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Hoặc bộ phận có nhu cầu nhập)</div>
-                    <div className={`${printSize === 'A5' ? 'print:h-1' : 'print:h-8'}`}></div>
+                    <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-8'}`}></div>
                     <div className="mt-1">
                         <input
                             type="text"
@@ -1035,6 +1035,9 @@ function InboundPrintContent() {
                     </div>
                 </div>
                 <div>
+                    <div className="text-sm italic text-center mb-1 invisible">
+                        Ngày ... tháng ... năm ...
+                    </div>
                     <div className="font-semibold">
                         <input
                             type="text"
@@ -1157,15 +1160,19 @@ function InboundPrintContent() {
                     #print-ready .signature-grid {
                         page-break-inside: avoid !important;
                         break-inside: avoid !important;
-                        gap: 2mm !important;
+                        gap: 0 !important;
                         margin-top: 2px !important;
-                        padding-right: 0 !important; /* Fill the whole remaining width */
+                        padding-right: 0 !important;
                         display: grid !important;
                         grid-template-columns: repeat(3, 1fr) !important;
                         width: 100% !important;
+                        justify-items: stretch !important;
+                    }
+                    #print-ready .signature-grid > div {
+                        width: 100% !important;
                     }
                     #print-ready .signature-grid .font-semibold {
-                        font-size: 10.5px !important; /* Smaller titles */
+                        font-size: 10px !important; /* Even smaller as requested */
                     }
                     #print-ready .pb-6, #print-ready .pb-10 {
                         padding-bottom: 0px !important;

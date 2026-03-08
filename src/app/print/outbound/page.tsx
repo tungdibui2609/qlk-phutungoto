@@ -1145,7 +1145,7 @@ function OutboundPrintContent() {
                         width: 100% !important;
                     }
                     #print-ready .signature-grid .font-semibold {
-                        font-size: 10.5px !important;
+                        font-size: 10px !important;
                     }
                     #print-ready .pb-6, #print-ready .pb-10 {
                         padding-bottom: 0px !important;
