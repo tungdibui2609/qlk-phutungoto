@@ -478,7 +478,7 @@ function OutboundPrintContent() {
     }
 
     return (
-        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('outbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 max-w-4xl mx-auto bg-white text-black text-[13px] print:text-[13px] leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
+        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('outbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 w-full max-w-4xl print:max-w-none print:w-full print:mx-0 mx-auto bg-white text-black text-[13px] ${printSize === 'A5' ? 'print:text-[12px]' : 'print:text-[13px]'} leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
             {isCapturing && (
                 <style dangerouslySetInnerHTML={{
                     __html: `
@@ -502,19 +502,22 @@ function OutboundPrintContent() {
                     __html: `
                     @media print {
                         @page {
-                            size: 210mm 148mm;
+                            /* Removed 'size: 210mm 148mm;' because Chrome has a known bug explicitly forcing width to 148mm when specifying this on A5 landscape */
                             margin: 5mm 5mm 5mm 5mm;
                         }
                         body, html {
                             margin: 0 !important;
                             padding: 0 !important;
-                            height: 148mm;
-                            overflow: hidden;
+                            width: auto !important;
+                            height: auto !important;
                         }
                         #print-ready {
-                            height: 138mm;
-                            overflow: hidden;
-                            margin: 0 auto;
+                            width: auto !important;
+                            max-width: none !important;
+                            height: auto !important;
+                            max-height: none !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
                         }
                     }
                 `}} />
@@ -621,9 +624,9 @@ function OutboundPrintContent() {
                 </div>
             </div>
 
-            <div className={`mt-4 ${printSize === 'A5' ? 'print:mt-2 pb-1' : 'print:mt-4'} space-y-2 ${printSize === 'A5' ? 'print:space-y-0.5' : 'print:space-y-0'} text-sm`}>
-                <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
-                    <span className="text-gray-600 shrink-0">- Họ tên người nhận hàng:</span>
+            <div className={`mt-4 ${printSize === 'A5' ? 'print:mt-2 pb-1' : 'print:mt-4'} space-y-2 ${printSize === 'A5' ? 'print:space-y-1' : 'print:space-y-0'} text-sm ${printSize === 'A5' ? 'print:text-[11px]' : ''}`}>
+                <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
+                    <span className="text-gray-600 shrink-0 mt-0.5">- Họ tên người nhận hàng:</span>
                     <EditableText
                         value={editCustomerName}
                         onChange={setEditCustomerName}
@@ -631,8 +634,8 @@ function OutboundPrintContent() {
                         isSnapshot={isSnapshot}
                     />
                 </div>
-                <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
-                    <span className="text-gray-600 shrink-0">- Địa chỉ ( bộ phận ):</span>
+                <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
+                    <span className="text-gray-600 shrink-0 mt-0.5">- Địa chỉ ( bộ phận ):</span>
                     <EditableText
                         value={editCustomerAddress}
                         onChange={setEditCustomerAddress}
@@ -640,8 +643,8 @@ function OutboundPrintContent() {
                         isSnapshot={isSnapshot}
                     />
                 </div>
-                <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
-                    <span className="text-gray-600 shrink-0">- Lý do xuất kho:</span>
+                <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
+                    <span className="text-gray-600 shrink-0 mt-0.5">- Lý do xuất kho:</span>
                     <EditableText
                         value={editReason}
                         onChange={setEditReason}
@@ -649,9 +652,9 @@ function OutboundPrintContent() {
                         isSnapshot={isSnapshot}
                     />
                 </div>
-                <div className={`flex items-center ${printSize === 'A5' ? 'print:leading-none print:h-4 print:mt-0' : ''} gap-8 print:gap-2`}>
-                    <div className="flex items-center">
-                        <span className="text-gray-600 shrink-0">- Xuất tại kho:</span>
+                <div className={`flex items-start flex-wrap ${printSize === 'A5' ? 'leading-tight' : ''} gap-x-8 gap-y-1 print:gap-x-2`}>
+                    <div className="flex items-start">
+                        <span className="text-gray-600 shrink-0 mt-0.5">- Xuất tại kho:</span>
                         <EditableText
                             value={editWarehouse}
                             onChange={setEditWarehouse}
@@ -659,26 +662,26 @@ function OutboundPrintContent() {
                             isSnapshot={isSnapshotMode}
                         />
                     </div>
-                    <div className="flex items-center flex-1">
-                        <span className="text-gray-600 shrink-0">Địa điểm:</span>
+                    <div className="flex items-start flex-1 min-w-[200px]">
+                        <span className="text-gray-600 shrink-0 mt-0.5">Địa điểm:</span>
                         <input
                             type="text"
                             value={editLocation}
                             onChange={(e) => setEditLocation(e.target.value)}
                             className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                         />
-                        <span className={`hidden print:inline ml-2 flex-1 min-w-[50px] font-bold ${isSnapshotMode ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
+                        <span className={`hidden print:inline ml-2 flex-1 font-bold break-words whitespace-normal ${isSnapshotMode ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
                     </div>
                 </div>
-                <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
-                    <span className="text-gray-600 shrink-0">- Ghi chú:</span>
+                <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
+                    <span className="text-gray-600 shrink-0 mt-0.5">- Ghi chú:</span>
                     <input
                         type="text"
                         value={editNote}
                         onChange={(e) => setEditNote(e.target.value)}
                         className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                     />
-                    <span className={`hidden print:inline ml-2 flex-1 font-bold ${isSnapshotMode ? 'inline' : ''}`}>{editNote || '\u00A0'}</span>
+                    <span className={`hidden print:inline ml-2 flex-1 font-bold break-words whitespace-normal ${isSnapshotMode ? 'inline' : ''}`}>{editNote || '\u00A0'}</span>
                 </div>
                 <div className={`flex items-center gap-6 ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
                     <div className="flex items-center">
@@ -714,13 +717,13 @@ function OutboundPrintContent() {
                 </div>
             </div>
 
-            <div className={`mt-6 ${printSize === 'A5' ? 'print:mt-2' : 'print:mt-1'}`}>
-                <table className="w-full border-collapse text-sm">
+            <div className={`mt-6 ${printSize === 'A5' ? 'print:mt-2' : 'print:mt-1'} w-full`}>
+                <table className={`w-full print:w-full border-collapse text-sm ${printSize === 'A5' ? 'print:table-fixed' : ''}`} style={{ width: '100%' }}>
                     <thead>
                         <tr className="bg-gray-100">
-                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-10`}>STT</th>
-                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-60`}>Tên, nhãn hiệu quy cách, phẩm chất vật tư, dụng cụ sản phẩm, hàng hóa</th>
-                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">
+                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 print:w-[5%]' : 'px-2 py-2 w-10'} text-center`}>STT</th>
+                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 print:w-[26%] break-words' : 'px-2 py-2 w-60'} text-center`}>Tên, nhãn hiệu quy cách, phẩm chất vật tư, dụng cụ sản phẩm, hàng hóa</th>
+                            <th rowSpan={2} className={`border border-gray-400 px-2 py-2 text-center ${printSize === 'A5' ? 'print:w-[15%]' : 'w-24'}`}>
                                 <EditableText
                                     value={editQuyCachTitle}
                                     onChange={setEditQuyCachTitle}
@@ -728,12 +731,12 @@ function OutboundPrintContent() {
                                     isSnapshot={isSnapshotMode}
                                 />
                             </th>
-                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-14`}>Đơn vị tính</th>
+                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 print:w-[10%]' : 'px-2 py-2 w-14'} text-center`}>Đơn vị tính</th>
                             <th colSpan={hasModule('outbound_conversion') && targetUnit ? (hasModule('outbound_financials') ? 3 : 2) : (hasModule('outbound_financials') ? 2 : 1)} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center`}>Số lượng</th>
-                            {!isInternal && hasModule('outbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-24`}>Đơn giá</th>}
-                            {!isInternal && hasModule('outbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-28`}>Thành tiền</th>}
+                            {!isInternal && hasModule('outbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 print:w-[12%]' : 'px-2 py-2 w-24'} text-center`}>Đơn giá</th>}
+                            {!isInternal && hasModule('outbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 print:w-[12%]' : 'px-2 py-2 w-28'} text-center`}>Thành tiền</th>}
                             {isInternal && (
-                                <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-16">
+                                <th rowSpan={2} className={`border border-gray-400 px-2 py-2 text-center ${printSize === 'A5' ? 'print:w-[12%]' : 'w-16'}`}>
                                     <EditableText
                                         value={editNoteTitle}
                                         onChange={setEditNoteTitle}
@@ -744,10 +747,10 @@ function OutboundPrintContent() {
                             )}
                         </tr>
                         <tr className="bg-gray-100">
-                            {hasModule('outbound_financials') && <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-20 align-top`}>Yêu cầu</th>}
-                            <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-20 align-top`}>Thực xuất</th>
+                            {hasModule('outbound_financials') && <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 print:w-[10%]' : 'px-2 py-2 w-20'} text-center align-top`}>Yêu cầu</th>}
+                            <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 print:w-[10%]' : 'px-2 py-2 w-20'} text-center align-top`}>Thực xuất</th>
                             {hasModule('outbound_conversion') && targetUnit && (
-                                <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-24`}>Quy đổi<br /><span className="font-normal text-[10px]">({targetUnit})</span></th>
+                                <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 print:w-[12%]' : 'px-2 py-2 w-24'} text-center`}>Quy đổi<br /><span className="font-normal text-[10px]">({targetUnit})</span></th>
                             )}
                         </tr>
                         <tr className="bg-gray-100 font-normal">
@@ -837,9 +840,9 @@ function OutboundPrintContent() {
 
                             return (
                                 <tr key={item.id} className="hover:bg-gray-50 font-bold">
-                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>{index + 1}</td>
-                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'}`}>{displayName}</td>
-                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-center`}>
+                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5 max-w-0 overflow-hidden' : 'px-2 py-1.5'} text-center`}>{index + 1}</td>
+                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 text-[11px] leading-tight max-w-0 break-words whitespace-normal' : 'px-2 py-1.5'}`}>{displayName}</td>
+                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 max-w-0' : 'px-2 py-1.5'} text-center`}>
                                         <EditableText
                                             value={editQuyCach[item.id] !== undefined ? editQuyCach[item.id] : quyCach}
                                             onChange={(val: string) => setEditQuyCach(prev => ({ ...prev, [item.id]: val }))}
