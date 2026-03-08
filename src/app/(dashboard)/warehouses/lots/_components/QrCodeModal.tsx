@@ -114,6 +114,8 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
                 positions: lot.positions?.map(p => p.code) || []
             }
 
+            console.log('Sending print data:', printData)
+
             const { error } = await (supabase as any).from('print_queue')
                 .insert({
                     lot_id: lot.id,

@@ -37,64 +37,83 @@ interface LogEntry {
     timestamp: Date
 }
 
+// Helper to ensure print_data is always an object (handles potential string from DB)
+function parsePrintJob(job: any): PrintJob {
+    if (!job) return job
+    try {
+        if (typeof job.print_data === 'string') {
+            return {
+                ...job,
+                print_data: JSON.parse(job.print_data)
+            }
+        }
+    } catch (e) {
+        console.error("Failed to parse print_data", e)
+    }
+    return job as PrintJob
+}
+
 // --- Components ---
 function LabelCard({ job, scale = 1, showBorder = true }: { job: PrintJob, scale?: number, showBorder?: boolean }) {
     const data = job.print_data
     const companyName = (data.company_prefix || 'TOAN THANG').toUpperCase()
-    const workArea = (data as any).work_area_name || ''
+    // const workArea = (data as any).work_area_name || ''
 
     return (
         <div
             style={{
                 transform: `scale(${scale})`,
                 transformOrigin: 'top left',
-                width: scale === 1 ? '100%' : 'auto',
-                height: scale === 1 ? '100%' : 'auto'
+                width: scale === 1 ? '3.54in' : 'auto',
+                height: scale === 1 ? '2.36in' : 'auto',
+                boxSizing: 'border-box'
             }}
             className={`bg-white text-black font-sans overflow-hidden transition-all duration-300 ${showBorder ? 'border-[1px] border-black rounded-sm' : ''
                 }`}
         >
-            <div className="p-3 flex flex-col h-full gap-2">
+            <div className="p-3 flex flex-col h-full">
                 {/* Header: Company & Lot Info */}
-                <div className="flex justify-between items-start border-b border-black pb-1.5">
-                    <div className="flex flex-col">
-                        <h2 className="text-sm font-black tracking-tight leading-tight">
+                <div className="flex justify-between items-start border-b-2 border-black pb-1 mb-2">
+                    <div className="flex flex-col min-w-0">
+                        <h2 className="text-[13px] font-black tracking-tight leading-none mb-0.5 truncate">
                             {companyName}
                         </h2>
-                        <p className="text-[9px] font-bold lowercase tracking-wider text-black/60">website: chanhthu.com</p>
+                        <p className="text-[8px] font-bold lowercase tracking-wider text-black/60 leading-none">website: chanhthu.com</p>
                     </div>
-                    <div className="text-right">
-                        <p className="text-[7px] font-bold uppercase opacity-50">Lot Number</p>
-                        <p className="text-[10px] font-black tracking-tight">{job.lot_code}</p>
+                    <div className="text-right flex-shrink-0 ml-2">
+                        <p className="text-[7px] font-bold uppercase opacity-50 leading-none">Lot Number</p>
+                        <p className="text-[11px] font-black tracking-tight leading-none">{job.lot_code}</p>
                     </div>
                 </div>
 
                 {/* Main Section: QR and Product Information */}
-                <div className="flex gap-2 items-stretch flex-1 min-h-0">
-                    {/* QR Code Segment (50%) */}
-                    <div className="w-1/2 flex flex-col items-center justify-center border-r border-dashed border-black/20 pr-1">
-                        <QRCode value={data.scan_url} size={scale < 0.5 ? 90 : 135} />
-                        <p className="text-[8px] mt-2 font-black tracking-[0.2em] opacity-80">SCAN TO ASSIGN</p>
+                <div className="flex gap-3 items-stretch flex-1 min-h-0">
+                    {/* QR Code Segment (45%) */}
+                    <div className="w-[45%] flex flex-col items-center justify-center border-r border-dashed border-black/30 pr-2">
+                        <div className="bg-white p-1">
+                            <QRCode value={data.scan_url} size={scale < 0.5 ? 85 : 120} />
+                        </div>
+                        <p className="text-[7px] mt-1.5 font-black tracking-[0.2em] opacity-80 whitespace-nowrap">SCAN TO ASSIGN</p>
                     </div>
 
-                    {/* Product Details Segment (50%) */}
-                    <div className="w-1/2 flex flex-col justify-between py-1 pl-2 min-w-0">
-                        <div>
-                            <div className="flex justify-between items-end mb-0.5">
-                                <p className="text-[7px] font-bold uppercase opacity-50">Sản phẩm</p>
+                    {/* Product Details Segment (55%) */}
+                    <div className="w-[55%] flex flex-col justify-between py-0.5 min-w-0">
+                        <div className="min-w-0">
+                            <div className="flex justify-between items-end mb-1">
+                                <p className="text-[7px] font-bold uppercase opacity-50 leading-none">Sản phẩm</p>
                                 {data.products?.[0]?.sku && (
-                                    <p className="text-[7px] font-black text-black/40">CODE: {data.products[0].sku}</p>
+                                    <p className="text-[7px] font-black text-black/40 leading-none">CODE: {data.products[0].sku}</p>
                                 )}
                             </div>
-                            <h3 className="text-[10px] font-black leading-tight uppercase break-words line-clamp-2 mb-1">
+                            <h3 className="text-[11px] font-black leading-[1.2] uppercase break-words line-clamp-2">
                                 {data.products?.[0]?.name || data.product_name}
                             </h3>
 
                             {/* Secondary Codes / Tags */}
                             {(data.products?.[0]?.tags && data.products[0].tags.length > 0) && (
-                                <div className="flex flex-wrap gap-1 mt-1">
+                                <div className="flex flex-wrap gap-1 mt-1.5">
                                     {data.products[0].tags.map((tag: string, i: number) => (
-                                        <span key={i} className="text-[7px] px-1 font-bold border border-black/20 rounded-[2px] bg-black/[0.03] text-black/60 truncate max-w-full">
+                                        <span key={i} className="text-[7px] px-1 font-bold border border-black/40 rounded-[2px] bg-black/[0.03] text-black shrink-0">
                                             #{tag.replace('@', data.products[0].sku || '')}
                                         </span>
                                     ))}
@@ -102,24 +121,26 @@ function LabelCard({ job, scale = 1, showBorder = true }: { job: PrintJob, scale
                             )}
                         </div>
 
-                        <div className="border-t border-black/10 pt-1.5 mt-auto">
-                            <p className="text-[7px] font-bold uppercase opacity-50 mb-0.5">Qty / Số lượng</p>
-                            <div className="flex items-baseline justify-between">
-                                <p className="text-xl font-black tabular-nums leading-none tracking-tighter">
-                                    {data.products?.[0]?.quantity || data.quantity}
-                                    <span className="text-[9px] ml-1 font-bold uppercase opacity-60">
+                        <div className="border-t border-black/20 pt-1.5">
+                            <p className="text-[7px] font-bold uppercase opacity-50 mb-1 leading-none">Qty / Số lượng</p>
+                            <div className="flex items-end justify-between leading-none">
+                                <div className="flex items-baseline gap-1">
+                                    <span className="text-2xl font-black tabular-nums tracking-tighter">
+                                        {data.products?.[0]?.quantity || data.quantity}
+                                    </span>
+                                    <span className="text-[9px] font-bold uppercase opacity-60">
                                         {data.products?.[0]?.unit || data.unit}
                                     </span>
-                                </p>
-                                <span className="text-[7px] font-black px-1.5 py-0.5 border border-black rounded-sm uppercase transform scale-90 origin-right">Inventory</span>
+                                </div>
+                                <span className="text-[8px] font-black px-1.5 py-0.5 border-2 border-black rounded-md uppercase mb-0.5">Inventory</span>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 {/* Footer: System Tag */}
-                <div className="border-t border-black pt-1 flex justify-center items-center">
-                    <span className="text-[7px] font-black tracking-[0.2em] uppercase">{companyName} SYSTEM CONTROL</span>
+                <div className="border-t-2 border-black mt-2 pt-1.5 flex justify-center items-center shrink-0">
+                    <span className="text-[8px] font-black tracking-[0.2em] uppercase leading-none">{companyName} SYSTEM CONTROL</span>
                 </div>
             </div>
         </div>
@@ -143,6 +164,8 @@ function PrintStationContent() {
 
     // UI States
     const [activeTab, setActiveTab] = useState<'queue' | 'history' | 'logs'>('queue')
+    const [isSilentMode, setIsSilentMode] = useState(false)
+    const [isProcessing, setIsProcessing] = useState(false)
     const hasPrintedRef = useRef(false)
 
     // Scoped client for Bot/Silent mode (uses token if provided)
@@ -188,7 +211,7 @@ function PrintStationContent() {
                 .eq('status', 'pending')
                 .order('created_at', { ascending: true })
 
-            if (pendingJobs) setJobs(pendingJobs)
+            if (pendingJobs) setJobs(pendingJobs.map(parsePrintJob))
 
             const { data: historyJobs } = await (supabase as any).from('print_queue')
                 .select('*')
@@ -196,7 +219,7 @@ function PrintStationContent() {
                 .order('created_at', { ascending: false })
                 .limit(20)
 
-            if (historyJobs) setHistory(historyJobs)
+            if (historyJobs) setHistory(historyJobs.map(parsePrintJob))
         }
 
         fetchJobs()
@@ -208,11 +231,11 @@ function PrintStationContent() {
                 table: 'print_queue'
             }, (payload) => {
                 if (payload.eventType === 'INSERT') {
-                    const newJob = payload.new as PrintJob
+                    const newJob = parsePrintJob(payload.new)
                     setJobs(prev => [...prev, newJob])
                     addLog(`Nhiệm vụ mới: ${newJob.lot_code}`, 'info')
                 } else if (payload.eventType === 'UPDATE') {
-                    const updatedJob = payload.new as PrintJob
+                    const updatedJob = parsePrintJob(payload.new)
                     if (updatedJob.status === 'completed') {
                         setJobs(prev => prev.filter(j => j.id !== updatedJob.id))
                         setHistory(prev => [updatedJob, ...prev].slice(0, 20))
@@ -252,20 +275,46 @@ function PrintStationContent() {
 
         const runSilentPrint = async () => {
             hasPrintedRef.current = true // Chặn ngay lập tức
-            const { data: job } = await (supabase as any).from('print_queue')
+            const { data: jobRaw } = await (supabase as any).from('print_queue')
                 .select('*')
                 .eq('id', jobIdParam)
                 .single()
 
-            if (job) {
+            if (jobRaw) {
+                const job = parsePrintJob(jobRaw)
+                console.log('SILENT PRINT JOB:', job.lot_code, 'Label Qty:', job.print_data.label_quantity)
                 setLastPrinted(job)
-                addLog(`Bot yêu cầu in: ${job.lot_code}`, 'success')
-                await new Promise(r => setTimeout(r, 1000))
-                // window.print() // Tạm dừng in theo yêu cầu để kiểm tra
+                addLog(`Bot yêu cầu in: ${job.lot_code} (${job.print_data.label_quantity || 1} tem)`, 'success')
+                await new Promise(r => setTimeout(r, 1500))
+                window.print()
             }
         }
-        runSilentPrint()
-    }, [silentParam, jobIdParam, currentSystem])
+        if (jobIdParam) runSilentPrint()
+    }, [jobIdParam, silentParam, scopedSupabase])
+
+    // --- Automated Processing Loop (Silent Mode) ---
+    useEffect(() => {
+        if (!isSilentMode || jobs.length === 0 || isProcessing) return
+
+        const autoProcess = async () => {
+            setIsProcessing(true)
+            const nextJob = jobs[0]
+
+            try {
+                addLog(`Hệ thống tự động xử lý: ${nextJob.lot_code}`, 'info')
+                await handlePrintJob(nextJob)
+                addLog(`Tự động in hoàn tất: ${nextJob.lot_code}`, 'success')
+            } catch (error: any) {
+                console.error('Auto process error:', error)
+                addLog(`Lỗi xử lý tự động: ${error.message}`, 'error')
+            } finally {
+                // Wait 4 seconds cooldown between jobs to allow printer to finish
+                setTimeout(() => setIsProcessing(false), 4000)
+            }
+        }
+
+        autoProcess()
+    }, [isSilentMode, jobs, isProcessing])
 
     // --- Action Handlers ---
     const handleDeleteJob = async (jobId: string) => {
@@ -330,11 +379,15 @@ function PrintStationContent() {
 
     const handlePrintJob = async (job: PrintJob) => {
         try {
-            setLastPrinted(job)
-            addLog(`Đang gửi lệnh in: ${job.lot_code}`, 'info')
+            const parsedJob = parsePrintJob(job)
+            console.log('MANUAL PRINT JOB:', parsedJob.lot_code, 'Label Qty:', parsedJob.print_data.label_quantity)
+            setLastPrinted(parsedJob)
+            addLog(`Đang gửi lệnh in: ${parsedJob.lot_code} (${parsedJob.print_data.label_quantity || 1} tem)`, 'info')
 
-            // Trigger print
-            setTimeout(() => window.print(), 100)
+            // Trigger print with a slightly longer delay to ensure DOM is ready
+            setTimeout(() => {
+                window.print()
+            }, 500)
 
             // Update status to completed in database
             const { error } = await (scopedSupabase as any)
@@ -374,23 +427,50 @@ function PrintStationContent() {
 
     if (!currentSystem && !silentParam) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 p-6 text-center">
+            <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-6 text-center">
                 <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mb-6 border border-red-500/20">
                     <WifiOff className="w-10 h-10 text-red-500" />
                 </div>
-                <h2 className="text-2xl font-bold text-white mb-2 font-display">Hệ thống chưa kết nối</h2>
-                <p className="text-zinc-500 max-w-md italic">Vui lòng quay lại Dashboard để khởi tạo phiên làm việc trước khi sử dụng trạm in.</p>
+                <h2 className="text-2xl font-bold text-slate-900 mb-2 font-display">Hệ thống chưa kết nối</h2>
+                <p className="text-slate-500 max-w-md italic">Vui lòng quay lại Dashboard để khởi tạo phiên làm việc trước khi sử dụng trạm in.</p>
             </div>
         )
     }
 
     return (
-        <div className="min-h-screen bg-[#09090b] text-zinc-100 font-sans selection:bg-emerald-500/30 overflow-x-hidden">
+        <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans selection:bg-emerald-500/30 overflow-x-hidden">
             {/* --- Dedicated Print Container (Hidden in UI) --- */}
             {lastPrinted && (
                 <div id="print-label-container" className="hidden print:block fixed inset-0 z-[9999] bg-white text-black">
-                    {Array.from({ length: lastPrinted.print_data.label_quantity || 1 }).map((_, i) => (
-                        <div key={i} className="w-[3.54in] h-[2.36in] bg-white overflow-hidden p-0 m-0" style={{ pageBreakAfter: 'always' }}>
+                    <style dangerouslySetInnerHTML={{
+                        __html: `
+                        @media print {
+                            body * { visibility: hidden !important; }
+                            #print-label-container, #print-label-container * { visibility: visible !important; }
+                            #print-label-container { 
+                                position: absolute !important; 
+                                left: 0 !important; 
+                                top: 0 !important; 
+                                width: 3.54in !important;
+                                height: auto !important;
+                                display: block !important;
+                            }
+                            .print-page { 
+                                width: 3.54in !important; 
+                                height: 2.36in !important; 
+                                page-break-after: always !important; 
+                                break-after: page !important;
+                                display: block !important;
+                                position: relative !important;
+                            }
+                            @page { margin: 0; size: 3.54in 2.36in; }
+                        }
+                    ` }} />
+                    {Array.from({ length: Number(lastPrinted.print_data.label_quantity) || 1 }).map((_, i) => (
+                        <div
+                            key={i}
+                            className="print-page bg-white overflow-hidden p-0 m-0"
+                        >
                             <LabelCard job={lastPrinted} showBorder={false} />
                         </div>
                     ))}
@@ -407,33 +487,53 @@ function PrintStationContent() {
                 </div>
 
                 {/* --- Top Navigation / Header --- */}
-                <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950/70 backdrop-blur-xl px-6 py-4 shadow-2xl">
+                <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/70 backdrop-blur-xl px-6 py-4 shadow-sm">
                     <div className="max-w-[1600px] mx-auto flex items-center justify-between">
                         <div className="flex items-center gap-5">
                             <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20 ring-1 ring-white/10">
                                 <Printer className="text-white" size={24} />
                             </div>
                             <div>
-                                <h1 className="text-xl font-black tracking-tight flex items-center gap-3 text-white">
+                                <h1 className="text-xl font-black tracking-tight flex items-center gap-3 text-slate-900">
                                     PRINT STATION
-                                    <span className="text-[10px] bg-zinc-800 px-3 py-1 rounded-full font-mono text-emerald-500 border border-zinc-700">V9.7_REBORN</span>
+                                    <span className="text-[10px] bg-slate-100 px-3 py-1 rounded-full font-mono text-emerald-600 border border-slate-200">V9.8_AUTO</span>
                                 </h1>
-                                <p className="text-[10px] text-zinc-500 flex items-center gap-2 uppercase font-black tracking-[0.2em] mt-1">
-                                    <Activity size={12} className="text-emerald-500 animate-pulse" />
-                                    Monitoring System: <span className="text-emerald-400">ACTIVE</span>
-                                    <span className="ml-2 px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded-full text-[9px] border border-blue-500/30">
-                                        REMOTE BOT ACTIVE
-                                    </span>
-                                </p>
+                                <div className="flex items-center gap-4 mt-1">
+                                    <p className="text-[10px] text-slate-500 flex items-center gap-2 uppercase font-black tracking-[0.2em]">
+                                        <Activity size={12} className="text-emerald-500 animate-pulse" />
+                                        System: <span className="text-emerald-600">LIVE</span>
+                                    </p>
+                                    <div className="h-1 w-1 bg-slate-300 rounded-full" />
+                                    <div className="flex items-center gap-2">
+                                        <span className={`text-[10px] font-black uppercase tracking-widest ${isSilentMode ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                            In tự động
+                                        </span>
+                                        <button
+                                            onClick={() => {
+                                                setIsSilentMode(!isSilentMode)
+                                                addLog(`Chế độ IN TỰ ĐỘNG: ${!isSilentMode ? 'BẬT' : 'TẮT'}`, !isSilentMode ? 'success' : 'warning')
+                                            }}
+                                            className={`w-10 h-5 rounded-full p-1 transition-all duration-300 relative flex items-center ${isSilentMode ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]' : 'bg-slate-300'}`}
+                                        >
+                                            <div className={`w-3 h-3 bg-white rounded-full transition-all duration-500 shadow-sm ${isSilentMode ? 'translate-x-5' : 'translate-x-0'}`} />
+                                        </button>
+                                    </div>
+                                    {isSilentMode && (
+                                        <div className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 rounded-full border border-emerald-500/20 animate-pulse">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                            <span className="text-[9px] font-black text-emerald-600 uppercase tracking-tighter">Automation Active</span>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
                         <div className="flex items-center gap-4">
-                            <div className="hidden md:flex items-center gap-3 bg-zinc-900 px-5 py-2.5 rounded-2xl border border-zinc-800 text-zinc-400 text-xs font-black tracking-widest uppercase">
-                                <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+                            <div className="hidden md:flex items-center gap-3 bg-white px-5 py-2.5 rounded-2xl border border-slate-200 text-slate-600 text-xs font-black tracking-widest uppercase">
+                                <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.3)]" />
                                 Database Linked
                             </div>
-                            <div className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 hover:text-white transition-colors cursor-pointer">
+                            <div className="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors cursor-pointer">
                                 <Bell size={18} />
                             </div>
                         </div>
@@ -457,24 +557,31 @@ function PrintStationContent() {
                         {/* Stats Grid */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             {[
-                                { label: 'Tổng hôm nay', value: stats.totalToday, icon: LayoutGrid, color: 'blue' },
-                                { label: 'Hoàn thành', value: stats.completed, icon: CheckCircle2, color: 'emerald' },
-                                { label: 'Đang đợi', value: stats.pending, icon: Clock, color: 'amber' }
+                                { label: 'Tổng hôm nay', value: stats.totalToday, icon: LayoutGrid, color: 'blue', gradient: 'from-blue-500 to-indigo-600' },
+                                { label: 'Hoàn thành', value: stats.completed, icon: CheckCircle2, color: 'emerald', gradient: 'from-emerald-500 to-teal-600' },
+                                { label: 'Đang đợi', value: stats.pending, icon: Clock, color: 'amber', gradient: 'from-orange-400 to-amber-600' }
                             ].map((s, i) => (
-                                <div key={i} className="bg-zinc-900/40 border border-zinc-800/60 rounded-3xl p-6 backdrop-blur-sm group hover:border-emerald-500/30 transition-all duration-500 shadow-xl">
+                                <div key={i} className={`relative overflow-hidden bg-white border border-slate-200 rounded-[2.5rem] p-7 shadow-sm group hover:shadow-xl hover:-translate-y-1 transition-all duration-500`}>
+                                    <div className={`absolute top-0 left-0 w-2 h-full bg-gradient-to-b ${s.gradient} opacity-80`} />
                                     <div className="flex items-center justify-between mb-4">
-                                        <div className={`p-3 rounded-2xl bg-${s.color}-500/10 ring-1 ring-${s.color}-500/20`}>
-                                            <s.icon size={22} className={`text-${s.color}-500`} />
+                                        <div className={`p-4 rounded-2xl bg-gradient-to-br ${s.gradient} shadow-lg shadow-${s.color}-500/20`}>
+                                            <s.icon size={24} className="text-white" />
                                         </div>
-                                        <span className="text-4xl font-black text-white tabular-nums tracking-tighter">{s.value}</span>
+                                        <div className="text-right">
+                                            <span className="text-5xl font-black text-slate-900 tabular-nums tracking-tighter block mb-1">{s.value}</span>
+                                            <p className={`text-[10px] font-black uppercase tracking-[0.2em] text-${s.color}-600/70`}>{s.label}</p>
+                                        </div>
                                     </div>
-                                    <p className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em]">{s.label}</p>
+                                    {/* Subtle background accent */}
+                                    <div className={`absolute -right-4 -bottom-4 opacity-[0.03] group-hover:scale-110 transition-transform duration-700`}>
+                                        <s.icon size={100} />
+                                    </div>
                                 </div>
                             ))}
                         </div>
 
                         {/* Main Work Area / Preview */}
-                        <div className="relative bg-zinc-900/20 border border-zinc-800 rounded-[3rem] overflow-hidden shadow-2xl min-h-[660px] flex flex-col backdrop-blur-md group">
+                        <div className="relative bg-white border border-slate-200 rounded-[3rem] overflow-hidden shadow-sm min-h-[660px] flex flex-col group">
                             {/* Decorative Grid */}
                             <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none" />
 
@@ -507,38 +614,38 @@ function PrintStationContent() {
                                         <div className="mt-12 flex flex-col items-center gap-4">
                                             <div className="flex -space-x-3">
                                                 {jobs.length > 0 ? (
-                                                    <div className="w-10 h-10 rounded-full border-[3px] border-zinc-900 bg-amber-500 flex items-center justify-center shadow-lg animate-pulse">
-                                                        <Clock size={18} className="text-zinc-900 font-bold" />
+                                                    <div className="w-10 h-10 rounded-full border-[3px] border-white bg-amber-500 flex items-center justify-center shadow-lg animate-pulse">
+                                                        <Clock size={18} className="text-white font-bold" />
                                                     </div>
                                                 ) : (
                                                     [1, 2, 3, 4].map(i => (
-                                                        <div key={i} className="w-10 h-10 rounded-full border-[3px] border-zinc-900 bg-emerald-500 flex items-center justify-center shadow-lg">
-                                                            <Check size={18} className="text-zinc-900 font-bold" />
+                                                        <div key={i} className="w-10 h-10 rounded-full border-[3px] border-white bg-emerald-500 flex items-center justify-center shadow-lg">
+                                                            <Check size={18} className="text-white font-bold" />
                                                         </div>
                                                     ))
                                                 )}
                                             </div>
-                                            <p className="text-zinc-400 font-bold italic text-sm">
+                                            <p className="text-slate-500 font-bold italic text-sm">
                                                 {jobs.length > 0 ? 'Incoming Package: ' : 'Processed Package: '}
-                                                <span className="text-white not-italic">{(jobs[0] || lastPrinted!).lot_code}</span>
+                                                <span className="text-slate-900 not-italic">{(jobs[0] || lastPrinted!).lot_code}</span>
                                             </p>
                                         </div>
                                     </div>
                                 ) : (
                                     <div className="text-center group">
-                                        <div className="w-32 h-32 bg-zinc-900/50 border border-zinc-800 rounded-[3rem] flex items-center justify-center mx-auto mb-8 group-hover:scale-110 transition-all duration-700 group-hover:border-emerald-500/30 group-hover:shadow-[0_0_50px_rgba(16,185,129,0.1)]">
-                                            <Layers className="text-zinc-700 group-hover:text-emerald-500 transition-colors" size={56} />
+                                        <div className="w-32 h-32 bg-slate-50 border border-slate-100 rounded-[3rem] flex items-center justify-center mx-auto mb-8 group-hover:scale-110 transition-all duration-700 group-hover:border-emerald-500/30 group-hover:shadow-[0_0_50px_rgba(16,185,129,0.1)]">
+                                            <Layers className="text-slate-300 group-hover:text-emerald-500 transition-colors" size={56} />
                                         </div>
-                                        <h3 className="text-2xl font-black text-white tracking-tight">System Ready</h3>
-                                        <p className="text-zinc-500 max-w-[320px] mx-auto mt-4 text-sm leading-relaxed font-bold italic uppercase tracking-widest opacity-60">Waiting for Remote Print Signal...</p>
+                                        <h3 className="text-2xl font-black text-slate-900 tracking-tight">System Ready</h3>
+                                        <p className="text-slate-400 max-w-[320px] mx-auto mt-4 text-sm leading-relaxed font-bold italic uppercase tracking-widest opacity-60">Waiting for Remote Print Signal...</p>
                                     </div>
                                 )}
                             </div>
 
                             {/* Recent History Grid Inside Main Area */}
-                            <div className="bg-zinc-950/40 border-t border-zinc-800/60 p-8 backdrop-blur-xl">
+                            <div className="bg-slate-50/80 border-t border-slate-200 p-8">
                                 <div className="flex items-center justify-between mb-6">
-                                    <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-zinc-500">Recently Dispatched</h3>
+                                    <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-400">Recently Dispatched</h3>
                                     <button
                                         onClick={() => setActiveTab('history')}
                                         className="text-[10px] text-emerald-500 hover:text-emerald-400 transition-colors uppercase font-black tracking-widest bg-emerald-500/10 px-4 py-2 rounded-xl"
@@ -548,13 +655,13 @@ function PrintStationContent() {
                                 </div>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                                     {history.slice(0, 4).map((h) => (
-                                        <div key={h.id} className="bg-zinc-900/60 p-4 rounded-2xl border border-zinc-800/80 hover:border-emerald-500/40 transition-all group overflow-hidden relative">
+                                        <div key={h.id} className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-emerald-500/40 transition-all group overflow-hidden relative shadow-sm">
                                             <div className="flex items-center gap-3 mb-2">
-                                                <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                                                <span className="text-xs font-black text-zinc-300 truncate">{h.lot_code}</span>
+                                                <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.3)]" />
+                                                <span className="text-xs font-black text-slate-700 truncate">{h.lot_code}</span>
                                             </div>
                                             <div className="flex items-center justify-between mt-3">
-                                                <p className="text-[10px] text-zinc-500 font-black tabular-nums">{format(new Date(h.created_at), 'HH:mm:ss')}</p>
+                                                <p className="text-[10px] text-slate-400 font-black tabular-nums">{format(new Date(h.created_at), 'HH:mm:ss')}</p>
                                                 <div className="opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <CheckCircle2 size={14} className="text-emerald-500" />
                                                 </div>
@@ -573,21 +680,21 @@ function PrintStationContent() {
 
                     {/* --- Right Column: Tabs (Queue, Logs) --- */}
                     <div className="col-span-12 lg:col-span-4 space-y-8 h-full">
-                        <div className="bg-zinc-900/40 border border-zinc-800 rounded-[3rem] shadow-2xl overflow-hidden flex flex-col h-full max-h-[1000px] backdrop-blur-xl">
+                        <div className="bg-white border border-slate-200 rounded-[3rem] shadow-sm overflow-hidden flex flex-col h-full max-h-[1000px]">
                             {/* Tab Switcher */}
-                            <div className="flex p-2 gap-2 border-b border-zinc-800/60 bg-zinc-950/20">
+                            <div className="flex p-2 gap-2 border-b border-slate-100 bg-slate-50/50">
                                 {(['queue', 'history', 'logs'] as const).map(tab => (
                                     <button
                                         key={tab}
                                         onClick={() => setActiveTab(tab)}
                                         className={`flex-1 py-4 rounded-[1.8rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 relative ${activeTab === tab
-                                            ? 'text-white bg-zinc-800 shadow-xl'
-                                            : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/30'
+                                            ? 'text-white bg-emerald-600 shadow-lg shadow-emerald-500/20'
+                                            : 'text-slate-400 hover:text-slate-600 hover:bg-slate-200/50'
                                             }`}
                                     >
                                         {tab === 'queue' ? 'Queue' : tab === 'history' ? 'History' : 'Logs'}
                                         {tab === 'queue' && jobs.length > 0 && (
-                                            <span className="absolute top-3 right-4 bg-emerald-500 text-zinc-900 px-2 py-0.5 rounded-full text-[9px] font-black border-2 border-zinc-900">
+                                            <span className="absolute top-3 right-4 bg-emerald-500 text-white px-2 py-0.5 rounded-full text-[9px] font-black border-2 border-white">
                                                 {jobs.length}
                                             </span>
                                         )}
@@ -602,30 +709,33 @@ function PrintStationContent() {
                                         {jobs.map((job, idx) => (
                                             <div key={job.id} className="group relative">
                                                 {/* Mini Label Design for Queue */}
-                                                <div className="bg-zinc-800/40 border border-zinc-800 rounded-[2rem] p-5 hover:border-emerald-500/40 transition-all duration-500 hover:shadow-[0_20px_40px_rgba(0,0,0,0.3)]">
+                                                <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-5 hover:border-emerald-500/40 transition-all duration-500">
                                                     <div className="flex justify-between items-start mb-4">
                                                         <div className="flex flex-col">
-                                                            <div className="flex items-center gap-2 mb-1">
-                                                                <span className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.2em]">{idx === 0 ? 'NEXT' : `POS ${idx + 1}`}</span>
-                                                                <div className={`w-1.5 h-1.5 rounded-full ${idx === 0 ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 'bg-zinc-600'}`} />
+                                                            <div className="flex items-center gap-2 mb-1 overflow-hidden">
+                                                                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] whitespace-nowrap">{idx === 0 ? 'NEXT' : `POS ${idx + 1}`}</span>
+                                                                <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${idx === 0 ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-300'}`} />
+                                                                <span className="ml-auto text-[10px] font-black bg-blue-500 text-white px-3 py-1 rounded-full shadow-sm tracking-widest whitespace-nowrap">
+                                                                    {job.print_data.label_quantity || 1} TEM
+                                                                </span>
                                                             </div>
-                                                            <h4 className="text-lg font-black text-white tracking-tight">{job.lot_code}</h4>
-                                                            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-1 italic">
+                                                            <h4 className="text-lg font-black text-slate-900 tracking-tight leading-tight">{job.lot_code}</h4>
+                                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5 italic">
                                                                 {(job.print_data as any).work_area_name || 'No Area Assigned'}
                                                             </p>
                                                         </div>
-                                                        <div className="bg-zinc-900/80 p-1 rounded-xl shadow-inner border border-zinc-800">
+                                                        <div className="bg-white p-1 rounded-xl shadow-sm border border-slate-200">
                                                             <QRCode value={job.print_data.scan_url} size={40} />
                                                         </div>
                                                     </div>
 
-                                                    <div className="bg-black/40 rounded-2xl p-3 border border-zinc-800/30 mb-5">
+                                                    <div className="bg-white/80 rounded-2xl p-3 border border-slate-200 mb-5 shadow-sm">
                                                         <div className="flex items-center gap-3">
                                                             <div className="p-2 bg-emerald-500/10 rounded-lg">
                                                                 <Package size={14} className="text-emerald-500" />
                                                             </div>
                                                             <div className="min-w-0">
-                                                                <p className="text-[10px] font-black text-white truncate uppercase tracking-tight">
+                                                                <p className="text-[10px] font-black text-slate-900 truncate uppercase tracking-tight">
                                                                     {job.print_data.products?.[0]?.name || job.print_data.product_name}
                                                                 </p>
                                                                 <p className="text-xs font-bold text-emerald-400">
@@ -650,7 +760,7 @@ function PrintStationContent() {
                                                         </button>
                                                         <button
                                                             onClick={() => handlePrintJob(job)}
-                                                            className="flex-1 py-3 rounded-xl bg-emerald-500 text-zinc-900 hover:bg-emerald-400 transition-all font-black text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-500/20"
+                                                            className="flex-1 py-3 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-all font-black text-[10px] uppercase tracking-widest shadow-md shadow-emerald-500/20"
                                                         >
                                                             Print Tag
                                                         </button>
@@ -659,11 +769,14 @@ function PrintStationContent() {
                                             </div>
                                         ))}
                                         {jobs.length === 0 && (
-                                            <div className="text-center py-32 space-y-4 opacity-40">
-                                                <div className="w-16 h-16 bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4 border border-zinc-700">
-                                                    <Printer size={24} className="text-zinc-600" />
+                                            <div className="text-center py-32 space-y-6">
+                                                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100 shadow-inner group">
+                                                    <Printer size={28} className="text-slate-300 group-hover:text-emerald-500 transition-colors duration-500" />
                                                 </div>
-                                                <p className="text-xs font-black uppercase tracking-[0.3em] text-zinc-500">Queue is Clear</p>
+                                                <div className="space-y-2">
+                                                    <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-400">Queue is Clear</p>
+                                                    <p className="text-[10px] text-slate-300 font-medium italic uppercase tracking-widest">Ready for next manifest</p>
+                                                </div>
                                             </div>
                                         )}
                                     </div>
@@ -672,33 +785,37 @@ function PrintStationContent() {
                                 {activeTab === 'history' && (
                                     <div className="space-y-3">
                                         {history.map(job => (
-                                            <div key={job.id} className="flex items-center gap-4 p-4 rounded-[2rem] bg-zinc-900/30 border border-zinc-800 hover:border-emerald-500/20 transition-all group">
-                                                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center flex-shrink-0 border border-emerald-500/10">
+                                            <div key={job.id} className="flex items-center gap-4 p-4 rounded-[2rem] bg-white border border-slate-200 hover:border-emerald-500/20 transition-all group shadow-sm">
+                                                <div className="w-12 h-12 rounded-2xl bg-emerald-500/5 flex items-center justify-center flex-shrink-0 border border-emerald-500/10">
                                                     <CheckCircle2 className="text-emerald-500" size={20} />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex justify-between items-start">
-                                                        <div>
-                                                            <p className="text-xs font-black text-white tracking-tight">{job.lot_code}</p>
-                                                            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-0.5">{(job.print_data as any).work_area_name || 'General'}</p>
+                                                        <div className="min-w-0">
+                                                            <div className="flex items-center gap-2">
+                                                                <p className="text-xs font-black text-slate-900 tracking-tight">{job.lot_code}</p>
+                                                                <span className="text-[8px] font-black bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200">
+                                                                    {job.print_data.label_quantity || 1} TEM
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{(job.print_data as any).work_area_name || 'General'}</p>
                                                         </div>
-                                                        <span className="text-[10px] font-black text-zinc-600 tabular-nums">{format(new Date(job.created_at), 'HH:mm')}</span>
+                                                        <span className="text-[10px] font-black text-slate-300 tabular-nums ml-auto">{format(new Date(job.created_at), 'HH:mm')}</span>
                                                     </div>
-                                                    <p className="text-[10px] text-emerald-400 font-bold truncate mt-2 uppercase">
+                                                    <p className="text-[10px] text-emerald-600 font-bold truncate mt-2 uppercase">
                                                         {job.print_data.products?.[0]?.name || job.print_data.product_name}
                                                     </p>
                                                 </div>
                                             </div>
                                         ))}
-                                        {history.length === 0 && <div className="text-center py-20 text-zinc-600 font-black uppercase tracking-widest text-[10px]">Empty Annals</div>}
                                     </div>
                                 )}
 
                                 {activeTab === 'logs' && (
-                                    <div className="font-mono text-[9px] space-y-3 bg-black ring-1 ring-zinc-800 p-6 rounded-[2rem] min-h-[600px] shadow-inner">
-                                        <div className="flex items-center gap-2 mb-4 border-b border-zinc-800 pb-3">
+                                    <div className="font-mono text-[9px] space-y-3 bg-slate-900 ring-1 ring-slate-800 p-6 rounded-[2rem] min-h-[600px] shadow-inner text-slate-300">
+                                        <div className="flex items-center gap-2 mb-4 border-b border-white/5 pb-3">
                                             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                            <span className="text-zinc-500 font-black uppercase tracking-widest">System Tailing...</span>
+                                            <span className="text-slate-500 font-black uppercase tracking-widest">System Tailing...</span>
                                         </div>
                                         {logs.map(log => (
                                             <div key={log.id} className="flex gap-3 leading-relaxed">
@@ -722,11 +839,7 @@ function PrintStationContent() {
             </div>
 
             <style jsx global>{`
-                @font-face {
-                    font-family: 'Inter';
-                    src: url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-                }
-                .font-display { font-family: 'Inter', sans-serif; }
+                .font-display { font-family: var(--font-inter), 'Inter', sans-serif; }
                 .custom-scrollbar::-webkit-scrollbar { width: 5px; }
                 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
                 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 20px; }
@@ -767,9 +880,9 @@ function PrintStationContent() {
 export default function PrintStationPage() {
     return (
         <Suspense fallback={
-            <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-white">
-                <Loader2 className="w-12 h-12 animate-spin text-blue-500 mb-4" />
-                <p className="italic text-zinc-400">Đang khởi động hệ thống in...</p>
+            <div className="flex flex-col items-center justify-center min-h-screen bg-white text-slate-900">
+                <Loader2 className="w-12 h-12 animate-spin text-emerald-500 mb-4" />
+                <p className="italic text-slate-400">Đang khởi động hệ thống in...</p>
             </div>
         }>
             <PrintStationContent />
