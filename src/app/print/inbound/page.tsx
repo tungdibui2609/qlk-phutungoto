@@ -158,6 +158,8 @@ function InboundPrintContent() {
     // Print size state
     const [printSize, setPrintSize] = useState<'A4' | 'A5'>('A4')
 
+    // Inject @page size into document.head so Chrome print preview picks it up
+
     // Capture and snapshot state
     const [isDownloading, setIsDownloading] = useState(false)
     const { isCapturing, downloadTimer, handleCapture } = useCaptureReceipt({
@@ -472,7 +474,7 @@ function InboundPrintContent() {
     }
 
     return (
-        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('inbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 w-full max-w-4xl print:max-w-none print:w-full print:mx-0 mx-auto bg-white text-black text-[13px] ${printSize === 'A5' ? 'print:text-[12px]' : 'print:text-[13px]'} leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
+        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('inbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 w-full max-w-4xl print:max-w-none print:w-full print:mx-0 mx-auto bg-white text-black text-[13px] ${printSize === 'A5' ? 'print:text-[12px] print-page-a5' : 'print:text-[13px] print-page-a4'} leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
             {isCapturing && (
                 <style dangerouslySetInnerHTML={{
                     __html: `
@@ -488,31 +490,6 @@ function InboundPrintContent() {
                     }
                     input, textarea {
                         display: none !important;
-                    }
-                `}} />
-            )}
-            {printSize === 'A5' && !isCapturing && (
-                <style dangerouslySetInnerHTML={{
-                    __html: `
-                    @media print {
-                        @page {
-                            /* Removed 'size: 210mm 148mm;' because Chrome has a known bug explicitly forcing width to 148mm when specifying this on A5 landscape */
-                            margin: 5mm 5mm 5mm 5mm;
-                        }
-                        body, html {
-                            margin: 0 !important;
-                            padding: 0 !important;
-                            width: auto !important;
-                            height: auto !important;
-                        }
-                        #print-ready {
-                            width: auto !important;
-                            max-width: none !important;
-                            height: auto !important;
-                            max-height: none !important;
-                            margin: 0 !important;
-                            padding: 0 !important;
-                        }
                     }
                 `}} />
             )}
@@ -551,7 +528,7 @@ function InboundPrintContent() {
 
             {/* Title */}
             <div className={`relative text-center ${printSize === 'A5' ? 'mt-2 mb-1' : 'mt-4 mb-2'}`}>
-                <h1 className={`${printSize === 'A5' ? 'text-lg' : 'text-xl'} font-bold tracking-wide`} style={{ fontFamily: "'Times New Roman', Times, serif" }}>
+                <h1 className={`${printSize === 'A5' ? 'text-base' : 'text-xl'} font-bold tracking-wide`} style={{ fontFamily: "'Times New Roman', Times, serif" }}>
                     PHIẾU NHẬP KHO
                 </h1>
 
@@ -584,7 +561,7 @@ function InboundPrintContent() {
                     </div>
                 )}
 
-                <div className="text-sm italic text-gray-600 mt-2">
+                <div className={`text-sm italic text-gray-600 ${printSize === 'A5' ? 'mt-0' : 'mt-2'}`}>
                     <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
                         Ngày{' '}
                         <input
@@ -618,7 +595,7 @@ function InboundPrintContent() {
                 </div>
             </div>
 
-            <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-1 pb-1' : 'print:mt-8 pb-16'} space-y-2 ${printSize === 'A5' ? 'print:space-y-0.5' : 'print:space-y-0'} text-sm`}>
+            <div className={`mt-1 ${printSize === 'A5' ? 'print:mt-0 pb-0.5' : 'print:mt-8 pb-16'} space-y-2 ${printSize === 'A5' ? 'print:space-y-0' : 'print:space-y-0'} text-sm`}>
                 <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
                     <span className="text-gray-600 shrink-0">- Họ tên người giao:</span>
                     <EditableText
@@ -744,13 +721,13 @@ function InboundPrintContent() {
                 </div>
             </div>
 
-            <div className="mt-6 print:mt-1 w-full">
-                <table className={`w-full print:w-full border-collapse text-sm ${printSize === 'A5' ? 'print:table-fixed' : ''}`} style={{ width: '100%' }}>
+            <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-0.5' : 'print:mt-1'} w-full`}>
+                <table className="w-full print:w-full border-collapse text-sm" style={{ width: '100%' }}>
                     <thead>
                         <tr className="bg-gray-100">
-                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 print:w-[5%]' : 'px-2 py-2 w-10'} text-center`}>STT</th>
-                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 print:w-[26%] break-words' : 'px-2 py-2 w-60'} text-center`}>Tên, nhãn hiệu quy cách, phẩm chất vật tư, dụng cụ sản phẩm, hàng hóa</th>
-                            <th rowSpan={2} className={`border border-gray-400 px-2 py-2 text-center ${printSize === 'A5' ? 'print:w-[15%]' : 'w-24'}`}>
+                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-10`}>STT</th>
+                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 w-[27%] break-words' : 'px-2 py-2 w-60'} text-center`}>Tên, nhãn hiệu quy cách, phẩm chất vật tư, dụng cụ sản phẩm, hàng hóa</th>
+                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">
                                 <EditableText
                                     value={editQuyCachTitle}
                                     onChange={setEditQuyCachTitle}
@@ -758,12 +735,12 @@ function InboundPrintContent() {
                                     isSnapshot={isSnapshotMode}
                                 />
                             </th>
-                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 print:w-[10%]' : 'px-2 py-2 w-14'} text-center`}>Đơn vị tính</th>
+                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-14`}>Đơn vị tính</th>
                             <th colSpan={hasModule('inbound_conversion') && targetUnit ? (hasModule('inbound_financials') ? 3 : 2) : (hasModule('inbound_financials') ? 2 : 1)} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center`}>Số lượng</th>
-                            {!isInternal && hasModule('inbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 print:w-[12%]' : 'px-2 py-2 w-24'} text-center`}>Đơn giá</th>}
-                            {!isInternal && hasModule('inbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 print:w-[12%]' : 'px-2 py-2 w-28'} text-center`}>Thành tiền</th>}
+                            {!isInternal && hasModule('inbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-24`}>Đơn giá</th>}
+                            {!isInternal && hasModule('inbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-28`}>Thành tiền</th>}
                             {isInternal && (
-                                <th rowSpan={2} className={`border border-gray-400 px-2 py-2 text-center ${printSize === 'A5' ? 'print:w-[12%]' : 'w-16'}`}>
+                                <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-16">
                                     <EditableText
                                         value={editNoteTitle}
                                         onChange={setEditNoteTitle}
@@ -774,10 +751,10 @@ function InboundPrintContent() {
                             )}
                         </tr>
                         <tr className="bg-gray-100">
-                            {hasModule('inbound_financials') && <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 print:w-[10%]' : 'px-2 py-2 w-20'} text-center align-top`}>Theo CT</th>}
-                            <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 print:w-[10%]' : 'px-2 py-2 w-20'} text-center align-top`}>Thực nhập</th>
+                            {hasModule('inbound_financials') && <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-20 align-top`}>Theo CT</th>}
+                            <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-20 align-top`}>Thực nhập</th>
                             {hasModule('inbound_conversion') && targetUnit && (
-                                <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 print:w-[12%]' : 'px-2 py-2 w-24'} text-center`}>Quy đổi<br /><span className="font-normal text-[10px]">({targetUnit})</span></th>
+                                <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-24`}>Quy đổi<br /><span className="font-normal text-[10px]">({targetUnit})</span></th>
                             )}
                         </tr>
                         <tr className="bg-gray-100 font-normal">
@@ -869,9 +846,9 @@ function InboundPrintContent() {
 
                             return (
                                 <tr key={item.id} className="hover:bg-gray-50 font-bold">
-                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5 max-w-0 overflow-hidden' : 'px-2 py-1.5'} text-center`}>{index + 1}</td>
-                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 text-[11px] leading-tight max-w-0 break-words whitespace-normal' : 'px-2 py-1.5'}`}>{displayName}</td>
-                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 max-w-0' : 'px-2 py-1.5'} text-center`}>
+                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>{index + 1}</td>
+                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 text-[11px] leading-tight break-words whitespace-normal text-wrap print:max-w-[120px]' : 'px-2 py-1.5'}`}>{displayName}</td>
+                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-center`}>
                                         <EditableText
                                             value={editQuyCach[item.id] !== undefined ? editQuyCach[item.id] : quyCach}
                                             onChange={(val: string) => setEditQuyCach(prev => ({ ...prev, [item.id]: val }))}
@@ -1026,7 +1003,7 @@ function InboundPrintContent() {
                     </div>
                     <div className={`text-xs text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
                     <div className={`text-xs text-gray-500 italic invisible ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Hoặc bộ phận có nhu cầu nhập)</div>
-                    <div className={`${printSize === 'A5' ? 'print:h-5' : 'print:h-8'}`}></div>
+                    <div className={`${printSize === 'A5' ? 'print:h-1' : 'print:h-8'}`}></div>
                     <div className="mt-1">
                         <input
                             type="text"
@@ -1053,7 +1030,7 @@ function InboundPrintContent() {
                     </div>
                     <div className={`text-xs text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
                     <div className={`text-xs text-gray-500 italic invisible ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Hoặc bộ phận có nhu cầu nhập)</div>
-                    <div className={`${printSize === 'A5' ? 'print:h-5' : 'print:h-8'}`}></div>
+                    <div className={`${printSize === 'A5' ? 'print:h-1' : 'print:h-8'}`}></div>
                     <div className="mt-1">
                         <input
                             type="text"
@@ -1122,61 +1099,90 @@ function InboundPrintContent() {
             <style jsx global>{`
                 @media print {
                     @page {
-                        /* Force portrait orientation to prevent browser from auto-rotating */
-                        size: portrait;
-                        margin: ${printSize === 'A5' ? '3mm 5mm 2mm 5mm' : '1mm 10mm 10mm 10mm'};
+                        margin: 0 !important;
                     }
-                    body {
-                        -webkit-print-color-adjust: exact;
-                        print-color-adjust: exact;
+                    html, body {
+                        width: 210mm !important;
+                        height: 148mm !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        overflow: hidden !important;
                     }
                     #print-ready {
-                        ${printSize === 'A5' ? `
-                            /* Normal 100% width on 210mm paper, let natural wrapping apply */
-                        ` : ''}
+                        width: 210mm !important;
+                        height: 148mm !important;
+                        max-width: 210mm !important;
+                        min-width: 210mm !important;
+                        margin: 0 !important;
+                        padding: 2mm 5mm !important;
+                        box-sizing: border-box !important;
+                        box-shadow: none !important;
+                        border: none !important;
+                        overflow: hidden !important;
+                        font-size: 8.5px !important;
+                        line-height: 1.1 !important;
                     }
-                    ${printSize === 'A5' ? `
-                    .print-a5-super-compact {
-                        font-size: 11px !important;
-                        line-height: 1.15 !important;
+                    #print-ready * {
+                        line-height: 1.1 !important;
                     }
-                    .print-a5-super-compact * {
-                        line-height: 1.15 !important;
-                    }
-                    .print-a5-super-compact h1 {
-                        font-size: 14px !important;
-                        margin-top: 2px !important;
+                    #print-ready h1 {
+                        font-size: 13px !important;
+                        margin-top: 0px !important;
                         margin-bottom: 2px !important;
                     }
-                    .print-a5-super-compact table th,
-                    .print-a5-super-compact table td {
-                        padding: 2px 4px !important;
-                        font-size: 11px !important;
+                    
+                    /* Info section compact */
+                    #print-ready .space-y-2 {
+                        gap: 0px !important;
                     }
-                    .print-a5-super-compact .print-total-row td {
-                        padding-top: 8px !important;
-                        padding-bottom: 8px !important;
+
+                    /* Table: fill full width */
+                    #print-ready table {
+                        width: 100% !important;
+                        table-layout: auto !important;
                     }
-                    .print-a5-super-compact .pb-6 {
+                    /* Remove ALL fixed Tailwind width classes on table cells */
+                    #print-ready table th,
+                    #print-ready table td {
+                        width: auto !important;
+                        min-width: 0 !important;
+                        max-width: none !important;
+                        padding: 1px 3px !important;
+                        font-size: 8px !important;
+                        word-break: break-word !important;
+                        overflow-wrap: break-word !important;
+                    }
+                    #print-ready .print-total-row td {
+                        padding-top: 2px !important;
                         padding-bottom: 2px !important;
                     }
-                    .print-a5-super-compact .signature-grid {
+                    
+                    /* Signature section compact */
+                    #print-ready .signature-grid {
                         page-break-inside: avoid !important;
                         break-inside: avoid !important;
+                        gap: 1px !important;
+                        margin-top: 2px !important;
                     }
-                    .print-a5-super-compact img:not([alt="Logo"]) {
-                        max-height: 25px !important;
-                    }
-                    thead {
-                        display: table-row-group !important;
-                    }
-                    table {
-                        page-break-inside: avoid !important;
-                    }
-                    ` : ''}
-                    .no-print {
+                    #print-ready .pb-6, #print-ready .pb-10 {
+                        padding-bottom: 0px !important;
                         display: none !important;
                     }
+                    #print-ready .signature-grid .print\:pt-3 {
+                        padding-top: 2px !important;
+                    }
+                    #print-ready .signature-grid .text-xs {
+                        display: none !important;
+                    }
+                    #print-ready img:not([alt="Logo"]) {
+                        max-height: 15px !important;
+                    }
+                    thead {
+                        display: table-header-group !important;
+                    }
+                }
+                .no-print {
+                    display: none !important;
                 }
 
                 /* Force all text in the print area to be black, both on screen and when printed */
@@ -1221,7 +1227,7 @@ function InboundPrintContent() {
             <img
                 src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
                 alt="QR"
-                className="block w-full h-[1px] opacity-0 pointer-events-none"
+                className="block w-full h-[1px] opacity-0 pointer-events-none print:hidden"
             />
         </div>
     )

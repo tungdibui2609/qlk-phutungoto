@@ -347,3 +347,22 @@ body::before {
   background: rgba(249, 115, 22, 0.2);
   color: var(--text-primary);
 }
+
+/* === Print Page Sizes (Named Pages) === */
+@page a5-page {
+  size: A5 portrait;
+  margin: 5mm;
+}
+
+@page a4-page {
+  size: A4 portrait;
+  margin: 15mm;
+}
+
+.print-page-a5 {
+  page: a5-page;
+}
+
+.print-page-a4 {
+  page: a4-page;
+}

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Test Khổ Giấy A5 Chuẩn</title>
+    <style>
+        @media print {
+            @page {
+                size: A5 portrait;
+                margin: 0;
+            }
+
+            body {
+                margin: 0;
+                padding: 0;
+            }
+
+            .no-print {
+                display: none;
+            }
+
+            .a5-page {
+                box-shadow: none !important;
+                border: 2px solid #ff0000 !important;
+                margin: 0 !important;
+            }
+        }
+
+        body {
+            background-color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+
+        .a5-page {
+            background: white;
+            width: 148mm;
+            height: 210mm;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            position: relative;
+            box-sizing: border-box;
+            border: 2px solid #ff0000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        .content {
+            padding: 5mm;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        p {
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .ruler-v {
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 210mm;
+            width: 10mm;
+            border-right: 1px dashed #ddd;
+            background: linear-gradient(to bottom, #eee 1%, transparent 1%) 0 0 / 100% 10mm;
+        }
+
+        .ruler-h {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 148mm;
+            height: 10mm;
+            border-bottom: 1px dashed #ddd;
+            background: linear-gradient(to right, #eee 1%, transparent 1%) 0 0 / 10mm 100%;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <button class="no-print" onclick="window.print()">Bấm vào đây để In Test A5 DOC</button>
+
+    <div class="a5-page">
+        <div class="ruler-v"></div>
+        <div class="ruler-h"></div>
+        <div class="content">
+            <h1>TEST KHỔ GIẤY A5 DỌC</h1>
+            <p style="font-size: 20px; font-weight: bold;">Rộng: 148mm | Cao: 210mm</p>
+            <div style="border: 1px dashed blue; padding: 20px; margin-top: 20px;">
+                <p>Khung màu đỏ này có kích thước <b>chính xác 14.8cm x 21cm</b>.</p>
+                <p>Tôi đã đặt <b>Lề (Margin): 0</b> trong lệnh in.</p>
+                <p>Trong Preview, nếu bạn chọn <b>Lề: Không có (None)</b>, khung đỏ sẽ khít khịt 1 trang.</p>
+            </div>
+            <p style="margin-top: 40px; color: red;">Paper size: <b>A5</b> | Orientation: <b>Portrait</b></p>
+        </div>
+    </div>
+
+    <div class="no-print"
+        style="margin-top: 20px; max-width: 600px; text-align: left; background: #fff; padding: 20px; border-radius: 8px;">
+        <h3>Giải thích kỹ thuật:</h3>
+        <ul>
+            <li>Khổ giấy A5 chuẩn là 148x210mm (đúng như bạn nói).</li>
+            <li>Lý do bị nhảy 2 trang là vì nếu nội dung dài đúng 210mm mà máy in lại cộng thêm lề (mặc định là ~5mm mỗi
+                bên) thì nó sẽ thành 220mm -> Tràn trang.</li>
+            <li>Để in 1 trang, nội dung thực tế (bảng biểu) nên cao khoảng 190-200mm để chừa chỗ cho lề.</li>
+        </ul>
+    </div>
+</body>
+
+</html>
