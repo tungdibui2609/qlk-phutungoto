@@ -496,8 +496,8 @@ function InboundPrintContent() {
                     __html: `
                     @media print {
                         @page {
-                            size: A5 portrait;
-                            margin: 10mm 15mm 10mm 15mm;
+                            size: 210mm 148mm;
+                            margin: 5mm 10mm 5mm 10mm;
                         }
                     }
                 `}} />

@@ -57,15 +57,15 @@ export function PrintHeader({
 
                 {/* Company Info */}
                 <div className={`flex flex-col justify-center ${isA5 ? 'gap-0' : 'gap-0.5'} ${isA5 ? 'min-w-0 flex-1' : ''}`}>
-                    <div className={`text-black font-bold uppercase leading-tight ${isA5 ? (isLarge ? 'text-[13px]' : 'text-[8px]') : (isLarge ? 'text-sm' : 'text-[10px]')} mb-0 ${isA5 ? '' : 'whitespace-nowrap'}`}>
+                    <div className={`text-black font-bold uppercase leading-tight ${isA5 ? (isLarge ? 'text-[13px]' : 'text-[11px]') : (isLarge ? 'text-sm' : 'text-[10px]')} mb-0 ${isA5 ? '' : 'whitespace-nowrap'}`}>
                         {companyInfo?.name || 'CÔNG TY'}
                     </div>
                     {companyInfo?.address && (
-                        <div className={`font-bold text-black leading-tight ${isA5 ? (isLarge ? 'text-[11px]' : 'text-[7px]') : (isLarge ? 'text-sm' : 'text-[8px]')}`}>
+                        <div className={`font-bold text-black leading-tight ${isA5 ? (isLarge ? 'text-[11px]' : 'text-[10px]') : (isLarge ? 'text-sm' : 'text-[8px]')}`}>
                             Địa chỉ: {companyInfo.address}
                         </div>
                     )}
-                    <div className={`font-bold text-black leading-tight ${isA5 ? (isLarge ? 'text-[11px]' : 'text-[7px]') : (isLarge ? 'text-sm' : 'text-[8px]')}`}>
+                    <div className={`font-bold text-black leading-tight ${isA5 ? (isLarge ? 'text-[11px]' : 'text-[10px]') : (isLarge ? 'text-sm' : 'text-[8px]')}`}>
                         {companyInfo?.email && `Email: ${companyInfo.email}`}
                         {companyInfo?.email && companyInfo?.phone && <span className="mx-1">|</span>}
                         {companyInfo?.phone && `ĐT: ${companyInfo.phone}`}
