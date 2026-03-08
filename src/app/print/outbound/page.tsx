@@ -1044,7 +1044,7 @@ function OutboundPrintContent() {
                         max-width: 210mm !important;
                         min-width: 210mm !important;
                         margin: 0 !important;
-                        padding: 2mm 10mm 5mm 5mm !important;
+                        padding: 2mm 20mm 5mm 15mm !important;
                         box-sizing: border-box !important;
                         box-shadow: none !important;
                         border: none !important;
@@ -1063,6 +1063,9 @@ function OutboundPrintContent() {
                     #print-ready h1 + div,
                     #print-ready h1 + div + div {
                         font-size: 11px !important;
+                    }
+                    #print-ready #print-header-title {
+                        margin-right: 5mm !important; /* Shift left to center on paper */
                     }
                     
                     /* Info section compact */
