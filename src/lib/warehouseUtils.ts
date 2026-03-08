@@ -62,7 +62,8 @@ export function groupWarehouseData(zones: Zone[], positions: PositionWithZone[])
 
                 if (isBinPattern) {
                     // MERGE BIN CASE: Create a virtual bin ("Ô suffix")
-                    const vBinId = `v-bin-${zone.id}-${suffix}`
+                    const safeSuffix = suffix.replace(/[^a-zA-Z0-9]/g, '_')
+                    const vBinId = `v-bin-${zone.id}-${safeSuffix}`
                     finalZones.push({
                         ...members[0],
                         id: vBinId,
@@ -87,7 +88,8 @@ export function groupWarehouseData(zones: Zone[], positions: PositionWithZone[])
 
                     // Create Virtual Levels under the Virtual Bin
                     Object.entries(levelGroups).forEach(([lvlName, lMembers]) => {
-                        const vLvlId = `v-lvl-${vBinId}-${lvlName}`
+                        const safeLvlName = lvlName.replace(/[^a-zA-Z0-9]/g, '_')
+                        const vLvlId = `v-lvl-${vBinId}-${safeLvlName}`
                         finalZones.push({
                             ...lMembers[0],
                             id: vLvlId,

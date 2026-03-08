@@ -247,7 +247,8 @@ function WarehouseMapContent() {
     const { handlePositionMenu, PositionActionUI } = usePositionActionManager({
         currentSystemCode: currentSystem?.code,
         isModuleEnabled,
-        onRefreshMap: fetchData
+        onRefreshMap: fetchData,
+        onRefreshLot: refreshLotInfo
     })
 
     async function fetchFullLotDetails(lotId: string) {
@@ -369,6 +370,40 @@ function WarehouseMapContent() {
         } catch (error: any) {
             console.error('Bulk delete error:', error)
             showToast(error.message || "Lỗi khi xóa LOT (có thể do ràng buộc dữ liệu khác)", 'error')
+        }
+    }
+
+    async function handleBulkDeleteTags(lotIds: string[]) {
+        if (!lotIds.length) return
+        if (!await showConfirm(`Bạn có chắc chắn muốn xóa TOÀN BỘ mã phụ của ${lotIds.length} LOT đã chọn?`)) return
+
+        try {
+            const chunkSize = 200;
+            let successCount = 0;
+
+            for (let i = 0; i < lotIds.length; i += chunkSize) {
+                const chunk = lotIds.slice(i, i + chunkSize);
+
+                // Delete all tags except system history tags
+                const { error } = await supabase
+                    .from('lot_tags')
+                    .delete()
+                    .in('lot_id', chunk)
+                    .not('tag', 'ilike', 'MERGED_%')
+                    .not('tag', 'ilike', 'SPLIT_%')
+
+                if (error) {
+                    console.error('Error deleting tags for chunk:', error);
+                    throw error;
+                }
+                successCount += chunk.length;
+            }
+
+            showToast(`Đã xóa mã phụ của ${successCount} LOT thành công`, 'success')
+            lotIds.forEach(id => refreshLotInfo(id))
+        } catch (error: any) {
+            console.error('Bulk delete tags error:', error)
+            showToast(error.message || "Lỗi khi xóa mã phụ", 'error')
         }
     }
 
@@ -639,6 +674,7 @@ function WarehouseMapContent() {
                                 highlightingPositionIds={recentlyUpdatedPositionIds}
                                 displayInternalCode={displayInternalCode}
                                 isGrouped={isGrouped}
+                                onBulkSelect={handleBulkSelect}
                                 onPrintZone={(zoneId) => {
                                     const params = new URLSearchParams()
                                     params.set('systemType', systemType)
@@ -750,6 +786,7 @@ function WarehouseMapContent() {
                 onExportOrder={handleExportOrder}
                 onBulkExport={handleBulkExport}
                 onTag={(lotIds) => setTaggingLotIds(lotIds)}
+                onDeleteTags={handleBulkDeleteTags}
                 onDeleteLot={handleBulkDeleteLot}
                 onOpenSelectHall={() => setIsSelectHallOpen(true)}
                 onOpenMove={() => setIsMoveModalOpen(true)}

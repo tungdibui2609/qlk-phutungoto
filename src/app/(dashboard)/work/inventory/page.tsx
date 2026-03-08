@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { ClipboardCheck, Plus, Loader2, ChevronRight, ChevronDown, ChevronUp, Layers, Check, Trash2, X, Calendar, User, Users, BarChart3, CheckCircle2, LayoutGrid, Eye, Package, MessageSquare } from 'lucide-react'
+import { ClipboardCheck, Plus, Loader2, ChevronRight, ChevronDown, ChevronUp, Layers, Check, Trash2, X, Calendar, User, Users, BarChart3, CheckCircle2, LayoutGrid, Eye, Package, MessageSquare, Lock, Unlock, AlertTriangle } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
 import { useSystem } from '@/contexts/SystemContext'
@@ -459,6 +459,10 @@ export default function InternalInventoryPage() {
 
     const toggleCheck = async (positionId: string) => {
         if (!selectedSession || !profile) return
+        if (selectedSession.status === 'completed') {
+            showToast('Phiếu đã được khóa, không thể chỉnh sửa', 'warning')
+            return
+        }
         const existing = items.find(i => i.position_id === positionId)
         const newChecked = !existing?.checked
 
@@ -497,6 +501,10 @@ export default function InternalInventoryPage() {
 
     const updateNote = async (positionId: string, note: string) => {
         if (!selectedSession || !profile) return
+        if (selectedSession.status === 'completed') {
+            showToast('Phiếu đã được khóa, không thể chỉnh sửa', 'warning')
+            return
+        }
         const existing = items.find(i => i.position_id === positionId)
 
         setItems(prev => {
@@ -534,6 +542,10 @@ export default function InternalInventoryPage() {
 
     const bulkCheck = async (pids: string[], checked: boolean) => {
         if (!selectedSession || !profile || pids.length === 0) return
+        if (selectedSession.status === 'completed') {
+            showToast('Phiếu đã được khóa, không thể chỉnh sửa', 'warning')
+            return
+        }
         const upserts = pids.map(pid => {
             const pos = positions.find(p => p.id === pid)
             const existing = items.find(i => i.position_id === pid)
@@ -586,6 +598,35 @@ export default function InternalInventoryPage() {
         items.forEach(i => { map[i.position_id] = i })
         return map
     }, [items])
+
+    const toggleSessionStatus = async () => {
+        if (!selectedSession) return
+        const isLocked = selectedSession.status === 'completed'
+        const newStatus = isLocked ? 'active' : 'completed'
+
+        try {
+            const { error } = await supabase
+                .from('internal_inventory_sessions')
+                .update({
+                    status: newStatus,
+                    completed_at: newStatus === 'completed' ? new Date().toISOString() : null
+                })
+                .eq('id', selectedSession.id)
+
+            if (error) throw error
+
+            const updatedSession = {
+                ...selectedSession,
+                status: newStatus,
+                completed_at: newStatus === 'completed' ? new Date().toISOString() : null
+            }
+            setSelectedSession(updatedSession)
+            setSessions(prev => prev.map(s => s.id === selectedSession.id ? updatedSession : s))
+            showToast(newStatus === 'completed' ? 'Đã khóa kiểm kê thành công' : ' Đã mở lại kiểm kê', 'success')
+        } catch (e: any) {
+            showToast('Lỗi cập nhật trạng thái: ' + e.message, 'error')
+        }
+    }
 
     const effectiveWhId = useMemo(() => {
         if (!selectedSession) return null
@@ -688,29 +729,52 @@ export default function InternalInventoryPage() {
         return children
     }, [selectedWh, childrenMap, effectiveWhId, sortedZones])
 
+    const hasHallInScope = useMemo(() => {
+        if (!selectedWh) return false
+        const ids = effectiveWhId ? getDescendantIds(effectiveWhId) : getDescendantIds(selectedWh)
+        return sortedZones.some(z => ids.includes(z.id) && z.is_hall)
+    }, [selectedWh, effectiveWhId, getDescendantIds, sortedZones])
+
     const hallSummary = useMemo(() => {
-        const dZone = sortedZones.find(z => z.id === selectedWh)
-        if (!dZone?.is_hall) return []
+        if (!hasHallInScope || !selectedWh) return []
         const groups: Record<string, any> = {}
-        const dZoneIds = effectiveWhId ? getDescendantIds(effectiveWhId) : getDescendantIds(dZone.id)
-        const dPositions = groupedData.positions.filter(p => p.zone_id && dZoneIds.includes(p.zone_id))
+        const scopeIds = effectiveWhId ? getDescendantIds(effectiveWhId) : getDescendantIds(selectedWh)
+        const hallZoneIds = sortedZones.filter(z => scopeIds.includes(z.id) && z.is_hall).map(z => z.id)
+
+        // Target positions are those inside any identified hall zone
+        const targetZoneIds = hallZoneIds.flatMap(hzid => getDescendantIds(hzid))
+        const dPositions = groupedData.positions.filter(p => p.zone_id && targetZoneIds.includes(p.zone_id))
+
         dPositions.forEach((p: any) => {
             const lot = p.lot_id ? lotInfo[p.lot_id] : null
             if (!lot || !lot.items) return
             lot.items.forEach((it: any) => {
-                const groupKey = `${it.sku}|${it.quantity}|${it.unit}`;
+                const tag = lot.tags?.[0] || ''
+                const groupKey = `${it.sku}|${it.quantity}|${it.unit}|${tag}`;
                 const res = itemsMap[p.id] || { checked: false, note: null }
                 if (!groups[groupKey]) {
-                    groups[groupKey] = { sku: it.sku, name: it.product_name, quantity: it.quantity, unit: it.unit, count: 1, checkedCount: res.checked ? 1 : 0, notes: res.note ? [res.note] : [] }
+                    groups[groupKey] = {
+                        groupKey,
+                        sku: it.sku,
+                        name: it.product_name,
+                        quantity: it.quantity,
+                        unit: it.unit,
+                        tag,
+                        count: 1,
+                        positionIds: [p.id],
+                        checkedCount: res.checked ? 1 : 0,
+                        notes: res.note ? [res.note] : []
+                    }
                 } else {
                     groups[groupKey].count++
+                    groups[groupKey].positionIds.push(p.id)
                     if (res.checked) groups[groupKey].checkedCount++
                     if (res.note) groups[groupKey].notes.push(res.note)
                 }
             })
         })
         return Object.values(groups).sort((a: any, b: any) => a.sku.localeCompare(b.sku))
-    }, [selectedWh, sortedZones, groupedData.positions, lotInfo, itemsMap, getDescendantIds])
+    }, [selectedWh, sortedZones, groupedData.positions, lotInfo, itemsMap, getDescendantIds, effectiveWhId])
 
     const toggleExpand = (id: string) => {
         setExpandedZones(prev => {
@@ -736,15 +800,90 @@ export default function InternalInventoryPage() {
         setExpandedZones(new Set())
     }
 
-    const renderInventoryPosition = (pos: any) => {
+    const renderInventoryPosition = (pos: any, isHall: boolean = false) => {
         const item = itemsMap[pos.id]
         const lot = pos.lot_id ? lotInfo[pos.lot_id] : null
+        const isChecked = item?.checked
         const hasNote = !!item?.note
+
+        if (isHall) {
+            return (
+                <div
+                    key={pos.id}
+                    onClick={() => toggleCheck(pos.id)}
+                    className={`group/pos border-2 rounded-2xl p-4 transition-all cursor-pointer shadow-sm relative flex flex-col gap-3 min-h-[160px] ${selectedSession?.status === 'completed'
+                        ? 'bg-stone-50/50 border-stone-200 pointer-events-none opacity-80'
+                        : isChecked
+                            ? 'bg-emerald-50/30 border-emerald-500 ring-4 ring-emerald-100/20'
+                            : hasNote
+                                ? 'bg-red-50/50 border-red-500 ring-4 ring-red-100/20'
+                                : 'bg-orange-50/10 border-orange-200 hover:border-orange-400 hover:shadow-md'
+                        }`}
+                >
+                    {/* Header: Code & Status */}
+                    <div className="flex justify-between items-start border-b border-orange-100 pb-2">
+                        <div className="flex flex-col">
+                            <span className="text-sm font-black text-indigo-700 tracking-tight uppercase leading-none">{pos.code}</span>
+                            {lot && <span className="text-[10px] font-bold text-stone-400 mt-1">LOT: <span className="text-amber-600">{lot.code}</span></span>}
+                        </div>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isChecked ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'bg-white border-2 border-stone-100 text-stone-100'}`}>
+                            <CheckCircle2 size={18} />
+                        </div>
+                    </div>
+
+                    {/* Content: Product Information */}
+                    <div className="flex-1 flex flex-col justify-center gap-1.5">
+                        {lot ? (
+                            lot.items?.map((li: any, i: number) => (
+                                <div key={i} className="text-center">
+                                    <h4 className="text-[13px] font-black text-stone-800 uppercase leading-tight line-clamp-2 mb-1">{li.product_name || li.sku}</h4>
+                                    <div className="flex items-center justify-center gap-2">
+                                        <span className="text-[10px] font-bold text-stone-400 font-mono italic">{li.sku}</span>
+                                        <div className="w-1 h-1 bg-stone-200 rounded-full" />
+                                        <div className="text-sm font-black text-stone-900">
+                                            {li.quantity} <span className="text-[10px] text-stone-500 font-bold uppercase">{li.unit}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="flex flex-col items-center opacity-20">
+                                <Package size={24} className="text-stone-300" />
+                                <span className="text-[10px] font-black uppercase tracking-widest italic">Vị trí trống</span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Footer: Notes */}
+                    <div
+                        className={`p-2 rounded-xl border transition-all text-center ${hasNote ? 'bg-red-50 border-red-200' : 'bg-orange-100/20 border-orange-100/50 group-hover/pos:bg-white'}`}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <input
+                            type="text"
+                            defaultValue={item?.note || ''}
+                            onBlur={(e) => updateNote(pos.id, e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                            placeholder="Ghi chú sai lệch..."
+                            className={`w-full bg-transparent text-[11px] font-bold italic outline-none placeholder:text-stone-200 ${hasNote ? 'text-red-600' : 'text-stone-400'}`}
+                        />
+                    </div>
+                </div>
+            )
+        }
 
         return (
             <div
                 key={pos.id}
-                className={`p-3 pb-1.5 rounded-xl border-2 shadow-sm relative flex flex-col items-center gap-y-2 min-h-[150px] text-center overflow-hidden transition-all ${hasNote ? 'bg-red-50/80 border-red-500 ring-1 ring-red-200' : 'bg-white border-stone-900'}`}
+                onClick={() => toggleCheck(pos.id)}
+                className={`p-3 pb-1.5 rounded-xl border-2 shadow-sm relative flex flex-col items-center gap-y-2 min-h-[150px] text-center overflow-hidden transition-all cursor-pointer ${selectedSession?.status === 'completed'
+                    ? 'bg-stone-50/50 border-stone-100 pointer-events-none opacity-80'
+                    : isChecked
+                        ? 'bg-emerald-50/50 border-emerald-500'
+                        : hasNote
+                            ? 'bg-red-50/80 border-red-500 ring-1 ring-red-200'
+                            : 'bg-white border-stone-900'
+                    }`}
             >
                 {/* 1. Header: Mã vị trí | Mã LOT (Color Coded) */}
                 <div className="w-full flex items-center justify-center relative border-b border-stone-100 pb-1">
@@ -761,6 +900,7 @@ export default function InternalInventoryPage() {
                             </>
                         )}
                     </div>
+                    {isChecked && <div className="absolute right-0 top-0 text-emerald-500"><CheckCircle2 size={16} /></div>}
                 </div>
 
                 {/* 2 -> 5 Content Area (Vertical & Centered) */}
@@ -804,7 +944,10 @@ export default function InternalInventoryPage() {
                 </div>
 
                 {/* 6. Ghi chú sai lệch (Direct Input - Footer Fixed) */}
-                <div className={`w-full mt-auto pt-1 border-t border-stone-100 px-2 pb-1 rounded-md transition-colors shrink-0 ${hasNote ? 'bg-red-50/50 border-red-200' : 'bg-transparent border-transparent'}`}>
+                <div
+                    className={`w-full mt-auto pt-1 border-t border-stone-100 px-2 pb-1 rounded-md transition-colors shrink-0 ${hasNote ? 'bg-red-50/50 border-red-200' : 'bg-transparent border-transparent'}`}
+                    onClick={(e) => e.stopPropagation()}
+                >
                     <input
                         key={pos.id}
                         type="text"
@@ -864,16 +1007,21 @@ export default function InternalInventoryPage() {
 
         // STYLE 1: DÃY / SẢNH (Green Header)
         if (isDãy && !isBigBin && !isLevelUnderBin) {
+            const hasErr = s.discrepancy > 0
             return (
                 <div key={zoneId} className="mb-4">
                     <div
-                        className="flex items-center justify-between p-4 bg-emerald-50/50 border border-emerald-100 rounded-2xl cursor-pointer hover:bg-emerald-100/50 transition-all shadow-sm"
+                        className={`flex items-center justify-between p-4 border rounded-2xl cursor-pointer transition-all shadow-sm ${hasErr ? 'bg-red-50 border-red-200 hover:bg-red-100/50' : 'bg-emerald-50/50 border-emerald-100 hover:bg-emerald-100/50'}`}
                         onClick={() => toggleExpand(zoneId)}
                     >
                         <div className="flex items-center gap-4">
-                            <div className="w-1.5 h-10 bg-emerald-500 rounded-full" />
+                            <div className={`w-1.5 h-10 rounded-full ${hasErr ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} />
                             <div className="flex items-center gap-3">
-                                {isExpanded ? <ChevronDown size={24} className="text-emerald-600" /> : <ChevronRight size={24} className="text-emerald-600" />}
+                                {isExpanded ? (
+                                    <ChevronDown size={24} className={hasErr ? 'text-red-600' : 'text-emerald-600'} />
+                                ) : (
+                                    <ChevronRight size={24} className={hasErr ? 'text-red-600' : 'text-emerald-600'} />
+                                )}
                                 <div>
                                     <h2 className="text-lg font-black text-stone-900 tracking-tight uppercase">{zone.name}</h2>
                                     <p className="text-xs font-bold text-stone-500">{s.total} vị trí</p>
@@ -881,12 +1029,13 @@ export default function InternalInventoryPage() {
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
-                            <div className="hidden sm:flex items-center gap-2 bg-white/80 px-3 py-1.5 rounded-xl border border-emerald-100">
-                                <span className="text-[10px] font-black text-emerald-600">{s.checked}/{s.total}</span>
-                                <div className="w-20 h-1.5 bg-emerald-100 rounded-full overflow-hidden">
-                                    <div className="h-full bg-emerald-500" style={{ width: `${s.pct}%` }} />
+                            <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl border ${hasErr ? 'bg-red-100/50 border-red-200' : 'bg-white/80 border-emerald-100'}`}>
+                                <span className={`text-[10px] font-black ${hasErr ? 'text-red-600' : 'text-emerald-600'}`}>{s.checked}/{s.total}</span>
+                                <div className={`w-20 h-1.5 rounded-full overflow-hidden ${hasErr ? 'bg-red-200' : 'bg-emerald-100'}`}>
+                                    <div className={`h-full ${hasErr ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${s.pct}%` }} />
                                 </div>
-                                <span className="text-[10px] font-black text-emerald-600">{s.pct}%</span>
+                                <span className={`text-[10px] font-black ${hasErr ? 'text-red-600' : 'text-emerald-600'}`}>{s.pct}%</span>
+                                {hasErr && <span className="text-[10px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded ml-1 animate-pulse">SAI LỆCH</span>}
                             </div>
                         </div>
                     </div>
@@ -894,8 +1043,16 @@ export default function InternalInventoryPage() {
                         <div className={`mt-4 ${isGroupingEnabled ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4' : 'space-y-4'}`}>
                             {filteredChildren.map(child => renderZoneTree(child.id, depth + 1, isGroupingEnabled ? currentBreadcrumb : []))}
                             {hasDirectPositions && (
-                                <div className="flex flex-col gap-2 px-2">
-                                    {filteredPos.map(pos => renderInventoryPosition(pos))}
+                                <div className={
+                                    zone.is_hall
+                                        ? "col-span-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-4 py-3 px-2"
+                                        : "flex flex-col gap-2 px-2"
+                                }>
+                                    {filteredPos.map(pos => (
+                                        <div key={pos.id} className="w-full">
+                                            {renderInventoryPosition(pos, !!zone.is_hall)}
+                                        </div>
+                                    ))}
                                 </div>
                             )}
                         </div>
@@ -951,8 +1108,16 @@ export default function InternalInventoryPage() {
                         </div>
                     </div>
                     {isExpanded && (
-                        <div className="flex flex-col gap-2">
-                            {filteredPos.map(pos => renderInventoryPosition(pos))}
+                        <div className={
+                            zone.is_hall
+                                ? "col-span-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-4 px-2"
+                                : "flex flex-col gap-2"
+                        }>
+                            {filteredPos.map(pos => (
+                                <div key={pos.id} className="w-full">
+                                    {renderInventoryPosition(pos, !!zone.is_hall)}
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>
@@ -1015,6 +1180,21 @@ export default function InternalInventoryPage() {
 
             {selectedSession ? (
                 <div className="space-y-4">
+                    {selectedSession.status === 'completed' && (
+                        <div className="bg-amber-50 border-2 border-amber-200 rounded-3xl p-6 flex items-center gap-6 shadow-xl shadow-amber-500/5 animate-in fade-in slide-in-from-top-4 duration-700">
+                            <div className="w-14 h-14 rounded-2xl bg-amber-500 flex items-center justify-center text-white shrink-0 shadow-lg shadow-amber-200 ring-4 ring-white">
+                                <AlertTriangle size={32} />
+                            </div>
+                            <div className="flex-1">
+                                <h4 className="text-xl font-black text-amber-900 leading-tight uppercase tracking-tight mb-1">KIỂM KÊ ĐÃ ĐƯỢC KHÓA</h4>
+                                <p className="text-sm font-bold text-amber-600 leading-relaxed max-w-2xl italic">Tất cả dữ liệu trong phiếu này đã được chốt và đồng bộ. Mọi thao tác chỉnh sửa (Tích chọn, Ghi chú, Xóa...) đều đã bị vô hiệu hóa để bảo vệ tính chính xác của dữ liệu.</p>
+                            </div>
+                            <div className="hidden lg:flex items-center gap-2 px-4 py-2 bg-white rounded-xl border border-amber-200 text-amber-600 font-black text-xs uppercase italic">
+                                Chế độ xem an toàn
+                            </div>
+                        </div>
+                    )}
+
                     <div className="flex items-center gap-4 bg-white rounded-xl border border-stone-200 p-4">
                         <button onClick={() => { setSelectedSession(null); fetchSessions() }} className="p-2 rounded-lg hover:bg-stone-100 transition-colors">
                             <X size={20} className="text-stone-500" />
@@ -1050,6 +1230,28 @@ export default function InternalInventoryPage() {
                                     <div><div className="text-2xl font-black text-purple-600">{pct}%</div><div className="text-[10px] text-stone-400 font-bold uppercase">Tiến độ</div></div>
                                     <div><div className="text-lg font-black text-stone-800">{checked}/{total}</div><div className="text-[10px] text-stone-400 font-bold uppercase">Vị trí</div></div>
                                     {disc > 0 && <div><div className="text-lg font-black text-red-600">{disc}</div><div className="text-[10px] text-stone-400 font-bold uppercase">Sai lệch</div></div>}
+
+                                    <div className="h-10 w-px bg-stone-100 mx-2" />
+
+                                    <button
+                                        onClick={toggleSessionStatus}
+                                        className={`flex items-center gap-2 px-6 py-2.5 rounded-2xl font-black text-sm transition-all shadow-lg active:scale-95 ${selectedSession.status === 'completed'
+                                            ? 'bg-amber-500 text-white shadow-amber-100 hover:bg-amber-600'
+                                            : 'bg-stone-900 text-white shadow-stone-200 hover:bg-stone-800'
+                                            }`}
+                                    >
+                                        {selectedSession.status === 'completed' ? (
+                                            <>
+                                                <Unlock size={18} />
+                                                MỞ LẠI KIỂM KÊ
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Lock size={18} />
+                                                KHÓA KIỂM KÊ
+                                            </>
+                                        )}
+                                    </button>
                                 </div>
                             )
                         })()}
@@ -1127,7 +1329,7 @@ export default function InternalInventoryPage() {
                                             <LayoutGrid size={14} /> {isGroupingEnabled ? 'Đã gom ô' : 'Gom ô (Merge)'}
                                         </button>
                                     </div>
-                                    {zones.find(z => z.id === selectedWh)?.is_hall && (
+                                    {hasHallInScope && (
                                         <button onClick={() => setShowHallSummary(!showHallSummary)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${showHallSummary ? 'bg-orange-500 text-white' : 'bg-white border border-stone-200 text-stone-500'}`}>
                                             <BarChart3 size={14} /> {showHallSummary ? 'Xem bản đồ' : 'Thống kê Sảnh'}
                                         </button>
@@ -1136,20 +1338,102 @@ export default function InternalInventoryPage() {
                                 <div className="p-4 min-h-[100px]">
                                     {showHallSummary ? (
                                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                                            {hallSummary.map((group, idx) => (
-                                                <div key={idx} className="bg-white border border-stone-100 rounded-2xl p-4 shadow-sm border-l-4 border-l-stone-900">
-                                                    <div className="flex justify-between items-start mb-3">
-                                                        <div className="flex-1"><h4 className="font-black text-stone-900">{group.sku}</h4><p className="text-[10px] text-stone-400 font-bold uppercase">{group.name}</p></div>
-                                                        <div className="text-right"><div className="text-lg font-black text-orange-600">{group.quantity} {group.unit}</div></div>
+                                            {hallSummary.map((group, idx) => {
+                                                const allChecked = group.checkedCount === group.count;
+                                                const hasErr = group.notes.length > 0;
+                                                const firstNote = group.notes[0] || '';
+                                                return (
+                                                    <div key={idx} className={`border-2 rounded-[2rem] p-6 shadow-sm hover:shadow-xl transition-all relative group/card flex flex-col gap-4 overflow-hidden ${hasErr ? 'bg-red-50 border-red-200' : 'bg-white border-stone-100'}`}>
+                                                        {/* Top Decoration Bar */}
+                                                        <div className={`absolute top-0 left-0 right-0 h-1.5 ${hasErr ? 'bg-red-500 animate-pulse' : allChecked ? 'bg-emerald-500' : 'bg-orange-500'}`} />
+
+                                                        {/* Header: SKU, Status & Action */}
+                                                        <div className="flex justify-between items-start">
+                                                            <div className="flex items-center gap-4">
+                                                                <button
+                                                                    onClick={() => {
+                                                                        bulkCheck(group.positionIds, !allChecked)
+                                                                    }}
+                                                                    className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${selectedSession.status === 'completed'
+                                                                        ? 'bg-stone-100 text-stone-300 cursor-not-allowed border-none pointer-events-none'
+                                                                        : allChecked
+                                                                            ? 'bg-green-500 text-white shadow-lg shadow-green-100'
+                                                                            : 'bg-stone-50 border-2 border-stone-100 text-stone-200 hover:border-stone-300'
+                                                                        }`}
+                                                                >
+                                                                    <CheckCircle2 size={24} />
+                                                                </button>
+                                                                <div>
+                                                                    <div className="flex items-center gap-2 mb-1">
+                                                                        <h4 className="text-lg font-black text-stone-900 tracking-tight leading-none">{group.sku}</h4>
+                                                                    </div>
+                                                                    <div className="flex flex-col gap-1">
+                                                                        {group.tag && (
+                                                                            <span className="text-[10px] font-bold text-orange-600 uppercase tracking-tight leading-tight">
+                                                                                {group.tag}
+                                                                            </span>
+                                                                        )}
+                                                                        <p className="text-[9px] font-bold text-stone-300 uppercase tracking-widest leading-none">MÃ SẢN PHẨM • SKU</p>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <div className="text-2xl font-black text-orange-600 leading-none">{group.quantity}</div>
+                                                                <div className="text-[10px] font-bold text-stone-400 uppercase mt-1 tracking-tighter">{group.unit}</div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Body: Product Name */}
+                                                        <div className={`rounded-2xl p-4 border min-h-[80px] flex items-center gap-3 ${hasErr ? 'bg-white/60 border-red-100' : 'bg-stone-50/50 border-stone-100'}`}>
+                                                            <div className="w-10 h-10 rounded-xl bg-white border border-stone-100 flex items-center justify-center text-stone-300">
+                                                                <Package size={20} />
+                                                            </div>
+                                                            <p className="text-sm font-extrabold text-stone-800 leading-[1.4] line-clamp-2 uppercase">
+                                                                {group.name}
+                                                            </p>
+                                                        </div>
+
+                                                        {/* Stats Grid */}
+                                                        <div className="grid grid-cols-3 gap-1 px-1">
+                                                            <div className="text-center">
+                                                                <div className="text-base font-black text-stone-800 leading-none">{group.count}</div>
+                                                                <div className="text-[8px] font-bold text-stone-400 uppercase mt-1 tracking-widest">TỔNG LOT</div>
+                                                            </div>
+                                                            <div className="text-center border-x border-stone-100">
+                                                                <div className="text-base font-black text-green-600 leading-none">{group.checkedCount}</div>
+                                                                <div className="text-[8px] font-bold text-stone-400 uppercase mt-1 tracking-widest">ĐÃ KIỂM</div>
+                                                            </div>
+                                                            <div className="text-center">
+                                                                <div className={`text-base font-black leading-none ${group.notes.length > 0 ? 'text-red-500' : 'text-stone-300'}`}>
+                                                                    {group.notes.length}
+                                                                </div>
+                                                                <div className="text-[8px] font-bold text-stone-400 uppercase mt-1 tracking-widest">GHI CHÚ</div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Batch Note Input */}
+                                                        <div className={`group/note flex items-center gap-3 p-1 rounded-2xl border-2 transition-all ${firstNote ? 'bg-red-50/50 border-red-200 ring-4 ring-red-50' : 'bg-stone-50 border-stone-50 hover:bg-white hover:border-stone-100'}`}>
+                                                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${firstNote ? 'bg-red-500 text-white shadow-lg shadow-red-100' : 'bg-white border border-stone-100 text-stone-300'}`}>
+                                                                <MessageSquare size={16} />
+                                                            </div>
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Nhập ghi chú chung cho cụm này..."
+                                                                defaultValue={firstNote}
+                                                                onBlur={(e) => {
+                                                                    const val = e.target.value;
+                                                                    if (val !== firstNote) {
+                                                                        group.positionIds.forEach((pid: string) => updateNote(pid, val));
+                                                                        showToast(`Đã cập nhật ghi chú cụm`, 'info');
+                                                                    }
+                                                                }}
+                                                                onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                                                                className={`flex-1 bg-transparent text-xs font-bold italic outline-none placeholder:text-stone-300 ${firstNote ? 'text-red-600' : 'text-stone-500'}`}
+                                                            />
+                                                        </div>
                                                     </div>
-                                                    <div className="grid grid-cols-3 gap-2 py-2 border-t border-stone-50 text-[10px]">
-                                                        <div><div className="font-black">{group.count}</div><div className="text-stone-400 uppercase">Tổng Lot</div></div>
-                                                        <div><div className="font-black text-green-600">{group.checkedCount}</div><div className="text-stone-400 uppercase">Đã kiểm</div></div>
-                                                        <div><div className={`font-black ${group.notes.length > 0 ? 'text-red-500' : 'text-stone-300'}`}>{group.notes.length}</div><div className="text-stone-400 uppercase">Ghi chú</div></div>
-                                                    </div>
-                                                    {group.notes.length > 0 && <div className="mt-2 pt-2 border-t border-stone-50 text-[9px] text-stone-500 italic">{group.notes[0]}</div>}
-                                                </div>
-                                            ))}
+                                                );
+                                            })}
                                         </div>
                                     ) : buildingChildren.length > 0 ? (
                                         buildingChildren.map(zone => {
@@ -1181,12 +1465,28 @@ export default function InternalInventoryPage() {
                             const s = session.stats || { total: 0, checked: 0, discrepancy: 0 }
                             const pct = s.total > 0 ? Math.round((s.checked / s.total) * 100) : 0
                             return (
-                                <div key={session.id} onClick={() => loadDetail(session)} className="bg-white rounded-xl border border-stone-200 shadow-sm hover:shadow-md transition-all cursor-pointer p-4 flex flex-col md:flex-row md:items-center gap-4 group">
-                                    <div className="w-12 h-12 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 shrink-0"><ClipboardCheck size={24} /></div>
+                                <div
+                                    key={session.id}
+                                    onClick={() => loadDetail(session)}
+                                    className={`rounded-xl border shadow-sm hover:shadow-md transition-all cursor-pointer p-4 flex flex-col md:flex-row md:items-center gap-4 group ${s.discrepancy > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-stone-200'}`}
+                                >
+                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${s.discrepancy > 0 ? 'bg-red-500 text-white shadow-lg shadow-red-100' : 'bg-purple-50 text-purple-600'}`}>
+                                        <ClipboardCheck size={24} />
+                                    </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex flex-wrap items-center gap-2 mb-1">
                                             <h3 className="font-bold text-stone-800">{session.name}</h3>
-                                            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-blue-100 text-blue-800">{session.status === 'active' ? 'Đang kiểm' : 'Hoàn thành'}</span>
+                                            {session.status === 'active' ? (
+                                                <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-blue-50 text-blue-600 border border-blue-100 italic tracking-wider">Đang kiểm</span>
+                                            ) : (
+                                                <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-stone-900 text-white flex items-center gap-1 shadow-sm border border-stone-800 tracking-wider">
+                                                    <Lock size={10} className="text-amber-400" />
+                                                    Hoàn thành
+                                                </span>
+                                            )}
+                                            {s.discrepancy > 0 && (
+                                                <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-red-500 text-white animate-pulse">Có sai lệch</span>
+                                            )}
                                         </div>
                                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-400 font-medium">
                                             <span className="font-bold text-stone-600">Khu vực: {session.warehouse_path}</span>
@@ -1194,12 +1494,12 @@ export default function InternalInventoryPage() {
                                             <span>{format(new Date(session.created_at), 'dd/MM/yyyy')}</span>
                                             <span>•</span>
                                             <span className="flex items-center gap-1.5">
-                                                <User size={12} className="text-stone-300" />
-                                                <span className="font-bold text-stone-500">{session.creator_name}</span>
+                                                <User size={12} className="text-stone-400" />
+                                                <span className="font-bold text-stone-800">{session.creator_name}</span>
                                                 {session.participant_names && session.participant_names.length > 0 && (
-                                                    <span className="text-stone-300 flex items-center gap-1.5">
-                                                        <span className="text-[10px] font-normal italic">cùng với</span>
-                                                        <span className="flex gap-1">
+                                                    <span className="flex items-center gap-1.5">
+                                                        <span className="text-[10px] font-normal italic text-stone-400">cùng với</span>
+                                                        <span className="font-bold text-stone-600">
                                                             {session.participant_names.join(', ')}
                                                         </span>
                                                     </span>
@@ -1208,9 +1508,15 @@ export default function InternalInventoryPage() {
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-4 shrink-0">
+                                        {s.discrepancy > 0 && (
+                                            <div className="text-center px-3 border-r border-red-100">
+                                                <div className="text-lg font-black text-red-600">-{s.discrepancy}</div>
+                                                <div className="text-[8px] font-bold text-red-400 uppercase tracking-widest leading-none">Sai lệch</div>
+                                            </div>
+                                        )}
                                         <div className="text-center px-3 border-r border-stone-100">
                                             <div className="text-lg font-black text-stone-800">{s.checked}/{s.total}</div>
-                                            <div className="text-[10px] text-stone-400 font-bold uppercase tracking-widest">Tiến độ</div>
+                                            <div className="text-[10px] text-stone-400 font-bold uppercase tracking-widest leading-none">Tiến độ</div>
                                         </div>
                                         <button onClick={(e) => { e.stopPropagation(); handleDelete(session.id) }} className="p-2 text-stone-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={18} /></button>
                                     </div>

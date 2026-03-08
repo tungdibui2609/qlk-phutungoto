@@ -604,17 +604,26 @@ export function LotForm({
 
             // Process Tags
             // To be safe, clear explicit tags for this lot except history meta tags
-            await supabase.from('lot_tags').delete()
+            const { error: deleteTagsError } = await supabase.from('lot_tags').delete()
                 .eq('lot_id', lotId)
                 .not('tag', 'ilike', 'MERGED_%')
                 .not('tag', 'ilike', 'SPLIT_%')
+
+            if (deleteTagsError) {
+                console.error('Tags Delete Error:', JSON.stringify(deleteTagsError, null, 2))
+            }
 
             const tagsToInsert: any[] = []
 
             // Tags for existing updated items
             for (const item of validItems) {
                 if (item.id && item.tag?.trim()) {
-                    tagsToInsert.push({ lot_id: lotId, lot_item_id: item.id, tag: item.tag.trim() })
+                    tagsToInsert.push({
+                        lot_id: lotId,
+                        lot_item_id: item.id,
+                        tag: item.tag.trim(),
+                        added_at: new Date().toISOString()
+                    })
                 }
             }
 
@@ -627,15 +636,19 @@ export function LotForm({
                         tagsToInsert.push({
                             lot_id: lotId,
                             lot_item_id: newInsertedItems[i].id,
-                            tag: newValidItems[i].tag!.trim()
+                            tag: newValidItems[i].tag!.trim(),
+                            added_at: new Date().toISOString()
                         })
                     }
                 }
             }
 
             if (tagsToInsert.length > 0) {
-                const tagRes = await supabase.from('lot_tags').insert(tagsToInsert)
-                if (tagRes.error) console.error('Tags Insert Error', tagRes.error)
+                const { error: tagInsertError } = await supabase.from('lot_tags').insert(tagsToInsert)
+                if (tagInsertError) {
+                    console.error('Tags Insert Error Details:', JSON.stringify(tagInsertError, null, 2))
+                    alert('Lỗi khi lưu mã phụ: ' + (tagInsertError.message || 'Lỗi không xác định'))
+                }
             }
         }
 

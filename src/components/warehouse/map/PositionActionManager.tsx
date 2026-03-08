@@ -15,9 +15,10 @@ interface UsePositionActionManagerProps {
     currentSystemCode?: string
     isModuleEnabled: (moduleId: string) => boolean
     onRefreshMap: () => void
+    onRefreshLot: (lotId: string) => void
 }
 
-export function usePositionActionManager({ currentSystemCode, isModuleEnabled, onRefreshMap }: UsePositionActionManagerProps) {
+export function usePositionActionManager({ currentSystemCode, isModuleEnabled, onRefreshMap, onRefreshLot }: UsePositionActionManagerProps) {
     // Context Menu State
     const [contextMenu, setContextMenu] = useState<{
         x: number
@@ -169,7 +170,8 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
                     lot_items (
                         id, quantity, product_id, unit,
                         products (name, unit, sku, product_code:id)
-                    )
+                    ),
+                    lot_tags (*)
                 `)
                 .eq('id', pos.lot_id)
                 .single()
@@ -194,7 +196,12 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
         setShowLotForm(false)
         setEditingLot(null)
         setTargetPositionId(null)
-        onRefreshMap()
+
+        if (lotData?.id) {
+            onRefreshLot(lotData.id)
+        } else {
+            onRefreshMap()
+        }
     }
 
     const PositionActionUI = () => (

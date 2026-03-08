@@ -53,170 +53,160 @@ const MemoizedPositionCell = React.memo<{
     }
 
     return (
-        <InView triggerOnce={false} rootMargin="200px 0px">
-            {({ inView, ref }: any) => (
-                <div
-                    ref={ref}
-                    style={{
-                        height: cellHeight > 0 ? `${cellHeight}px` : (isMobile ? '100px' : '125px'),
-                        width: cellWidth > 0 ? `${cellWidth}px` : '100%'
+        <div
+            style={{
+                height: cellHeight > 0 ? `${cellHeight}px` : (isMobile ? '100px' : '125px'),
+                width: cellWidth > 0 ? `${cellWidth}px` : '100%'
+            }}
+            className={`
+                relative ${isAssignmentMode ? 'cursor-pointer' : ''} ${isMobile ? 'p-0.5' : 'p-1'} rounded-lg border-2 transition-all
+                flex flex-col justify-between overflow-hidden
+                ${bgClass} ${borderClass} ${ringClass}
+                ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.02] hover:z-10' : ''}
+                ${isHighlightBlinking ? 'animate-highlight-blink' : ''}
+            `}
+            onClick={() => isAssignmentMode && onPositionSelect?.(ids)}
+        >
+            {!isAssignmentMode && (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation()
+                        onPositionSelect?.(ids)
                     }}
                     className={`
-                        relative ${isAssignmentMode ? 'cursor-pointer' : ''} ${isMobile ? 'p-0.5' : 'p-1'} rounded-lg border-2 transition-all
-                        flex flex-col justify-between overflow-hidden
-                        ${bgClass} ${borderClass} ${ringClass}
-                        ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.02] hover:z-10' : ''}
-                        ${isHighlightBlinking ? 'animate-highlight-blink' : ''}
+                        absolute bottom-1 left-1 z-20 w-4 h-4 rounded
+                        border-2 transition-all duration-150
+                        flex items-center justify-center
+                        ${isSelected
+                            ? 'bg-blue-500 border-blue-500 text-white shadow-md'
+                            : 'bg-white/90 dark:bg-gray-800/90 border-gray-300 dark:border-gray-500 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30'
+                        }
                     `}
-                    onClick={() => isAssignmentMode && onPositionSelect?.(ids)}
+                    title={isSelected ? "Bỏ chọn vị trí" : "Chọn vị trí"}
                 >
-                    {inView ? (
-                        <>
-                            {!isAssignmentMode && (
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        onPositionSelect?.(ids)
-                                    }}
-                                    className={`
-                                        absolute bottom-1 left-1 z-20 w-4 h-4 rounded
-                                        border-2 transition-all duration-150
-                                        flex items-center justify-center
-                                        ${isSelected
-                                            ? 'bg-blue-500 border-blue-500 text-white shadow-md'
-                                            : 'bg-white/90 dark:bg-gray-800/90 border-gray-300 dark:border-gray-500 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30'
-                                        }
-                                    `}
-                                    title={isSelected ? "Bỏ chọn vị trí" : "Chọn vị trí"}
-                                >
-                                    {isSelected && (
-                                        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                    )}
-                                </button>
-                            )}
-                            <div className="flex justify-center items-start w-full relative mb-1 shrink-0">
-                                {!isAssignmentMode && isOccupied && lotDetail && (
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation()
-                                            onViewDetails?.(pos.lot_id!)
-                                        }}
-                                        className="absolute left-0 top-0 text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors z-20"
-                                        title="Xem chi tiết LOT"
-                                    >
-                                        <Eye size={12} />
-                                    </button>
-                                )}
+                    {isSelected && (
+                        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                    )}
+                </button>
+            )}
 
-                                <div className={`font-mono ${isGrouped ? 'text-[8px]' : 'text-[10px]'} flex justify-center items-center text-black dark:text-white font-bold leading-tight w-full text-center ${cellWidth === 0 && !isGrouped ? 'whitespace-nowrap px-1' : 'break-all px-0.5'}`} style={{ minWidth: 0 }}>
-                                    {pos.code}
-                                </div>
+            <div className="flex justify-center items-start w-full relative mb-1 shrink-0">
+                {!isAssignmentMode && isOccupied && lotDetail && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            onViewDetails?.(pos.lot_id!)
+                        }}
+                        className="absolute left-0 top-0 text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors z-20"
+                        title="Xem chi tiết LOT"
+                    >
+                        <Eye size={12} />
+                    </button>
+                )}
 
-                                {!isAssignmentMode && (
-                                    <button
-                                        onClick={(e) => {
-                                            e.preventDefault()
-                                            e.stopPropagation()
-                                            onPositionMenu?.(pos, e)
-                                        }}
-                                        className="absolute right-0 top-0 text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors z-40 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-bl-lg"
-                                        title="Tùy chọn"
-                                    >
-                                        <MoreHorizontal size={14} />
-                                    </button>
-                                )}
+                <div className={`font-mono ${isGrouped ? 'text-[8px]' : 'text-[10px]'} flex justify-center items-center text-black dark:text-white font-bold leading-tight w-full text-center ${cellWidth === 0 && !isGrouped ? 'whitespace-nowrap px-1' : 'break-all px-0.5'}`} style={{ minWidth: 0 }}>
+                    {pos.code}
+                </div>
 
-                                <div className={`flex gap-0.5 absolute ${!isAssignmentMode ? 'right-5' : 'right-0'} top-0`}>
-                                    {isTargetLot && (
-                                        <div title="Đang chọn" className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
-                                    )}
-                                    {isOccupied && !isTargetLot && (
-                                        <div title="Có hàng">
-                                            <Package size={10} className="text-amber-500 dark:text-amber-400" />
+                {!isAssignmentMode && (
+                    <button
+                        onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            onPositionMenu?.(pos, e)
+                        }}
+                        className="absolute right-0 top-0 text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors z-40 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-bl-lg"
+                        title="Tùy chọn"
+                    >
+                        <MoreHorizontal size={14} />
+                    </button>
+                )}
+
+                <div className={`flex gap-0.5 absolute ${!isAssignmentMode ? 'right-5' : 'right-0'} top-0`}>
+                    {isTargetLot && (
+                        <div title="Đang chọn" className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
+                    )}
+                    {isOccupied && !isTargetLot && (
+                        <div title="Có hàng">
+                            <Package size={10} className="text-amber-500 dark:text-amber-400" />
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {lotDetail && isOccupied ? (
+                <div className="flex flex-col items-center w-full flex-1 min-h-0 gap-0.5 mt-0.5">
+                    <div className={`${isGrouped ? 'text-[8px]' : 'text-[10px]'} font-bold leading-tight w-full text-center shrink-0 ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'} ${isGrouped ? 'break-all' : 'truncate'}`}>
+                        {lotDetail.code}
+                    </div>
+
+                    <div className="w-full space-y-1 flex-1 min-h-0">
+                        {lotDetail.items?.map((item: any, idx: number) => {
+                            const nameObj = displayInternalCode && item.internal_name ? item.internal_name : item.product_name;
+                            const codeObj = displayInternalCode && item.internal_code ? item.internal_code : item.sku;
+                            return (
+                                <div key={idx} className="flex flex-col gap-0.5 w-full text-center border-b border-black/5 dark:border-white/5 last:border-0 pb-0.5 last:pb-0 shrink-0">
+                                    {nameObj && (
+                                        <div className="text-[9px] text-gray-600 dark:text-gray-300 leading-tight line-clamp-2" title={nameObj}>
+                                            {nameObj}
                                         </div>
                                     )}
-                                </div>
-                            </div>
-
-                            {lotDetail && isOccupied ? (
-                                <div className="flex flex-col items-center w-full flex-1 min-h-0 gap-0.5 mt-0.5">
-                                    <div className={`${isGrouped ? 'text-[8px]' : 'text-[10px]'} font-bold leading-tight w-full text-center shrink-0 ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'} ${isGrouped ? 'break-all' : 'truncate'}`}>
-                                        {lotDetail.code}
+                                    <div className="text-[9px] font-mono text-blue-600 dark:text-blue-400 font-bold break-words">
+                                        {codeObj || '-'} : {item.quantity} {item.unit || '-'}
                                     </div>
-
-                                    {/* Wrapping Logic: No scrollbars, SKU and Quantity wrap naturally */}
-                                    <div className="w-full space-y-1 flex-1 min-h-0">
-                                        {lotDetail.items?.map((item: any, idx: number) => {
-                                            const nameObj = displayInternalCode && item.internal_name ? item.internal_name : item.product_name;
-                                            const codeObj = displayInternalCode && item.internal_code ? item.internal_code : item.sku;
-                                            return (
-                                                <div key={idx} className="flex flex-col gap-0.5 w-full text-center border-b border-black/5 dark:border-white/5 last:border-0 pb-0.5 last:pb-0 shrink-0">
-                                                    {nameObj && (
-                                                        <div className="text-[9px] text-gray-600 dark:text-gray-300 leading-tight line-clamp-2" title={nameObj}>
-                                                            {nameObj}
-                                                        </div>
-                                                    )}
-                                                    <div className="text-[9px] font-mono text-blue-600 dark:text-blue-400 font-bold break-words">
-                                                        {codeObj || '-'} : {item.quantity} {item.unit || '-'}
-                                                    </div>
-                                                    {item.tags && item.tags.length > 0 && (
-                                                        <TagDisplay
-                                                            tags={item.tags}
-                                                            variant="compact"
-                                                            placeholderMap={{ '@': codeObj || '' }}
-                                                            className="mt-0.5"
-                                                        />
-                                                    )}
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
-
-                                    <div className="flex justify-between items-center w-full px-0.5 pt-0.5 opacity-80 text-[8px] text-gray-500 dark:text-gray-400 mt-auto font-mono">
-                                        {(() => {
-                                            const formatDate = (dateStr: string) => {
-                                                if (!dateStr) return '';
-                                                const d = new Date(dateStr);
-                                                const day = String(d.getDate()).padStart(2, '0');
-                                                const month = String(d.getMonth() + 1).padStart(2, '0');
-                                                const year = String(d.getFullYear()).slice(-2);
-                                                return `${day}/${month}/${year}`;
-                                            };
-
-                                            const peeling = lotDetail.peeling_date ? `B:${formatDate(lotDetail.peeling_date)}` : '';
-                                            const packaging = lotDetail.packaging_date ? `Đ:${formatDate(lotDetail.packaging_date)}` : '';
-                                            const inbound = lotDetail.inbound_date && !lotDetail.peeling_date && !lotDetail.packaging_date
-                                                ? `N:${formatDate(lotDetail.inbound_date)}`
-                                                : '';
-
-                                            if (peeling && packaging) {
-                                                return (
-                                                    <>
-                                                        <span className="shrink-0">{peeling}</span>
-                                                        <span className="text-gray-300 dark:text-gray-600">|</span>
-                                                        <span className="shrink-0">{packaging}</span>
-                                                    </>
-                                                );
-                                            }
-
-                                            // Fallback for single or other combinations
-                                            const display = peeling || packaging || inbound;
-                                            return <span className="w-full text-center">{display}</span>;
-                                        })()}
-                                    </div>
+                                    {item.tags && item.tags.length > 0 && (
+                                        <TagDisplay
+                                            tags={item.tags}
+                                            variant="compact"
+                                            placeholderMap={{ '@': codeObj || '' }}
+                                            className="mt-0.5"
+                                        />
+                                    )}
                                 </div>
-                            ) : (
-                                <div className="flex-1 shrink-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                                    <span className="text-[10px] text-gray-400 font-medium">Trống</span>
-                                </div>
-                            )}
-                        </>
-                    ) : null}
+                            )
+                        })}
+                    </div>
+
+                    <div className="flex justify-between items-center w-full px-0.5 pt-0.5 opacity-80 text-[8px] text-gray-500 dark:text-gray-400 mt-auto font-mono">
+                        {(() => {
+                            const formatDate = (dateStr: string) => {
+                                if (!dateStr) return '';
+                                const d = new Date(dateStr);
+                                const day = String(d.getDate()).padStart(2, '0');
+                                const month = String(d.getMonth() + 1).padStart(2, '0');
+                                const year = String(d.getFullYear()).slice(-2);
+                                return `${day}/${month}/${year}`;
+                            };
+
+                            const peeling = lotDetail.peeling_date ? `B:${formatDate(lotDetail.peeling_date)}` : '';
+                            const packaging = lotDetail.packaging_date ? `Đ:${formatDate(lotDetail.packaging_date)}` : '';
+                            const inbound = lotDetail.inbound_date && !lotDetail.peeling_date && !lotDetail.packaging_date
+                                ? `N:${formatDate(lotDetail.inbound_date)}`
+                                : '';
+
+                            if (peeling && packaging) {
+                                return (
+                                    <>
+                                        <span className="shrink-0">{peeling}</span>
+                                        <span className="text-gray-300 dark:text-gray-600">|</span>
+                                        <span className="shrink-0">{packaging}</span>
+                                    </>
+                                );
+                            }
+
+                            const display = peeling || packaging || inbound;
+                            return <span className="w-full text-center">{display}</span>;
+                        })()}
+                    </div>
+                </div>
+            ) : (
+                <div className="flex-1 shrink-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                    <span className="text-[10px] text-gray-400 font-medium">Trống</span>
                 </div>
             )}
-        </InView>
+        </div>
     )
 }, (prev, next) => {
     return prev.pos.id === next.pos.id &&
@@ -542,13 +532,19 @@ export default function FlexibleZoneGrid({
                             </div>
                         )}
                         <div
-                            className={`flex items-center justify-between px-4 border-b ${isLevelUnderBin ? 'py-1' : isBigBin ? 'py-1.5' : 'py-3'}`}
+                            className={`flex items-center justify-between px-4 border-b ${isLevelUnderBin ? 'py-1' : isBigBin ? 'py-1.5' : 'py-3'} ${collapsible ? 'cursor-pointer hover:bg-emerald-50/50' : ''}`}
                             style={headerColor
                                 ? { backgroundColor: headerColor, borderColor: headerColor }
                                 : { background: 'linear-gradient(to right, rgb(236 253 245), white)' }
                             }
+                            onClick={() => collapsible && onToggleCollapse(zone.id)}
                         >
                             <div className="flex items-center gap-3">
+                                {collapsible && (
+                                    isCollapsed
+                                        ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
+                                        : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
+                                )}
                                 <div
                                     className={`rounded-full shrink-0 ${isLevelUnderBin ? 'w-0.5 h-3' : isBigBin ? 'w-1 h-5' : 'w-1 h-8'}`}
                                     style={{ backgroundColor: headerTextColor || (headerColor ? 'rgba(255,255,255,0.8)' : '#22c55e') }}
@@ -574,8 +570,8 @@ export default function FlexibleZoneGrid({
                                             style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
                                         >
                                             {isLevelUnderBin
-                                                ? `${currentBreadcrumb.join(' • ')} | ${totalPositions} vị trí`
-                                                : (isMobile || isGrouped ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • '))
+                                                ? (isGrouped ? (zone.name.includes('|') ? zone.name : `${zone.name} | ${totalPositions} vị trí`) : `${currentBreadcrumb.join(' • ')} | ${totalPositions} vị trí`)
+                                                : (isMobile || isGrouped ? zone.name : currentBreadcrumb.join(' • '))
                                             }
                                         </h2>
                                     </div>
@@ -584,7 +580,7 @@ export default function FlexibleZoneGrid({
                                             className="text-xs"
                                             style={{ color: headerTextColor ? `${headerTextColor}cc` : (headerColor ? 'rgba(255,255,255,0.8)' : undefined) }}
                                         >
-                                            {totalPositions} ô / <span className="font-semibold text-blue-100">{totalSelectableCount} có hàng</span>
+                                            {totalPositions} ô / <span className="font-semibold text-blue-600 dark:text-blue-400">{totalSelectableCount} có hàng</span>
                                         </p>
                                     )}
                                 </div>
@@ -693,23 +689,23 @@ export default function FlexibleZoneGrid({
 
                         <div className="p-2">
                             {!isCollapsed && (
-                                <>
+                                <div className="p-2 bg-emerald-50/10 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800">
                                     <div
-                                        className="grid gap-1"
+                                        className="grid gap-1.5"
                                         style={{
                                             gridTemplateColumns: cellWidth > 0
                                                 ? `repeat(${positionColumns}, ${cellWidth}px)`
-                                                : `repeat(${positionColumns}, minmax(auto, 1fr))`
+                                                : `repeat(${positionColumns}, minmax(0, 1fr))`
                                         }}
                                     >
                                         {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth))}
                                     </div>
                                     {hasChildren && (
-                                        <div className="mt-2 space-y-1.5">
+                                        <div className="mt-2 space-y-1.5 px-1 pb-1">
                                             {zone.children.map(child => renderZone(child as any, depth + 1, currentBreadcrumb))}
                                         </div>
                                     )}
-                                </>
+                                </div>
                             )}
                         </div>
                     </div>
@@ -776,7 +772,7 @@ export default function FlexibleZoneGrid({
                                             className="text-xs"
                                             style={{ color: headerTextColor ? `${headerTextColor}cc` : (headerColor ? 'rgba(255,255,255,0.8)' : undefined) }}
                                         >
-                                            {totalPositions} ô / <span className="font-semibold text-blue-100">{totalSelectableCount} có hàng</span>
+                                            {totalPositions} ô / <span className="font-semibold text-blue-600 dark:text-blue-400">{totalSelectableCount} có hàng</span>
                                         </p>
                                     )}
                                 </div>
@@ -884,7 +880,7 @@ export default function FlexibleZoneGrid({
                         </div>
 
                         {!isCollapsed && (
-                            <div className="p-2 space-y-1.5">
+                            <div className="p-2 bg-emerald-50/10 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800">
                                 {hasPositions && (
                                     <div
                                         className="grid gap-1"
@@ -958,11 +954,28 @@ export default function FlexibleZoneGrid({
                                         ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-gray-400'} />
                                         : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-gray-400'} />
                                 )}
+                                {!isAssignmentMode && totalSelectableCount > 0 && onBulkSelect && (
+                                    <div className="flex items-center justify-center shrink-0 mr-1" onClick={e => e.stopPropagation()}>
+                                        <input
+                                            type="checkbox"
+                                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                            checked={isAllSelected}
+                                            ref={el => {
+                                                if (el) el.indeterminate = isIndeterminate
+                                            }}
+                                            onChange={handleZoneCheckboxChange}
+                                            title={`Chọn tất cả ${totalSelectableCount} vị trí có hàng`}
+                                        />
+                                    </div>
+                                )}
                                 <span
                                     className={`font-bold tracking-tight ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-base' : depth === 0 ? 'text-base' : 'text-sm'}`}
                                     style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
                                 >
-                                    {isLevelUnderBin ? `${currentBreadcrumb.join(' • ')} | ${totalPositions} vị trí` : zone.name}
+                                    {isLevelUnderBin
+                                        ? (isGrouped ? (zone.name.includes('|') ? zone.name : `${zone.name} | ${totalPositions} vị trí`) : `${currentBreadcrumb.join(' • ')} | ${totalPositions} vị trí`)
+                                        : (isMobile || isGrouped ? zone.name : currentBreadcrumb.join(' • '))
+                                    }
                                 </span>
                                 {!isLevelUnderBin && totalPositions > 0 && (
                                     <span
@@ -1045,7 +1058,7 @@ export default function FlexibleZoneGrid({
                         </div>
 
                         {!isCollapsed && (
-                            <div className="p-1.5">
+                            <div className="p-1.5 bg-emerald-50/5 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800">
                                 {hasPositions && (
                                     <div
                                         className="grid gap-1 mb-1.5"

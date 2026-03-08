@@ -1,6 +1,6 @@
 'use client'
-import { useMemo } from 'react'
-import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2 } from 'lucide-react'
+import { useMemo, useState, useRef, useEffect } from 'react'
+import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 
 type Position = Database['public']['Tables']['positions']['Row']
@@ -19,6 +19,7 @@ interface MultiSelectActionBarProps {
     }>
     onClear: () => void
     onTag: (lotIds: string[]) => void
+    onDeleteTags: (lotIds: string[]) => void
     onDeleteLot: (lotIds: string[]) => void
     onBulkExport: () => void
     onExportOrder: (positionIds: string[], lotIds: string[]) => void
@@ -32,12 +33,39 @@ export default function MultiSelectActionBar({
     lotInfo,
     onClear,
     onTag,
+    onDeleteTags,
     onDeleteLot,
     onBulkExport,
     onExportOrder,
     onOpenSelectHall,
     onOpenMove
 }: MultiSelectActionBarProps) {
+    const [isTagMenuOpen, setIsTagMenuOpen] = useState(false)
+    const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
+    const tagMenuRef = useRef<HTMLDivElement>(null)
+    const buttonRef = useRef<HTMLButtonElement>(null)
+
+    // Close tag menu when clicking outside
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (tagMenuRef.current && !tagMenuRef.current.contains(event.target as Node)) {
+                setIsTagMenuOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
+
+    const handleToggleMenu = () => {
+        if (!isTagMenuOpen && buttonRef.current) {
+            const rect = buttonRef.current.getBoundingClientRect()
+            setMenuPosition({
+                top: rect.top - 8, // 8px spacing
+                left: rect.left
+            })
+        }
+        setIsTagMenuOpen(!isTagMenuOpen)
+    }
 
     // Get selected positions data
     const selectedPositions = useMemo(() => {
@@ -120,7 +148,7 @@ export default function MultiSelectActionBar({
     return (
         <div className="fixed bottom-0 left-0 right-0 z-50 animate-in slide-in-from-bottom-5">
             <div className="mx-auto w-fit min-w-[320px] max-w-[95vw] px-4 pb-4">
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700">
                     {/* Action buttons and Selection Info */}
                     <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-700">
                         {/* Selection count */}
@@ -161,17 +189,54 @@ export default function MultiSelectActionBar({
                                 <span>Di chuyển</span>
                             </button>
 
-                            <button
-                                onClick={() => {
-                                    if (selectedLotIds.size > 0) onTag(Array.from(selectedLotIds))
-                                }}
-                                disabled={selectedLotIds.size === 0}
-                                className="flex items-center gap-2 px-2 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all active:scale-95 disabled:opacity-50 group whitespace-nowrap"
-                                title="Gán mã phụ"
-                            >
-                                <Tag size={14} className="text-teal-500 group-hover:scale-110 transition-transform" />
-                                <span>Gán mã phụ</span>
-                            </button>
+                            <div> {/* Removed relative and ref={tagMenuRef} */}
+                                <button
+                                    ref={buttonRef}
+                                    onClick={handleToggleMenu}
+                                    disabled={selectedLotIds.size === 0}
+                                    className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all active:scale-95 disabled:opacity-50 group whitespace-nowrap ${isTagMenuOpen
+                                        ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 ring-1 ring-blue-200 dark:ring-blue-800'
+                                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                        }`}
+                                >
+                                    <Tag size={14} className="text-teal-500 group-hover:scale-110 transition-transform" />
+                                    <span>Mã phụ</span>
+                                    <ChevronDown size={12} className={`transition-transform duration-200 ${isTagMenuOpen ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {isTagMenuOpen && (
+                                    <div
+                                        ref={tagMenuRef}
+                                        className="fixed min-w-[160px] bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-100 dark:border-gray-700 p-1 animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200 z-[100]"
+                                        style={{
+                                            top: menuPosition.top,
+                                            left: menuPosition.left,
+                                            transform: 'translateY(-100%)' // Shift up by its height
+                                        }}
+                                    >
+                                        <button
+                                            onClick={() => {
+                                                onTag(Array.from(selectedLotIds))
+                                                setIsTagMenuOpen(false)
+                                            }}
+                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors text-left"
+                                        >
+                                            <Tag size={14} className="text-teal-500" />
+                                            <span>Gán mã phụ</span>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                onDeleteTags(Array.from(selectedLotIds))
+                                                setIsTagMenuOpen(false)
+                                            }}
+                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors text-left"
+                                        >
+                                            <Trash2 size={14} className="text-rose-500" />
+                                            <span>Xóa mã phụ</span>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
 
                             <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1 shrink-0" />
 
