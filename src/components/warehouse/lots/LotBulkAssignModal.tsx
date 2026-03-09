@@ -107,7 +107,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             try {
                 // Use robust join logic for fresh verification count
                 const { count: lotCount, error: countError } = await supabase.from('lots')
-                    .select('id, positions!left(id)', { count: 'exact', head: true })
+                    .select('id, positions!positions_lot_id_fkey(id)', { count: 'exact', head: true })
                     .eq('system_code', currentSystem.code)
                     .is('positions', null)
                     .neq('status', 'hidden');

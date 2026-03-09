@@ -102,7 +102,7 @@ export default function MobileWorkTab() {
             const { data, error } = await supabase
                 .from('export_task_items')
                 .select(`id, quantity, unit, status, lot_id, position_id,
-          lots (id, code, positions (code, is_hall:zone_positions(zone_id))),
+          lots (id, code, positions!positions_lot_id_fkey (code, is_hall:zone_positions(zone_id))),
           positions (code), products (name, sku)`)
                 .eq('task_id', taskId)
             if (error) throw error

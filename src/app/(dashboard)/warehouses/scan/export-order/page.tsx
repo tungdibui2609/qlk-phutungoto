@@ -131,7 +131,7 @@ export default function ExportOrderScanPage() {
                 .from('export_task_items')
                 .select(`
                     id, quantity, unit, status, lot_id, position_id,
-                    lots (id, code, positions (code, is_hall:zone_positions(zone_id))),
+                    lots (id, code, positions!positions_lot_id_fkey (code, is_hall:zone_positions(zone_id))),
                     positions (code),
                     products (name, sku)
                 `)
@@ -564,15 +564,15 @@ export default function ExportOrderScanPage() {
                                         <div
                                             key={item.id}
                                             className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all ${isExported ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800'
-                                                    : isHall ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
-                                                        : isChanged ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
-                                                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
+                                                : isHall ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+                                                    : isChanged ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+                                                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
                                                 }`}
                                         >
                                             {/* Status Icon */}
                                             <div className={`p-1.5 rounded-lg shrink-0 ${isPending ? 'bg-slate-100 dark:bg-slate-700 text-slate-400'
-                                                    : isExported ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600'
-                                                        : 'bg-amber-100 dark:bg-amber-900/50 text-amber-600'
+                                                : isExported ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600'
+                                                    : 'bg-amber-100 dark:bg-amber-900/50 text-amber-600'
                                                 }`}>
                                                 {isPending ? <ArrowDownToLine size={18} /> : <CheckCircle2 size={18} />}
                                             </div>
@@ -588,8 +588,8 @@ export default function ExportOrderScanPage() {
                                                     <span className="text-xs text-stone-500 font-mono">{item.position_name}</span>
                                                     {!isPending && (
                                                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${isExported ? 'bg-emerald-100 text-emerald-600'
-                                                                : isHall ? 'bg-amber-100 text-amber-600'
-                                                                    : 'bg-blue-100 text-blue-600'
+                                                            : isHall ? 'bg-amber-100 text-amber-600'
+                                                                : 'bg-blue-100 text-blue-600'
                                                             }`}>
                                                             {statusLabel}{(isHall || isChanged) ? ` → ${item.current_position_name}` : ''}
                                                         </span>

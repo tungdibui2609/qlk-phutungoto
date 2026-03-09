@@ -253,7 +253,7 @@ function WarehouseMapContent() {
         try {
             const { data, error } = await supabase
                 .from('lots')
-                .select(`*, created_at, suppliers(name), qc_info(name), lot_items(id, quantity, unit, products(name, sku, unit)), positions(code), lot_tags(tag, lot_item_id)`)
+                .select(`*, created_at, suppliers(name), qc_info(name), lot_items(id, quantity, unit, products(name, sku, unit)), positions!positions_lot_id_fkey(code), lot_tags(tag, lot_item_id)`)
                 .eq('id', lotId)
                 .single()
             if (error) throw error

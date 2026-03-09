@@ -87,7 +87,7 @@ export default function MobileAssignTab() {
         setLoading(true)
         try {
             const { data: lot, error } = await supabase.from('lots')
-                .select('*, lot_items(id, quantity, unit, product_id, products(name, sku)), positions(id, code)')
+                .select('*, lot_items(id, quantity, unit, product_id, products(name, sku)), positions!positions_lot_id_fkey(id, code)')
                 .eq('code', code).single()
 
             if (error || !lot) { showToast(`Không tìm thấy LOT "${code}"`, 'error'); setPaused(false); setLoading(false); return }

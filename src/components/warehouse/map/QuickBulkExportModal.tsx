@@ -76,7 +76,7 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({ lotI
                 // 1. Fetch current LOT state to ensure we have latest data (in case of concurrent changes)
                 const { data: lot, error: fetchError } = await supabase
                     .from('lots')
-                    .select('*, lot_items(*, products(sku, name, unit, cost_price)), positions(code)')
+                    .select('*, lot_items(*, products(sku, name, unit, cost_price)), positions!positions_lot_id_fkey(code)')
                     .eq('id', lotId)
                     .single()
 

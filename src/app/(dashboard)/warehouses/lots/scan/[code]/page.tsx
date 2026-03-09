@@ -57,7 +57,7 @@ export default function LotScanPage({ params }: PageProps) {
                         id, quantity, unit,
                         products (name, sku, unit, internal_code, internal_name)
                     ),
-                    positions (id, code),
+                    positions!positions_lot_id_fkey (id, code),
                     lot_tags (tag, lot_item_id)
                 `)
                 .eq('code', code)

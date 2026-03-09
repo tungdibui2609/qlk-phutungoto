@@ -381,7 +381,7 @@ export function useLotManagement() {
                 } else {
                     // Quick count for unassigned only using robust join logic
                     const { count: unassignedCount } = await supabase.from('lots')
-                        .select('id, positions!left(id)', { count: 'exact', head: true })
+                        .select('id, positions!positions_lot_id_fkey(id)', { count: 'exact', head: true })
                         .eq('system_code', currentSystem.code)
                         .is('positions', null)
                         .neq('status', 'hidden');
@@ -416,7 +416,7 @@ export function useLotManagement() {
     qc_info(name),
     lot_tags(tag, lot_item_id),
     products(name, unit, sku, cost_price, internal_code, internal_name),
-    positions(id, code, zone_positions!left(zone_id))
+    positions!positions_lot_id_fkey(id, code, zone_positions(zone_id))
         `;
 
             let query = (supabase.rpc as any)('get_unassigned_lots', { p_system_code: currentSystem.code })
@@ -541,7 +541,7 @@ export function useLotManagement() {
     qc_info(name),
     lot_tags(tag, lot_item_id),
     products(name, unit, sku, cost_price, internal_code, internal_name),
-    positions(id, code, zone_positions!left(zone_id))
+    positions!positions_lot_id_fkey(id, code, zone_positions(zone_id))
         `;
 
             let query = supabase

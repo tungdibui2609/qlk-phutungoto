@@ -83,7 +83,7 @@ export function useInventoryByLot(units: any[]) {
                 ),
                 products (name, unit, product_code:id, sku, system_type),
                 suppliers(name),
-                positions(code),
+                positions!positions_lot_id_fkey(code),
                 lot_tags(tag, lot_item_id)
             `)
             .eq('status', 'active')

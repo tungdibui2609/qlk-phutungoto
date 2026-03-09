@@ -100,7 +100,7 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             // Find lots with pending exports in system history
             const { data, error } = await supabase
                 .from('lots')
-                .select('id, code, metadata, positions(code)')
+                .select('id, code, metadata, positions!positions_lot_id_fkey(code)')
                 .eq('system_code', systemType)
             // Note: Filtering JSON arrays in JS for precision, but selecting all relevant lots
 

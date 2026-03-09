@@ -97,7 +97,7 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
         try {
             const { data, error } = await supabase
                 .from('lots')
-                .select('id, code, metadata, positions(code)')
+                .select('id, code, metadata, positions!positions_lot_id_fkey(code)')
                 .eq('system_code', systemType)
 
             if (error) throw error

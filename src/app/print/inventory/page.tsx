@@ -196,7 +196,7 @@ export default function InventoryPrintPage() {
                         ),
                         products!inner(name, unit, product_code:id, sku, system_type, internal_code, internal_name),
                         suppliers(name),
-                        positions(code)
+                        positions!positions_lot_id_fkey(code)
                     `)
                     .eq('status', 'active')
                     .order('created_at', { ascending: false })
