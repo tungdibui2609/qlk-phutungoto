@@ -92,30 +92,31 @@ export function LotBulkAssignTagModal({ onClose, onSuccess, fetchUntaggedLots }:
             const alreadyTagged: string[] = [];
             const error: string[] = [];
 
-            const historyInserts = [];
+
 
             // 3. Logic: Sequential (1-to-1) or Single-to-All (1-to-N)
             const count = assignMode === 'single-to-all' && rawTags.length === 1
                 ? targetLots.length
                 : Math.min(rawTags.length, targetLots.length);
 
-            // 3.1 Ensure all unique tags exist in master_tags
+            // 3.1 Ensure all unique tags exist in master_tags (Batch Insert)
             const uniqueRawTags = Array.from(new Set(rawTags));
-            for (const tag of uniqueRawTags) {
-                if (!existingTags.includes(tag)) {
-                    try {
-                        await fetch("/api/lot-tags/master", {
-                            method: "POST",
-                            body: JSON.stringify({
-                                name: tag,
-                                systemCode: currentSystem.code
-                            })
-                        });
-                    } catch (e) {
-                        console.error(`Error registering master tag ${tag}:`, e);
-                    }
+            const tagsToRegister = uniqueRawTags.filter(tag => !existingTags.includes(tag));
+
+            if (tagsToRegister.length > 0) {
+                try {
+                    const masterInserts = tagsToRegister.map(name => ({
+                        name: name.toUpperCase().trim(),
+                        system_code: currentSystem.code
+                    }));
+                    await supabase.from('master_tags').upsert(masterInserts, { onConflict: 'name,system_code' });
+                } catch (e) {
+                    console.error(`Error registering master tags:`, e);
                 }
             }
+
+            const tagInserts = [];
+            const historyInserts = [];
 
             for (let i = 0; i < count; i++) {
                 const lot = targetLots[i];
@@ -131,29 +132,38 @@ export function LotBulkAssignTagModal({ onClose, onSuccess, fetchUntaggedLots }:
 
                 const targetItemId = lot.lot_items && lot.lot_items.length > 0 ? lot.lot_items[0].id : null;
 
-                const { error: insertError } = await supabase.from('lot_tags').insert({
+                tagInserts.push({
                     lot_id: lot.id,
                     tag: tag,
                     lot_item_id: targetItemId,
                     added_at: new Date().toISOString()
                 });
 
-                if (insertError) {
-                    console.error(`Error assigning tag ${tag} to lot ${lot.code}:`, insertError);
-                    error.push(`${lot.code} (${tag})`);
-                } else {
-                    success.push({ lot: lot.code, tag });
+                historyInserts.push({
+                    system_code: currentSystem.code,
+                    action_type: 'assign_tag',
+                    entity_type: 'lot',
+                    entity_id: lot.id,
+                    details: { tag, item_id: targetItemId, bulk_assign: true }
+                });
+            }
 
-                    historyInserts.push({
-                        system_code: currentSystem.code,
-                        action_type: 'assign_tag',
-                        entity_type: 'lot',
-                        entity_id: lot.id,
-                        details: { tag, item_id: targetItemId, bulk_assign: true }
+            // 4. Batch Insert Tag Data
+            if (tagInserts.length > 0) {
+                const { error: batchError } = await supabase.from('lot_tags').insert(tagInserts);
+                if (batchError) {
+                    console.error('Error in batch tag insert:', batchError);
+                    showToast('Lỗi khi lưu mã phụ hàng loạt.', 'error');
+                } else {
+                    // Update results state correctly since we did it in batch
+                    tagInserts.forEach(ti => {
+                        const lotCode = targetLots.find(l => l.id === ti.lot_id)?.code || 'Unknown';
+                        success.push({ lot: lotCode, tag: ti.tag });
                     });
                 }
             }
 
+            // 5. Batch Insert History
             if (historyInserts.length > 0) {
                 await (supabase as any).from('operation_history').insert(historyInserts);
             }

@@ -196,13 +196,24 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             }
 
             const actualCount = Math.min(availablePositions.length, lotsToAssign.length);
+            const positionUpdates = [];
             const historyInserts = [];
 
+            const lotIdsToAssign = lotsToAssign.slice(0, actualCount).map(l => l.id);
+
+            // 1. Clear existing mappings for these lots
+            await supabase.from('positions').update({ lot_id: null }).in('lot_id', lotIdsToAssign);
+
+            // 2. Prepare updates and history
             for (let i = 0; i < actualCount; i++) {
                 const lot = lotsToAssign[i];
                 const pos = availablePositions[i];
 
-                await supabase.from('positions').update({ lot_id: lot.id }).eq('id', pos.id);
+                positionUpdates.push({
+                    id: pos.id,
+                    code: pos.code,
+                    lot_id: lot.id
+                });
 
                 historyInserts.push({
                     system_code: currentSystem.code,
@@ -218,6 +229,15 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                 });
             }
 
+            // 3. Batch Update Positions
+            if (positionUpdates.length > 0) {
+                const { error: batchError } = await supabase
+                    .from('positions')
+                    .upsert(positionUpdates);
+                if (batchError) throw batchError;
+            }
+
+            // 4. Batch Insert History
             if (historyInserts.length > 0) {
                 await (supabase as any).from('operation_history').insert(historyInserts);
             }
@@ -312,22 +332,23 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             const actualUpdateCount = Math.min(validPositions.length, lotsToAssign.length);
 
             // 4. Perform Mapping and Update
+            const lotIdsToAssign = lotsToAssign.slice(0, actualUpdateCount).map(l => l.id);
+
+            // 1. Clear existing mappings for these lots defensively
+            await supabase.from('positions').update({ lot_id: null }).in('lot_id', lotIdsToAssign);
+
+            const positionUpdates = [];
             const historyInserts = [];
 
             for (let i = 0; i < actualUpdateCount; i++) {
                 const lot = lotsToAssign[i];
                 const pos = validPositions[i];
 
-                // Remove any current position mapping defensively
-                await supabase.from('positions').update({ lot_id: null }).eq('lot_id', lot.id);
-
-                // Assign new
-                const { error: assignError } = await supabase
-                    .from('positions')
-                    .update({ lot_id: lot.id })
-                    .eq('id', pos.id);
-
-                if (assignError) throw assignError;
+                positionUpdates.push({
+                    id: pos.id,
+                    code: pos.code,
+                    lot_id: lot.id
+                });
 
                 historyInserts.push({
                     system_code: currentSystem.code,
@@ -342,6 +363,15 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                 });
             }
 
+            // 2. Batch Update Positions
+            if (positionUpdates.length > 0) {
+                const { error: batchError } = await supabase
+                    .from('positions')
+                    .upsert(positionUpdates);
+                if (batchError) throw batchError;
+            }
+
+            // 3. Batch Insert History
             if (historyInserts.length > 0) {
                 await (supabase as any).from('operation_history').insert(historyInserts);
             }
