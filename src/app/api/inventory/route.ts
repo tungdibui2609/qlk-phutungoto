@@ -43,65 +43,100 @@ export async function GET(request: Request) {
 
         const convertToKg = searchParams.get('convertToKg') === 'true'
 
-        // 1. Fetch Inbound items (Status = 'Completed')
-        let inboundQuery = supabase
-            .from('inbound_order_items')
-            .select(`
-                product_id,
-                product_name,
-                unit,
-                quantity,
-                order:inbound_orders!inner (
-                    status,
-                    warehouse_name,
-                    created_at,
-                    system_code
-                )
-            `)
-            .eq('order.status', 'Completed')
-            .eq('order.system_code', systemType)
+        // 1. Fetch ALL Inbound items (Status = 'Completed') using pagination
+        let inboundItems: any[] = [];
+        let inboundFrom = 0;
+        const PAGE_SIZE = 1000;
+        let inboundHasMore = true;
 
-        if (warehouse && warehouse !== 'Tất cả') {
-            inboundQuery = inboundQuery.eq('order.warehouse_name', warehouse)
+        while (inboundHasMore) {
+            let inboundQuery = supabase
+                .from('inbound_order_items')
+                .select(`
+                    product_id,
+                    product_name,
+                    unit,
+                    quantity,
+                    order:inbound_orders!inner (
+                        status,
+                        warehouse_name,
+                        created_at,
+                        system_code
+                    )
+                `)
+                .eq('order.status', 'Completed')
+                .eq('order.system_code', systemType)
+                .range(inboundFrom, inboundFrom + PAGE_SIZE - 1);
+
+            if (warehouse && warehouse !== 'Tất cả') {
+                inboundQuery = inboundQuery.eq('order.warehouse_name', warehouse)
+            }
+
+            if (to) {
+                inboundQuery = inboundQuery.lte('order.created_at', `${to} 23:59:59`)
+            }
+
+            const { data, error } = await inboundQuery;
+            if (error) throw error;
+
+            if (!data || data.length === 0) {
+                inboundHasMore = false;
+            } else {
+                inboundItems = [...inboundItems, ...data];
+                if (data.length < PAGE_SIZE) {
+                    inboundHasMore = false;
+                } else {
+                    inboundFrom += PAGE_SIZE;
+                }
+            }
         }
 
-        if (to) {
-            inboundQuery = inboundQuery.lte('order.created_at', `${to} 23:59:59`)
+        // 2. Fetch ALL Outbound items (Status = 'Completed') using pagination
+        let outboundItems: any[] = [];
+        let outboundFrom = 0;
+        let outboundHasMore = true;
+
+        while (outboundHasMore) {
+            let outboundQuery = supabase
+                .from('outbound_order_items')
+                .select(`
+                    product_id,
+                    product_name,
+                    unit,
+                    quantity,
+                    order:outbound_orders!inner (
+                        status,
+                        warehouse_name,
+                        created_at,
+                        system_code
+                    )
+                `)
+                .eq('order.status', 'Completed')
+                .eq('order.system_code', systemType)
+                .range(outboundFrom, outboundFrom + PAGE_SIZE - 1);
+
+            if (warehouse && warehouse !== 'Tất cả') {
+                outboundQuery = outboundQuery.eq('order.warehouse_name', warehouse)
+            }
+
+            if (to) {
+                outboundQuery = outboundQuery.lte('order.created_at', `${to} 23:59:59`)
+            }
+
+            const { data, error } = await outboundQuery;
+            if (error) throw error;
+
+            if (!data || data.length === 0) {
+                outboundHasMore = false;
+            } else {
+                outboundItems = [...outboundItems, ...data];
+                if (data.length < PAGE_SIZE) {
+                    outboundHasMore = false;
+                } else {
+                    outboundFrom += PAGE_SIZE;
+                }
+            }
         }
-
-        const { data: inboundItems, error: inboundError } = await inboundQuery
-
-        if (inboundError) throw inboundError
-
-        // 2. Fetch Outbound items (Status = 'Completed')
-        let outboundQuery = supabase
-            .from('outbound_order_items')
-            .select(`
-                product_id,
-                product_name,
-                unit,
-                quantity,
-                order:outbound_orders!inner (
-                    status,
-                    warehouse_name,
-                    created_at,
-                    system_code
-                )
-            `)
-            .eq('order.status', 'Completed')
-            .eq('order.system_code', systemType)
-
-        if (warehouse && warehouse !== 'Tất cả') {
-            outboundQuery = outboundQuery.eq('order.warehouse_name', warehouse)
-        }
-
-        if (to) {
-            outboundQuery = outboundQuery.lte('order.created_at', `${to} 23:59:59`)
-        }
-
-        const { data: outboundItems, error: outboundError } = await outboundQuery
-
-        if (outboundError) throw outboundError
 
         // 3. Aggregate Data
         interface InventoryItem {

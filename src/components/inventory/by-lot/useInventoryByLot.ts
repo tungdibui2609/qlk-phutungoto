@@ -64,55 +64,75 @@ export function useInventoryByLot(units: any[]) {
 
     async function fetchLots(showLoading = true) {
         if (showLoading) setLoading(true)
-        const { data, error } = await supabase
-            .from('lots')
-            .select(`
-                *,
-                lot_items (
-                    id,
-                    quantity,
-                    unit,
-                    product_id,
-                    products (
-                        name,
-                        unit,
-                        sku,
-                        product_code:id,
-                        system_type
-                    )
-                ),
-                products (name, unit, product_code:id, sku, system_type),
-                suppliers(name),
-                positions!positions_lot_id_fkey(code),
-                lot_tags(tag, lot_item_id)
-            `)
-            .eq('status', 'active')
-            .order('created_at', { ascending: false })
 
-        if (error) {
-            console.error('Error fetching lots:', error)
-        } else if (data) {
-            // Filter by systemType & Branch in memory
-            const filtered = (data as any[]).filter(lot => {
-                // System Type Filter
-                let systemTypeCheck = true
-                if (systemType) {
-                    const hasMainMatch = lot.products && lot.products.system_type === systemType
-                    const hasItemMatch = lot.lot_items && lot.lot_items.some((item: any) => item.products?.system_type === systemType)
-                    systemTypeCheck = hasMainMatch || hasItemMatch
+        let allData: any[] = []
+        let fetchFrom = 0
+        const FETCH_PAGE_SIZE = 1000
+
+        try {
+            while (true) {
+                const { data: pageData, error: pageError } = await supabase
+                    .from('lots')
+                    .select(`
+                        *,
+                        lot_items (
+                            id,
+                            quantity,
+                            unit,
+                            product_id,
+                            products (
+                                name,
+                                unit,
+                                sku,
+                                product_code:id,
+                                system_type
+                            )
+                        ),
+                        products (name, unit, product_code:id, sku, system_type),
+                        suppliers(name),
+                        positions!positions_lot_id_fkey(code),
+                        lot_tags(tag, lot_item_id)
+                    `)
+                    .eq('status', 'active')
+                    .order('created_at', { ascending: false })
+                    .range(fetchFrom, fetchFrom + FETCH_PAGE_SIZE - 1)
+
+                if (pageError) {
+                    console.error('Error fetching page of lots:', pageError)
+                    break
                 }
-                if (!systemTypeCheck) return false
+                if (!pageData || pageData.length === 0) break
+                allData = [...allData, ...pageData]
+                if (pageData.length < FETCH_PAGE_SIZE) break
+                fetchFrom += FETCH_PAGE_SIZE
+            }
 
-                // Branch Filter
-                if (selectedBranch && selectedBranch !== "Tất cả") {
-                    if (lot.warehouse_name !== selectedBranch) return false
-                }
+            if (allData.length > 0) {
+                // Filter by systemType & Branch in memory
+                const filtered = allData.filter(lot => {
+                    // System Type Filter
+                    let systemTypeCheck = true
+                    if (systemType) {
+                        const hasMainMatch = lot.products && lot.products.system_type === systemType
+                        const hasItemMatch = lot.lot_items && lot.lot_items.some((item: any) => item.products?.system_type === systemType)
+                        systemTypeCheck = hasMainMatch || hasItemMatch
+                    }
+                    if (!systemTypeCheck) return false
 
-                return true;
-            });
-            setLots(filtered as unknown as Lot[])
+                    // Branch Filter
+                    if (selectedBranch && selectedBranch !== "Tất cả") {
+                        if (lot.warehouse_name !== selectedBranch) return false
+                    }
+
+                    return true;
+                });
+                setLots(filtered as unknown as Lot[])
+            }
+        } catch (err) {
+            console.error('Error in fetchLots loop:', err)
+        } finally {
+            setLoading(false)
         }
-        setLoading(false)
     }
 
     const groupedInventory = useMemo(() => {

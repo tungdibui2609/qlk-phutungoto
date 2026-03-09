@@ -54,33 +54,46 @@ export async function getLotInventoryForReconciliation(
     systemType: string,
     warehouseName?: string
 ) {
-    let query = supabase
-        .from('lots')
-        .select(`
-            id,
-            product_id,
-            quantity,
-            warehouse_name,
-            lot_items (
+    let allData: any[] = []
+    let from = 0
+    const PAGE_SIZE = 1000
+
+    while (true) {
+        let query = supabase
+            .from('lots')
+            .select(`
+                id,
                 product_id,
                 quantity,
-                unit,
+                warehouse_name,
+                lot_items (
+                    product_id,
+                    quantity,
+                    unit,
+                    products (name, sku, unit, system_type)
+                ),
                 products (name, sku, unit, system_type)
-            ),
-            products (name, sku, unit, system_type)
-        `)
-        .eq('status', 'active')
-        .eq('system_code', systemType)
+            `)
+            .eq('status', 'active')
+            .eq('system_code', systemType)
+            .order('id') // Always order for deterministic pagination
+            .range(from, from + PAGE_SIZE - 1)
 
-    if (warehouseName && warehouseName !== 'Tất cả') {
-        query = query.eq('warehouse_name', warehouseName)
+        if (warehouseName && warehouseName !== 'Tất cả') {
+            query = query.eq('warehouse_name', warehouseName)
+        }
+
+        const { data, error } = await query
+        if (error) {
+            console.error('Error fetching lot inventory page:', error)
+            throw error
+        }
+
+        if (!data || data.length === 0) break
+        allData = [...allData, ...data]
+        if (data.length < PAGE_SIZE) break
+        from += PAGE_SIZE
     }
 
-    const { data, error } = await query
-    if (error) {
-        console.error('Error fetching lot inventory:', error)
-        throw error
-    }
-
-    return data
+    return allData
 }

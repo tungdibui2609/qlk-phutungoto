@@ -128,29 +128,44 @@ export function useLotManagement() {
     }, [page, pageSize])
 
 
+    // Helper to fetch all records with pagination (overcomes Supabase 1000 default)
+    async function fetchAllPaginated(table: string, filter?: (query: any) => any, selectFields = '*', pageSize = 1000) {
+        let allData: any[] = []
+        let from = 0
+        while (true) {
+            let query = supabase.from(table as any).select(selectFields).range(from, from + pageSize - 1)
+            if (filter) query = filter(query)
+            const { data, error } = await query
+            if (error) { console.error(`Error fetching ${table}:`, error); break }
+            if (!data || data.length === 0) break
+            allData = [...allData, ...data]
+            if (data.length < pageSize) break
+            from += pageSize
+        }
+        return allData
+    }
+
     async function fetchCommonData() {
         if (!currentSystem?.code) return
 
-        const [prodRes, suppRes, qcRes, branchRes, unitRes, pUnitRes, tagRes] = await Promise.all([
-            supabase.from('products').select('*').eq('system_type', currentSystem.code).order('name'),
-            supabase.from('suppliers').select('*').eq('system_code', currentSystem.code).order('name'),
-            supabase.from('qc_info').select('*').eq('system_code', currentSystem.code).order('name'),
-            supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'),
-            supabase.from('units').select('*'),
-            supabase.from('product_units').select('*'),
-            supabase.from('lot_tags').select('tag').order('tag')
+        const [prodData, suppData, qcData, branchData, unitData, pUnitData, tagData] = await Promise.all([
+            fetchAllPaginated('products', q => q.eq('system_type', currentSystem!.code).order('name')),
+            fetchAllPaginated('suppliers', q => q.eq('system_code', currentSystem!.code).order('name')),
+            fetchAllPaginated('qc_info', q => q.eq('system_code', currentSystem!.code).order('name')),
+            fetchAllPaginated('branches', q => q.order('is_default', { ascending: false }).order('name')),
+            fetchAllPaginated('units'),
+            fetchAllPaginated('product_units'),
+            fetchAllPaginated('lot_tags', q => q.order('tag'), 'tag')
         ])
 
-        if (prodRes.data) setProducts(prodRes.data)
-        if (suppRes.data) setSuppliers(suppRes.data)
-        if (qcRes.data) setQCList(qcRes.data)
-        if (branchRes.data) setBranches(branchRes.data)
-        if (unitRes.data) setUnits(unitRes.data)
-        if (pUnitRes.data) setProductUnits(pUnitRes.data)
-        if (tagRes.data) {
-            const uniqueTags = Array.from(new Set(tagRes.data.map(t => t.tag))).filter(Boolean)
-            setExistingTags(uniqueTags)
-        }
+        setProducts(prodData)
+        setSuppliers(suppData)
+        setQCList(qcData)
+        setBranches(branchData)
+        setUnits(unitData)
+        setProductUnits(pUnitData)
+        const uniqueTags = Array.from(new Set(tagData.map((t: any) => t.tag))).filter(Boolean) as string[]
+        setExistingTags(uniqueTags)
     }
 
     async function fetchLots(showLoading = true) {
@@ -600,10 +615,23 @@ export function useLotManagement() {
                 query = query.gte(dateFilterField, startDate).lte(dateFilterField, end.toISOString());
             }
 
-            // Increase range to 5000 to catch more untagged lots if there are many tagged ones
-            const { data, error } = await (query as any)
-                .order('created_at', { ascending: false })
-                .range(0, 5000);
+            // Fetch ALL lots then filter untagged client-side for accuracy
+            // Use pagination to overcome Supabase limits
+            let allData: any[] = []
+            let fetchFrom = 0
+            const FETCH_PAGE_SIZE = 1000
+            while (true) {
+                const { data: pageData, error: pageError } = await (query as any)
+                    .order('created_at', { ascending: false })
+                    .range(fetchFrom, fetchFrom + FETCH_PAGE_SIZE - 1)
+                if (pageError) throw pageError
+                if (!pageData || pageData.length === 0) break
+                allData = [...allData, ...pageData]
+                if (pageData.length < FETCH_PAGE_SIZE) break
+                fetchFrom += FETCH_PAGE_SIZE
+            }
+            const data = allData
+            const error = null;
 
             if (error) {
                 console.error('Error in fetchUntaggedLotsForBulkAssign query:', error);

@@ -315,17 +315,30 @@ export function ExportOrderStatsModal({
 
     async function fetchData() {
         setLoading(true)
-        try {
-            const [posRes, zoneRes, zpRes, layoutRes] = await Promise.all([
-                supabase.from('positions').select('*').order('code'),
-                supabase.from('zones').select('*').order('level').order('code'),
-                supabase.from('zone_positions').select('zone_id, position_id'),
-                supabase.from('zone_status_layouts' as any).select('*').limit(1000)
-            ])
 
-            const posData = posRes.data || []
-            const zoneData = zoneRes.data || []
-            const zpData = zpRes.data || []
+        async function fetchAll(table: string, filter?: (query: any) => any, customSelect = '*', limit = 1000) {
+            let allRecs: any[] = []
+            let from = 0
+            while (true) {
+                let query = supabase.from(table as any).select(customSelect).range(from, from + limit - 1)
+                if (filter) query = filter(query)
+                const { data, error } = await query
+                if (error) throw error
+                if (!data || data.length === 0) break
+                allRecs = [...allRecs, ...data]
+                if (data.length < limit) break
+                from += limit
+            }
+            return allRecs
+        }
+
+        try {
+            const [posData, zoneData, zpData, layoutData] = await Promise.all([
+                fetchAll('positions', q => q.order('code')),
+                fetchAll('zones', q => q.order('level').order('code')),
+                fetchAll('zone_positions'),
+                fetchAll('zone_status_layouts')
+            ])
 
             const zpLookup = new Map<string, string>()
             zpData.forEach((zp: any) => {
@@ -337,16 +350,14 @@ export function ExportOrderStatsModal({
                 zone_id: zpLookup.get(pos.id) || null
             }))
 
-            let layoutData: any[] = []
-            if (layoutRes.error) {
+            const finalLayoutData = [...layoutData]
+            if (finalLayoutData.length === 0) {
                 const local = localStorage.getItem('local_status_layouts')
-                if (local) layoutData = Object.values(JSON.parse(local))
-            } else {
-                layoutData = layoutRes.data || []
+                if (local) finalLayoutData.push(...Object.values(JSON.parse(local)))
             }
 
             const layoutsMap: Record<string, any> = {}
-            layoutData.forEach((l: any) => { if (l.zone_id) layoutsMap[l.zone_id] = l })
+            finalLayoutData.forEach((l: any) => { if (l.zone_id) layoutsMap[l.zone_id] = l })
 
             setPositions(posWithZone)
             setZones(zoneData)

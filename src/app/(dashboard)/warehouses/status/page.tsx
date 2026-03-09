@@ -112,11 +112,11 @@ function WarehouseStatusContent() {
         }
 
         try {
-            const [posData, zoneData, zpData, layoutRes] = await Promise.all([
+            let [posData, zoneData, zpData, layoutData] = await Promise.all([
                 fetchAll('positions', q => q.eq('system_type', systemType).order('code').order('id')),
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
                 fetchAllZonesPos(),
-                supabase.from('zone_status_layouts' as any).select('*').limit(1000)
+                fetchAll('zone_status_layouts')
             ])
 
             // Extract unique lot_ids currently in use on the map
@@ -147,13 +147,10 @@ function WarehouseStatusContent() {
                 }
             }
 
-            let layoutData: any[] = []
-            if (layoutRes.error) {
-                console.warn('Could not fetch zone_status_layouts, trying localStorage fallback.');
+            // Fallback for layouts if empty
+            if (layoutData.length === 0) {
                 const local = localStorage.getItem('local_status_layouts');
                 if (local) layoutData = Object.values(JSON.parse(local));
-            } else {
-                layoutData = layoutRes.data || []
             }
 
             // Create lookup map for positions -> zone_id (O(N) instead of O(N*M))
