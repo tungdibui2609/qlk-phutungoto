@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { matchDateRange } from '@/lib/dateUtils'
 import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { PositionWithZone } from './useWarehouseData'
+import { matchSearch } from '@/lib/searchUtils'
 
 interface UseMapFiltersProps {
     positions: PositionWithZone[]
@@ -37,55 +38,28 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
             if (trimmed) {
                 // Helper: match position code, lot code, product, supplier, qc, tags (everything)
                 const matchesAll = (p: PositionWithZone, term: string): boolean => {
-                    if (p.code.toLowerCase().includes(term)) return true
                     const lot = p.lot_id ? lotInfo[p.lot_id] : null
-                    if (!lot) return false
-                    if (lot.code && lot.code.toLowerCase().includes(term)) return true
-                    if (lot.supplier_name && lot.supplier_name.toLowerCase().includes(term)) return true
-                    if (lot.qc_name && lot.qc_name.toLowerCase().includes(term)) return true
-                    if (lot.items && Array.isArray(lot.items)) {
-                        for (const item of lot.items) {
-                            if (item.product_name && item.product_name.toLowerCase().includes(term)) return true
-                            if (item.internal_name && item.internal_name.toLowerCase().includes(term)) return true
-                            if (item.sku && item.sku.toLowerCase().includes(term)) return true
-                            if (item.internal_code && item.internal_code.toLowerCase().includes(term)) return true
-                            if (item.tags && Array.isArray(item.tags)) {
-                                if (item.tags.some((t: string) => t.toLowerCase().includes(term))) return true
-                            }
-                        }
+                    const searchPayload = {
+                        positionCode: p.code,
+                        ...(lot || {})
                     }
-                    if (lot.products) {
-                        if (lot.products.name && lot.products.name.toLowerCase().includes(term)) return true
-                        if (lot.products.internal_name && lot.products.internal_name.toLowerCase().includes(term)) return true
-                        if (lot.products.sku && lot.products.sku.toLowerCase().includes(term)) return true
-                        if (lot.products.internal_code && lot.products.internal_code.toLowerCase().includes(term)) return true
-                    }
-                    return false
+                    return matchSearch(searchPayload, term)
                 }
 
                 // Helper: match only product-related fields (name, SKU, internal code, lot code, position code)
                 const matchesProduct = (p: PositionWithZone, term: string): boolean => {
-                    if (p.code.toLowerCase().includes(term)) return true
                     const lot = p.lot_id ? lotInfo[p.lot_id] : null
-                    if (!lot) return false
-                    if (lot.code && lot.code.toLowerCase().includes(term)) return true
-                    if (lot.supplier_name && lot.supplier_name.toLowerCase().includes(term)) return true
-                    if (lot.qc_name && lot.qc_name.toLowerCase().includes(term)) return true
-                    if (lot.items && Array.isArray(lot.items)) {
-                        for (const item of lot.items) {
-                            if (item.product_name && item.product_name.toLowerCase().includes(term)) return true
-                            if (item.internal_name && item.internal_name.toLowerCase().includes(term)) return true
-                            if (item.sku && item.sku.toLowerCase().includes(term)) return true
-                            if (item.internal_code && item.internal_code.toLowerCase().includes(term)) return true
-                        }
+                    const searchPayload = {
+                        positionCode: p.code,
+                        lotCode: lot?.code,
+                        ...(lot?.products || {}),
+                        items: lot?.items?.map((it: any) => ({
+                            product_name: it.product_name,
+                            sku: it.sku,
+                            internal_code: it.internal_code
+                        }))
                     }
-                    if (lot.products) {
-                        if (lot.products.name && lot.products.name.toLowerCase().includes(term)) return true
-                        if (lot.products.internal_name && lot.products.internal_name.toLowerCase().includes(term)) return true
-                        if (lot.products.sku && lot.products.sku.toLowerCase().includes(term)) return true
-                        if (lot.products.internal_code && lot.products.internal_code.toLowerCase().includes(term)) return true
-                    }
-                    return false
+                    return matchSearch(searchPayload, term)
                 }
 
                 // Helper: match only tags (mã phụ)

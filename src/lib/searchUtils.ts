@@ -19,10 +19,6 @@ export function normalizeSearchString(text: string, removeAccents = false): stri
     return normalized.trim();
 }
 
-/**
- * Truly dynamic "Search Anything" utility.
- * Stringifies any object/data and checks if it contains the search term (case-insensitive).
- */
 export function matchSearch(data: any, term: string): boolean {
     if (!term) return true;
     if (!data) return false;
@@ -30,12 +26,44 @@ export function matchSearch(data: any, term: string): boolean {
     const normalizedTerm = normalizeSearchString(term);
     const unaccentedTerm = normalizeSearchString(term, true);
 
-    // We stringify the entire object to catch all fields (present and future)
-    const dynamicSearchString = JSON.stringify(data).toLowerCase().normalize('NFC');
+    // Chuẩn hóa dữ liệu
+    const dataString = typeof data === 'string' ? data : JSON.stringify(data);
+    const dynamicSearchString = dataString.toLowerCase().normalize('NFC');
     const unaccentedDataString = normalizeSearchString(dynamicSearchString, true);
 
-    // Kiểm tra khớp có dấu hoặc không dấu (để tăng độ linh hoạt)
-    return dynamicSearchString.includes(normalizedTerm) || unaccentedDataString.includes(unaccentedTerm);
+    // 1. Kiểm tra khớp chuỗi trực tiếp (Phổ biến nhất)
+    if (dynamicSearchString.includes(normalizedTerm) || unaccentedDataString.includes(unaccentedTerm)) {
+        return true;
+    }
+
+    // 2. Tìm kiếm theo từ khóa (Keywords)
+    const keywords = normalizedTerm.split(/\s+/).filter(k => k.length > 1); // Bỏ qua từ 1 ký tự
+    const unaccentedKeywords = unaccentedTerm.split(/\s+/).filter(k => k.length > 1);
+
+    if (keywords.length > 0) {
+        // Tất cả các từ khóa quan trọng phải xuất hiện trong dữ liệu
+        const matchesAccented = keywords.every(k => dynamicSearchString.includes(k));
+        const matchesUnaccented = unaccentedKeywords.every(k => unaccentedDataString.includes(k));
+        if (matchesAccented || matchesUnaccented) return true;
+    }
+
+    // 3. Xử lý trường hợp ngược: chuỗi tìm kiếm CHỨA dữ liệu (Ví dụ: tìm "Sầu riêng 4 túi" khớp với "Sầu riêng")
+    // Chỉ áp dụng cho các trường tên hoặc mã nếu data là object, hoặc chính nó nếu là string
+    if (typeof data === 'string') {
+        const normData = normalizeSearchString(data);
+        if (normData.length > 5 && normalizedTerm.includes(normData)) return true;
+    } else if (typeof data === 'object') {
+        const fieldsToReverseMatch = ['name', 'product_name', 'sku', 'code', 'internal_code'];
+        for (const field of fieldsToReverseMatch) {
+            const val = data[field];
+            if (typeof val === 'string' && val.length > 5) {
+                const normVal = normalizeSearchString(val);
+                if (normalizedTerm.includes(normVal)) return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 /**

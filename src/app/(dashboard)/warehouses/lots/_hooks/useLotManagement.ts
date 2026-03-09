@@ -239,83 +239,118 @@ export function useLotManagement() {
 
             // 1. Search Term Logic (Deep Search)
             if (searchTerm) {
-                const normalizedTerm = normalizeSearchString(searchTerm)
-                const term = `%${normalizedTerm}%`
-                let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`, `internal_code.ilike.${term}`, `internal_name.ilike.${term}`]
+                // Escape special LIKE characters (% and _) to prevent SQL parsing issues
+                const escapeLike = (s: string) => s.replace(/[%_]/g, '\\$&');
+                const normalizedTerm = normalizeSearchString(searchTerm);
+                const unaccentedTerm = normalizeSearchString(searchTerm, true);
+                const escapedTerm = escapeLike(normalizedTerm);
+                const term = `%${escapedTerm}%`;
 
-                // Safe check if searchTerm is a UUID to search in 'id' column without crashing postgres
-                const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(searchTerm)
-                if (isUUID) {
-                    orConditionsProd.push(`id.eq.${searchTerm}`)
-                }
+                // Helper to match accent-insensitive locally
+                const localMatch = (value: string | null | undefined) => {
+                    const v = normalizeSearchString(String(value || ''));
+                    const vu = normalizeSearchString(String(value || ''), true);
+                    return (
+                        v === normalizedTerm ||
+                        vu === unaccentedTerm ||
+                        v.startsWith(normalizedTerm) ||
+                        vu.startsWith(unaccentedTerm) ||
+                        v.includes(normalizedTerm) ||
+                        vu.includes(unaccentedTerm)
+                    );
+                };
 
-                // Find products matching name, sku, or valid UUID id
-                const { data: prods } = await supabase.from('products').select('id, name, sku, internal_code, internal_name').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code)
-                let prodIds = prods?.map(p => p.id) || []
+                // Check UUID
+                const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(searchTerm);
 
-                // Prioritize exact matches
-                if (prods && prods.length > 0) {
-                    const sLower = normalizedTerm.toLowerCase();
-                    const unaccentedTerm = normalizeSearchString(searchTerm, true);
-
-                    const exactMatches = prods.filter(p => {
-                        const pName = normalizeSearchString(p.name || '')
-                        const pSku = normalizeSearchString(p.sku || '')
-                        const pIntName = normalizeSearchString(p.internal_name || '')
-                        const pIntCode = normalizeSearchString(p.internal_code || '')
-
-                        const uName = normalizeSearchString(p.name || '', true)
-                        const uSku = normalizeSearchString(p.sku || '', true)
-
-                        return pSku === sLower || pName === sLower || pIntCode === sLower || pIntName === sLower ||
-                            uSku === unaccentedTerm || uName === unaccentedTerm
-                    });
-                    if (exactMatches.length > 0) {
-                        prodIds = exactMatches.map(p => p.id);
+                // Prefer local filtering on preloaded products to support accent-insensitive search
+                let prodIds: string[] = [];
+                if (products && products.length > 0) {
+                    prodIds = products
+                        .filter(p =>
+                            localMatch(p.name) ||
+                            localMatch((p as any).sku) ||
+                            localMatch((p as any).internal_code) ||
+                            localMatch((p as any).internal_name) ||
+                            (isUUID && p.id === searchTerm)
+                        )
+                        .map(p => p.id);
+                    
+                    // Debug log if products loaded but none match
+                    if (prodIds.length === 0 && searchTerm.length > 2) {
+                        console.log('[Search Debug] Products loaded but no local match for:', searchTerm);
+                        console.log('[Search Debug] Sample products:', products.slice(0, 3).map(p => p.name));
                     }
+                } else {
+                    // Fallback to server query if products not loaded yet
+                    console.log('[Search Debug] Products not loaded, using fallback query for:', searchTerm);
+                    let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`, `internal_code.ilike.${term}`, `internal_name.ilike.${term}`];
+                    if (isUUID) orConditionsProd.push(`id.eq.${searchTerm}`);
+                    const { data: prods, error: prodError } = await supabase.from('products').select('id').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
+                    if (prodError) {
+                        console.error('[Search Debug] Error fetching products:', prodError);
+                    }
+                    prodIds = prods?.map(p => p.id) || [];
                 }
 
-                // Find suppliers matching
-                const { data: supps } = await supabase.from('suppliers').select('id').ilike('name', term).eq('system_code', currentSystem.code)
-                const suppIds = supps?.map(s => s.id) || []
+                // Suppliers - prefer local filtering
+                let suppIds: string[] = [];
+                if (suppliers && suppliers.length > 0) {
+                    suppIds = suppliers.filter(s => localMatch(s.name)).map(s => s.id);
+                } else {
+                    const { data: supps } = await supabase.from('suppliers').select('id').ilike('name', term).eq('system_code', currentSystem.code);
+                    suppIds = supps?.map(s => s.id) || [];
+                }
 
-                // Find tags matching
-                const { data: tags } = await supabase.from('lot_tags').select('lot_id').ilike('tag', term)
-                const tagLotIds = tags?.map(t => t.lot_id) || []
+                // QC - prefer local filtering
+                let qcIds: string[] = [];
+                if (qcList && qcList.length > 0) {
+                    qcIds = qcList.filter(q => localMatch(q.name)).map(q => q.id);
+                } else {
+                    const { data: qcs } = await supabase.from('qc_info').select('id').ilike('name', term).eq('system_code', currentSystem.code);
+                    qcIds = qcs?.map(q => q.id) || [];
+                }
 
-                // Find QC matching
-                const { data: qcs } = await supabase.from('qc_info').select('id').ilike('name', term).eq('system_code', currentSystem.code)
-                const qcIds = qcs?.map(q => q.id) || []
+                // Tags - fetch paginated lot_ids by tag to bypass 1000-row limit
+                const tagLots = await fetchAllPaginated('lot_tags', (q) => (q as any).ilike('tag', `%${normalizedTerm}%`), 'lot_id');
+                const tagLotIds = (tagLots || []).map((t: any) => t.lot_id).filter(Boolean);
 
-                // Find lots with these products or suppliers OR code/note match
-                // We'll use an RPC or raw OR query if possible. 
-                // Alternatively, fetch IDs from lot_items where product_id in prodIds
-                let itemLotIds: string[] = []
+                // Find lots that have items with the matching products (chunked to avoid URL length)
+                let itemLotIds: string[] = [];
                 if (prodIds.length > 0) {
-                    const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', prodIds)
-                    if (items) {
-                        itemLotIds = items.map(i => i.lot_id)
+                    const CHUNK = 500;
+                    for (let i = 0; i < prodIds.length; i += CHUNK) {
+                        const slice = prodIds.slice(i, i + CHUNK);
+                        const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', slice);
+                        if (items) itemLotIds.push(...items.map(i => i.lot_id));
+                    }
+                    
+                    // Also search in lots.product_id directly (for lots created without lot_items)
+                    const { data: lotsWithProductId } = await supabase.from('lots')
+                        .select('id')
+                        .in('product_id', prodIds)
+                        .eq('system_code', currentSystem.code);
+                    if (lotsWithProductId) {
+                        itemLotIds.push(...lotsWithProductId.map(l => l.id));
                     }
                 }
 
                 // Combine all lot IDs found from children records
-                const combinedLotIds = Array.from(new Set([...itemLotIds, ...tagLotIds])).slice(0, 300) // Limit to 300 to avoid 414 URI Too Long errors
-                const safeSuppIds = suppIds.slice(0, 50)
-                const safeQcIds = qcIds.slice(0, 50)
+                const combinedLotIds = Array.from(new Set([...itemLotIds, ...tagLotIds])).slice(0, 300); // prevent 414 errors
+                const safeSuppIds = suppIds.slice(0, 50);
+                const safeQcIds = qcIds.slice(0, 50);
 
                 // Construct OR filter for top-level lots
                 let orConditions = [
                     `code.ilike.${term}`,
                     `notes.ilike.${term}`,
                     `metadata->>extra_info.ilike.${term}`
-                ]
-                if (combinedLotIds.length > 0) orConditions.push(`id.in.(${combinedLotIds.join(',')})`)
-                if (safeSuppIds.length > 0) orConditions.push(`supplier_id.in.(${safeSuppIds.join(',')})`)
-                if (safeQcIds.length > 0) orConditions.push(`qc_id.in.(${safeQcIds.join(',')})`)
+                ];
+                if (combinedLotIds.length > 0) orConditions.push(`id.in.(${combinedLotIds.join(',')})`);
+                if (safeSuppIds.length > 0) orConditions.push(`supplier_id.in.(${safeSuppIds.join(',')})`);
+                if (safeQcIds.length > 0) orConditions.push(`qc_id.in.(${safeQcIds.join(',')})`);
 
-                // Note: .or() with large lists can be slow/error prone URL length. 
-                // We sliced it to prevent server crashes on extremely generic searches.
-                query = query.or(orConditions.join(','))
+                query = query.or(orConditions.join(','));
             }
 
             // 2. Date Range
@@ -438,45 +473,89 @@ export function useLotManagement() {
                 .select(selectQuery);
 
             if (searchTerm) {
-                const term = `% ${searchTerm}% `;
-                let orConditionsProd = [`name.ilike.${term} `, `sku.ilike.${term} `, `internal_code.ilike.${term} `, `internal_name.ilike.${term} `];
-                const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(searchTerm);
-                if (isUUID) orConditionsProd.push(`id.eq.${searchTerm} `);
+                // Escape special LIKE characters (% and _) to prevent SQL parsing issues
+                const escapeLike = (s: string) => s.replace(/[%_]/g, '\\$&');
+                const normalizedTerm = normalizeSearchString(searchTerm);
+                const unaccentedTerm = normalizeSearchString(searchTerm, true);
+                const escapedTerm = escapeLike(normalizedTerm);
+                const term = `%${escapedTerm}%`;
 
-                const { data: prods } = await supabase.from('products').select('id, name, sku').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
-                let prodIds = prods?.map(p => p.id) || [];
-
-                if (prods && prods.length > 0) {
-                    const sLower = searchTerm.toLowerCase();
-                    const exactMatches = prods.filter(p =>
-                        (p.sku && p.sku.toLowerCase() === sLower) ||
-                        (p.name && p.name.toLowerCase() === sLower) ||
-                        ((p as any).internal_code && (p as any).internal_code.toLowerCase() === sLower) ||
-                        ((p as any).internal_name && (p as any).internal_name.toLowerCase() === sLower)
+                const localMatch = (value: string | null | undefined) => {
+                    const v = normalizeSearchString(String(value || ''));
+                    const vu = normalizeSearchString(String(value || ''), true);
+                    return (
+                        v === normalizedTerm ||
+                        vu === unaccentedTerm ||
+                        v.startsWith(normalizedTerm) ||
+                        vu.startsWith(unaccentedTerm) ||
+                        v.includes(normalizedTerm) ||
+                        vu.includes(unaccentedTerm)
                     );
-                    if (exactMatches.length > 0) prodIds = exactMatches.map(p => p.id);
+                };
+
+                const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(searchTerm);
+
+                let prodIds: string[] = [];
+                if (products && products.length > 0) {
+                    prodIds = products
+                        .filter(p =>
+                            localMatch(p.name) ||
+                            localMatch((p as any).sku) ||
+                            localMatch((p as any).internal_code) ||
+                            localMatch((p as any).internal_name) ||
+                            (isUUID && p.id === searchTerm)
+                        )
+                        .map(p => p.id);
+                } else {
+                    let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`, `internal_code.ilike.${term}`, `internal_name.ilike.${term}`];
+                    if (isUUID) orConditionsProd.push(`id.eq.${searchTerm}`);
+                    const { data: prods } = await supabase.from('products').select('id').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
+                    prodIds = prods?.map(p => p.id) || [];
                 }
 
-                const { data: supps } = await supabase.from('suppliers').select('id').ilike('name', term).eq('system_code', currentSystem.code);
-                const suppIds = supps?.map(s => s.id) || [];
+                let suppIds: string[] = [];
+                if (suppliers && suppliers.length > 0) {
+                    suppIds = suppliers.filter(s => localMatch(s.name)).map(s => s.id);
+                } else {
+                    const { data: supps } = await supabase.from('suppliers').select('id').ilike('name', term).eq('system_code', currentSystem.code);
+                    suppIds = supps?.map(s => s.id) || [];
+                }
 
-                const { data: tags } = await supabase.from('lot_tags').select('lot_id').ilike('tag', term);
-                const tagLotIds = tags?.map(t => t.lot_id) || [];
+                const tagLots = await fetchAllPaginated('lot_tags', (q) => (q as any).ilike('tag', `%${escapedTerm}%`), 'lot_id');
+                const tagLotIds = (tagLots || []).map((t: any) => t.lot_id).filter(Boolean);
 
-                const { data: qcs } = await supabase.from('qc_info').select('id').ilike('name', term).eq('system_code', currentSystem.code);
-                const qcIds = qcs?.map(q => q.id) || [];
+                let qcIds: string[] = [];
+                if (qcList && qcList.length > 0) {
+                    qcIds = qcList.filter(q => localMatch(q.name)).map(q => q.id);
+                } else {
+                    const { data: qcs } = await supabase.from('qc_info').select('id').ilike('name', term).eq('system_code', currentSystem.code);
+                    qcIds = qcs?.map(q => q.id) || [];
+                }
 
                 let itemLotIds: string[] = [];
                 if (prodIds.length > 0) {
-                    const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', prodIds);
-                    if (items) itemLotIds = items.map(i => i.lot_id);
+                    const CHUNK = 500;
+                    for (let i = 0; i < prodIds.length; i += CHUNK) {
+                        const slice = prodIds.slice(i, i + CHUNK);
+                        const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', slice);
+                        if (items) itemLotIds.push(...items.map(i => i.lot_id));
+                    }
+                    
+                    // Also search in lots.product_id directly (for lots created without lot_items)
+                    const { data: lotsWithProductId } = await supabase.from('lots')
+                        .select('id')
+                        .in('product_id', prodIds)
+                        .eq('system_code', currentSystem.code);
+                    if (lotsWithProductId) {
+                        itemLotIds.push(...lotsWithProductId.map(l => l.id));
+                    }
                 }
 
                 const combinedLotIds = Array.from(new Set([...itemLotIds, ...tagLotIds])).slice(0, 300);
                 const safeSuppIds = suppIds.slice(0, 50);
                 const safeQcIds = qcIds.slice(0, 50);
 
-                let orConditions = [`code.ilike.${term} `, `notes.ilike.${term} `, `metadata ->> extra_info.ilike.${term} `];
+                let orConditions = [`code.ilike.${term}`, `notes.ilike.${term}`, `metadata->>extra_info.ilike.${term}`];
                 if (combinedLotIds.length > 0) orConditions.push(`id.in.(${combinedLotIds.join(',')})`);
                 if (safeSuppIds.length > 0) orConditions.push(`supplier_id.in.(${safeSuppIds.join(',')})`);
                 if (safeQcIds.length > 0) orConditions.push(`qc_id.in.(${safeQcIds.join(',')})`);
@@ -566,42 +645,77 @@ export function useLotManagement() {
                 .neq('status', 'hidden');
 
             if (searchTerm) {
-                const term = `% ${searchTerm}% `;
-                let orConditionsProd = [`name.ilike.${term} `, `sku.ilike.${term} `, `internal_code.ilike.${term} `, `internal_name.ilike.${term} `];
-                const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(searchTerm);
-                if (isUUID) orConditionsProd.push(`id.eq.${searchTerm} `);
+                // Escape special LIKE characters (% and _) to prevent SQL parsing issues
+                const escapeLike = (s: string) => s.replace(/[%_]/g, '\\$&');
+                const normalizedTerm = normalizeSearchString(searchTerm);
+                const unaccentedTerm = normalizeSearchString(searchTerm, true);
+                const escapedTerm = escapeLike(normalizedTerm);
+                const term = `%${escapedTerm}%`;
 
-                const { data: prods } = await supabase.from('products').select('id, name, sku').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
-                let prodIds = prods?.map(p => p.id) || [];
-
-                if (prods && prods.length > 0) {
-                    const sLower = searchTerm.toLowerCase();
-                    const exactMatches = prods.filter(p =>
-                        (p.sku && p.sku.toLowerCase() === sLower) ||
-                        (p.name && p.name.toLowerCase() === sLower) ||
-                        ((p as any).internal_code && (p as any).internal_code.toLowerCase() === sLower) ||
-                        ((p as any).internal_name && (p as any).internal_name.toLowerCase() === sLower)
+                const localMatch = (value: string | null | undefined) => {
+                    const v = normalizeSearchString(String(value || ''));
+                    const vu = normalizeSearchString(String(value || ''), true);
+                    return (
+                        v === normalizedTerm ||
+                        vu === unaccentedTerm ||
+                        v.startsWith(normalizedTerm) ||
+                        vu.startsWith(unaccentedTerm) ||
+                        v.includes(normalizedTerm) ||
+                        vu.includes(unaccentedTerm)
                     );
-                    if (exactMatches.length > 0) prodIds = exactMatches.map(p => p.id);
+                };
+
+                const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(searchTerm);
+
+                let prodIds: string[] = [];
+                if (products && products.length > 0) {
+                    prodIds = products
+                        .filter(p =>
+                            localMatch(p.name) ||
+                            localMatch((p as any).sku) ||
+                            localMatch((p as any).internal_code) ||
+                            localMatch((p as any).internal_name) ||
+                            (isUUID && p.id === searchTerm)
+                        )
+                        .map(p => p.id);
+                } else {
+                    let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`, `internal_code.ilike.${term}`, `internal_name.ilike.${term}`];
+                    if (isUUID) orConditionsProd.push(`id.eq.${searchTerm}`);
+                    const { data: prods } = await supabase.from('products').select('id').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
+                    prodIds = prods?.map(p => p.id) || [];
                 }
 
-                const { data: supps } = await supabase.from('suppliers').select('id').ilike('name', term).eq('system_code', currentSystem.code);
-                const suppIds = supps?.map(s => s.id) || [];
+                let suppIds: string[] = [];
+                if (suppliers && suppliers.length > 0) {
+                    suppIds = suppliers.filter(s => localMatch(s.name)).map(s => s.id);
+                } else {
+                    const { data: supps } = await supabase.from('suppliers').select('id').ilike('name', term).eq('system_code', currentSystem.code);
+                    suppIds = supps?.map(s => s.id) || [];
+                }
 
-                const { data: qcs } = await supabase.from('qc_info').select('id').ilike('name', term).eq('system_code', currentSystem.code);
-                const qcIds = qcs?.map(q => q.id) || [];
+                let qcIds: string[] = [];
+                if (qcList && qcList.length > 0) {
+                    qcIds = qcList.filter(q => localMatch(q.name)).map(q => q.id);
+                } else {
+                    const { data: qcs } = await supabase.from('qc_info').select('id').ilike('name', term).eq('system_code', currentSystem.code);
+                    qcIds = qcs?.map(q => q.id) || [];
+                }
 
                 let itemLotIds: string[] = [];
                 if (prodIds.length > 0) {
-                    const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', prodIds);
-                    if (items) itemLotIds = items.map(i => i.lot_id);
+                    const CHUNK = 500;
+                    for (let i = 0; i < prodIds.length; i += CHUNK) {
+                        const slice = prodIds.slice(i, i + CHUNK);
+                        const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', slice);
+                        if (items) itemLotIds.push(...items.map(i => i.lot_id));
+                    }
                 }
 
                 const combinedLotIds = Array.from(new Set(itemLotIds)).slice(0, 300);
                 const safeSuppIds = suppIds.slice(0, 50);
                 const safeQcIds = qcIds.slice(0, 50);
 
-                let orConditions = [`code.ilike.${term} `, `notes.ilike.${term} `, `metadata ->> extra_info.ilike.${term} `];
+                let orConditions = [`code.ilike.${term}`, `notes.ilike.${term}`, `metadata->>extra_info.ilike.${term}`];
                 if (combinedLotIds.length > 0) orConditions.push(`id.in.(${combinedLotIds.join(',')})`);
                 if (safeSuppIds.length > 0) orConditions.push(`supplier_id.in.(${safeSuppIds.join(',')})`);
                 if (safeQcIds.length > 0) orConditions.push(`qc_id.in.(${safeQcIds.join(',')})`);
