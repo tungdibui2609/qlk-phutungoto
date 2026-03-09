@@ -438,7 +438,7 @@ export function useZoneManager() {
             // First, find if any position is occupied before blowing everything up
             const { data: occupied } = await supabase
                 .from('positions')
-                .select('id, lots!inner(id)')
+                .select('id, lots!positions_lot_id_fkey!inner(id)')
                 .eq('system_type', systemType)
                 .limit(1)
 
@@ -531,7 +531,7 @@ export function useZoneManager() {
                     const chunk = idArr.slice(i, i + 100)
                     const { data: occupied, error: occErr } = await supabase
                         .from('positions')
-                        .select('code, lot_id, lots!inner(id)')
+                        .select('code, lot_id, lots!positions_lot_id_fkey!inner(id)')
                         .eq('system_type', systemType)
                         .in('id', chunk)
 

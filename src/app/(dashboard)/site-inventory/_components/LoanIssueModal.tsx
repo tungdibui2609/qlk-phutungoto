@@ -54,7 +54,7 @@ export const LoanIssueModal: React.FC<LoanIssueModalProps> = ({ isOpen, onClose,
             .select(`
                 id, quantity, unit,
                 products!inner (id, name, sku, system_type),
-                lots!inner (code, warehouse_name)
+                lots!positions_lot_id_fkey!inner (code, warehouse_name)
             `)
             .eq('products.system_type', systemType)
             .gt('quantity', 0)

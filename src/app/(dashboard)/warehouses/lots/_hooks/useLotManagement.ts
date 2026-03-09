@@ -192,7 +192,7 @@ export function useLotManagement() {
             if (positionFilter === 'unassigned') {
                 // Unassigned: Use RPC for scalable filtering
                 // Left Join on positions is still needed to fetch (empty) positions array for type consistency
-                selectQuery += `, positions(id, code, zone_positions!left(zone_id))`
+                selectQuery += `, positions!positions_lot_id_fkey(id, code, zone_positions!left(zone_id))`
 
                 query = (supabase.rpc as any)('get_unassigned_lots', { p_system_code: currentSystem.code })
                     .select(selectQuery, { count: 'exact' })
@@ -200,11 +200,11 @@ export function useLotManagement() {
             } else {
                 // Standard Logic
                 if (selectedZoneId) {
-                    selectQuery += `, positions!inner(id, code, zone_positions!inner(zone_id))`
+                    selectQuery += `, positions!positions_lot_id_fkey!inner(id, code, zone_positions!inner(zone_id))`
                 } else if (positionFilter === 'assigned') {
-                    selectQuery += `, positions!inner(id, code, zone_positions!left(zone_id))`
+                    selectQuery += `, positions!positions_lot_id_fkey!inner(id, code, zone_positions!left(zone_id))`
                 } else {
-                    selectQuery += `, positions(id, code, zone_positions!left(zone_id))`
+                    selectQuery += `, positions!positions_lot_id_fkey(id, code, zone_positions!left(zone_id))`
                 }
 
                 query = supabase
@@ -361,7 +361,7 @@ export function useLotManagement() {
                 .range(from, to)
 
             if (error) {
-                console.error('Error fetching lots:', error)
+                console.error('Error fetching lots:', JSON.stringify(error, null, 2))
                 showToast('Lỗi tải dữ liệu: ' + error.message, 'error')
             } else if (data) {
                 let sortedLots = data as unknown as Lot[];

@@ -167,7 +167,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             // 2. Fetch available positions
             const { data: posData } = await supabase
                 .from('positions')
-                .select('id, code, lot_id, lots!left(id), zone_positions!inner(zone_id)')
+                .select('id, code, lot_id, lots!positions_lot_id_fkey(id), zone_positions!inner(zone_id)')
                 .eq('system_type', currentSystem.code)
                 .in('zone_positions.zone_id', descIds)
                 .order('code');
@@ -256,7 +256,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             // We might have more than 100 codes, chunk the querying if necessary, but typically < 200.
             const { data: posData, error: posError } = await supabase
                 .from('positions')
-                .select('id, lot_id, code, lots!left(id)')
+                .select('id, lot_id, code, lots!positions_lot_id_fkey(id)')
                 .eq('system_type', currentSystem.code)
                 .in('code', uniqueCodes);
 
