@@ -419,7 +419,12 @@ export default function InventoryPage() {
             )}
 
             {activeTab === 'tags' && (
-                <InventoryByTag units={units} />
+                <InventoryByTag
+                    units={units}
+                    systemType={systemType}
+                    selectedBranch={selectedBranch}
+                    targetUnitId={targetUnitId}
+                />
             )}
 
             {activeTab === 'reconciliation' && (

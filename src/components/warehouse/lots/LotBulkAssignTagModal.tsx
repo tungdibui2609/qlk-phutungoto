@@ -99,6 +99,24 @@ export function LotBulkAssignTagModal({ onClose, onSuccess, fetchUntaggedLots }:
                 ? targetLots.length
                 : Math.min(rawTags.length, targetLots.length);
 
+            // 3.1 Ensure all unique tags exist in master_tags
+            const uniqueRawTags = Array.from(new Set(rawTags));
+            for (const tag of uniqueRawTags) {
+                if (!existingTags.includes(tag)) {
+                    try {
+                        await fetch("/api/lot-tags/master", {
+                            method: "POST",
+                            body: JSON.stringify({
+                                name: tag,
+                                systemCode: currentSystem.code
+                            })
+                        });
+                    } catch (e) {
+                        console.error(`Error registering master tag ${tag}:`, e);
+                    }
+                }
+            }
+
             for (let i = 0; i < count; i++) {
                 const lot = targetLots[i];
                 const tag = assignMode === 'single-to-all' && rawTags.length === 1 ? rawTags[0] : rawTags[i];

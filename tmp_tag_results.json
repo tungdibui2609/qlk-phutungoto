@@ -1,0 +1,275 @@
+{
+  "tags": [
+    {
+      "tag": "THÙNG COCONUT",
+      "lot_id": "49bdd905-7a05-4f44-95bf-286c35e1840b",
+      "lot_item_id": "6fe4b177-a518-4368-a534-6f5779e2e178",
+      "lots": {
+        "id": "49bdd905-7a05-4f44-95bf-286c35e1840b",
+        "code": "DL-LOT-090326-024",
+        "status": "active",
+        "system_code": "KHO_DONG_LANH"
+      }
+    },
+    {
+      "tag": "THÙNG COCONUT",
+      "lot_id": "2f2bf6ff-8997-4623-80be-556fdf9a7247",
+      "lot_item_id": "ae1fb050-c924-46d4-b3ad-33400cb68d6d",
+      "lots": {
+        "id": "2f2bf6ff-8997-4623-80be-556fdf9a7247",
+        "code": "DL-LOT-090326-025",
+        "status": "active",
+        "system_code": "KHO_DONG_LANH"
+      }
+    },
+    {
+      "tag": "THÙNG COCONUT",
+      "lot_id": "31e2e6be-73c4-4204-b697-234a26fb2a77",
+      "lot_item_id": "7951913f-55cc-4070-a5b8-d2978b0730fe",
+      "lots": {
+        "id": "31e2e6be-73c4-4204-b697-234a26fb2a77",
+        "code": "DL-LOT-090326-026",
+        "status": "active",
+        "system_code": "KHO_DONG_LANH"
+      }
+    },
+    {
+      "tag": "THÙNG COCONUT",
+      "lot_id": "d6ee1a49-b6f9-4750-98fe-6d1c41a3a491",
+      "lot_item_id": "3c970186-2961-47e2-b32b-184de039c407",
+      "lots": {
+        "id": "d6ee1a49-b6f9-4750-98fe-6d1c41a3a491",
+        "code": "DL-LOT-090326-027",
+        "status": "active",
+        "system_code": "KHO_DONG_LANH"
+      }
+    }
+  ],
+  "items": [
+    {
+      "id": "6fe4b177-a518-4368-a534-6f5779e2e178",
+      "created_at": "2026-03-09T07:48:34.32426+00:00",
+      "lot_id": "49bdd905-7a05-4f44-95bf-286c35e1840b",
+      "product_id": "14e4a450-b0ff-407c-8b86-6ff42c3dbfa2",
+      "quantity": 35,
+      "unit": "Thùng (15 Kg)"
+    },
+    {
+      "id": "ae1fb050-c924-46d4-b3ad-33400cb68d6d",
+      "created_at": "2026-03-09T07:52:47.004336+00:00",
+      "lot_id": "2f2bf6ff-8997-4623-80be-556fdf9a7247",
+      "product_id": "14e4a450-b0ff-407c-8b86-6ff42c3dbfa2",
+      "quantity": 32,
+      "unit": "Thùng (15 Kg)"
+    },
+    {
+      "id": "7951913f-55cc-4070-a5b8-d2978b0730fe",
+      "created_at": "2026-03-09T07:55:11.22234+00:00",
+      "lot_id": "31e2e6be-73c4-4204-b697-234a26fb2a77",
+      "product_id": "14e4a450-b0ff-407c-8b86-6ff42c3dbfa2",
+      "quantity": 33,
+      "unit": "Thùng (15 Kg)"
+    },
+    {
+      "id": "3c970186-2961-47e2-b32b-184de039c407",
+      "created_at": "2026-03-09T07:56:27.868773+00:00",
+      "lot_id": "d6ee1a49-b6f9-4750-98fe-6d1c41a3a491",
+      "product_id": "14e4a450-b0ff-407c-8b86-6ff42c3dbfa2",
+      "quantity": 18,
+      "unit": "Thùng (15 Kg)"
+    }
+  ],
+  "lots": [
+    {
+      "id": "2f2bf6ff-8997-4623-80be-556fdf9a7247",
+      "code": "DL-LOT-090326-025",
+      "notes": "",
+      "status": "active",
+      "product_id": null,
+      "supplier_id": null,
+      "inbound_date": "2026-03-09",
+      "batch_code": null,
+      "quantity": 32,
+      "created_at": "2026-03-09T07:52:46.811765+00:00",
+      "peeling_date": "2026-03-09T00:00:00+00:00",
+      "qc_id": null,
+      "system_code": "KHO_DONG_LANH",
+      "packaging_date": "2026-03-09",
+      "warehouse_name": "CN Cư M'gar",
+      "images": [],
+      "metadata": {
+        "extra_info": "",
+        "system_history": {
+          "exports": [],
+          "inbound": [
+            {
+              "id": "5ae4917b-ab42-4440-b72f-10ad9803007c",
+              "date": "2026-03-09T07:52:45.500Z",
+              "draft": true,
+              "items": {
+                "0": {
+                  "unit": "Thùng (15 Kg)",
+                  "price": 0,
+                  "quantity": 32,
+                  "product_id": "14e4a450-b0ff-407c-8b86-6ff42c3dbfa2",
+                  "product_sku": "TP112010901.001.04",
+                  "product_name": "Xoài Keaw cấp đông cắt má loại A (Thùng 15 Kg)"
+                }
+              },
+              "supplier_id": null,
+              "supplier_name": "N/A"
+            }
+          ]
+        }
+      },
+      "company_id": "b503014d-19b6-464e-91f3-f34eba4b4b05"
+    },
+    {
+      "id": "31e2e6be-73c4-4204-b697-234a26fb2a77",
+      "code": "DL-LOT-090326-026",
+      "notes": "",
+      "status": "active",
+      "product_id": null,
+      "supplier_id": null,
+      "inbound_date": "2026-03-09",
+      "batch_code": null,
+      "quantity": 33,
+      "created_at": "2026-03-09T07:55:10.954283+00:00",
+      "peeling_date": "2026-03-09T00:00:00+00:00",
+      "qc_id": null,
+      "system_code": "KHO_DONG_LANH",
+      "packaging_date": "2026-03-09",
+      "warehouse_name": "CN Cư M'gar",
+      "images": [],
+      "metadata": {
+        "extra_info": "",
+        "system_history": {
+          "exports": [],
+          "inbound": [
+            {
+              "id": "c732ad62-5525-4209-815e-b515020d507c",
+              "date": "2026-03-09T07:55:09.693Z",
+              "draft": true,
+              "items": {
+                "0": {
+                  "unit": "Thùng (15 Kg)",
+                  "price": 0,
+                  "quantity": 33,
+                  "product_id": "14e4a450-b0ff-407c-8b86-6ff42c3dbfa2",
+                  "product_sku": "TP112010901.001.04",
+                  "product_name": "Xoài Keaw cấp đông cắt má loại A (Thùng 15 Kg)"
+                }
+              },
+              "supplier_id": null,
+              "supplier_name": "N/A"
+            }
+          ]
+        }
+      },
+      "company_id": "b503014d-19b6-464e-91f3-f34eba4b4b05"
+    },
+    {
+      "id": "49bdd905-7a05-4f44-95bf-286c35e1840b",
+      "code": "DL-LOT-090326-024",
+      "notes": "",
+      "status": "active",
+      "product_id": null,
+      "supplier_id": null,
+      "inbound_date": "2026-03-09",
+      "batch_code": null,
+      "quantity": 35,
+      "created_at": "2026-03-09T07:48:34.190076+00:00",
+      "peeling_date": "2026-03-09T00:00:00+00:00",
+      "qc_id": null,
+      "system_code": "KHO_DONG_LANH",
+      "packaging_date": "2026-03-09",
+      "warehouse_name": "CN Cư M'gar",
+      "images": [],
+      "metadata": {
+        "extra_info": "",
+        "system_history": {
+          "edits": [
+            {
+              "id": "9fdcea08-4b46-4850-8ea8-13ef983bd597",
+              "date": "2026-03-09T07:51:56.868Z",
+              "actor": "Hồng Nhi",
+              "changes": [
+                "Nhà cung cấp: N/A → N/A",
+                "QC: N/A → N/A",
+                "Batch NCC: N/A → N/A"
+              ],
+              "description": "Cập nhật thông tin lô hàng"
+            }
+          ],
+          "exports": [],
+          "inbound": [
+            {
+              "id": "1c7e551c-a31a-4430-bdc4-90b0ab3c8589",
+              "date": "2026-03-09T07:48:32.973Z",
+              "draft": true,
+              "items": {
+                "0": {
+                  "unit": "Thùng (15 Kg)",
+                  "price": 0,
+                  "quantity": 35,
+                  "product_id": "14e4a450-b0ff-407c-8b86-6ff42c3dbfa2",
+                  "product_sku": "TP112010901.001.04",
+                  "product_name": "Xoài Keaw cấp đông cắt má loại A (Thùng 15 Kg)"
+                }
+              },
+              "is_edit": true,
+              "updated_at": "2026-03-09T07:51:56.868Z",
+              "supplier_id": null,
+              "supplier_name": "N/A"
+            }
+          ]
+        }
+      },
+      "company_id": "b503014d-19b6-464e-91f3-f34eba4b4b05"
+    },
+    {
+      "id": "d6ee1a49-b6f9-4750-98fe-6d1c41a3a491",
+      "code": "DL-LOT-090326-027",
+      "notes": "",
+      "status": "active",
+      "product_id": null,
+      "supplier_id": null,
+      "inbound_date": "2026-03-09",
+      "batch_code": null,
+      "quantity": 18,
+      "created_at": "2026-03-09T07:56:27.742371+00:00",
+      "peeling_date": "2026-03-09T00:00:00+00:00",
+      "qc_id": null,
+      "system_code": "KHO_DONG_LANH",
+      "packaging_date": "2026-03-09",
+      "warehouse_name": "CN Cư M'gar",
+      "images": [],
+      "metadata": {
+        "extra_info": "",
+        "system_history": {
+          "exports": [],
+          "inbound": [
+            {
+              "id": "d6612c88-8257-459b-b7ad-2b16b3fc79c8",
+              "date": "2026-03-09T07:56:26.501Z",
+              "draft": true,
+              "items": {
+                "0": {
+                  "unit": "Thùng (15 Kg)",
+                  "price": 0,
+                  "quantity": 18,
+                  "product_id": "14e4a450-b0ff-407c-8b86-6ff42c3dbfa2",
+                  "product_sku": "TP112010901.001.04",
+                  "product_name": "Xoài Keaw cấp đông cắt má loại A (Thùng 15 Kg)"
+                }
+              },
+              "supplier_id": null,
+              "supplier_name": "N/A"
+            }
+          ]
+        }
+      },
+      "company_id": "b503014d-19b6-464e-91f3-f34eba4b4b05"
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { Database } from "@/lib/database.types";
 import { convertUnit as convertUnitLogic } from '@/lib/unitConversion'
+// Removed fs/path imports
 
 export const dynamic = 'force-dynamic';
 
@@ -34,11 +35,16 @@ export async function GET(req: NextRequest) {
         )
 
         const searchParams = req.nextUrl.searchParams;
-        const tagFilter = searchParams.get("tag") || "";
+        const tagFilter = (searchParams.get("tag") || "").toLowerCase(); // Case-insensitive filter
         const warehouse = searchParams.get("warehouse") || "";
         const systemParam = searchParams.get('systemType')
         const systemType = systemParam || cookieStore.get('systemType')?.value || 'FROZEN'
         const targetUnitId = searchParams.get('targetUnitId')
+
+        // Normalize systemType: Handle common mismatches
+        let normalizedSystemType = systemType;
+        if (systemType === 'FROZEN') normalizedSystemType = 'KHO_DONG_LANH';
+        if (systemType === 'DRY') normalizedSystemType = 'KHO_VAT_TU_BAO_BI'; // Or whatever DRY maps to
 
         // Fetch Support Data
         const { data: unitsData } = await supabase.from('units').select('id, name')
@@ -60,38 +66,59 @@ export async function GET(req: NextRequest) {
                 conversionMap.get(pu.product_id)!.set(pu.unit_id, pu.conversion_rate)
             })
 
-        // Build query
-        let query = supabase
-            .from('lots')
-            .select(`
-                id,
-                code,
-                warehouse_name,
-                lot_items (
+        // Build query and Fetch ALL lots using pagination
+        let allFetchedLots: any[] = [];
+        let from = 0;
+        const PAGE_SIZE = 1000;
+        let hasMore = true;
+
+        while (hasMore) {
+            let query = supabase
+                .from('lots')
+                .select(`
                     id,
-                    product_id,
-                    quantity,
-                    unit
-                ),
-                lot_tags (
-                    tag,
-                    lot_item_id
-                )
-            `)
-            .eq('status', 'active');
+                    code,
+                    warehouse_name,
+                    status,
+                    lot_items (
+                        id,
+                        product_id,
+                        quantity,
+                        unit
+                    ),
+                    lot_tags (
+                        tag,
+                        lot_item_id
+                    )
+                `)
+                .neq('status', 'hidden')
+                .range(from, from + PAGE_SIZE - 1);
 
-        if (systemType) {
-            query = query.eq('system_code', systemType);
+            if (normalizedSystemType) {
+                query = query.eq('system_code', normalizedSystemType);
+            }
+
+            if (warehouse && warehouse !== "Tất cả") {
+                query = query.eq('warehouse_name', warehouse);
+            }
+
+            const { data: lots, error } = await query;
+            if (error) throw error;
+
+            if (!lots || lots.length === 0) {
+                hasMore = false;
+            } else {
+                allFetchedLots = [...allFetchedLots, ...lots];
+                if (lots.length < PAGE_SIZE) {
+                    hasMore = false;
+                } else {
+                    from += PAGE_SIZE;
+                }
+            }
         }
 
-        if (warehouse && warehouse !== "Tất cả") {
-            query = query.eq('warehouse_name', warehouse);
-        }
-
-        const { data: lots, error } = await query;
-
-        if (error) throw error;
-        if (!lots) return NextResponse.json({ ok: true, items: [], uniqueTags: [] });
+        if (allFetchedLots.length === 0) return NextResponse.json({ ok: true, items: [], uniqueTags: [] });
+        const lots = allFetchedLots; // Re-use the 'lots' variable name for the rest of processing
 
         const tagInventory = new Map<string, Map<string, {
             productCode: string;
@@ -107,10 +134,12 @@ export async function GET(req: NextRequest) {
         lots.forEach((lot: any) => {
             if (!lot.lot_items) return;
 
+            // 1. Get General Tags for the LOT
             const generalTags = (lot.lot_tags || [])
                 .filter((t: any) => !t.lot_item_id)
                 .map((t: any) => t.tag);
 
+            // 2. Map Specific Tags per item
             const itemTagsMap = new Map<string, string[]>();
             (lot.lot_tags || []).filter((t: any) => t.lot_item_id).forEach((t: any) => {
                 if (!itemTagsMap.has(t.lot_item_id)) itemTagsMap.set(t.lot_item_id, []);
@@ -123,55 +152,59 @@ export async function GET(req: NextRequest) {
                 if (!prod) return;
 
                 const specificTags = itemTagsMap.get(item.id) || [];
-                const combinedTags = Array.from(new Set([...generalTags, ...specificTags]));
-                if (combinedTags.length === 0) return;
+                // FLATTEN: Instead of one composite string, we treat each tag separately
+                // Also handle "No Tag" case
+                let combinedTags = Array.from(new Set([...generalTags, ...specificTags]));
+                if (combinedTags.length === 0) combinedTags = ["Chưa gắn mã"];
 
-                if (tagFilter && !combinedTags.includes(tagFilter)) return;
-                combinedTags.forEach(t => allTags.add(t));
+                combinedTags.forEach(currentTag => {
+                    // CASE-INSENSITIVE Filter
+                    if (tagFilter && currentTag.toLowerCase() !== tagFilter.toLowerCase()) return;
+                    if (currentTag !== "Chưa gắn mã") allTags.add(currentTag);
 
-                const compositeTag = combinedTags.sort().join('; ');
-                if (!tagInventory.has(compositeTag)) {
-                    tagInventory.set(compositeTag, new Map());
-                }
+                    if (!tagInventory.has(currentTag)) {
+                        tagInventory.set(currentTag, new Map());
+                    }
 
-                const productMapForTag = tagInventory.get(compositeTag)!;
-                const uName = (item.unit || '').trim();
+                    const productMapForTag = tagInventory.get(currentTag)!;
+                    const uName = (item.unit || '').trim();
 
-                let quantity = item.quantity
-                let unitDisplay = uName
-                let isUnconvertible = false
-                let key = `${prod.sku}__${uName}`
+                    let quantity = item.quantity
+                    let unitDisplay = uName
+                    let isUnconvertible = false
+                    let key = `${prod.sku}__${uName}`
 
-                const baseUnitName = prod.unit || null
-                const isConvertible = targetUnitId && prod && (
-                    baseUnitName?.toLowerCase() === targetUnit?.name?.toLowerCase() ||
-                    conversionMap.get(pid)?.has(targetUnitId)
-                )
+                    const baseUnitName = prod.unit || null
+                    const isConvertible = targetUnitId && prod && (
+                        baseUnitName?.toLowerCase() === targetUnit?.name?.toLowerCase() ||
+                        conversionMap.get(pid)?.has(targetUnitId)
+                    )
 
-                if (targetUnitId && isConvertible) {
-                    key = `${prod.sku}__${targetUnitId}`
-                    unitDisplay = targetUnit.name
-                    quantity = convertUnitLogic(pid, uName, targetUnit.name, quantity, baseUnitName, unitNameMap, conversionMap)
-                } else {
-                    if (targetUnitId) isUnconvertible = true
-                }
+                    if (targetUnitId && isConvertible) {
+                        key = `${prod.sku}__${targetUnitId}`
+                        unitDisplay = targetUnit.name
+                        quantity = convertUnitLogic(pid, uName, targetUnit.name, quantity, baseUnitName, unitNameMap, conversionMap)
+                    } else {
+                        if (targetUnitId) isUnconvertible = true
+                    }
 
-                if (!productMapForTag.has(key)) {
-                    productMapForTag.set(key, {
-                        productCode: prod.sku,
-                        productName: prod.name,
-                        quantity: 0,
-                        unit: unitDisplay,
-                        lotCodes: [],
-                        isUnconvertible
-                    });
-                }
+                    if (!productMapForTag.has(key)) {
+                        productMapForTag.set(key, {
+                            productCode: prod.sku,
+                            productName: prod.name,
+                            quantity: 0,
+                            unit: unitDisplay,
+                            lotCodes: [],
+                            isUnconvertible
+                        });
+                    }
 
-                const entry = productMapForTag.get(key)!;
-                entry.quantity += quantity;
-                if (!entry.lotCodes.includes(lot.code)) {
-                    entry.lotCodes.push(lot.code);
-                }
+                    const entry = productMapForTag.get(key)!;
+                    entry.quantity += quantity;
+                    if (!entry.lotCodes.includes(lot.code)) {
+                        entry.lotCodes.push(lot.code);
+                    }
+                });
             });
         });
 
@@ -204,7 +237,13 @@ export async function GET(req: NextRequest) {
             });
         });
 
-        items.sort((a, b) => a.tag.localeCompare(b.tag));
+        // Sort: "Chưa gắn mã" at the end, others by name
+        items.sort((a, b) => {
+            if (a.tag === "Chưa gắn mã") return 1;
+            if (b.tag === "Chưa gắn mã") return -1;
+            return a.tag.localeCompare(b.tag);
+        });
+
         return NextResponse.json({
             ok: true,
             items,

@@ -2,8 +2,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { useSystem } from '@/contexts/SystemContext'
-import { Search, Loader2, Warehouse, ChevronDown, ChevronRight, Printer } from 'lucide-react'
+import { Loader2, ChevronDown, Printer } from 'lucide-react'
 import { formatQuantityFull } from '@/lib/numberUtils'
 
 // Types matching API response
@@ -32,37 +31,20 @@ interface HierarchyNode {
     productDetails?: TagInvItem['products'][0]
 }
 
-export default function InventoryByTag({ units }: { units: any[] }) {
-    const { systemType } = useSystem()
+export default function InventoryByTag({
+    units,
+    systemType,
+    selectedBranch,
+    targetUnitId
+}: {
+    units: any[],
+    systemType: string,
+    selectedBranch: string,
+    targetUnitId: string | null
+}) {
     const [tagItems, setTagItems] = useState<TagInvItem[]>([])
     const [loading, setLoading] = useState(false)
     const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set())
-    const [targetUnitId, setTargetUnitId] = useState<string | null>(null)
-    const [selectedBranch, setSelectedBranch] = useState('Tất cả')
-    const [branches, setBranches] = useState<{ id: string, name: string }[]>([])
-
-    // Fetch Branches
-    useEffect(() => {
-        async function fetchBranches() {
-            const { data, error } = await supabase
-                .from('branches')
-                .select('id, name, is_default')
-                .order('is_default', { ascending: false })
-                .order('name')
-
-            if (error) {
-                console.error('Error fetching branches:', error)
-            }
-            if (data) {
-                setBranches(data)
-                const defaultBranch = data.find(b => b.is_default)
-                if (defaultBranch) {
-                    setSelectedBranch(defaultBranch.name)
-                }
-            }
-        }
-        fetchBranches()
-    }, [])
 
     // Fetch Data
     useEffect(() => {
@@ -162,59 +144,22 @@ export default function InventoryByTag({ units }: { units: any[] }) {
 
     return (
         <div className="space-y-4">
-            {/* Filters */}
-            <div className="flex flex-col md:flex-row gap-4 items-end bg-white dark:bg-stone-900 p-4 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm mt-4">
-                <div className="w-full md:w-1/2 xl:w-48">
-                    <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Chi nhánh / Kho</label>
-                    <div className="relative">
-                        <Warehouse className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
-                        <select
-                            value={selectedBranch}
-                            onChange={e => setSelectedBranch(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
-                        >
-                            <option value="Tất cả">Tất cả chi nhánh</option>
-                            {branches.map(b => (
-                                <option key={b.id} value={b.name}>{b.name}</option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
-
-                <div className="flex items-center justify-between xl:justify-start gap-4 w-full xl:w-auto pt-2 xl:pt-0">
-                    <div className="w-full xl:w-48">
-                        <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Quy đổi đơn vị</label>
-                        <div className="relative">
-                            <select
-                                value={targetUnitId || ''}
-                                onChange={e => setTargetUnitId(e.target.value || null)}
-                                className="w-full px-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer pr-8"
-                            >
-                                <option value="">Đơn vị gốc</option>
-                                {units.map(u => (
-                                    <option key={u.id} value={u.id}>{u.name}</option>
-                                ))}
-                            </select>
-                            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
-                        </div>
-                    </div>
-
-                    <button
-                        onClick={() => {
-                            const params = new URLSearchParams()
-                            params.set('type', 'tags')
-                            if (systemType) params.set('systemType', systemType)
-                            if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
-                            if (targetUnitId) params.set('targetUnitId', targetUnitId)
-                            params.set('to', new Date().toISOString().split('T')[0])
-                            window.open(`/print/inventory?${params.toString()}`, '_blank')
-                        }}
-                        className="p-2 mt-6 text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-md transition-all active:scale-95"
-                        title="In báo cáo"
-                    >
-                        <Printer className="w-5 h-5" />
-                    </button>
-                </div>
+            <div className="flex justify-end pr-4">
+                <button
+                    onClick={() => {
+                        const params = new URLSearchParams()
+                        params.set('type', 'tags')
+                        if (systemType) params.set('systemType', systemType)
+                        if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
+                        if (targetUnitId) params.set('targetUnitId', targetUnitId)
+                        params.set('to', new Date().toISOString().split('T')[0])
+                        window.open(`/print/inventory?${params.toString()}`, '_blank')
+                    }}
+                    className="p-2 text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 border border-stone-300 dark:border-stone-700 rounded-md transition-all active:scale-95 flex items-center gap-2"
+                >
+                    <Printer className="w-5 h-5" />
+                    <span className="text-sm font-medium">In báo cáo</span>
+                </button>
             </div>
 
             <div className="bg-white dark:bg-stone-900 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm overflow-hidden">
