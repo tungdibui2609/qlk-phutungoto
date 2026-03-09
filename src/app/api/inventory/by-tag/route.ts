@@ -46,10 +46,28 @@ export async function GET(req: NextRequest) {
         if (systemType === 'FROZEN') normalizedSystemType = 'KHO_DONG_LANH';
         if (systemType === 'DRY') normalizedSystemType = 'KHO_VAT_TU_BAO_BI'; // Or whatever DRY maps to
 
-        // Fetch Support Data
-        const { data: unitsData } = await supabase.from('units').select('id, name')
-        const { data: productsData } = await supabase.from('products').select('id, sku, name, unit')
-        const { data: prodUnitsData } = await supabase.from('product_units').select('product_id, unit_id, conversion_rate')
+        // Fetch Support Data with pagination to bypass 1000 limit
+        const fetchAllWithPagination = async (tableName: string, selectCols: string) => {
+            let allResults: any[] = [];
+            let currentFrom = 0;
+            const LIMIT = 1000;
+            while (true) {
+                const { data, error } = await supabase
+                    .from(tableName as any)
+                    .select(selectCols)
+                    .range(currentFrom, currentFrom + LIMIT - 1);
+                if (error) throw error;
+                if (!data || data.length === 0) break;
+                allResults = [...allResults, ...data];
+                if (data.length < LIMIT) break;
+                currentFrom += LIMIT;
+            }
+            return allResults;
+        };
+
+        const unitsData = await fetchAllWithPagination('units', 'id, name');
+        const productsData = await fetchAllWithPagination('products', 'id, sku, name, unit');
+        const prodUnitsData = await fetchAllWithPagination('product_units', 'product_id, unit_id, conversion_rate');
 
         const targetUnit = targetUnitId ? (unitsData as any[])?.find(u => u.id === targetUnitId) : null
         const unitNameMap = new Map<string, string>()

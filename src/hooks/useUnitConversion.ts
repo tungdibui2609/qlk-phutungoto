@@ -24,20 +24,36 @@ export function useUnitConversion() {
         async function fetchData() {
             setLoading(true)
             try {
-                const [unitsRes, prodUnitsRes] = await Promise.all([
-                    supabase.from('units').select('id, name'),
-                    supabase.from('product_units').select('product_id, unit_id, conversion_rate')
-                ])
+                // Fetch all with pagination to bypass 1000 limit
+                const fetchAll = async (tableName: string, query: any) => {
+                    let allResults: any[] = [];
+                    let from = 0;
+                    const LIMIT = 1000;
+                    while (true) {
+                        const { data, error } = await query.range(from, from + LIMIT - 1);
+                        if (error) throw error;
+                        if (!data || data.length === 0) break;
+                        allResults = [...allResults, ...data];
+                        if (data.length < LIMIT) break;
+                        from += LIMIT;
+                    }
+                    return allResults;
+                };
 
-                if (unitsRes.data) {
+                const [unitsData, prodUnitsData] = await Promise.all([
+                    fetchAll('units', supabase.from('units').select('id, name')),
+                    fetchAll('product_units', supabase.from('product_units').select('product_id, unit_id, conversion_rate'))
+                ]);
+
+                if (unitsData) {
                     const uMap = new Map<string, string>()
-                    unitsRes.data.forEach((u: Unit) => uMap.set(u.name.toLowerCase(), u.id))
+                    unitsData.forEach((u: Unit) => uMap.set(u.name.toLowerCase(), u.id))
                     setUnitNameMap(uMap)
                 }
 
-                if (prodUnitsRes.data) {
+                if (prodUnitsData) {
                     const cMap = new Map<string, Map<string, number>>()
-                    prodUnitsRes.data.forEach((pu: ProductUnit) => {
+                    prodUnitsData.forEach((pu: ProductUnit) => {
                         if (!cMap.has(pu.product_id)) {
                             cMap.set(pu.product_id, new Map())
                         }

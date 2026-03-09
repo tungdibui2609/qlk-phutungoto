@@ -154,10 +154,28 @@ export async function GET(request: Request) {
             isUnconvertible?: boolean
         }
 
-        // Fetch product info and conversion data if needed
-        const { data: productsData } = await supabase.from('products').select('*')
-        const { data: unitsData } = await supabase.from('units').select('*')
-        const { data: prodUnitsData } = await supabase.from('product_units').select('*')
+        // Fetch support data with pagination to bypass 1000 limit
+        const fetchAllWithPagination = async (tableName: string) => {
+            let allResults: any[] = [];
+            let currentFrom = 0;
+            const LIMIT = 1000;
+            while (true) {
+                const { data, error } = await supabase
+                    .from(tableName as any)
+                    .select('*')
+                    .range(currentFrom, currentFrom + LIMIT - 1);
+                if (error) throw error;
+                if (!data || data.length === 0) break;
+                allResults = [...allResults, ...data];
+                if (data.length < LIMIT) break;
+                currentFrom += LIMIT;
+            }
+            return allResults;
+        };
+
+        const productsData = await fetchAllWithPagination('products');
+        const unitsData = await fetchAllWithPagination('units');
+        const prodUnitsData = await fetchAllWithPagination('product_units');
 
         // Maps for O(1) Access
         const productMap = new Map<string, any>()
