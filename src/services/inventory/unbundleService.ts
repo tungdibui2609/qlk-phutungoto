@@ -24,6 +24,19 @@ export const unbundleService = {
      * 2. Creates a Conversion Inbound Order (PNK) to add converted smaller units.
      */
     /**
+     * Extracts number from parentheses, e.g. "Thùng (15kg)" -> 15
+     */
+    parseRateFromName(name: string): number | null {
+        if (!name) return null
+        const match = name.match(/\(([\d.]+)\s*\w*\)/)
+        if (match && match[1]) {
+            const val = parseFloat(match[1])
+            return isNaN(val) ? null : val
+        }
+        return null
+    },
+
+    /**
      * Checks if a product needs unbundling to fulfill a requested quantity.
      * Returns metadata about the unbundle operation if needed.
      */
@@ -55,11 +68,27 @@ export const unbundleService = {
         if (normReqUnit !== baseUnitName) {
             const currentBase = unitStockMap.get(`${productId}_${baseUnitName}`) || 0
             if (currentBase > 0) {
-                const rUnitId = unitNameMap.get(normReqUnit)
-                const rateReqStackToBase = conversionMap.get(productId)?.get(rUnitId || '') || 0
+                // PRIORITY 1: Parse from name
+                let rateBaseToReq = this.parseRateFromName(unit)
 
-                if (rateReqStackToBase > 0) {
-                    const rateBaseToReq = 1 / rateReqStackToBase
+                // PRIORITY 2: Map to ID
+                if (rateBaseToReq === null) {
+                    let rUnitId = unitNameMap.get(normReqUnit)
+                    if (!rUnitId) {
+                        for (const [name, id] of unitNameMap.entries()) {
+                            if (name.startsWith(normReqUnit) || normReqUnit.startsWith(name)) {
+                                rUnitId = id
+                                break
+                            }
+                        }
+                    }
+                    const rateReqStackToBase = conversionMap.get(productId)?.get(rUnitId || '') || 0
+                    if (rateReqStackToBase > 0) {
+                        rateBaseToReq = 1 / rateReqStackToBase
+                    }
+                }
+
+                if (rateBaseToReq && rateBaseToReq > 0) {
                     const baseToBreak = Math.ceil(deficit / rateBaseToReq - 0.000001)
 
                     if (currentBase >= baseToBreak) {
@@ -84,11 +113,30 @@ export const unbundleService = {
 
             const currentAlt = unitStockMap.get(`${productId}_${normAltUnit}`) || 0
             if (currentAlt > 0) {
-                const altToBase = pu.conversion_rate
-                const reqUnitId = unitNameMap.get(normReqUnit)
-                const reqToBase = normReqUnit === baseUnitName ? 1 : (conversionMap.get(productId)?.get(reqUnitId || '') || 1)
+                // PRIORITY 1: Parse rate from req unit name
+                let rateAltToReq = 0
+                const pRateReq = this.parseRateFromName(unit)
+                const pRateAlt = this.parseRateFromName(altUnitName)
 
-                const rateAltToReq = altToBase / reqToBase
+                if (pRateReq !== null && pRateAlt !== null) {
+                    rateAltToReq = pRateAlt / pRateReq
+                } else {
+                    // PRIORITY 2: Map to IDs
+                    const altToBase = pu.conversion_rate
+                    let reqUnitId = unitNameMap.get(normReqUnit)
+
+                    if (!reqUnitId) {
+                        for (const [name, id] of unitNameMap.entries()) {
+                            if (name.startsWith(normReqUnit) || normReqUnit.startsWith(name)) {
+                                reqUnitId = id
+                                break
+                            }
+                        }
+                    }
+
+                    const reqToBase = normReqUnit === baseUnitName ? 1 : (conversionMap.get(productId)?.get(reqUnitId || '') || 1)
+                    rateAltToReq = altToBase / reqToBase
+                }
 
                 if (rateAltToReq > 0) {
                     const altToBreak = Math.ceil(deficit / rateAltToReq - 0.000001)

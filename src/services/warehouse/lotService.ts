@@ -22,6 +22,19 @@ export interface SplitPreviewResult {
  */
 export const lotService = {
     /**
+     * Extracts number from parentheses, e.g. "Thùng (15kg)" -> 15
+     */
+    parseRateFromName(name: string): number | null {
+        if (!name) return null
+        const match = name.match(/\(([\d.]+)\s*\w*\)/)
+        if (match && match[1]) {
+            const val = parseFloat(match[1])
+            return isNaN(val) ? null : val
+        }
+        return null
+    },
+
+    /**
      * Internal helper to convert quantity to Base Unit
      */
     toBaseAmount(
@@ -35,14 +48,32 @@ export const lotService = {
         if (!productId || !unitName || !baseUnitName) return qty
         if (unitName.toLowerCase() === baseUnitName.toLowerCase()) return qty
 
-        const uid = unitNameMap.get(unitName.toLowerCase())
-        if (!uid) return qty
-
-        const rates = conversionMap.get(productId)
-        if (rates && rates.has(uid)) {
-            const result = qty * rates.get(uid)!
-            return Number(result.toFixed(6)) // Prevent floating point issues
+        // PRIORITY 1: Parse from name (Thùng (15kg) -> 15)
+        const parsedRate = this.parseRateFromName(unitName)
+        if (parsedRate !== null) {
+            return Number((qty * parsedRate).toFixed(6))
         }
+
+        // PRIORITY 2: Map to ID and use conversionMap
+        let uid = unitNameMap.get(unitName.toLowerCase())
+        if (!uid) {
+            // Fuzzy match (fallback for old units without parentheses)
+            const normalizedTarget = unitName.toLowerCase()
+            for (const [name, id] of unitNameMap.entries()) {
+                if (name.startsWith(normalizedTarget) || normalizedTarget.startsWith(name)) {
+                    uid = id
+                    break
+                }
+            }
+        }
+
+        if (uid) {
+            const rates = conversionMap.get(productId)
+            if (rates && rates.has(uid)) {
+                return Number((qty * rates.get(uid)!).toFixed(6))
+            }
+        }
+
         return qty
     },
 
@@ -87,6 +118,12 @@ export const lotService = {
         const baseUnit = item.products?.unit || ''
         const originalUnit = item.unit || baseUnit
 
+        // Safety: If consumed more than exists, something is wrong
+        if (remainingQty < -0.000001) {
+            console.error('[LotService] Over-consumption detected', { lotId: item.lot_id, consumed: consumedOriginalQty, available: item.quantity })
+            return null
+        }
+
         if (remainingQty <= 0.000001) return null
 
         const floorRemaining = Math.floor(remainingQty + 0.000001)
@@ -97,7 +134,22 @@ export const lotService = {
             let targetQty = 0
 
             const getRate = (uName: string) => {
-                const uid = unitNameMap.get(uName.toLowerCase())
+                // PRIORITY 1: Name parsing (e.g. "Thùng (15kg)" -> 15)
+                const pRate = this.parseRateFromName(uName)
+                if (pRate !== null) return pRate
+
+                // PRIORITY 2: Map to ID
+                let uid = unitNameMap.get(uName.toLowerCase())
+                if (!uid) {
+                    const normalized = uName.toLowerCase()
+                    for (const [name, id] of unitNameMap.entries()) {
+                        if (name.startsWith(normalized) || normalized.startsWith(name)) {
+                            uid = id
+                            break
+                        }
+                    }
+                }
+
                 const rates = conversionMap.get(item.product_id || '')
                 return uid ? (rates?.get(uid) || 1) : 1
             }

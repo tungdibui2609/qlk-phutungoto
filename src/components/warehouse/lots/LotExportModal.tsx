@@ -117,16 +117,31 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
         const baseUnit = item.products?.unit || ''
         const originalUnit = item.unit || baseUnit
 
+        // PRIORITY 1: Parse from names
+        const pRateSelected = lotService.parseRateFromName(selectedUnit)
+        const pRateOriginal = lotService.parseRateFromName(originalUnit)
+
+        if (pRateSelected !== null && pRateOriginal !== null) {
+            return (selectedQty * pRateSelected) / pRateOriginal
+        }
+
+        // PRIORITY 2: Use toBaseAmount logic
         const baseQty = toBaseAmount(item.product_id, selectedUnit, selectedQty, baseUnit)
 
-        const originalUnitId = unitNameMap.get(originalUnit.toLowerCase())
-        if (!originalUnitId) return baseQty
+        let originalRate = 1
+        const pRateOrigFallback = lotService.parseRateFromName(originalUnit)
 
-        const productRates = conversionMap.get(item.product_id)
-        const rate = productRates?.get(originalUnitId)
-        if (!rate) return baseQty
+        if (pRateOrigFallback !== null) {
+            originalRate = pRateOrigFallback
+        } else {
+            const originalUnitId = unitNameMap.get(originalUnit.toLowerCase())
+            if (originalUnitId) {
+                const productRates = conversionMap.get(item.product_id)
+                originalRate = productRates?.get(originalUnitId) || 1
+            }
+        }
 
-        return baseQty / rate
+        return baseQty / originalRate
     }
 
     const handleQuantityChange = (itemId: string, value: number) => {
@@ -393,7 +408,21 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                                                         {isOver ? (
                                                             <span>Vượt quá tồn kho! (~ {formatQuantityFull(consumed)} {item.unit || item.products?.unit} gốc)</span>
                                                         ) : (
-                                                            <span>Tương đương: {formatQuantityFull(consumed)} {item.unit || item.products?.unit} (gốc)</span>
+                                                            <div className="flex flex-col items-end gap-0.5">
+                                                                <span>Tương đương: {formatQuantityFull(consumed)} {item.unit || item.products?.unit} (gốc)</span>
+                                                                {!unitNameMap.has((item.unit || item.products?.unit || '').toLowerCase()) && (
+                                                                    <span className="text-orange-500 flex items-center gap-1">
+                                                                        <AlertCircle size={10} />
+                                                                        Đơn vị "{item.unit || item.products?.unit}" cũ, tự động khớp mờ
+                                                                    </span>
+                                                                )}
+                                                                {!unitNameMap.has((exportUnits[item.id] || '').toLowerCase()) && (
+                                                                    <span className="text-orange-500 flex items-center gap-1">
+                                                                        <AlertCircle size={10} />
+                                                                        Đơn vị xuất "{exportUnits[item.id]}" tự động khớp mờ
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         )}
                                                     </div>
                                                 )}
