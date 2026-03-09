@@ -436,7 +436,12 @@ export function useZoneManager() {
         setIsSaving(true)
         try {
             // First, find if any position is occupied before blowing everything up
-            const { data: occupied } = await supabase.from('positions').select('id').not('lot_id', 'is', null).limit(1)
+            const { data: occupied } = await supabase
+                .from('positions')
+                .select('id, lots!inner(id)')
+                .eq('system_type', systemType)
+                .limit(1)
+
             if (occupied && occupied.length > 0) {
                 showToast('Lỗi: Cấu trúc hiện tại đang có hàng hóa. Không thể xóa sạch!', 'error')
                 setIsSaving(false)
@@ -526,9 +531,9 @@ export function useZoneManager() {
                     const chunk = idArr.slice(i, i + 100)
                     const { data: occupied, error: occErr } = await supabase
                         .from('positions')
-                        .select('code, lot_id')
+                        .select('code, lot_id, lots!inner(id)')
+                        .eq('system_type', systemType)
                         .in('id', chunk)
-                        .not('lot_id', 'is', null)
 
                     if (occErr) throw occErr
                     if (occupied) occupiedList.push(...occupied)

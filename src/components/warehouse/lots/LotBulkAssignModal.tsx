@@ -167,33 +167,40 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             // 2. Fetch available positions
             const { data: posData } = await supabase
                 .from('positions')
-                .select('id, code, zone_positions!inner(zone_id)')
+                .select('id, code, lot_id, lots!left(id), zone_positions!inner(zone_id)')
                 .eq('system_type', currentSystem.code)
-                .is('lot_id', null)
                 .in('zone_positions.zone_id', descIds)
                 .order('code');
 
             if (!posData || posData.length === 0) {
-                showToast('Không tìm thấy vị trí trống.', 'error');
+                showToast('Không tìm thấy vị trí nào.', 'error');
+                return;
+            }
+
+            // Filter for actually empty positions: no lot_id OR lot doesn't exist anymore
+            const availablePositions = posData.filter(p => !p.lot_id || !p.lots);
+
+            if (availablePositions.length === 0) {
+                showToast('Không có vị trí trống.', 'warning');
                 return;
             }
 
             // Numeric sort in memory since Supabase JS client order() doesn't officially support 'numeric' option in all versions/types
-            posData.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }));
+            availablePositions.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }));
 
             // 3. Fetch unassigned lots
-            const lotsToAssign = await fetchUnassignedLots(posData.length);
+            const lotsToAssign = await fetchUnassignedLots(availablePositions.length);
             if (lotsToAssign.length === 0) {
                 showToast('Không có LOT phù hợp để gán.', 'warning');
                 return;
             }
 
-            const actualCount = Math.min(posData.length, lotsToAssign.length);
+            const actualCount = Math.min(availablePositions.length, lotsToAssign.length);
             const historyInserts = [];
 
             for (let i = 0; i < actualCount; i++) {
                 const lot = lotsToAssign[i];
-                const pos = posData[i];
+                const pos = availablePositions[i];
 
                 await supabase.from('positions').update({ lot_id: lot.id }).eq('id', pos.id);
 
@@ -249,7 +256,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             // We might have more than 100 codes, chunk the querying if necessary, but typically < 200.
             const { data: posData, error: posError } = await supabase
                 .from('positions')
-                .select('id, lot_id, code')
+                .select('id, lot_id, code, lots!left(id)')
                 .eq('system_type', currentSystem.code)
                 .in('code', uniqueCodes);
 
@@ -267,7 +274,8 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                 const p = posMap.get(code);
                 if (!p) {
                     missingCodes.push(code);
-                } else if (p.lot_id) {
+                } else if (p.lot_id && p.lots) {
+                    // Only error if lot_id is present AND the joined lot record exists
                     assignedCodes.push(code);
                 } else {
                     validPositions.push({ id: p.id, code: p.code });

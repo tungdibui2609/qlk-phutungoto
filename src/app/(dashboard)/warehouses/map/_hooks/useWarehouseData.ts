@@ -237,10 +237,20 @@ export function useWarehouseData() {
 
             const occupied = new Set<string>()
             posWithZone.forEach(pos => {
-                if (pos.lot_id && lotInfoMap[pos.lot_id]) {
+                // If it has a lot_id, it's occupied (we've cleaned orphans, but let's be safe)
+                if (pos.lot_id) {
                     const lot = lotInfoMap[pos.lot_id]
-                    const totalQty = lot.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
-                    if (totalQty > 0) occupied.add(pos.id)
+                    if (lot) {
+                        const totalQty = lot.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
+                        if (totalQty > 0) {
+                            occupied.add(pos.id)
+                        }
+                    } else {
+                        // It has a lot_id but no lot info found? Might be orphan or still loading.
+                        // For map purposes, if it has a lot_id, let's treat it as occupied to be safe 
+                        // and show it's not available for new assignments.
+                        occupied.add(pos.id)
+                    }
                 }
             })
             setOccupiedIds(occupied)

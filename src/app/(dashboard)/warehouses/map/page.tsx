@@ -123,9 +123,7 @@ function WarehouseMapContent() {
                 // Actually, move usually means move ONE lot from old pos to ONE new pos. 
                 // If it's a virtual cell, it might be confusing. For now, let's keep it simple: take the first ID.
                 const positionId = targetIds[0]
-                const pos = positions.find(p => p.id === positionId)
-                if (!pos) return
-                if (pos.lot_id) {
+                if (occupiedIds.has(positionId)) {
                     showToast('Vị trí này đã có hàng, vui lòng chọn một vị trí trống khác.', 'warning')
                     return
                 }
