@@ -6,6 +6,8 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
 import { supabase } from '@/lib/supabaseClient'
+import { LotLabel } from '@/components/warehouse/lots/LotLabel'
+
 
 interface QrCodeModalProps {
     lot: Lot
@@ -143,6 +145,61 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
             onClick={(e) => e.target === e.currentTarget && onClose()}
         >
+            <style dangerouslySetInnerHTML={{
+                __html: `
+                @media print {
+                    body * { visibility: hidden !important; }
+                    #print-label-container, #print-label-container * { visibility: visible !important; }
+                    #print-label-container { 
+                        position: fixed !important; 
+                        left: 0 !important; 
+                        top: 0 !important; 
+                        width: 3.54in !important;
+                        height: auto !important;
+                        display: block !important;
+                        background: white !important;
+                        z-index: 99999 !important;
+                    }
+                    .print-page { 
+                        width: 3.54in !important; 
+                        height: 2.36in !important; 
+                        page-break-after: always !important; 
+                        break-after: page !important;
+                        display: block !important;
+                        position: relative !important;
+                    }
+                    @page { margin: 0; size: 3.54in 2.36in; }
+                }
+            ` }} />
+
+            {/* Hidden Print Container */}
+            <div id="print-label-container" className="hidden print:block bg-white">
+                {Array.from({ length: printQuantity }).map((_, i) => (
+                    <div key={i} className="print-page bg-white overflow-hidden p-0 m-0">
+                        <LotLabel
+                            data={{
+                                lot_code: lot.code,
+                                scan_url: scanUrl,
+                                company_prefix: 'TOAN THANG',
+                                product_name: lot.lot_items?.[0]?.products?.name || 'SP',
+                                quantity: lot.lot_items?.[0]?.quantity,
+                                unit: lot.lot_items?.[0]?.unit || lot.lot_items?.[0]?.products?.unit || '',
+                                positions: lot.positions?.map(p => p.code) || [],
+                                products: lot.lot_items?.map(item => ({
+                                    name: item.products?.name || 'SP',
+                                    sku: item.products?.sku || '',
+                                    quantity: item.quantity,
+                                    unit: item.unit || item.products?.unit || '',
+                                    tags: lot.lot_tags?.filter(t => t.lot_item_id === item.id).map(t => t.tag) || []
+                                })) || [],
+                            }}
+                            showBorder={false}
+                            qrOnly={true}
+                        />
+                    </div>
+                ))}
+            </div>
+
             <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 max-w-md w-full max-h-[90vh] flex flex-col shadow-2xl scale-100 animate-in zoom-in-95 duration-200 border border-zinc-200 dark:border-zinc-800 relative">
                 <button
                     onClick={onClose}
