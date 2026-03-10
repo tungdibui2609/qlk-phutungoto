@@ -50,7 +50,27 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
 
         lot.lot_items?.forEach(item => {
             initialQuantities[item.id] = 0 // Start with 0
-            initialUnits[item.id] = item.unit || item.products?.unit || ''
+            
+            // Logic: Pick "Thùng" unit defined for product if it exists
+            const baseUnit = item.unit || item.products?.unit || ''
+            const availableUnits = [
+                baseUnit,
+                ...productUnits
+                    .filter(pu => pu.product_id === item.product_id)
+                    .map(pu => units.find(u => u.id === pu.unit_id)?.name)
+            ].filter(Boolean) as string[]
+
+            const thungUnit = availableUnits
+                .sort((a, b) => {
+                    const aHasExtra = a.includes('(') ? 1 : 0
+                    const bHasExtra = b.includes('(') ? 1 : 0
+                    return bHasExtra - aHasExtra // Prioritize unit with (
+                })
+                .find(u => 
+                    u.toLowerCase().normalize('NFC').includes('thùng')
+                )
+
+            initialUnits[item.id] = thungUnit || baseUnit
         })
 
         setExportQuantities(initialQuantities)
@@ -69,7 +89,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
         }
 
         fetchCustomers()
-    }, [lot, systemType])
+    }, [lot, systemType, units, productUnits])
 
     async function fetchCustomers() {
         if (!systemType) return
@@ -366,18 +386,30 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                                                     onChange={(e) => handleUnitChange(item.id, e.target.value)}
                                                     className="p-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all cursor-pointer"
                                                 >
-                                                    {[
-                                                        item.products?.unit,
-                                                        ...productUnits
-                                                            .filter(pu => pu.product_id === item.product_id)
-                                                            .map(pu => units.find(u => u.id === pu.unit_id)?.name)
-                                                    ]
-                                                        .filter(Boolean)
-                                                        .filter((v, i, a) => a.indexOf(v) === i)
-                                                        .map(uName => (
-                                                            <option key={uName} value={uName!}>{uName}</option>
-                                                        ))
-                                                    }
+                                                    {(() => {
+                                                        const rawUnits = [
+                                                            item.products?.unit,
+                                                            (item as any).unit,
+                                                            exportUnits[item.id],
+                                                            ...productUnits
+                                                                .filter(pu => pu.product_id === item.product_id)
+                                                                .map(pu => units.find(u => u.id === pu.unit_id)?.name)
+                                                        ].filter(Boolean) as string[]
+
+                                                        const uniqueUnits = Array.from(new Set(rawUnits))
+                                                        
+                                                        // Filter Logic: If has "Thùng (...", remove plain "Thùng"
+                                                        const hasSpecificThung = uniqueUnits.some(u => u.toLowerCase().includes('thùng ('))
+                                                        
+                                                        return uniqueUnits
+                                                            .filter(u => {
+                                                                if (hasSpecificThung && u.toLowerCase().trim() === 'thùng') return false
+                                                                return true
+                                                            })
+                                                            .map(uName => (
+                                                                <option key={uName} value={uName}>{uName}</option>
+                                                            ))
+                                                    })()}
                                                 </select>
                                             ) : (
                                                 <span className="p-2 text-xs font-bold bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500">

@@ -36,10 +36,29 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
         // Initialize splitUnits with item's current unit or product base unit
         const initialUnits: Record<string, string> = {}
         lot.lot_items?.forEach(item => {
-            initialUnits[item.id] = item.unit || item.products?.unit || ''
+            // Logic: Pick "Thùng" unit defined for product if it exists
+            const baseUnit = item.unit || item.products?.unit || ''
+            const availableUnits = [
+                baseUnit,
+                ...productUnits
+                    .filter(pu => pu.product_id === item.product_id)
+                    .map(pu => units.find(u => u.id === pu.unit_id)?.name)
+            ].filter(Boolean) as string[]
+
+            const thungUnit = availableUnits
+                .sort((a, b) => {
+                    const aHasExtra = a.includes('(') ? 1 : 0
+                    const bHasExtra = b.includes('(') ? 1 : 0
+                    return bHasExtra - aHasExtra // Prioritize unit with (
+                })
+                .find(u => 
+                    u.toLowerCase().normalize('NFC').includes('thùng')
+                )
+
+            initialUnits[item.id] = thungUnit || baseUnit
         })
         setSplitUnits(initialUnits)
-    }, [lot, currentSystem])
+    }, [lot, currentSystem, units, productUnits])
 
     async function generateNewLotCode() {
         if (!currentSystem?.name) return;
@@ -88,19 +107,31 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
         const baseUnit = item.products?.unit || ''
         const originalUnit = item.unit || baseUnit
 
-        // 1. Convert selected qty to base qty
+        // PRIORITY 1: Parse from names (for Thùng (9kg) etc.)
+        const pRateSelected = lotService.parseRateFromName(selectedUnit)
+        const pRateOriginal = lotService.parseRateFromName(originalUnit)
+
+        if (pRateSelected !== null && pRateOriginal !== null) {
+            return (selectedQty * pRateSelected) / pRateOriginal
+        }
+
+        // PRIORITY 2: Use toBaseAmount logic
         const baseQty = toBaseAmount(item.product_id, selectedUnit, selectedQty, baseUnit)
 
-        // 2. Convert base qty to original unit qty
-        // Rate: 1 originalUnit = rate * baseUnit. So 1 baseUnit = 1/rate originalUnits.
-        const originalUnitId = unitNameMap.get(originalUnit.toLowerCase())
-        if (!originalUnitId) return baseQty // Fallback to base if mapping fails
+        let originalRate = 1
+        const pRateOrigFallback = lotService.parseRateFromName(originalUnit)
 
-        const productRates = conversionMap.get(item.product_id)
-        const rate = productRates?.get(originalUnitId)
-        if (!rate) return baseQty // Fallback
+        if (pRateOrigFallback !== null) {
+            originalRate = pRateOrigFallback
+        } else {
+            const originalUnitId = unitNameMap.get(originalUnit.toLowerCase())
+            if (originalUnitId) {
+                const productRates = conversionMap.get(item.product_id)
+                originalRate = productRates?.get(originalUnitId) || 1
+            }
+        }
 
-        return baseQty / rate
+        return baseQty / originalRate
     }
 
     const handleQuantityChange = (itemId: string, value: number) => {
@@ -353,18 +384,30 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                                                     onChange={(e) => handleUnitChange(item.id, e.target.value)}
                                                     className="p-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none bg-slate-50 dark:bg-slate-900 transition-all cursor-pointer"
                                                 >
-                                                    {[
-                                                        item.products?.unit,
-                                                        ...productUnits
-                                                            .filter(pu => pu.product_id === item.product_id)
-                                                            .map(pu => units.find(u => u.id === pu.unit_id)?.name)
-                                                    ]
-                                                        .filter(Boolean)
-                                                        .filter((v, i, a) => a.indexOf(v) === i)
-                                                        .map(uName => (
-                                                            <option key={uName} value={uName!}>{uName}</option>
-                                                        ))
-                                                    }
+                                                    {(() => {
+                                                        const rawUnits = [
+                                                            item.products?.unit,
+                                                            (item as any).unit,
+                                                            splitUnits[item.id],
+                                                            ...productUnits
+                                                                .filter(pu => pu.product_id === item.product_id)
+                                                                .map(pu => units.find(u => u.id === pu.unit_id)?.name)
+                                                        ].filter(Boolean) as string[]
+
+                                                        const uniqueUnits = Array.from(new Set(rawUnits))
+                                                        
+                                                        // Filter Logic: If has "Thùng (...", remove plain "Thùng"
+                                                        const hasSpecificThung = uniqueUnits.some(u => u.toLowerCase().includes('thùng ('))
+                                                        
+                                                        return uniqueUnits
+                                                            .filter(u => {
+                                                                if (hasSpecificThung && u.toLowerCase().trim() === 'thùng') return false
+                                                                return true
+                                                            })
+                                                            .map(uName => (
+                                                                <option key={uName} value={uName}>{uName}</option>
+                                                            ))
+                                                    })()}
                                                 </select>
                                             ) : (
                                                 <span className="p-2 text-xs font-bold bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500">
