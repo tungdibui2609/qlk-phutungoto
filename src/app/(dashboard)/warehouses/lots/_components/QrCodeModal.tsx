@@ -1,6 +1,7 @@
 import { X, Printer, Copy, Check, Cloud, Minus, Plus } from 'lucide-react'
 import QRCode from "react-qr-code"
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Lot } from '../_hooks/useLotManagement'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
@@ -148,18 +149,35 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
             <style dangerouslySetInnerHTML={{
                 __html: `
                 @media print {
-                    body * { visibility: hidden !important; }
-                    #print-label-container, #print-label-container * { visibility: visible !important; }
+                    /* Definitively hide everything that is a direct child of body except our container */
+                    body > *:not(#print-label-container) { 
+                        display: none !important; 
+                    }
+                    
+                    /* Reset body/html for the printer */
+                    html, body { 
+                        margin: 0 !important; 
+                        padding: 0 !important; 
+                        height: auto !important;
+                        background: white !important;
+                        overflow: visible !important;
+                    }
+                    
                     #print-label-container { 
-                        position: fixed !important; 
+                        display: block !important;
+                        position: absolute !important; 
                         left: 0 !important; 
                         top: 0 !important; 
                         width: 3.54in !important;
-                        height: auto !important;
-                        display: block !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
                         background: white !important;
-                        z-index: 99999 !important;
                     }
+                    
+                    #print-label-container * { 
+                        visibility: visible !important; 
+                    }
+                    
                     .print-page { 
                         width: 3.54in !important; 
                         height: 2.36in !important; 
@@ -167,38 +185,48 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
                         break-after: page !important;
                         display: block !important;
                         position: relative !important;
+                        overflow: hidden !important;
+                        background: white !important;
+                    }
+                    
+                    .print-page:last-child {
+                        page-break-after: avoid !important;
+                        break-after: avoid !important;
                     }
                     @page { margin: 0; size: 3.54in 2.36in; }
                 }
             ` }} />
 
-            {/* Hidden Print Container */}
-            <div id="print-label-container" className="hidden print:block bg-white">
-                {Array.from({ length: printQuantity }).map((_, i) => (
-                    <div key={i} className="print-page bg-white overflow-hidden p-0 m-0">
-                        <LotLabel
-                            data={{
-                                lot_code: lot.code,
-                                scan_url: scanUrl,
-                                company_prefix: 'TOAN THANG',
-                                product_name: lot.lot_items?.[0]?.products?.name || 'SP',
-                                quantity: lot.lot_items?.[0]?.quantity,
-                                unit: lot.lot_items?.[0]?.unit || lot.lot_items?.[0]?.products?.unit || '',
-                                positions: lot.positions?.map(p => p.code) || [],
-                                products: lot.lot_items?.map(item => ({
-                                    name: item.products?.name || 'SP',
-                                    sku: item.products?.sku || '',
-                                    quantity: item.quantity,
-                                    unit: item.unit || item.products?.unit || '',
-                                    tags: lot.lot_tags?.filter(t => t.lot_item_id === item.id).map(t => t.tag) || []
-                                })) || [],
-                            }}
-                            showBorder={false}
-                            qrOnly={true}
-                        />
-                    </div>
-                ))}
-            </div>
+            {/* Print Container content defined here but rendered via Portal if in browser */}
+            {typeof document !== 'undefined' && createPortal(
+                <div id="print-label-container" className="hidden print:block bg-white text-black">
+                    {Array.from({ length: printQuantity }).map((_, i) => (
+                        <div key={i} className="print-page bg-white overflow-hidden p-0 m-0">
+                            <LotLabel
+                                data={{
+                                    lot_code: lot.code,
+                                    scan_url: scanUrl,
+                                    company_prefix: 'TOAN THANG',
+                                    product_name: lot.lot_items?.[0]?.products?.name || 'SP',
+                                    quantity: lot.lot_items?.[0]?.quantity,
+                                    unit: lot.lot_items?.[0]?.unit || lot.lot_items?.[0]?.products?.unit || '',
+                                    positions: lot.positions?.map(p => p.code) || [],
+                                    products: lot.lot_items?.map(item => ({
+                                        name: item.products?.name || 'SP',
+                                        sku: item.products?.sku || '',
+                                        quantity: item.quantity,
+                                        unit: item.unit || item.products?.unit || '',
+                                        tags: lot.lot_tags?.filter(t => t.lot_item_id === item.id).map(t => t.tag) || []
+                                    })) || [],
+                                }}
+                                showBorder={false}
+                                qrOnly={true}
+                            />
+                        </div>
+                    ))}
+                </div>,
+                document.body
+            )}
 
             <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 max-w-md w-full max-h-[90vh] flex flex-col shadow-2xl scale-100 animate-in zoom-in-95 duration-200 border border-zinc-200 dark:border-zinc-800 relative">
                 <button

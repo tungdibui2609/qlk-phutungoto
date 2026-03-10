@@ -25,6 +25,7 @@ import { ZoneCollapseControls } from './_components/ZoneCollapseControls'
 import { MapSearchStats } from './_components/MapSearchStats'
 import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
 import { SelectMoveDestinationModal } from '@/components/warehouse/map/SelectMoveDestinationModal'
+import { LotBulkPrintModal } from '@/components/warehouse/map/LotBulkPrintModal'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
 
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -88,6 +89,7 @@ function WarehouseMapContent() {
     const [taggingLotIds, setTaggingLotIds] = useState<string[] | null>(null)
     const [viewingLot, setViewingLot] = useState<any>(null)
     const [qrLot, setQrLot] = useState<any>(null)
+    const [bulkPrintLotIds, setBulkPrintLotIds] = useState<string[] | null>(null)
     const [isMapControlsOpen, setIsMapControlsOpen] = useState(false)
     const [isGrouped, setIsGrouped] = useState(false)
 
@@ -407,6 +409,10 @@ function WarehouseMapContent() {
 
     const handleBulkExport = () => {
         setIsBulkExportOpen(true)
+    }
+
+    const handleBulkPrint = (lotIds: string[]) => {
+        setBulkPrintLotIds(lotIds)
     }
 
     async function handleMoveToHall(hallId: string) {
@@ -783,6 +789,7 @@ function WarehouseMapContent() {
                 onClear={() => setSelectedPositionIds(new Set())}
                 onExportOrder={handleExportOrder}
                 onBulkExport={handleBulkExport}
+                onBulkPrint={handleBulkPrint}
                 onTag={(lotIds) => setTaggingLotIds(lotIds)}
                 onDeleteTags={handleBulkDeleteTags}
                 onDeleteLot={handleBulkDeleteLot}
@@ -803,6 +810,13 @@ function WarehouseMapContent() {
                 onConfirm={handleMoveItems}
                 zones={zones}
             />
+
+            {bulkPrintLotIds && (
+                <LotBulkPrintModal
+                    lotIds={bulkPrintLotIds}
+                    onClose={() => setBulkPrintLotIds(null)}
+                />
+            )}
 
             {isBulkExportOpen && (
                 <QuickBulkExportModal

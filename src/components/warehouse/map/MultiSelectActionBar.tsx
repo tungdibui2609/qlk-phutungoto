@@ -1,6 +1,6 @@
 'use client'
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown } from 'lucide-react'
+import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown, Printer } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 
 type Position = Database['public']['Tables']['positions']['Row']
@@ -22,6 +22,7 @@ interface MultiSelectActionBarProps {
     onDeleteTags: (lotIds: string[]) => void
     onDeleteLot: (lotIds: string[]) => void
     onBulkExport: () => void
+    onBulkPrint: (lotIds: string[]) => void
     onExportOrder: (positionIds: string[], lotIds: string[]) => void
     onOpenSelectHall?: () => void
     onOpenMove?: () => void
@@ -36,6 +37,7 @@ export default function MultiSelectActionBar({
     onDeleteTags,
     onDeleteLot,
     onBulkExport,
+    onBulkPrint,
     onExportOrder,
     onOpenSelectHall,
     onOpenMove
@@ -169,6 +171,16 @@ export default function MultiSelectActionBar({
                             >
                                 <FileOutput size={14} className="text-blue-500 group-hover:scale-110 transition-transform" />
                                 <span>Lệnh xuất kho</span>
+                            </button>
+
+                            <button
+                                onClick={() => onBulkPrint(Array.from(selectedLotIds))}
+                                disabled={selectedLotIds.size === 0}
+                                className="flex items-center gap-2 px-2 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all active:scale-95 disabled:opacity-50 group whitespace-nowrap"
+                                title="In mã QR hàng loạt"
+                            >
+                                <Printer size={14} className="text-emerald-500 group-hover:scale-110 transition-transform" />
+                                <span>In mã QR</span>
                             </button>
 
                             <button
