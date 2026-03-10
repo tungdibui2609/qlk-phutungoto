@@ -171,7 +171,7 @@ function ExportOrderDetailContent() {
                         status,
                         priority,
                         position_id,
-                        positions (
+                        positions!export_task_items_position_id_fkey (
                             code,
                             zone_positions(zone_id)
                         ),
@@ -180,7 +180,7 @@ function ExportOrderDetailContent() {
                             code, 
                             inbound_date, 
                             lot_tags (tag, lot_item_id),
-                            positions (
+                            positions!positions_lot_id_fkey (
                                 code,
                                 zone_positions(zone_id)
                             )
@@ -203,12 +203,15 @@ function ExportOrderDetailContent() {
                 }
             }
 
+            // Deduplicate items to prevent duplicate keys in UI
+            const uniqueItems = Array.from(new Map((data.items || []).map((item: any) => [item.id, item])).values())
+
             const formattedTask: ExportTask = {
                 ...data,
                 status: data.status as ExportTask['status'],
                 created_by_name: 'Admin',
-                items_count: data.items?.length || 0,
-                items: data.items?.map((item: any) => {
+                items_count: uniqueItems.length,
+                items: uniqueItems.map((item: any) => {
                     // Original position from export_task_items (when task was created)
                     const originalPosCode = item.positions?.code || 'N/A'
                     const originalPosId = item.position_id

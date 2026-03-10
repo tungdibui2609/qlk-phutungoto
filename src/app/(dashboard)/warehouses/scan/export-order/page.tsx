@@ -132,7 +132,7 @@ export default function ExportOrderScanPage() {
                 .select(`
                     id, quantity, unit, status, lot_id, position_id,
                     lots (id, code, positions!positions_lot_id_fkey (code, is_hall:zone_positions(zone_id))),
-                    positions (code),
+                    positions!export_task_items_position_id_fkey (code),
                     products (name, sku)
                 `)
                 .eq('task_id', taskId)

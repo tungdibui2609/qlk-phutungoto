@@ -333,12 +333,18 @@ export function ExportOrderStatsModal({
         }
 
         try {
-            const [posData, zoneData, zpData, layoutData] = await Promise.all([
+            const [rawPos, rawZones, rawZp, rawLayouts] = await Promise.all([
                 fetchAll('positions', q => q.order('code')),
                 fetchAll('zones', q => q.order('level').order('code')),
                 fetchAll('zone_positions'),
                 fetchAll('zone_status_layouts')
             ])
+
+            // Deduplicate to prevent duplicate keys
+            const posData = Array.from(new Map(rawPos.map(r => [r.id, r])).values())
+            const zoneData = Array.from(new Map(rawZones.map(r => [r.id, r])).values())
+            const zpData = Array.from(new Map(rawZp.map(r => [`${r.position_id}-${r.zone_id}`, r])).values())
+            const layoutData = Array.from(new Map(rawLayouts.map(r => [r.zone_id, r])).values())
 
             const zpLookup = new Map<string, string>()
             zpData.forEach((zp: any) => {
@@ -582,7 +588,7 @@ export function ExportOrderStatsModal({
                                 : `repeat(${positionColumns}, minmax(auto, 1fr))`,
                             gap: `${layout?.layout_gap ?? 4}px`
                         }}>
-                            {zone.positions.map(pos => renderCell(pos, cellHeight, cellWidth))}
+                            {zone.positions.map(pos => renderCell(pos, zone.id, cellHeight, cellWidth))}
                         </div>
                     )}
                     {zone.children.map(child => renderZone(child as any, depth, currentBreadcrumb))}
@@ -658,7 +664,7 @@ export function ExportOrderStatsModal({
                                 : `repeat(${positionColumns}, minmax(auto, 1fr))`,
                             gap: `${layout?.layout_gap ?? 4}px`
                         }}>
-                            {zone.positions.map(pos => renderCell(pos, cellHeight, cellWidth))}
+                            {zone.positions.map(pos => renderCell(pos, zone.id, cellHeight, cellWidth))}
                         </div>
                     )}
                     {hasChildren && (
@@ -741,26 +747,26 @@ export function ExportOrderStatsModal({
                         gap: `${Math.max(1, (layout?.layout_gap ?? 16) / 8)}px`
                     }}
                 >
-                    {allPositions.map(pos => {
-                        const colors = getCellColors(pos.id)
-                        return (
-                            <div
-                                key={pos.id}
-                                className={`flex-1 h-full ${colors.barSegment} transition-colors rounded-sm`}
-                            />
-                        )
-                    })}
+                        {allPositions.map(pos => {
+                            const colors = getCellColors(pos.id)
+                            return (
+                                <div
+                                    key={`${zone.id}-${pos.id}`}
+                                    className={`flex-1 h-full ${colors.barSegment} transition-colors rounded-sm`}
+                                />
+                            )
+                        })}
                 </div>
             </div>
         )
     }
 
-    function renderCell(pos: PositionWithZone, cellHeight: number, cellWidth: number): React.ReactNode {
+    function renderCell(pos: PositionWithZone, zoneId: string, cellHeight: number, cellWidth: number): React.ReactNode {
         const colors = getCellColors(pos.id)
 
         return (
             <div
-                key={pos.id}
+                key={`${zoneId}-${pos.id}`}
                 style={{ height: cellHeight > 0 ? `${cellHeight}px` : '42px' }}
                 className={`
                     relative border text-center transition-all p-1

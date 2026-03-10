@@ -122,7 +122,7 @@ function ExportOrderContent() {
                         id, product_id, quantity, unit,
                         products ( name, sku )
                     ),
-                    positions (id, code)
+                    positions!positions_lot_id_fkey (id, code)
                 `)
                 .in('id', uniqueLotIds)
 
