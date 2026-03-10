@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react'
-import { ChevronDown, CheckSquare, Square, Eye } from 'lucide-react'
+import React, { useMemo, useState, useEffect } from 'react'
+import { ChevronDown, CheckSquare, Square, Eye, Printer } from 'lucide-react'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 
 interface ExportItemProps {
@@ -66,353 +66,290 @@ export function parsePositionPrefix(prefix: string): string {
 }
 
 export function ExportMapList({ items, onPositionSelect, selectedIds = new Set(), onBulkSelect, onViewLotDetails, readOnly = false }: ExportMapListProps) {
-    // Group items by zone prefix or dynamic zone_path
-    const groupedItems = useMemo(() => {
-        const groups: Record<string, ExportItemProps[]> = {}
-        const groupNames: Record<string, string> = {}
+    // Grouping structure: Aisle (Dãy) -> Bin (Ô - Gom) -> Floor (Tầng)
+    const aisleGroups = useMemo(() => {
+        // Step 1: Flatten items into a structured map
+        const data: any = {}
+
         items.forEach(item => {
-            let prefix = item.position_name
-            let name = ""
+            const path = item.zone_path || []
+            const posName = item.position_name || ""
+            
+            let aisleKey = "AISLE_OTHER"
+            let aisleName = "DÃY KHÁC"
+            let binKey = "BIN_OTHER"
+            let binName = "Ô KHÁC"
+            let floorKey = "FLOOR_OTHER"
+            let floorName = "TẦNG KHÁC"
 
-            if (item.zone_path && item.zone_path.length > 0) {
-                prefix = item.zone_path.join('|')
-                name = item.zone_path.slice(1).join(' - ') || item.zone_path[0]
-            } else {
-                const lastDotIdx = item.position_name.lastIndexOf('.')
-                // Typically VT is the last dot part
-                if (lastDotIdx > 0 && item.position_name.toUpperCase().includes('VT')) {
-                    prefix = item.position_name.substring(0, lastDotIdx)
+            // Strategy 1: Extract from structured Position Name (e.g., K1D1A03T101, K1D2B05T501)
+            // Matches: [K then digit] [D then digit as Aisle] [Letter then digit as Bin] [T then digit as Floor]
+            const complexMatch = posName.match(/(?:K\d+)?D(\d+)([A-Z]+)(\d+)T(\d+)/i)
+            
+            if (complexMatch) {
+                const aisleNum = complexMatch[1]
+                const binLetter = complexMatch[2]
+                const binNum = complexMatch[3]
+                const floorVal = complexMatch[4]
+                
+                aisleKey = `WH-D${aisleNum}`
+                aisleName = `DÃY ${aisleNum}`
+                
+                // Gom ô: Group by numeric part of the bin (e.g., A03, B03 -> 03)
+                binKey = `${aisleKey}|Ô-${binNum}`
+                binName = `Ô ${binNum}`
+                
+                // For floor, if it's 3 digits like 501, 101, we might want the first digit as the floor level
+                const floorLevel = floorVal.length >= 3 ? floorVal[0] : floorVal
+                floorKey = `${binKey}|T${floorLevel}`
+                floorName = `TẦNG ${floorLevel}`
+            } 
+            // Strategy 2: Use zone_path as fallback or for manual overrides
+            else if (path.length >= 2) {
+                const warehouse = path[0]
+                const aisle = path[1]
+                
+                if (aisleKey === "AISLE_OTHER") {
+                    aisleKey = `${warehouse}|${aisle}`
+                    aisleName = aisle.toUpperCase().startsWith('DÃY ') ? aisle.toUpperCase() : `DÃY ${aisle}`
                 }
-                name = parsePositionPrefix(prefix)
+
+                if (path.length >= 3) {
+                    const bin = path[2]
+                    const binMatch = bin.match(/\d+$/)
+                    const binSuffix = binMatch ? binMatch[0] : bin
+                    
+                    if (binKey === "BIN_OTHER") {
+                        binKey = `${aisleKey}|Ô-${binSuffix}`
+                        binName = `Ô ${binSuffix}`
+                    }
+
+                    if (path.length >= 4) {
+                        const floor = path[3]
+                        if (floorKey === "FLOOR_OTHER") {
+                            floorKey = `${binKey}|${floor}`
+                            floorName = floor.toUpperCase().startsWith('TẦNG ') ? floor.toUpperCase() : `TẦNG ${floor}`
+                        }
+                    }
+                }
+            } 
+            // Strategy 3: Simple regex for basic patterns (e.g., A03T1)
+            else {
+                const simpleMatch = posName.match(/([A-Z])(\d+)T(\d+)/i)
+                if (simpleMatch) {
+                    const bNum = simpleMatch[2]
+                    const fNum = simpleMatch[3]
+                    
+                    if (binKey === "BIN_OTHER") {
+                        binKey = `${aisleKey}|Ô-${bNum}`
+                        binName = `Ô ${bNum}`
+                    }
+                    if (floorKey === "FLOOR_OTHER") {
+                        floorKey = `${binKey}|Tầng ${fNum}`
+                        floorName = `TẦNG ${fNum}`
+                    }
+                }
             }
 
-            if (!groups[prefix]) {
-                groups[prefix] = []
-                groupNames[prefix] = name
+            // Final safety check: if still empty/other, try to default to Aisle 1 if patterned
+            if (aisleName === "DÃY KHÁC" && posName.includes('K1D')) {
+                 aisleName = "DÃY 1"
+                 aisleKey = "WH-D1"
             }
-            groups[prefix].push(item)
+
+            if (!data[aisleKey]) {
+                data[aisleKey] = { name: aisleName, bins: {} }
+            }
+            if (!data[aisleKey].bins[binKey]) {
+                data[aisleKey].bins[binKey] = { name: binName, floors: {} }
+            }
+            if (!data[aisleKey].bins[binKey].floors[floorKey]) {
+                data[aisleKey].bins[binKey].floors[floorKey] = { name: floorName, items: [] }
+            }
+            data[aisleKey].bins[binKey].floors[floorKey].items.push(item)
         })
 
-        // Format and sort
-        return Object.entries(groups).map(([prefix, currentItems]) => {
-            // Sort items numerically by VT number roughly
-            currentItems.sort((a, b) => a.position_name.localeCompare(b.position_name, undefined, { numeric: true }))
-
-            return {
-                prefix,
-                name: groupNames[prefix],
-                items: currentItems
-            }
-        }).sort((a, b) => a.prefix.localeCompare(b.prefix)) // Sort alphabetically so NK1 comes before NK2, etc.
+        // Step 2: Convert to sorted array
+        return Object.values(data).map((aisle: any) => ({
+            ...aisle,
+            bins: Object.values(aisle.bins).map((bin: any) => ({
+                ...bin,
+                floors: Object.values(bin.floors).map((floor: any) => {
+                    // Sort items: Suffix ABC
+                    floor.items.sort((a: any, b: any) => a.position_name.localeCompare(b.position_name))
+                    return floor
+                }).sort((a: any, b: any) => {
+                    // Floor sort: Level 02 before 01
+                    return b.name.localeCompare(a.name, undefined, { numeric: true })
+                })
+            })).sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+        })).sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true }))
     }, [items])
 
-    const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
-        new Set(groupedItems.map(g => g.prefix)) // Expand all by default
-    )
+    const [expandedAisles, setExpandedAisles] = useState<Set<string>>(new Set())
 
-    const toggleGroup = (prefix: string) => {
-        setExpandedGroups(prev => {
+    useEffect(() => {
+        // Expand first aisle by default
+        if (aisleGroups.length > 0 && expandedAisles.size === 0) {
+            setExpandedAisles(new Set([aisleGroups[0].name]))
+        }
+    }, [aisleGroups])
+
+    const toggleAisle = (name: string) => {
+        setExpandedAisles(prev => {
             const next = new Set(prev)
-            if (next.has(prefix)) next.delete(prefix)
-            else next.add(prefix)
+            if (next.has(name)) next.delete(name)
+            else next.add(name)
             return next
         })
     }
 
     if (items.length === 0) return null
 
-    const parentGroups = useMemo(() => {
-        const pGroups: Record<string, {
-            name: string,
-            prefix: string,
-            subGroups: typeof groupedItems
-        }> = {}
-
-        groupedItems.forEach(group => {
-            let parentPrefix = ""
-            let formattedParentZone = ""
-
-            const firstItem = group.items[0]
-            if (firstItem && firstItem.zone_path && firstItem.zone_path.length > 0) {
-                const parentPathArray = firstItem.zone_path.length > 1 ? firstItem.zone_path.slice(0, -1) : firstItem.zone_path
-                parentPrefix = parentPathArray.join('|')
-                formattedParentZone = parentPathArray.join(' - ')
-            } else {
-                const parts = group.prefix.split('.')
-                parentPrefix = parts[0]
-                formattedParentZone = parentPrefix
-                if (parentPrefix.startsWith('NK')) {
-                    formattedParentZone = `NHÀ KHO ${parentPrefix.replace('NK', '')}`
-                } else {
-                    formattedParentZone = parentPrefix.toUpperCase()
-                }
-            }
-
-            if (!pGroups[parentPrefix]) {
-                pGroups[parentPrefix] = {
-                    name: formattedParentZone,
-                    prefix: parentPrefix,
-                    subGroups: []
-                }
-            }
-            pGroups[parentPrefix].subGroups.push(group)
-        })
-
-        return Object.values(pGroups).sort((a, b) => a.prefix.localeCompare(b.prefix))
-    }, [groupedItems])
-
-    const [expandedParents, setExpandedParents] = useState<Set<string>>(
-        new Set(parentGroups.map(g => g.prefix)) // Expand all by default
-    )
-
-    const toggleParentGroup = (prefix: string) => {
-        setExpandedParents(prev => {
-            const next = new Set(prev)
-            if (next.has(prefix)) next.delete(prefix)
-            else next.add(prefix)
-            return next
-        })
-    }
-
     return (
-        <div className="space-y-6 w-full">
-            {/* Top Summaries */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
-                <div className="bg-slate-50 dark:bg-zinc-800/50 p-3 rounded-xl border border-stone-200 dark:border-zinc-700 shadow-sm">
-                    <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 uppercase tracking-wider">Tổng vị trí xuất</div>
-                    <div className="text-xl font-bold text-slate-900 dark:text-white flex items-baseline gap-2">
-                        {items.length} <span className="text-sm font-medium text-slate-500">vị trí</span>
-                    </div>
-                </div>
-                <div className="bg-slate-50 dark:bg-zinc-800/50 p-3 rounded-xl border border-stone-200 dark:border-zinc-700 shadow-sm">
-                    <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 uppercase tracking-wider">Tổng xuất kho</div>
-                    <div className="text-xl font-bold text-slate-900 dark:text-white flex items-baseline gap-2">
-                        {items.reduce((sum, item) => sum + item.quantity, 0).toLocaleString()}
-                        <span className="text-sm font-medium text-slate-500">{Array.from(new Set(items.map(i => i.unit))).join(', ')}</span>
-                    </div>
-                </div>
-            </div>
-
-            {parentGroups.map((parentGroup) => {
-                const isParentExpanded = expandedParents.has(parentGroup.prefix)
-                let parentTotalPositions = 0
-                let parentTotalQuantity = 0
-                const parentUnits = new Set<string>()
-
-                parentGroup.subGroups.forEach(subG => {
-                    parentTotalPositions += subG.items.length
-                    parentTotalQuantity += subG.items.reduce((sum, item) => sum + item.quantity, 0)
-                    subG.items.forEach(i => parentUnits.add(i.unit))
-                })
+        <div className="space-y-8 w-full max-w-full overflow-hidden">
+            {aisleGroups.map((aisle: any) => {
+                const isExpanded = expandedAisles.has(aisle.name)
+                const totalPositions = aisle.bins.reduce((sum: number, bin: any) => 
+                    sum + bin.floors.reduce((fsum: number, floor: any) => fsum + floor.items.length, 0), 0)
 
                 return (
-                    <div key={parentGroup.prefix} className="flex flex-col bg-white dark:bg-zinc-800 rounded-2xl border border-stone-200 dark:border-zinc-700 shadow-sm overflow-hidden">
-                        {/* Parent Group Header */}
+                    <div key={aisle.name} className="flex flex-col bg-white dark:bg-zinc-800 rounded-xl border border-stone-200 dark:border-zinc-700 shadow-sm overflow-hidden mb-6">
+                        {/* Aisle Header */}
                         <div
-                            className="flex items-center justify-between p-4 cursor-pointer hover:bg-stone-50 dark:hover:bg-zinc-700/50 transition-colors select-none"
-                            onClick={() => toggleParentGroup(parentGroup.prefix)}
+                            className="flex items-center justify-between p-3 px-5 cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-700/50 transition-colors select-none bg-[#f8f9fb] dark:bg-zinc-800/80 border-b border-stone-200 dark:border-zinc-700"
+                            onClick={() => toggleAisle(aisle.name)}
                         >
-                            <div className="flex items-center gap-3 flex-1 min-w-0">
-                                {onBulkSelect && (() => {
-                                    const selectableItems = parentGroup.subGroups.flatMap(sg => sg.items.filter(item => item.id && item.status !== 'Exported'))
-                                    if (selectableItems.length === 0) return null
-
-                                    const allSelected = selectableItems.every(item => selectedIds.has(item.id!))
-
-                                    return (
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation()
-                                                onBulkSelect(
-                                                    selectableItems.map(item => item.id!),
-                                                    !allSelected
-                                                )
-                                            }}
-                                            className={`p-0.5 rounded transition-colors ${allSelected
-                                                ? 'text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30'
-                                                : 'text-stone-400 hover:text-stone-600 hover:bg-stone-200 dark:hover:bg-zinc-700'
-                                                }`}
-                                            title={allSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
-                                        >
-                                            {allSelected ? <CheckSquare size={18} /> : <Square size={18} />}
-                                        </button>
-                                    )
-                                })()}
-                                <ChevronDown size={20} className={`text-stone-400 dark:text-zinc-500 transition-transform ${isParentExpanded ? 'rotate-180' : ''}`} />
-                                <span className="font-black text-stone-800 dark:text-stone-200 text-base uppercase tracking-wider">
-                                    {parentGroup.name}
-                                </span>
-                            </div>
-                            <div className="flex items-center gap-3 text-sm shrink-0 ml-4">
-                                <span className="bg-stone-100 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-stone-300 px-3 py-1.5 rounded-lg font-bold">
-                                    {parentTotalPositions} vị trí
-                                </span>
-                                <span className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 px-3 py-1.5 rounded-lg font-bold">
-                                    {parentTotalQuantity.toLocaleString()} {Array.from(parentUnits).join(', ')}
-                                </span>
+                            <div className="flex items-center gap-4">
+                                <ChevronDown size={22} className={`text-emerald-500 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+                                <div className="flex items-center gap-4">
+                                    <div className="flex items-center gap-2">
+                                        <Square size={18} className="text-slate-400" />
+                                        <span className="font-bold text-slate-800 dark:text-stone-100 text-xl uppercase">
+                                            {aisle.name}
+                                        </span>
+                                    </div>
+                                    <div className="hidden sm:flex items-center gap-2 text-sm text-slate-500 font-medium">
+                                        <span>{aisle.bins.length} ô</span>
+                                        <span>/</span>
+                                        <span className="text-emerald-600 font-bold">{totalPositions} có hàng</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        {/* Child Groups Container */}
-                        {isParentExpanded && (
-                            <div className="p-4 pt-0 space-y-3 bg-stone-50/50 dark:bg-zinc-900/20 border-t border-stone-100 dark:border-zinc-800">
-                                <div className="mt-4 space-y-3">
-                                    {parentGroup.subGroups.map((group) => {
-                                        const isExpanded = expandedGroups.has(group.prefix)
-                                        const totalQuantity = group.items.reduce((sum, item) => sum + item.quantity, 0)
-                                        const units = Array.from(new Set(group.items.map(i => i.unit))).join(', ')
-
+                        {/* Bins Container */}
+                        {isExpanded && (
+                            <div className="p-5 bg-[#fafbfc] dark:bg-zinc-900/40">
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                    {aisle.bins.map((bin: any) => {
+                                        const binTotalPositions = bin.floors.reduce((sum: number, f: any) => sum + f.items.length, 0)
                                         return (
-                                            <div key={group.prefix} className="flex flex-col bg-slate-50 dark:bg-zinc-800/30 border border-slate-200 dark:border-zinc-800 rounded-xl overflow-hidden">
-                                                {/* Group Header */}
-                                                <div
-                                                    className="flex items-center justify-between p-3 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-700/50 transition-colors select-none"
-                                                    onClick={() => toggleGroup(group.prefix)}
-                                                >
-                                                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                                                        {onBulkSelect && !readOnly && (
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation()
-                                                                    // Filter out items without IDs or already exported (if you want to prevent selecting exported items)
-                                                                    const selectableItems = group.items.filter(item => item.id && item.status !== 'Exported')
-                                                                    if (selectableItems.length === 0) return
-
-                                                                    const allSelected = selectableItems.every(item => selectedIds.has(item.id!))
-                                                                    onBulkSelect(
-                                                                        selectableItems.map(item => item.id!),
-                                                                        !allSelected
-                                                                    )
-                                                                }}
-                                                                className={`p-0.5 rounded transition-colors ${group.items.filter(item => item.id && item.status !== 'Exported').length > 0 && group.items.filter(item => item.id && item.status !== 'Exported').every(item => selectedIds.has(item.id!))
-                                                                    ? 'text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30'
-                                                                    : 'text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700'
-                                                                    }`}
-                                                                title={group.items.filter(item => item.id && item.status !== 'Exported').length > 0 && group.items.filter(item => item.id && item.status !== 'Exported').every(item => selectedIds.has(item.id!)) ? "Bỏ chọn tất cả" : "Chọn tất cả"}
-                                                            >
-                                                                {group.items.filter(item => item.id && item.status !== 'Exported').length > 0 && group.items.filter(item => item.id && item.status !== 'Exported').every(item => selectedIds.has(item.id!)) ? <CheckSquare size={16} /> : <Square size={16} />}
-                                                            </button>
-                                                        )}
-                                                        <ChevronDown size={18} className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                                                        <span className="font-bold text-slate-700 dark:text-slate-300 text-sm">
-                                                            {group.name}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 text-xs shrink-0 ml-2">
-                                                        <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-1 rounded-md font-bold">
-                                                            {group.items.length} vt
-                                                        </span>
-                                                        <span className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-2 py-1 rounded-md font-bold">
-                                                            {totalQuantity.toLocaleString()} {units}
+                                            <div key={bin.name} className="flex flex-col bg-white dark:bg-zinc-800 rounded-2xl border border-stone-200 dark:border-zinc-700 shadow-md transition-shadow overflow-hidden">
+                                                {/* Bin Header */}
+                                                <div className="flex items-center justify-between p-4 px-6 bg-slate-50/80 dark:bg-zinc-800 border-b border-slate-100 dark:border-zinc-700">
+                                                    <div className="flex items-center gap-3">
+                                                        <ChevronDown size={20} className="text-slate-400" />
+                                                        <span className="font-bold text-slate-800 dark:text-stone-100 text-xl flex items-center gap-2">
+                                                            {bin.name}
+                                                            <span className="bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 px-3 py-0.5 rounded-full text-xs font-bold border border-blue-200 dark:border-blue-800">
+                                                                {binTotalPositions} vị trí
+                                                            </span>
                                                         </span>
                                                     </div>
                                                 </div>
 
-                                                {/* Group Items Grid */}
-                                                {isExpanded && (
-                                                    <div className="p-2 border-t border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
-                                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10 gap-2">
-                                                            {group.items.map((item, idx) => {
-                                                                const isExported = item.status === 'Exported'
-                                                                const isSelected = item.id ? selectedIds.has(item.id) : false
-                                                                const hasLot = !!item.lot_code
+                                                {/* Floors Container */}
+                                                <div className="p-4 space-y-6">
+                                                    {bin.floors.map((floor: any) => (
+                                                        <div key={floor.name} className="flex flex-col bg-white dark:bg-zinc-900/20 rounded-2xl border border-slate-100 dark:border-zinc-800 overflow-hidden shadow-sm">
+                                                            {/* Floor Sub-header */}
+                                                            <div className="flex items-center justify-between p-3 px-4 bg-[#f1f5f9]/50 dark:bg-zinc-800 border-b border-slate-100 dark:border-zinc-800">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-[4px] h-5 bg-emerald-500 rounded-full" />
+                                                                    <span className="text-sm font-bold text-slate-800 dark:text-zinc-200 uppercase flex items-center gap-2 tracking-wide">
+                                                                        {floor.name} <span className="text-slate-300">|</span> <span className="text-emerald-600 font-extrabold">{floor.items.length} VỊ TRÍ</span>
+                                                                    </span>
+                                                                </div>
+                                                            </div>
 
-                                                                let bgClass = "bg-white dark:bg-slate-800"
-                                                                let borderClass = "border-slate-200 dark:border-slate-700"
-
-                                                                if (isSelected) {
-                                                                    bgClass = "bg-blue-50 dark:bg-blue-900/30"
-                                                                    borderClass = "border-blue-500"
-                                                                } else if (hasLot) {
-                                                                    bgClass = "bg-amber-50 dark:bg-amber-900/10"
-                                                                    borderClass = "border-amber-200 dark:border-amber-800"
-                                                                }
-
-                                                                // Override styles for exported mode
-                                                                if (isExported) {
-                                                                    bgClass = "bg-slate-50 dark:bg-slate-800/30 opacity-60"
-                                                                    borderClass = "border-slate-200 dark:border-slate-700"
-                                                                }
-
-                                                                return (
-                                                                    <div
-                                                                        key={item.id || idx}
-                                                                        className={`relative group flex flex-col p-1 rounded border ${bgClass} ${borderClass} aspect-square text-[10px] transition-all ${readOnly ? 'opacity-80' : 'hover:shadow-md'} ${!isExported && hasLot && !readOnly ? 'hover:border-blue-300' : ''}`}
-                                                                    >
-                                                                        {onPositionSelect && item.id && !isExported && !readOnly && (
-                                                                            <button
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation()
-                                                                                    onPositionSelect(item.id!)
-                                                                                }}
-                                                                                className={`absolute bottom-1 left-1 z-10 p-0.5 rounded bg-white/80 dark:bg-gray-800/80 hover:bg-blue-50 dark:hover:bg-blue-900/50 transition-colors ${isSelected ? 'text-blue-600' : 'text-gray-400'}`}
-                                                                                title={isSelected ? "Bỏ chọn" : "Chọn vị trí"}
-                                                                            >
-                                                                                {isSelected ? <CheckSquare size={14} /> : <Square size={14} />}
-                                                                            </button>
-                                                                        )}
-
-                                                                        {hasLot && onViewLotDetails && (
-                                                                            <button
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation()
-                                                                                    onViewLotDetails(item.lot_code)
-                                                                                }}
-                                                                                className="absolute left-1 top-1 text-slate-400 hover:text-blue-600 dark:text-slate-500 dark:hover:text-blue-400 transition-colors z-20"
-                                                                                title="Xem chi tiết LOT"
-                                                                            >
-                                                                                <Eye size={12} />
-                                                                            </button>
-                                                                        )}
-
-                                                                        {item.display_status && ['Moved to Hall', 'Changed Position'].includes(item.display_status) && (
-                                                                            <div className="absolute left-5 top-1 flex items-center z-20 max-w-[calc(100%-24px)]">
-                                                                                <span className={`text-[8px] leading-[12px] font-bold px-1.5 py-[0.5px] rounded truncate ${item.display_status === 'Moved to Hall' ? 'text-orange-700 bg-orange-100 dark:text-orange-400 dark:bg-orange-900/30' : 'text-blue-700 bg-blue-100 dark:text-blue-400 dark:bg-blue-900/30'}`} title={item.current_position_name}>
-                                                                                    ➔ {item.current_position_name}
-                                                                                </span>
-                                                                            </div>
-                                                                        )}
-
-                                                                        <div className="font-bold text-center text-slate-700 dark:text-slate-200 mb-0.5 border-b border-slate-100 dark:border-slate-700/50 pb-0.5 truncate text-[10px] pt-4">
-                                                                            {item.position_name}
-                                                                        </div>
-
-                                                                        <div className="flex flex-col gap-0.5 flex-1 justify-center overflow-hidden">
-                                                                            <div className="font-bold text-center text-teal-700 dark:text-teal-400 truncate text-[9px]">{item.sku}</div>
-                                                                            <div className="text-[9px] text-slate-500 line-clamp-2 text-center">
-                                                                                {item.product_name}
-                                                                            </div>
-                                                                            {item.lot_tags && item.lot_tags.length > 0 && (
-                                                                                <div className="w-full flex justify-center scale-90 -my-0.5 mt-0.5 shrink-0">
-                                                                                    <TagDisplay
-                                                                                        tags={item.lot_tags
-                                                                                            .filter(t => !t.tag.startsWith('SPLIT_TO:') && !t.tag.startsWith('MERGED_TO:'))
-                                                                                            .map(t => t.tag)}
-                                                                                        variant="compact"
-                                                                                        placeholderMap={{ '@': item.sku || 'SẢN PHẨM' }}
-                                                                                    />
+                                                            {/* Position Grid - ABC Layout */}
+                                                            <div className="p-4">
+                                                                <div className="grid grid-cols-3 gap-4">
+                                                                    {/* 
+                                                                        We need to ensure A, B, C positions align.
+                                                                        Logic: Filter items for A, B, C segments.
+                                                                    */}
+                                                                    {['A', 'B', 'C'].map(segment => {
+                                                                        const segmentItems = floor.items.filter((i: any) => {
+                                                                            // Robust segment detection: find first A, B, or C in the string
+                                                                            const match = i.position_name.match(/\b[A-C]|[A-C](?=\d)/i)
+                                                                            return match && match[0].toUpperCase() === segment
+                                                                        })
+                                                                        
+                                                                        if (segmentItems.length === 0) {
+                                                                            return (
+                                                                                <div key={segment} className="min-h-[120px] flex flex-col items-center justify-center border-2 border-dashed border-slate-100 dark:border-zinc-800 rounded-2xl bg-slate-50/20">
+                                                                                    <span className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">{segment} - TRỐNG</span>
                                                                                 </div>
-                                                                            )}
-                                                                            <div className={`font-mono text-[9px] mt-auto font-bold text-center ${isExported ? 'text-slate-500 dark:text-slate-400' : 'text-blue-600 dark:text-blue-400'}`}>
-                                                                                {item.quantity} {item.unit}
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                )
-                                                            })}
+                                                                            )
+                                                                        }
+
+                                                                        return segmentItems.map((item: any) => {
+                                                                            const isSelected = selectedIds.has(item.id!)
+                                                                            const isExported = item.status === 'Exported'
+                                                                            
+                                                                            return (
+                                                                                <div
+                                                                                    key={item.id}
+                                                                                    onClick={() => onPositionSelect?.(item.id!)}
+                                                                                    className={`relative flex flex-col p-2 pb-1 bg-white dark:bg-zinc-800 rounded-2xl border-2 transition-all cursor-pointer select-none group min-h-[120px] ${
+                                                                                        isSelected 
+                                                                                        ? 'bg-blue-50 border-blue-500 ring-4 ring-blue-100/50 dark:bg-blue-900/30' 
+                                                                                        : 'border-slate-100 hover:border-emerald-400 dark:border-zinc-700 hover:shadow-lg'
+                                                                                    } ${isExported ? 'opacity-50 grayscale' : ''} shadow-sm`}
+                                                                                >
+                                                                                    <div className="text-xs font-black text-slate-400 dark:text-zinc-500 text-center mb-1.5 truncate bg-slate-50 dark:bg-zinc-900/50 py-1 rounded-lg">
+                                                                                        {item.position_name}
+                                                                                    </div>
+                                                                                    
+                                                                                    <div className="flex-1 flex flex-col items-center justify-center gap-0.5 overflow-hidden px-1">
+                                                                                        <div className="text-sm font-black text-emerald-700 dark:text-emerald-400 leading-tight text-center">
+                                                                                            {item.sku}
+                                                                                        </div>
+                                                                                        <div className="text-[11px] font-medium text-slate-600 dark:text-zinc-300 line-clamp-2 text-center leading-normal mb-1">
+                                                                                            {item.product_name}
+                                                                                        </div>
+                                                                                        <div className="text-[10px] font-black text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/40 px-2 py-0.5 rounded-lg border border-blue-100 dark:border-blue-800 whitespace-nowrap">
+                                                                                            {item.quantity} {item.unit}
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    {item.lot_tags && item.lot_tags.length > 0 && (
+                                                                                        <div className="w-full text-center">
+                                                                                            <span className="text-[8px] font-black text-orange-600 dark:text-orange-400 leading-none">
+                                                                                                {item.lot_tags.map((t: any) => t.tag).join(', ')}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            )
+                                                                        })
+                                                                    })}
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                )}
+                                                    ))}
+                                                </div>
                                             </div>
                                         )
                                     })}
                                 </div>
                             </div>
-                        )
-                        }
-                    </div >
+                        )}
+                    </div>
                 )
             })}
-        </div >
+        </div>
     )
 }

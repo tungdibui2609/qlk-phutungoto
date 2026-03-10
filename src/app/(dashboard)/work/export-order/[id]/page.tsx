@@ -38,6 +38,7 @@ interface ExportOrderItem {
     zone_path?: string[]
     full_position_path?: string | null
     lot_tags?: { tag: string; lot_item_id: string | null }[] | null
+    part_number?: string | null
 }
 
 interface ExportTask {
@@ -185,7 +186,7 @@ function ExportOrderDetailContent() {
                                 zone_positions(zone_id)
                             )
                         ),
-                        products (name, sku, image_url)
+                        products (name, sku, image_url, part_number)
                     )
                 `)
                 .eq('id', taskId)
@@ -290,7 +291,8 @@ function ExportOrderDetailContent() {
                         priority: item.priority || null,
                         zone_path: zonePath,
                         full_position_path: fullPosPath,
-                        lot_tags: item.lots?.lot_tags
+                        lot_tags: item.lots?.lot_tags,
+                        part_number: item.products?.part_number
                     }
                 }).sort((a: any, b: any) => {
                     const posA = a.position_name || ''
@@ -732,6 +734,7 @@ function ExportOrderDetailContent() {
                                 display_status: item.display_status,
                                 product_name: item.product_name,
                                 sku: item.sku,
+                                part_number: item.part_number,
                                 zone_path: item.zone_path,
                                 lot_tags: item.lot_tags
                             }))}

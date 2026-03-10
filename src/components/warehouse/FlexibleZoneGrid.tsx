@@ -311,7 +311,25 @@ export default function FlexibleZoneGrid({
                 if (oa !== ob) return oa - ob
                 return (a.code || '').localeCompare(b.code || '')
             })
-            node.positions.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }))
+            node.positions.sort((a, b) => {
+                const codeA = a.code || ''
+                const codeB = b.code || ''
+
+                // Extract numeric suffix (e.g., "01" from "A01")
+                const matchA = codeA.match(/\d+$/)
+                const matchB = codeB.match(/\d+$/)
+
+                const numA = matchA ? parseInt(matchA[0], 10) : -1
+                const numB = matchB ? parseInt(matchB[0], 10) : -1
+
+                // 1. Sort by numeric suffix DESCENDING (02 above 01)
+                if (numA !== numB) {
+                    return numB - numA
+                }
+
+                // 2. Sort by prefix ABC ASCENDING
+                return codeA.localeCompare(codeB, undefined, { numeric: true })
+            })
 
             let totalPos = node.positions.length
             let descIds: string[] = []
