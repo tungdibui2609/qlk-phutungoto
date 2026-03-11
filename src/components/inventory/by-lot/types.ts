@@ -6,7 +6,7 @@ export type Lot = Database['public']['Tables']['lots']['Row'] & {
         products: { name: string; unit: string; product_code?: string; sku: string; system_type: string } | null
     })[] | null
     suppliers: { name: string } | null
-    positions: { code: string }[] | null
+    positions: { id: string; code: string }[] | null
     lot_tags: { tag: string; lot_item_id: string | null }[] | null
     // Legacy support
     products: { name: string; unit: string; product_code?: string; sku: string; system_type: string } | null

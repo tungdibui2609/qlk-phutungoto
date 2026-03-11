@@ -15,6 +15,9 @@ export default function InventoryByLot({ units }: { units: any[] }) {
         setSearchTerm,
         selectedBranch,
         setSelectedBranch,
+        selectedZoneId,
+        setSelectedZoneId,
+        allZones,
         targetUnitId,
         setTargetUnitId,
         branches,
@@ -45,6 +48,9 @@ export default function InventoryByLot({ units }: { units: any[] }) {
                 systemType={systemType ?? ''}
                 companyInfo={companyInfo}
                 loadingCompany={loadingCompany}
+                selectedZoneId={selectedZoneId}
+                setSelectedZoneId={setSelectedZoneId}
+                allZones={allZones}
             />
 
             {/* Mobile List */}

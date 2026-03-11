@@ -1,13 +1,16 @@
 'use client'
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { ClipboardCheck, Plus, Loader2, ChevronRight, ChevronDown, ChevronUp, Layers, Check, Trash2, X, Calendar, User, Users, BarChart3, CheckCircle2, LayoutGrid, Eye, Package, MessageSquare, Lock, Unlock, AlertTriangle } from 'lucide-react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { ClipboardCheck, Plus, Loader2, ChevronRight, ChevronDown, ChevronUp, Layers, Check, Trash2, X, Calendar, User, Users, BarChart3, CheckCircle2, LayoutGrid, Eye, Package, MessageSquare, Lock, Unlock, AlertTriangle, Edit } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import { format } from 'date-fns'
+import { LotForm } from '@/app/(dashboard)/warehouses/lots/_components/LotForm'
+import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
+import { normalizeSearchString } from '@/lib/searchUtils'
 
 // Types
 interface Session {
@@ -39,6 +42,7 @@ interface InvItem {
     checked_by: string | null
     checked_at: string | null
     lot_id_snapshot: string | null
+    is_modified?: boolean
 }
 
 interface Zone {
@@ -101,6 +105,7 @@ export default function InternalInventoryPage() {
     const { systemType, currentSystem } = useSystem()
     const { profile } = useUser()
     const { showToast, showConfirm } = useToast()
+    const { hasModule } = useSystem()
 
     const [loading, setLoading] = useState(true)
     const [sessions, setSessions] = useState<Session[]>([])
@@ -124,6 +129,30 @@ export default function InternalInventoryPage() {
     const [selectedUserIds, setSelectedUserIds] = useState<string[]>([])
     const [zonesLoading, setZonesLoading] = useState(false)
     const [creating, setCreating] = useState(false)
+
+    // Lot Edit State
+    const [editingLot, setEditingLot] = useState<Lot | null>(null)
+    const [editingPositionId, setEditingPositionId] = useState<string | null>(null)
+    const [showLotEdit, setShowLotEdit] = useState(false)
+
+    // Common Data for LotForm
+    const [commonData, setCommonData] = useState<{
+        products: Product[],
+        suppliers: Supplier[],
+        qcList: QCInfo[],
+        units: Unit[],
+        productUnits: ProductUnit[],
+        branches: any[],
+        existingTags: string[]
+    }>({
+        products: [],
+        suppliers: [],
+        qcList: [],
+        units: [],
+        productUnits: [],
+        branches: [],
+        existingTags: []
+    })
 
     // Filter & Expansion
     const [selectedWh, setSelectedWh] = useState<string | null>(null)
@@ -305,6 +334,57 @@ export default function InternalInventoryPage() {
         fetchAllZones()
     }, [systemType, profile?.company_id])
 
+    // Load Common Data for LotForm
+    useEffect(() => {
+        if (!systemType || !currentSystem) return
+
+        const fetchCommonData = async () => {
+            const fetchAllPaginated = async (table: string, filter?: (query: any) => any, selectFields = '*', pageSize = 1000) => {
+                let allData: any[] = []
+                let from = 0
+                while (true) {
+                    let query = supabase.from(table as any).select(selectFields).range(from, from + pageSize - 1)
+                    if (filter) query = filter(query)
+                    const { data, error } = await query
+                    if (error) { console.error(`Error fetching ${table}:`, error); break }
+                    if (!data || data.length === 0) break
+                    allData = [...allData, ...data]
+                    if (data.length < pageSize) break
+                    from += pageSize
+                }
+                return allData
+            }
+
+            try {
+                const [prodData, suppData, qcData, branchData, unitData, pUnitData, tagData] = await Promise.all([
+                    fetchAllPaginated('products', q => q.eq('system_type', systemType).order('name')),
+                    fetchAllPaginated('suppliers', q => q.eq('system_code', systemType).order('name')),
+                    fetchAllPaginated('qc_info', q => q.eq('system_code', systemType).order('name')),
+                    fetchAllPaginated('branches', q => q.order('is_default', { ascending: false }).order('name')),
+                    fetchAllPaginated('units'),
+                    fetchAllPaginated('product_units'),
+                    fetchAllPaginated('lot_tags', q => q.order('tag'), 'tag')
+                ])
+
+                const uniqueTags = Array.from(new Set(tagData.map((t: any) => t.tag))).filter(Boolean) as string[]
+
+                setCommonData({
+                    products: prodData,
+                    suppliers: suppData,
+                    qcList: qcData,
+                    branches: branchData,
+                    units: unitData,
+                    productUnits: pUnitData,
+                    existingTags: uniqueTags
+                })
+            } catch (err) {
+                console.error('Error loading lot common data:', err)
+            }
+        }
+
+        fetchCommonData()
+    }, [systemType, currentSystem])
+
     const handleCreate = async () => {
         if (!systemType || !profile) return
         setCreating(true)
@@ -455,7 +535,75 @@ export default function InternalInventoryPage() {
         } finally {
             setDetailLoading(false)
         }
-    }, [systemType, showToast, profile?.company_id])
+    }, [systemType, showToast, profile?.company_id, lotInfo])
+
+    const handleEditLot = (lotId: string, positionId: string) => {
+        setEditingPositionId(positionId)
+        // Fetch full lot details if needed, or construct from lotInfo
+        const loadFullLot = async () => {
+            const { data, error } = await supabase
+                .from('lots')
+                .select(`
+                    *,
+                    lot_items(id, quantity, product_id, unit, products(name, sku, unit, internal_code, internal_name)),
+                    lot_tags(tag, lot_item_id)
+                `)
+                .eq('id', lotId)
+                .single()
+
+            if (data) {
+                setEditingLot(data as any as Lot)
+                setShowLotEdit(true)
+            } else if (error) {
+                showToast('Lỗi tải thông tin lô: ' + error.message, 'error')
+            }
+        }
+        loadFullLot()
+    }
+
+    const onLotEditSuccess = async (updatedLot: any) => {
+        if (!selectedSession || !profile) return
+        const posId = editingPositionId
+        setShowLotEdit(false)
+        setEditingLot(null)
+        setEditingPositionId(null)
+
+        // Find which position was affected
+        const affectedPosId = posId || positions.find(p => p.lot_id === updatedLot.id)?.id
+        if (!affectedPosId) return
+
+        // Update is_modified in internal_inventory_items
+        try {
+            const existing = items.find(i => i.position_id === affectedPosId)
+            const pos = positions.find(p => p.id === affectedPosId)
+
+            const { data, error } = await supabase.from('internal_inventory_items').upsert({
+                session_id: selectedSession.id,
+                position_id: affectedPosId,
+                zone_id: (pos?.zone_id && !pos.zone_id.startsWith('v-')) ? pos.zone_id : null,
+                checked: existing?.checked || false,
+                note: existing?.note || null,
+                checked_by: profile.id,
+                checked_at: new Date().toISOString(),
+                lot_id_snapshot: pos?.lot_id || null,
+                is_modified: true
+            }, { onConflict: 'session_id,position_id' }).select()
+
+            if (error) {
+                showToast('Lỗi cập nhật trạng thái: ' + error.message, 'error')
+                return
+            }
+
+            console.log('Upsert success, record:', data)
+
+            // Refresh detailed data
+            loadDetail(selectedSession)
+            showToast('Đã cập nhật thông tin LOT và đánh dấu thay đổi', 'success')
+        } catch (e: any) {
+            console.error('Catch error:', e)
+            showToast('Lỗi cập nhật trạng thái: ' + e.message, 'error')
+        }
+    }
 
     const toggleCheck = async (positionId: string) => {
         if (!selectedSession || !profile) return
@@ -473,7 +621,7 @@ export default function InternalInventoryPage() {
                 id: crypto.randomUUID(),
                 session_id: selectedSession.id,
                 position_id: positionId,
-                zone_id: pos?.zone_id || null,
+                zone_id: (pos?.zone_id && !pos.zone_id.startsWith('v-')) ? pos.zone_id : null,
                 checked: true,
                 note: null,
                 checked_by: profile.id,
@@ -487,7 +635,7 @@ export default function InternalInventoryPage() {
             await supabase.from('internal_inventory_items').upsert({
                 session_id: selectedSession.id,
                 position_id: positionId,
-                zone_id: pos?.zone_id || null,
+                zone_id: (pos?.zone_id && !pos.zone_id.startsWith('v-')) ? pos.zone_id : null,
                 checked: newChecked,
                 note: existing?.note || null,
                 checked_by: profile.id,
@@ -514,7 +662,7 @@ export default function InternalInventoryPage() {
                 id: crypto.randomUUID(),
                 session_id: selectedSession.id,
                 position_id: positionId,
-                zone_id: pos?.zone_id || null,
+                zone_id: (pos?.zone_id && !pos.zone_id.startsWith('v-')) ? pos.zone_id : null,
                 checked: false,
                 note,
                 checked_by: profile.id,
@@ -528,7 +676,7 @@ export default function InternalInventoryPage() {
             await supabase.from('internal_inventory_items').upsert({
                 session_id: selectedSession.id,
                 position_id: positionId,
-                zone_id: pos?.zone_id || null,
+                zone_id: (pos?.zone_id && !pos.zone_id.startsWith('v-')) ? pos.zone_id : null,
                 checked: existing?.checked || false,
                 note,
                 checked_by: profile.id,
@@ -552,7 +700,7 @@ export default function InternalInventoryPage() {
             return {
                 session_id: selectedSession.id,
                 position_id: pid,
-                zone_id: pos?.zone_id || null,
+                zone_id: (pos?.zone_id && !pos.zone_id.startsWith('v-')) ? pos.zone_id : null,
                 checked,
                 note: existing?.note || null,
                 checked_by: profile.id,
@@ -573,7 +721,7 @@ export default function InternalInventoryPage() {
                         id: crypto.randomUUID(),
                         session_id: selectedSession.id,
                         position_id: pid,
-                        zone_id: pos?.zone_id || null,
+                        zone_id: (pos?.zone_id && !pos.zone_id.startsWith('v-')) ? pos.zone_id : null,
                         checked,
                         note: null,
                         checked_by: profile.id,
@@ -805,6 +953,7 @@ export default function InternalInventoryPage() {
         const lot = pos.lot_id ? lotInfo[pos.lot_id] : null
         const isChecked = item?.checked
         const hasNote = !!item?.note
+        const isModified = !!item?.is_modified
 
         if (isHall) {
             return (
@@ -817,7 +966,9 @@ export default function InternalInventoryPage() {
                             ? 'bg-emerald-50/30 border-emerald-500 ring-4 ring-emerald-100/20'
                             : hasNote
                                 ? 'bg-red-50/50 border-red-500 ring-4 ring-red-100/20'
-                                : 'bg-orange-50/10 border-orange-200 hover:border-orange-400 hover:shadow-md'
+                                : isModified
+                                    ? 'bg-blue-50/50 border-blue-500 hover:border-blue-700'
+                                    : 'bg-orange-50/10 border-orange-200 hover:border-orange-400 hover:shadow-md'
                         }`}
                 >
                     {/* Header: Code & Status */}
@@ -829,6 +980,21 @@ export default function InternalInventoryPage() {
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isChecked ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'bg-white border-2 border-stone-100 text-stone-100'}`}>
                             <CheckCircle2 size={18} />
                         </div>
+                        {lot && selectedSession?.status !== 'completed' && (
+                            <div className="flex items-center gap-2 absolute top-2 right-2 z-10">
+                                {isModified && (
+                                    <div className="flex items-center gap-1 bg-blue-600 text-white text-[8px] font-black px-2 py-1 rounded-full uppercase tracking-tighter shadow-lg border border-white">
+                                        Đã sửa
+                                    </div>
+                                )}
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleEditLot(pos.lot_id, pos.id) }}
+                                    className="w-8 h-8 rounded-full bg-white border border-stone-200 text-stone-400 hover:text-blue-600 hover:border-blue-200 flex items-center justify-center transition-all"
+                                >
+                                    <Edit size={14} />
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     {/* Content: Product Information */}
@@ -882,7 +1048,9 @@ export default function InternalInventoryPage() {
                         ? 'bg-emerald-50/50 border-emerald-500'
                         : hasNote
                             ? 'bg-red-50/80 border-red-500 ring-1 ring-red-200'
-                            : 'bg-white border-stone-900'
+                            : isModified
+                                ? 'bg-blue-50/50 border-blue-500'
+                                : 'bg-white border-stone-900'
                     }`}
             >
                 {/* 1. Header: Mã vị trí | Mã LOT (Color Coded) */}
@@ -939,6 +1107,23 @@ export default function InternalInventoryPage() {
                         <div className="flex flex-col items-center gap-1 opacity-20 py-2">
                             <Package size={28} className="text-stone-300" />
                             <span className="text-[11px] font-black uppercase tracking-[0.2em] italic text-stone-900">Vị trí hiện trống</span>
+                        </div>
+                    )}
+
+                    {lot && selectedSession?.status !== 'completed' && (
+                        <div className="flex items-center gap-2 mt-1">
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleEditLot(pos.lot_id, pos.id) }}
+                                className="p-1 px-3 rounded-full border border-stone-100 text-stone-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all flex items-center gap-1.5"
+                            >
+                                <Edit size={10} />
+                                <span className="text-[9px] font-black uppercase tracking-tighter">Sửa LOT</span>
+                            </button>
+                            {isModified && (
+                                <span className="text-[8px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 uppercase tracking-tighter">
+                                    Đã sửa
+                                </span>
+                            )}
                         </div>
                     )}
                 </div>
@@ -1257,17 +1442,6 @@ export default function InternalInventoryPage() {
                         })()}
                     </div>
 
-                    {/* Debug Info */}
-                    <div className="bg-stone-50 border border-stone-200 rounded-xl p-3 text-[10px] font-mono text-stone-400 flex flex-wrap gap-4">
-                        <span>Phiếu: {selectedSession.id}</span>
-                        <span>Kho đích: {selectedSession.warehouse_id || 'Không có'}</span>
-                        <span>SelectedWh: {selectedWh || 'N/A'}</span>
-                        <span>Zones: {zones.length}</span>
-                        <span>WhTabs: {warehouses.length}</span>
-                        <span>BuildingChildren: {buildingChildren.length}</span>
-                        <span>Positions: {positions.length} ({groupedData.positions.length} sau gom)</span>
-                        <span>Items: {items.length}</span>
-                    </div>
                     {detailLoading ? <div className="flex justify-center p-12"><Loader2 className="animate-spin text-purple-600" size={32} /></div> : (
                         <>
                             <div className="flex gap-2 flex-wrap">
@@ -1525,6 +1699,32 @@ export default function InternalInventoryPage() {
                         })}
                     </div>
                 )
+            )}
+
+            {showLotEdit && (
+                <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-md z-[60] overflow-y-auto p-4 md:p-10">
+                    <div className="max-w-6xl mx-auto">
+                        <div className="flex justify-end mb-4">
+                            <button onClick={() => { setShowLotEdit(false); setEditingLot(null) }} className="p-3 bg-white/20 hover:bg-white/40 text-white rounded-full transition-all">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <LotForm
+                            isVisible={showLotEdit}
+                            editingLot={editingLot}
+                            onClose={() => { setShowLotEdit(false); setEditingLot(null) }}
+                            onSuccess={onLotEditSuccess}
+                            products={commonData.products}
+                            suppliers={commonData.suppliers}
+                            qcList={commonData.qcList}
+                            units={commonData.units}
+                            productUnits={commonData.productUnits}
+                            branches={commonData.branches}
+                            existingTags={commonData.existingTags}
+                            isModuleEnabled={hasModule}
+                        />
+                    </div>
+                </div>
             )}
 
             {isCreateOpen && (

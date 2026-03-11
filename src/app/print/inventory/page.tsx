@@ -10,6 +10,7 @@ import { formatQuantityFull } from '@/lib/numberUtils'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { PrintHeader } from '@/components/print/PrintHeader'
 import { EditableText } from '@/components/print/PrintHelpers'
+import { useUnitConversion } from '@/hooks/useUnitConversion'
 
 // Types
 interface InventoryItem {
@@ -40,6 +41,11 @@ interface LotItem {
     inboundDate: string | null
     positions: { code: string }[] | null
     supplierName: string
+    tags: string[]
+    kg: number // New field
+    kgRate?: number; // New: 1 unit = X kg
+    productId: string; // New: Precise product lookup
+    baseUnit: string;  // New: Precise base unit
 }
 
 interface ReconciliationItem {
@@ -54,17 +60,33 @@ interface ReconciliationItem {
     diff: number
 }
 
-export default function InventoryPrintPage() {
+interface GroupedLot {
+    key: string;
+    productSku: string;
+    productName: string;
+    internalCode?: string | null;
+    internalName?: string | null;
+    productUnit: string;
+    totalQuantity: number;
+    totalKg: number; // New field
+    kgRate?: number; // New
+    variants: Map<string, { totalQuantity: number, totalKg: number, items: LotItem[] }>; 
+    items: LotItem[];
+}
+
+export default function PrintInventoryPage() {
     const searchParams = useSearchParams()
-    const type = searchParams.get('type') as 'accounting' | 'lot' | 'reconciliation' || 'accounting'
+    const type = searchParams.get('type') || 'accounting'
     const systemType = searchParams.get('systemType') || ''
-    const dateFrom = searchParams.get('from') || ''
-    const dateTo = searchParams.get('to') || new Date().toISOString().split('T')[0]
+    const dateFrom = searchParams.get('dateFrom') || ''
+    const dateTo = searchParams.get('dateTo') || new Date().toISOString().split('T')[0]
     const warehouse = searchParams.get('warehouse') || ''
-    const searchTerm = searchParams.get('search') || ''
+    const searchTerm = searchParams.get('q') || searchParams.get('search') || ''
     const convertToKg = searchParams.get('convertToKg') === 'true'
     const isInternalCodeDisplay = searchParams.get('internalCode') === 'true'
     const isSnapshot = searchParams.get('snapshot') === '1'
+    const zoneId = searchParams.get('zoneId') || ''
+    const targetUnitId = searchParams.get('targetUnitId') || ''
     const token = searchParams.get('token')
 
     // Check for company info in params (from screenshot service)
@@ -88,7 +110,16 @@ export default function InventoryPrintPage() {
     const [error, setError] = useState<string | null>(null)
     const [accountingItems, setAccountingItems] = useState<InventoryItem[]>([])
     const [lotItems, setLotItems] = useState<LotItem[]>([])
+    const [groupedLots, setGroupedLots] = useState<GroupedLot[]>([])
     const [reconcileItems, setReconcileItems] = useState<ReconciliationItem[]>([])
+
+    // Unit Conversion Support
+    const { convertUnit, toBaseAmount, getBaseToKgRate, conversionMap, unitNameMap } = useUnitConversion()
+    const [allUnits, setAllUnits] = useState<any[]>([])
+
+    // Zone states for recursive filtering
+    const [posToZoneMap, setPosToZoneMap] = useState<Record<string, string>>({})
+    const [zoneHierarchy, setZoneHierarchy] = useState<Record<string, string | null>>({})
 
     // Use shared hook for company info
     const { companyInfo, logoSrc } = usePrintCompanyInfo({
@@ -136,7 +167,7 @@ export default function InventoryPrintPage() {
         else if (type === 'lot') setEditReportTitle('BÁO CÁO TỒN KHO THEO LOT')
         else if (type === 'reconciliation') setEditReportTitle('BẢNG ĐỐI CHIẾU TỒN KHO VS KẾ TOÁN')
 
-    }, [type, systemType, dateFrom, dateTo, warehouse, convertToKg]) // Removed redundant dependency
+    }, [type, systemType, dateFrom, dateTo, warehouse, zoneId, convertToKg, conversionMap, unitNameMap]) // Re-run when conversion data is ready
 
     async function fetchData() {
         setLoading(true)
@@ -146,6 +177,9 @@ export default function InventoryPrintPage() {
             const preFetchedDataStr = searchParams.get('data')
             if (preFetchedDataStr) {
                 try {
+                // 0. Fetch Units (for conversion)
+                const { data: uData } = await supabase.from('units').select('id, name')
+                if (uData) setAllUnits(uData)
                     const data = JSON.parse(preFetchedDataStr)
                     if (data.ok) {
                         if (data.items) setAccountingItems(data.items)
@@ -161,6 +195,59 @@ export default function InventoryPrintPage() {
 
             if (token) {
                 await supabase.auth.setSession({ access_token: token, refresh_token: '' })
+            }
+
+            // A. Fetch Zone Data for recursive filtering if needed (type lot or reconciliation)
+            let currentHierarchy: Record<string, string | null> = {}
+            let currentPosMap: Record<string, string> = {}
+
+            if (type === 'lot' || type === 'reconciliation') {
+                const PAGE_SIZE_MAP = 1000
+                // 1. Fetch Zones
+                let zonesFrom = 0
+                while (true) {
+                    const { data, error } = await supabase
+                        .from('zones')
+                        .select('id, parent_id')
+                        .eq('system_type', systemType)
+                        .range(zonesFrom, zonesFrom + PAGE_SIZE_MAP - 1)
+                    if (error) throw error
+                    if (!data || data.length === 0) break
+                    data.forEach(z => { currentHierarchy[z.id] = z.parent_id })
+                    if (data.length < PAGE_SIZE_MAP) break
+                    zonesFrom += PAGE_SIZE_MAP
+                }
+                setZoneHierarchy(currentHierarchy)
+
+                // 2. Fetch Zone-Position Mappings
+                let zpFrom = 0
+                while (true) {
+                    const { data, error } = await supabase
+                        .from('zone_positions')
+                        .select('zone_id, position_id')
+                        .range(zpFrom, zpFrom + PAGE_SIZE_MAP - 1)
+                    if (error) throw error
+                    if (!data || data.length === 0) break
+                    data.forEach(item => {
+                        if (item.position_id && item.zone_id) {
+                            currentPosMap[item.position_id] = item.zone_id
+                        }
+                    })
+                    if (data.length < PAGE_SIZE_MAP) break
+                    zpFrom += PAGE_SIZE_MAP
+                }
+                setPosToZoneMap(currentPosMap)
+            }
+
+            const isDescendantOrSelf = (targetId: string, searchId: string, hierarchy: Record<string, string | null>): boolean => {
+                if (!targetId || !searchId) return false
+                if (targetId === searchId) return true
+                let current = hierarchy[targetId]
+                while (current) {
+                    if (current === searchId) return true
+                    current = hierarchy[current]
+                }
+                return false
             }
 
             if (type === 'accounting') {
@@ -185,96 +272,236 @@ export default function InventoryPrintPage() {
                 else throw new Error(data.error || 'Unknown error')
             }
             else if (type === 'lot') {
-                // Fetch Lot Data
-                let query = supabase
-                    .from('lots')
-                    .select(`
-                        *,
-                        lot_items (
-                            id, quantity, product_id,
-                            products (name, unit, sku, product_code:id, internal_code, internal_name)
-                        ),
-                        products!inner(name, unit, product_code:id, sku, system_type, internal_code, internal_name),
-                        suppliers(name),
-                        positions!positions_lot_id_fkey(code)
-                    `)
-                    .eq('status', 'active')
-                    .order('created_at', { ascending: false })
+                // Fetch ALL Lots with pagination
+                let allLots: any[] = []
+                let lotsFrom = 0
+                const LOTS_PAGE_SIZE = 1000
 
-                if (systemType) {
-                    query = query.eq('products.system_type', systemType)
+                while (true) {
+                    let query = supabase
+                        .from('lots')
+                        .select(`
+                            *,
+                            lot_items (
+                                id, quantity, unit, product_id,
+                                products (name, unit, sku, product_code:id, internal_code, internal_name, system_type)
+                            ),
+                            products(name, unit, product_code:id, sku, system_type, internal_code, internal_name),
+                            suppliers(name),
+                            lot_tags(tag),
+                            positions!positions_lot_id_fkey(id, code)
+                        `)
+                        .eq('status', 'active')
+                        .order('created_at', { ascending: false })
+                        .range(lotsFrom, lotsFrom + LOTS_PAGE_SIZE - 1)
+
+                    if (warehouse && warehouse !== 'Tất cả') {
+                        query = query.eq('warehouse_name', warehouse)
+                    }
+
+                    const { data: pageData, error: pageError } = await query
+                    if (pageError) throw pageError
+                    if (!pageData || pageData.length === 0) break
+                    allLots = [...allLots, ...pageData]
+                    if (pageData.length < LOTS_PAGE_SIZE) break
+                    lotsFrom += LOTS_PAGE_SIZE
                 }
 
-                const { data, error } = await query
-                if (error) throw error
+                if (allLots.length > 0) {
+                    let mapped: LotItem[] = allLots.flatMap((lot: any) => {
+                        // System Type Filter logic (Sync with main screen)
+                        let systemTypeMatch = true
+                        if (systemType) {
+                            const mainMatch = lot.products && lot.products.system_type === systemType
+                            const itemMatch = lot.lot_items?.some((item: any) => item.products?.system_type === systemType)
+                            systemTypeMatch = mainMatch || itemMatch
+                        }
+                        if (!systemTypeMatch) return []
 
-                if (data) {
-                    const mapped: LotItem[] = data.flatMap((lot: any) => {
+                        const lotTags = (lot.lot_tags || []).map((t: any) => t.tag).filter(Boolean) as string[]
+                        const lotData = {
+                            lotCode: lot.code,
+                            batchCode: lot.batch_code || '-',
+                            inboundDate: lot.inbound_date,
+                            positions: lot.positions,
+                            supplierName: lot.suppliers?.name || '-',
+                            tags: lotTags
+                        }
+
                         if (lot.lot_items && lot.lot_items.length > 0) {
                             return lot.lot_items.map((item: any, idx: number) => ({
+                                ...lotData,
                                 id: item.id || `${lot.id}-item-${idx}`,
-                                lotCode: lot.code,
                                 productSku: item.products?.sku || 'N/A',
                                 productName: item.products?.name || 'Unknown',
                                 internalCode: item.products?.internal_code || null,
                                 internalName: item.products?.internal_name || null,
-                                productUnit: item.products?.unit || '-',
+                                productUnit: item.unit || item.products?.unit || '-',
                                 quantity: item.quantity,
-                                batchCode: lot.batch_code || '-',
-                                inboundDate: lot.inbound_date,
-                                positions: lot.positions,
-                                supplierName: lot.suppliers?.name || '-'
+                                kg: 0,
+                                productId: item.product_id || item.products?.product_code || '',
+                                baseUnit: item.products?.unit || ''
                             }))
                         } else if (lot.products) {
                             return [{
+                                ...lotData,
                                 id: lot.id,
-                                lotCode: lot.code,
                                 productSku: lot.products.sku || 'N/A',
                                 productName: lot.products.name,
                                 internalCode: lot.products.internal_code || null,
                                 internalName: lot.products.internal_name || null,
                                 productUnit: lot.products.unit,
                                 quantity: lot.quantity,
-                                batchCode: lot.batch_code || '-',
-                                inboundDate: lot.inbound_date,
-                                positions: lot.positions,
-                                supplierName: lot.suppliers?.name || '-'
+                                kg: 0,
+                                productId: lot.product_id || lot.products.product_code || '',
+                                baseUnit: lot.products.unit || ''
                             }]
                         }
                         return []
                     })
 
+                    // Zone filtering (Recursive)
+                    if (zoneId) {
+                        mapped = mapped.filter((item: any) => {
+                            return item.positions?.some((p: any) => {
+                                const posZoneId = currentPosMap[p.id]
+                                return isDescendantOrSelf(posZoneId, zoneId, currentHierarchy)
+                            })
+                        })
+                    }
+
                     // Client-side search filtering
+                    const searchLower = searchTerm.toLowerCase()
                     const filtered = mapped.filter(item =>
                         !searchTerm ||
-                        item.lotCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        item.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        (item.internalName && item.internalName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                        item.productSku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        (item.internalCode && item.internalCode.toLowerCase().includes(searchTerm.toLowerCase()))
+                        item.lotCode.toLowerCase().includes(searchLower) ||
+                        item.productName.toLowerCase().includes(searchLower) ||
+                        (item.internalName && item.internalName.toLowerCase().includes(searchLower)) ||
+                        item.productSku.toLowerCase().includes(searchLower) ||
+                        (item.internalCode && item.internalCode.toLowerCase().includes(searchLower))
                     )
 
                     setLotItems(filtered)
+
+                    // 🟠 Aggregation Logic (Match Image provided by user)
+                    const groupsMap = new Map<string, GroupedLot>()
+                    filtered.forEach(item => {
+                        let displayQty = item.quantity
+                        let displayUnit = item.productUnit
+                        
+                        // Calculate KG: convert qty to base unit, then multiply by base-to-kg rate
+                        if (item.productId && item.baseUnit) {
+                            const baseQty = toBaseAmount(item.productId, item.productUnit, item.quantity, item.baseUnit)
+                            const kgRate = getBaseToKgRate(item.productId, item.baseUnit)
+                            if (kgRate !== null) {
+                                item.kg = baseQty * kgRate
+                                // Calculate display rate: how many kg per 1 display unit
+                                const oneBaseQty = toBaseAmount(item.productId, item.productUnit, 1, item.baseUnit)
+                                item.kgRate = oneBaseQty * kgRate
+                            }
+                        }
+
+                        // Apply Unit Conversion if needed for DISPLAY quantity column
+                        const targetUnit = targetUnitId ? allUnits.find(u => u.id === targetUnitId) : null
+                        if (targetUnitId && targetUnit && item.productId && item.baseUnit) {
+                            displayUnit = targetUnit.name
+                            displayQty = convertUnit(item.productId, item.productUnit, targetUnit.name, item.quantity, item.baseUnit)
+                        }
+
+                        const key = `${item.productSku}__${displayUnit}`
+                        if (!groupsMap.has(key)) {
+                            groupsMap.set(key, {
+                                key,
+                                productSku: item.productSku,
+                                productName: item.productName,
+                                internalCode: item.internalCode,
+                                internalName: item.internalName,
+                                productUnit: displayUnit,
+                                totalQuantity: 0,
+                                totalKg: 0,
+                                kgRate: item.kgRate, // Store the rate for the product in this unit
+                                variants: new Map<string, { totalQuantity: number, totalKg: number, items: LotItem[] }>(),
+                                items: []
+                            })
+                        }
+                        const g = groupsMap.get(key)!
+                        g.totalQuantity += displayQty || 0
+                        g.totalKg += item.kg || 0
+                        g.items.push(item)
+
+                        // Variant (Composite Tag)
+                        const compositeTag = item.tags.length > 0 ? item.tags.join('; ') : 'Không có mã phụ'
+                        const currentV = g.variants.get(compositeTag) || { totalQuantity: 0, totalKg: 0, items: [] }
+                        g.variants.set(compositeTag, {
+                            totalQuantity: currentV.totalQuantity + (displayQty || 0),
+                            totalKg: currentV.totalKg + (item.kg || 0),
+                            items: [...currentV.items, item]
+                        })
+                    })
+
+                    setGroupedLots(Array.from(groupsMap.values()).sort((a, b) => a.productSku.localeCompare(b.productSku)))
                 }
             }
             else if (type === 'reconciliation') {
                 // Fetch Accounting
+                const params = new URLSearchParams()
+                params.set('dateTo', dateTo)
+                params.set('systemType', systemType)
+                if (warehouse) params.set('warehouse', warehouse)
+
                 const headers: HeadersInit = {}
                 if (token) headers['Authorization'] = `Bearer ${token}`
 
-                const accRes = await fetch(`/api/inventory?dateTo=${dateTo}&systemType=${systemType}`, { headers })
+                const accRes = await fetch(`/api/inventory?${params.toString()}`, { headers })
                 if (!accRes.ok) throw new Error(`Acc Fetch failed: ${accRes.status}`)
                 const accData = await accRes.json()
                 const accItems: InventoryItem[] = accData.ok ? accData.items : []
 
-                // Fetch Lots
-                const { data: lots, error: lotError } = await supabase
-                    .from('lots')
-                    .select('product_id, quantity, products!inner(name, sku, unit, system_type, internal_code, internal_name)')
-                    .eq('status', 'active')
-                    .eq('products.system_type', systemType) // Filter by system
+                // Fetch Lots with pagination
+                let allReconcileLots: any[] = []
+                let rLotsFrom = 0
+                const R_PAGE_SIZE = 1000
 
-                if (lotError) throw lotError
+                while (true) {
+                    let query = supabase
+                        .from('lots')
+                        .select(`
+                            id, 
+                            product_id, 
+                            quantity, 
+                            warehouse_name,
+                            products(name, sku, unit, system_type, internal_code, internal_name),
+                            positions!positions_lot_id_fkey(id, code)
+                        `)
+                        .eq('status', 'active')
+                        .range(rLotsFrom, rLotsFrom + R_PAGE_SIZE - 1)
+
+                    if (warehouse && warehouse !== 'Tất cả') {
+                        query = query.eq('warehouse_name', warehouse)
+                    }
+
+                    const { data: pageData, error: pageError } = await query
+                    if (pageError) throw pageError
+                    if (!pageData || pageData.length === 0) break
+                    allReconcileLots = [...allReconcileLots, ...pageData]
+                    if (pageData.length < R_PAGE_SIZE) break
+                    rLotsFrom += R_PAGE_SIZE
+                }
+
+                // Filter lots by systemType and Zone in memory
+                const lots = allReconcileLots.filter((lot: any) => {
+                    // System Type Match (Note: Reconciliation assumes main product matches)
+                    if (systemType && lot.products?.system_type !== systemType) return false
+                    
+                    // Zone Match
+                    if (zoneId) {
+                         return lot.positions?.some((p: any) => {
+                            const posZoneId = currentPosMap[p.id]
+                            return isDescendantOrSelf(posZoneId, zoneId, currentHierarchy)
+                        })
+                    }
+                    return true
+                })
 
                 const lotMap = new Map<string, number>()
                 const productDetails = new Map<string, { code: string, name: string, unit: string, internalCode?: string | null, internalName?: string | null }>()
@@ -298,7 +525,7 @@ export default function InventoryPrintPage() {
                 const comparisonMap = new Map<string, ReconciliationItem>()
 
                 accItems.forEach(acc => {
-                    const lotQty = lotMap.get(acc.id) || 0 // acc.id is productId in InventoryItem interface used in api
+                    const lotQty = lotMap.get(acc.id) || 0
                     comparisonMap.set(acc.id, {
                         productId: acc.id,
                         productCode: acc.productCode,
@@ -328,7 +555,7 @@ export default function InventoryPrintPage() {
                     })
                 })
 
-                setReconcileItems(Array.from(comparisonMap.values()))
+                setReconcileItems(Array.from(comparisonMap.values()).sort((a, b) => a.productCode.localeCompare(b.productCode)))
             }
         } catch (e: any) {
             console.error(e)
@@ -456,7 +683,7 @@ export default function InventoryPrintPage() {
                                             {item.isUnconvertible && <span className="ml-1 text-[10px] italic text-red-600 print:text-black">(*)</span>}
                                         </td>
                                         <td className="border border-black p-1">{displayCode}</td>
-                                        <td className="border border-black p-1 text-center">{item.unit}</td>
+                                        <td className="border border-black p-2 text-center text-stone-600 font-bold">{item.unit}</td>
                                         <td className="border border-black p-1 text-right">{formatQuantityFull(item.opening)}</td>
                                         <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyIn)}</td>
                                         <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyOut)}</td>
@@ -469,36 +696,88 @@ export default function InventoryPrintPage() {
                 )}
 
                 {type === 'lot' && (
-                    <table className="w-full border-collapse border border-black text-sm">
+                    <table className="w-full border-collapse border border-black text-[12px]">
                         <thead>
-                            <tr className="bg-gray-200">
-                                <th className="border border-black p-1">Mã LOT</th>
-                                <th className="border border-black p-1">Mã SP</th>
-                                <th className="border border-black p-1">Tên Sản Phẩm</th>
-                                <th className="border border-black p-1">NCC</th>
-                                <th className="border border-black p-1">Ngày Nhập</th>
-                                <th className="border border-black p-1 text-right">Số Lượng</th>
-                                <th className="border border-black p-1 text-center">ĐVT</th>
+                            <tr className="bg-gray-100">
+                                <th className="border border-black p-2 w-10 text-center font-bold">STT</th>
+                                <th className="border border-black p-2 w-28 font-bold">Mã SP</th>
+                                <th className="border border-black p-2 font-bold min-w-[200px]">Tên sản phẩm</th>
+                                <th className="border border-black p-2 w-48 font-bold">Mã phụ / Phân loại</th>
+                                <th className="border border-black p-2 w-16 text-center font-bold">ĐVT</th>
+                                <th className="border border-black p-2 w-24 text-right font-bold">Số lượng</th>
+                                <th className="border border-black p-2 w-24 text-right font-bold">Quy đổi (Kg)</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {lotItems.length === 0 ? (
-                                <tr><td colSpan={7} className="border border-black p-4 text-center">Không có dữ liệu</td></tr>
+                            {groupedLots.length === 0 ? (
+                                <tr><td colSpan={7} className="border border-black p-4 text-center text-stone-500">Không có dữ liệu</td></tr>
                             ) : (
-                                lotItems.map((item, idx) => {
-                                    const displayCode = isInternalCodeDisplay && item.internalCode ? item.internalCode : item.productSku || 'N/A'
-                                    const displayName = isInternalCodeDisplay && item.internalName ? item.internalName : item.productName
+                                groupedLots.map((group, gIdx) => {
+                                    const displayCode = isInternalCodeDisplay && group.internalCode ? group.internalCode : group.productSku || 'N/A'
+                                    const displayName = isInternalCodeDisplay && group.internalName ? group.internalName : group.productName
+
+                                    const variantEntries = Array.from(group.variants.entries()).sort((a, b) => {
+                                        if (a[0] === 'Không có mã phụ') return 1
+                                        if (b[0] === 'Không có mã phụ') return -1
+                                        return a[0].localeCompare(b[0])
+                                    })
+
+                                    const hasRealVariants = variantEntries.length > 1 || (variantEntries.length === 1 && variantEntries[0][0] !== 'Không có mã phụ')
+                                    const totalVariantRows = variantEntries.length
 
                                     return (
-                                        <tr key={`${item.id}-${idx}`}>
-                                            <td className="border border-black p-1 font-mono">{item.lotCode}</td>
-                                            <td className="border border-black p-1">{displayCode}</td>
-                                            <td className="border border-black p-1">{displayName}</td>
-                                            <td className="border border-black p-1">{item.supplierName}</td>
-                                            <td className="border border-black p-1 text-center">{item.inboundDate ? new Date(item.inboundDate).toLocaleDateString('vi-VN') : '-'}</td>
-                                            <td className="border border-black p-1 text-right font-bold">{formatQuantityFull(item.quantity)}</td>
-                                            <td className="border border-black p-1 text-center">{item.productUnit}</td>
-                                        </tr>
+                                        <React.Fragment key={group.key}>
+                                            {/* 1. Main Product Summary Row */}
+                                            <tr className="bg-white font-bold h-10">
+                                                <td className="border border-black p-2 text-center text-stone-500">{gIdx + 1}</td>
+                                                <td className="border border-black p-2">{displayCode}</td>
+                                                <td className="border border-black p-2" colSpan={2}>{displayName}</td>
+                                                <td className="border border-black p-2 text-center text-stone-600 font-bold">
+                                                    <div>{group.productUnit}</div>
+                                                    {group.kgRate && group.kgRate !== 1 && (
+                                                        <div className="text-[9px] text-stone-400 font-normal leading-tight">
+                                                            (1 {group.productUnit} = {formatQuantityFull(group.kgRate)} Kg)
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="border border-black p-2 text-right">{formatQuantityFull(group.totalQuantity)}</td>
+                                                <td className="border border-black p-2 text-right text-stone-700 font-bold bg-stone-50/50">{formatQuantityFull(group.totalKg)}</td>
+                                            </tr>
+
+                                                    {/* 2. Simplified Variant Rows (Show only total for each tag) */}
+                                                    {hasRealVariants && variantEntries.map(([tag, data], vIdx) => {
+                                                        const isFirstVariant = vIdx === 0
+                                                        return (
+                                                            <tr key={`${group.key}-v-${vIdx}`} className="bg-stone-50/30">
+                                                                {/* Vertical Label Merge for "Mã phụ" title */}
+                                                                {isFirstVariant && (
+                                                                    <td className="border border-black p-1 text-[9px] text-stone-400 font-bold uppercase text-center align-middle bg-stone-50/50" colSpan={2} rowSpan={totalVariantRows}>
+                                                                        Mã phụ /<br/>Phân loại:
+                                                                    </td>
+                                                                )}
+                                                                {/* Merged Tag Name cell with indent char to fill the space */}
+                                                                <td className="border border-black p-2 text-xs font-bold text-stone-600 bg-white" colSpan={2}>
+                                                                    <span className="text-stone-300 mr-2 ml-4 font-mono">└</span>
+                                                                    {tag === 'Không có mã phụ' ? 'Mặc định' : tag}
+                                                                </td>
+                                                                <td className="border border-black p-2 text-center text-stone-600 font-bold">
+                                                                    <div>{group.productUnit}</div>
+                                                                    {group.kgRate && group.kgRate !== 1 && (
+                                                                        <div className="text-[8px] text-stone-400 font-normal leading-tight">
+                                                                            (1 {group.productUnit} = {formatQuantityFull(group.kgRate)} Kg)
+                                                                        </div>
+                                                                    )}
+                                                                </td>
+                                                                <td className="border border-black p-2 text-right text-stone-600 font-medium">
+                                                                    {formatQuantityFull(data.totalQuantity)}
+                                                                </td>
+                                                                <td className="border border-black p-2 text-right text-stone-600 font-bold bg-white">
+                                                                    {formatQuantityFull(data.totalKg)}
+                                                                </td>
+                                                            </tr>
+                                                        )
+                                                    })}
+                                        </React.Fragment>
                                     )
                                 })
                             )}
@@ -531,7 +810,7 @@ export default function InventoryPrintPage() {
                                         <tr key={item.productId} className={item.diff !== 0 ? 'bg-orange-50 print:bg-transparent' : ''}>
                                             <td className="border border-black p-1">{displayCode}</td>
                                             <td className="border border-black p-1">{displayName}</td>
-                                            <td className="border border-black p-1 text-center">{item.unit}</td>
+                                            <td className="border border-black p-2 text-center text-stone-600 font-bold">{item.unit}</td>
                                             <td className="border border-black p-1 text-right">{formatQuantityFull(item.accountingBalance)}</td>
                                             <td className="border border-black p-1 text-right">{formatQuantityFull(item.lotBalance)}</td>
                                             <td className={`border border-black p-1 text-right font-bold ${item.diff !== 0 ? 'text-red-600 print:text-black' : ''}`}>

@@ -9,26 +9,29 @@ export function useInventoryByLot(units: any[]) {
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const [selectedBranch, setSelectedBranch] = useState('Tất cả')
+    const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [targetUnitId, setTargetUnitId] = useState<string | null>(null)
     const [branches, setBranches] = useState<{ id: string, name: string }[]>([])
+    const [allZones, setAllZones] = useState<any[]>([])
+    const [posToZoneMap, setPosToZoneMap] = useState<Record<string, string>>({})
+    const [zoneHierarchy, setZoneHierarchy] = useState<Record<string, string | null>>({})
     const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
 
     const { systemType } = useSystem()
     const { convertUnit, unitNameMap, conversionMap } = useUnitConversion()
 
     useEffect(() => {
+        setSelectedZoneId(null)
         fetchBranches()
         fetchLots()
 
         // 🟢 Real-time Subscription: Listen for changes in positions
-        // This ensures that when a position is assigned to a LOT on mobile, 
-        // the desktop Lot Management page updates automatically.
         const channel = supabase
             .channel('inventory-by-lot-positions')
             .on(
                 'postgres_changes',
                 {
-                    event: '*', // Listen for ALL changes (UPDATE, INSERT, DELETE)
+                    event: '*',
                     schema: 'public',
                     table: 'positions'
                 },
@@ -70,6 +73,58 @@ export function useInventoryByLot(units: any[]) {
         const FETCH_PAGE_SIZE = 1000
 
         try {
+            // 1. Fetch ALL Zones and Zone Positions mapping for the system
+            const PAGE_SIZE_MAP = 1000
+            
+            // 1a. Fetch ALL Zones
+            let allZonesData: any[] = []
+            let zonesFrom = 0
+            while (true) {
+                const { data, error } = await supabase
+                    .from('zones')
+                    .select('*')
+                    .eq('system_type', systemType)
+                    .range(zonesFrom, zonesFrom + PAGE_SIZE_MAP - 1)
+                
+                if (error) throw error
+                if (!data || data.length === 0) break
+                allZonesData = [...allZonesData, ...data]
+                if (data.length < PAGE_SIZE_MAP) break
+                zonesFrom += PAGE_SIZE_MAP
+            }
+            
+            setAllZones(allZonesData)
+            const hierarchy: Record<string, string | null> = {}
+            allZonesData.forEach((z: any) => {
+                hierarchy[z.id] = z.parent_id
+            })
+            setZoneHierarchy(hierarchy)
+
+            // 1b. Fetch ALL Zone-Position Mappings
+            let allZPData: any[] = []
+            let zpFrom = 0
+            while (true) {
+                const { data, error } = await supabase
+                    .from('zone_positions')
+                    .select('zone_id, position_id')
+                    .range(zpFrom, zpFrom + PAGE_SIZE_MAP - 1)
+                
+                if (error) throw error
+                if (!data || data.length === 0) break
+                allZPData = [...allZPData, ...data]
+                if (data.length < PAGE_SIZE_MAP) break
+                zpFrom += PAGE_SIZE_MAP
+            }
+
+            const mapping: Record<string, string> = {}
+            allZPData.forEach((item: any) => {
+                if (item.position_id && item.zone_id) {
+                    mapping[item.position_id] = item.zone_id
+                }
+            })
+            setPosToZoneMap(mapping)
+
+            // 2. Fetch LOTs
             while (true) {
                 const { data: pageData, error: pageError } = await supabase
                     .from('lots')
@@ -90,7 +145,7 @@ export function useInventoryByLot(units: any[]) {
                         ),
                         products (name, unit, product_code:id, sku, system_type),
                         suppliers(name),
-                        positions!positions_lot_id_fkey(code),
+                        positions!positions_lot_id_fkey(id, code),
                         lot_tags(tag, lot_item_id)
                     `)
                     .eq('status', 'active')
@@ -107,27 +162,27 @@ export function useInventoryByLot(units: any[]) {
                 fetchFrom += FETCH_PAGE_SIZE
             }
 
-            if (allData.length > 0) {
-                // Filter by systemType & Branch in memory
-                const filtered = allData.filter(lot => {
-                    // System Type Filter
-                    let systemTypeCheck = true
-                    if (systemType) {
-                        const hasMainMatch = lot.products && lot.products.system_type === systemType
-                        const hasItemMatch = lot.lot_items && lot.lot_items.some((item: any) => item.products?.system_type === systemType)
-                        systemTypeCheck = hasMainMatch || hasItemMatch
-                    }
-                    if (!systemTypeCheck) return false
+            // Filter by systemType & Branch in memory
+            const filtered = allData.filter(lot => {
+                // System Type Filter
+                let systemTypeCheck = true
+                if (systemType) {
+                    const hasMainMatch = lot.products && lot.products.system_type === systemType
+                    const hasItemMatch = lot.lot_items && lot.lot_items.some((item: any) => item.products?.system_type === systemType)
+                    systemTypeCheck = hasMainMatch || hasItemMatch
+                }
+                if (!systemTypeCheck) return false
 
-                    // Branch Filter
-                    if (selectedBranch && selectedBranch !== "Tất cả") {
-                        if (lot.warehouse_name !== selectedBranch) return false
-                    }
+                // Branch Filter
+                if (selectedBranch && selectedBranch !== "Tất cả") {
+                    const lotWarehouse = (lot.warehouse_name || '').trim()
+                    const targetBranch = selectedBranch.trim()
+                    if (lotWarehouse !== targetBranch) return false
+                }
 
-                    return true;
-                });
-                setLots(filtered as unknown as Lot[])
-            }
+                return true;
+            });
+            setLots(filtered as unknown as Lot[])
         } catch (err) {
             console.error('Error in fetchLots loop:', err)
         } finally {
@@ -136,10 +191,54 @@ export function useInventoryByLot(units: any[]) {
     }
 
     const groupedInventory = useMemo(() => {
+        const searchLower = (searchTerm || '').toLowerCase()
+
+        // 1. Helper for Zone Filtering
+        const isDescendantOrSelf = (targetId: string, searchId: string): boolean => {
+            if (targetId === searchId) return true
+            let current = zoneHierarchy[targetId]
+            while (current) {
+                if (current === searchId) return true
+                current = zoneHierarchy[current]
+            }
+            return false
+        }
+
+        // 2. Perform Filtering on LOTs first
+        const filteredLots = lots.filter(lot => {
+            // Zone Filter
+            if (selectedZoneId) {
+                const matchesZone = lot.positions?.some((p: any) => {
+                    const zId = posToZoneMap[p.id]
+                    return zId && isDescendantOrSelf(zId, selectedZoneId)
+                })
+                if (!matchesZone) return false
+            }
+
+            // Simple Search Filter on Lot level (to keep relevant lots)
+            // If LOT has items, they will be filtered individually later
+            if (!searchTerm) return true
+
+            const matchInLot = (
+                lot.code.toLowerCase().includes(searchLower) ||
+                (lot.products?.name?.toLowerCase() || '').includes(searchLower) ||
+                (lot.suppliers?.name?.toLowerCase() || '').includes(searchLower) ||
+                (lot.lot_tags?.some(t => t.tag.toLowerCase().includes(searchLower)))
+            )
+            
+            // If lot items exist, we check if any item matches
+            const matchInItems = lot.lot_items?.some(item => 
+                (item.products?.name?.toLowerCase() || '').includes(searchLower) ||
+                (item.products?.sku?.toLowerCase() || '').includes(searchLower)
+            )
+
+            return matchInLot || matchInItems
+        })
+
         const groups = new Map<string, GroupedProduct>()
 
-        lots.forEach(lot => {
-            // Helper to process a single item logic
+        // 3. Aggregate only the matching lots
+        filteredLots.forEach(lot => {
             const processItem = (
                 sku: string,
                 name: string,
@@ -149,11 +248,21 @@ export function useInventoryByLot(units: any[]) {
                 productId: string | null,
                 baseUnit: string | null
             ) => {
+                // Secondary Search Filter on specific Variant/Item data
+                if (searchTerm) {
+                    const matchesNameOrSku = name.toLowerCase().includes(searchLower) || sku.toLowerCase().includes(searchLower)
+                    const itemTags = lot.lot_tags?.filter(t => t.lot_item_id === itemId || !t.lot_item_id).map(t => t.tag.toLowerCase()) || []
+                    const matchesTags = itemTags.some(t => t.includes(searchLower))
+                    
+                    if (!matchesNameOrSku && !matchesTags && !lot.code.toLowerCase().includes(searchLower)) {
+                        return // Skip this variant/item if it doesn't match search
+                    }
+                }
+
                 let displayQty = qty
                 let displayUnit = unit
                 let key = `${sku}__${unit}`
 
-                // Logic conversion
                 const targetUnit = targetUnitId ? units.find(u => u.id === targetUnitId) : null
                 const isConvertible = targetUnitId && productId && baseUnit && (
                     baseUnit.toLowerCase() === targetUnit?.name?.toLowerCase() ||
@@ -165,7 +274,6 @@ export function useInventoryByLot(units: any[]) {
                     displayQty = convertUnit(productId, unit, targetUnit!.name, qty, baseUnit)
                     key = `${sku}__${targetUnitId}`
                 } else if (targetUnitId) {
-                    // Not convertible, keep separate
                     key = `${sku}__${unit}__UNCONVERTIBLE`
                 }
 
@@ -173,7 +281,7 @@ export function useInventoryByLot(units: any[]) {
                     groups.set(key, {
                         key,
                         productSku: sku,
-                        productCode: sku, // Using SKU as code for display
+                        productCode: sku,
                         productName: name,
                         unit: displayUnit,
                         totalQuantity: 0,
@@ -185,19 +293,14 @@ export function useInventoryByLot(units: any[]) {
                 group.totalQuantity += displayQty
                 if (!group.lotCodes.includes(lot.code)) group.lotCodes.push(lot.code)
 
-                // Determine Tag/Variant
                 let tags: string[] = []
                 if (lot.lot_tags) {
-                    // Item specific tags
                     const itemTags = lot.lot_tags.filter(t => t.lot_item_id === itemId).map(t => t.tag)
-                    // General tags (assume apply to all items)
                     const generalTags = lot.lot_tags.filter(t => !t.lot_item_id).map(t => t.tag)
                     tags = [...new Set([...itemTags, ...generalTags])].sort()
                 }
 
-                const compositeTag = tags.length > 0 ? tags.join('; ') : 'Không có mã phụ' // Or 'Chưa phân loại'
-
-                // Aggregate into variant
+                const compositeTag = tags.length > 0 ? tags.join('; ') : 'Không có mã phụ'
                 const currentVariantQty = group.variants.get(compositeTag) || 0
                 group.variants.set(compositeTag, currentVariantQty + displayQty)
             }
@@ -205,13 +308,11 @@ export function useInventoryByLot(units: any[]) {
             if (lot.lot_items && lot.lot_items.length > 0) {
                 lot.lot_items.forEach(item => {
                     if (item.products) {
-                        const itemUnit = item.unit || item.products.unit
-                        const qty = item.quantity || 0
                         processItem(
                             item.products.sku,
                             item.products.name,
-                            itemUnit,
-                            qty,
+                            item.unit || item.products.unit,
+                            item.quantity || 0,
                             item.id,
                             item.product_id,
                             item.products.unit
@@ -219,7 +320,6 @@ export function useInventoryByLot(units: any[]) {
                     }
                 })
             } else if (lot.products) {
-                // Legacy
                 processItem(
                     lot.products.sku,
                     lot.products.name,
@@ -232,18 +332,9 @@ export function useInventoryByLot(units: any[]) {
             }
         })
 
-        // Search Filter
-        const searchLower = (searchTerm || '').toLowerCase()
-        const result = Array.from(groups.values()).filter(g =>
-            g.productSku.toLowerCase().includes(searchLower) ||
-            g.productName.toLowerCase().includes(searchLower) ||
-            Array.from(g.variants.keys()).some(k => k.toLowerCase().includes(searchLower))
-        )
+        return Array.from(groups.values()).sort((a, b) => a.productSku.localeCompare(b.productSku))
 
-        // Sort by SKU
-        return result.sort((a, b) => a.productSku.localeCompare(b.productSku))
-
-    }, [lots, searchTerm, targetUnitId, unitNameMap, conversionMap, units, convertUnit])
+    }, [lots, searchTerm, targetUnitId, unitNameMap, conversionMap, units, convertUnit, selectedZoneId, posToZoneMap, zoneHierarchy])
 
     const toggleExpand = (key: string) => {
         const newSet = new Set(expandedProducts)
@@ -259,6 +350,9 @@ export function useInventoryByLot(units: any[]) {
         setSearchTerm,
         selectedBranch,
         setSelectedBranch,
+        selectedZoneId,
+        setSelectedZoneId,
+        allZones,
         targetUnitId,
         setTargetUnitId,
         branches,
