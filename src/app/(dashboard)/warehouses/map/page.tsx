@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { ChevronUp, ChevronDown, Layers, X } from 'lucide-react'
+import { ChevronUp, ChevronDown, Layers, X, Maximize2 } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import MultiSelectActionBar from '@/components/warehouse/map/MultiSelectActionBar'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
@@ -92,6 +92,16 @@ function WarehouseMapContent() {
     const [bulkPrintLotIds, setBulkPrintLotIds] = useState<string[] | null>(null)
     const [isMapControlsOpen, setIsMapControlsOpen] = useState(false)
     const [isGrouped, setIsGrouped] = useState(false)
+    const [mergedZones, setMergedZones] = useState<Set<string>>(new Set())
+
+    const toggleMergeZone = (zoneId: string) => {
+        setMergedZones(prev => {
+            const next = new Set(prev)
+            if (next.has(zoneId)) next.delete(zoneId)
+            else next.add(zoneId)
+            return next
+        })
+    }
 
     useEffect(() => {
         const checkMobile = () => setIsMobile(window.innerWidth < 1024)
@@ -679,6 +689,8 @@ function WarehouseMapContent() {
                                 displayInternalCode={displayInternalCode}
                                 isGrouped={isGrouped}
                                 onBulkSelect={handleBulkSelect}
+                                mergedZones={mergedZones}
+                                onToggleMergeZone={toggleMergeZone}
                                 onPrintZone={(zoneId) => {
                                     const params = new URLSearchParams()
                                     params.set('systemType', systemType)
@@ -740,6 +752,36 @@ function WarehouseMapContent() {
                                 <Layers size={14} className={isGrouped ? 'text-white' : 'text-indigo-500'} />
                                 {isGrouped ? 'Đang Gom ô' : 'Gom ô'}
                             </button>
+                            {isGrouped && (
+                                <button
+                                    onClick={() => {
+                                        // Get all displayed zones
+                                        const { zones: displayZones } = groupWarehouseData(filteredZones, filteredPositions)
+                                        const levelZoneIds = displayZones.filter(z => z.id.startsWith('v-lvl-')).map(z => z.id)
+                                        const allMerged = levelZoneIds.every(id => mergedZones.has(id))
+                                        if (allMerged) {
+                                            // Unmerge all
+                                            setMergedZones(new Set())
+                                        } else {
+                                            // Merge all
+                                            setMergedZones(prev => {
+                                                const next = new Set(prev)
+                                                levelZoneIds.forEach(id => next.add(id))
+                                                return next
+                                            })
+                                        }
+                                    }}
+                                    className={`px-3 py-2 rounded-full text-xs transition flex items-center gap-1 font-medium ml-1 ${
+                                        mergedZones.size > 0
+                                            ? 'bg-purple-600 text-white'
+                                            : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200'
+                                    }`}
+                                    title={mergedZones.size > 0 ? "Tắt gộp ô toàn bộ" : "Gộp ô toàn bộ (hàng cồng kềnh)"}
+                                >
+                                    <Maximize2 size={14} />
+                                    {mergedZones.size > 0 ? 'Đang gộp hết' : 'Gộp ô hết'}
+                                </button>
+                            )}
                         </div>
 
                         {/* Thu gọn Group */}

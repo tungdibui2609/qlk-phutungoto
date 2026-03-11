@@ -73,7 +73,12 @@ async function fetchAll(query: any) {
     let finished = false
 
     // Ensure we have a stable sort by ID if not already sorted, to avoid duplicates across pages
-    const stableQuery = query.order('id', { ascending: true })
+    // Supabase allows multiple .order() calls, which are applied in sequence.
+    let stableQuery = query
+    
+    // Check if the query likely lacks an order by looking at its internal state if possible,
+    // but in most cases, adding order('id') at the end ensures stability.
+    stableQuery = stableQuery.order('id', { ascending: true })
 
     while (!finished) {
         const { data, error } = await stableQuery.range(from, to)
@@ -99,6 +104,27 @@ async function fetchAll(query: any) {
         seen.add(item.id)
         return true
     })
+}
+
+/**
+ * Fetch data in chunks using .in('id', ids) to avoid large URL issues 
+ * and bypass Supabase's 1000-row limit by fetching each chunk fully.
+ */
+async function fetchInChunks(table: string, field: string, values: string[], select = '*', chunkSize = 500) {
+    if (!values.length) return [];
+    let allResults: any[] = [];
+    
+    for (let i = 0; i < values.length; i += chunkSize) {
+        const chunk = values.slice(i, i + chunkSize);
+        const { data, error } = await supabase
+            .from(table as any)
+            .select(select)
+            .in(field, chunk);
+            
+        if (error) throw error;
+        if (data) allResults = [...allResults, ...data];
+    }
+    return allResults;
 }
 
 export default function InternalInventoryPage() {
@@ -163,15 +189,18 @@ export default function InternalInventoryPage() {
         if (!systemType) return
         setLoading(true)
         try {
-            const [sessionsRes, rawZones, rawSysPos, rawZP] = await Promise.all([
-                supabase.from('internal_inventory_sessions').select('*').eq('system_code', systemType).order('created_at', { ascending: false }),
-                fetchAll(supabase.from('zones').select('id, name, parent_id, display_order, is_hall')),
-                fetchAll(supabase.from('positions').select('id, system_type, lot_id').eq('system_type', systemType)),
-                fetchAll(supabase.from('zone_positions').select('zone_id, position_id'))
+            const [sessionsRes, rawZones, rawSysPos] = await Promise.all([
+                fetchAll(supabase.from('internal_inventory_sessions').select('*').eq('system_code', systemType).order('created_at', { ascending: false })),
+                fetchAll(supabase.from('zones').select('id, name, parent_id, display_order, is_hall').eq('system_type', systemType)),
+                fetchAll(supabase.from('positions').select('id, system_type, lot_id').eq('system_type', systemType))
             ])
 
-            if (sessionsRes.error) throw sessionsRes.error
-            const data = sessionsRes.data || []
+            if (!sessionsRes) throw new Error('Cannot fetch sessions')
+            const data = sessionsRes
+            
+            // Optimized: Fetch zone_positions ONLY for the relevant positions
+            const posIds = rawSysPos.map(p => p.id)
+            const rawZP = await fetchInChunks('zone_positions', 'position_id', posIds, 'zone_id, position_id')
 
             const userIds = [...new Set((data || []).map(s => s.created_by).filter(Boolean))]
             let userMap: Record<string, string> = {}
@@ -307,6 +336,7 @@ export default function InternalInventoryPage() {
                 let query = supabase
                     .from('zones')
                     .select('id, name, parent_id, display_order, system_type')
+                    .eq('system_type', systemType)
 
                 // Fetch users for selection from construction_members (as requested)
                 if (systemType) {
@@ -343,8 +373,10 @@ export default function InternalInventoryPage() {
                 let allData: any[] = []
                 let from = 0
                 while (true) {
-                    let query = supabase.from(table as any).select(selectFields).range(from, from + pageSize - 1)
-                    if (filter) query = filter(query)
+                let query = supabase.from(table as any).select(selectFields).range(from, from + pageSize - 1)
+                if (filter) query = filter(query)
+                // Ensure stable sorting
+                query = query.order('id', { ascending: true })
                     const { data, error } = await query
                     if (error) { console.error(`Error fetching ${table}:`, error); break }
                     if (!data || data.length === 0) break
@@ -447,12 +479,15 @@ export default function InternalInventoryPage() {
                 }
             } catch (e) { }
 
-            const [rawZonesData, rawPosData, zpData, itemsData] = await Promise.all([
-                fetchAll(supabase.from('zones').select('id, name, code, parent_id, level, display_order, is_hall, system_type')),
+            const [rawZonesData, rawPosData, itemsData] = await Promise.all([
+                fetchAll(supabase.from('zones').select('id, name, code, parent_id, level, display_order, is_hall, system_type').eq('system_type', systemType)),
                 fetchAll(supabase.from('positions').select('id, code, lot_id, system_type').eq('system_type', systemType)),
-                fetchAll(supabase.from('zone_positions').select('zone_id, position_id')),
                 fetchAll(supabase.from('internal_inventory_items').select('*').eq('session_id', session.id)),
             ])
+
+            // Optimized: Fetch zone_positions ONLY for positions in this system
+            const posIds = rawPosData.map(p => p.id)
+            const zpData = await fetchInChunks('zone_positions', 'position_id', posIds, 'zone_id, position_id')
 
             // Map zones to positions before grouping
             const rawZPMap: Record<string, string> = {}
@@ -509,10 +544,13 @@ export default function InternalInventoryPage() {
 
             const lotIds = [...new Set(posWithZone.map((p: any) => p.lot_id).filter(Boolean))] as string[]
             if (lotIds.length > 0) {
-                const { data: lots } = await supabase
-                    .from('lots')
-                    .select('id, code, lot_items(id, quantity, unit, products(name, sku, color)), lot_tags(tag)')
-                    .in('id', lotIds)
+                // IMPORTANT: Fetch lots in chunks to bypass 1000-row limit
+                const lots = await fetchInChunks(
+                    'lots', 
+                    'id', 
+                    lotIds, 
+                    'id, code, lot_items(id, quantity, unit, products(name, sku, color)), lot_tags(tag)'
+                )
 
                 const infoMap: Record<string, any> = {}
                 lots?.forEach((l: any) => {

@@ -1,6 +1,6 @@
 'use client'
 import React, { useMemo } from 'react'
-import { ChevronDown, ChevronRight, Package, Settings, Eye, MoreHorizontal, Printer } from 'lucide-react'
+import { ChevronDown, ChevronRight, Package, Settings, Eye, MoreHorizontal, Printer, Maximize2 } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { InView } from 'react-intersection-observer'
@@ -224,6 +224,192 @@ const MemoizedPositionCell = React.memo<{
         prev.isGrouped === next.isGrouped
 })
 
+const MergedBigCell = React.memo<{
+    pos: any,
+    isMobile: boolean,
+    isOccupied: boolean,
+    isSelected: boolean,
+    isTargetLot: boolean,
+    aggregatedItems: Array<{ product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string }>,
+    isAssignmentMode: boolean,
+    isHighlightBlinking: boolean,
+    displayInternalCode?: boolean,
+    zoneBreadcrumb?: string[],
+    onPositionSelect?: (id: string | string[]) => void,
+    onViewDetails?: (lotId: string) => void,
+    onPositionMenu?: (pos: any, event: React.MouseEvent) => void
+}>(({ pos, isMobile, isOccupied, isSelected, isTargetLot, aggregatedItems, isAssignmentMode, isHighlightBlinking, displayInternalCode, zoneBreadcrumb, onPositionSelect, onViewDetails, onPositionMenu }) => {
+    const ids = pos.realIds || [pos.id]
+    const mergedCount = pos.mergedCount || ids.length
+    const originalCodes = pos.originalCodes || [pos.code]
+
+    let bgClass = 'bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20'
+    let borderClass = 'border-indigo-300 dark:border-indigo-700'
+    let ringClass = ''
+
+    if (isSelected) {
+        bgClass = 'bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30'
+        borderClass = 'border-blue-500'
+        ringClass = 'ring-2 ring-blue-300'
+    } else if (isTargetLot) {
+        bgClass = 'bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/30 dark:to-pink-900/30'
+        borderClass = 'border-purple-500'
+        ringClass = 'ring-2 ring-purple-300'
+    } else if (isOccupied) {
+        bgClass = 'bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/10 dark:to-orange-900/10'
+        borderClass = 'border-amber-300 dark:border-amber-700'
+    }
+
+    return (
+        <div
+            style={{ gridColumn: '1 / -1', minHeight: isMobile ? '110px' : '150px' }}
+            className={`
+                relative ${isAssignmentMode ? 'cursor-pointer' : ''} p-2.5 rounded-xl border-2 transition-all
+                flex flex-col overflow-hidden
+                ${bgClass} ${borderClass} ${ringClass}
+                ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.01] hover:z-10' : ''}
+                ${isHighlightBlinking ? 'animate-highlight-blink' : ''}
+            `}
+            onClick={() => isAssignmentMode && onPositionSelect?.(ids)}
+        >
+            {/* Top row: badge + code + actions */}
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+                <div className="flex items-center gap-2 min-w-0">
+                    {/* Checkbox */}
+                    {!isAssignmentMode && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onPositionSelect?.(ids) }}
+                            className={`w-5 h-5 rounded shrink-0 border-2 transition-all flex items-center justify-center
+                                ${isSelected
+                                    ? 'bg-blue-500 border-blue-500 text-white shadow-md'
+                                    : 'bg-white/90 dark:bg-gray-800/90 border-gray-300 dark:border-gray-500 hover:border-blue-400'
+                                }
+                            `}
+                            title={isSelected ? "Bỏ chọn" : "Chọn vị trí"}
+                        >
+                            {isSelected && (
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                </svg>
+                            )}
+                        </button>
+                    )}
+
+                    {/* Big Position Title */}
+                    <div className="flex items-center gap-1.5 min-w-0">
+                        <Maximize2 size={14} className="text-indigo-500 dark:text-indigo-400 shrink-0" />
+                        <span className="text-[9px] font-bold text-indigo-700 dark:text-indigo-300 whitespace-nowrap">
+                            {zoneBreadcrumb && zoneBreadcrumb.length > 0
+                                ? zoneBreadcrumb.join(' • ')
+                                : pos.code
+                            }
+                        </span>
+                        <span className="text-[9px] bg-indigo-100 dark:bg-indigo-800/50 text-indigo-600 dark:text-indigo-300 px-1.5 py-0.5 rounded-full font-bold shrink-0 whitespace-nowrap">
+                            {mergedCount} ô gộp
+                        </span>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                    {!isAssignmentMode && isOccupied && aggregatedItems.length > 0 && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onViewDetails?.(pos.lot_id!) }}
+                            className="text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors"
+                            title="Xem chi tiết LOT"
+                        >
+                            <Eye size={14} />
+                        </button>
+                    )}
+                    {isOccupied && (
+                        <Package size={14} className="text-amber-500 dark:text-amber-400" />
+                    )}
+                    {isTargetLot && (
+                        <div className="w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse" />
+                    )}
+                    {!isAssignmentMode && (
+                        <button
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPositionMenu?.(pos, e) }}
+                            className="text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                            title="Tùy chọn"
+                        >
+                            <MoreHorizontal size={16} />
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* Content: Aggregated product summary */}
+            {aggregatedItems.length > 0 ? (
+                <div className="flex flex-col gap-0.5 flex-1">
+                    <div className="grid gap-y-0.5 items-start" style={{ gridTemplateColumns: '1fr auto', columnGap: '6px' }}>
+                        {aggregatedItems.slice(0, 2).map((item, idx) => {
+                            const nameObj = displayInternalCode && item.internal_name ? item.internal_name : item.product_name;
+                            const codeObj = displayInternalCode && item.internal_code ? item.internal_code : item.sku;
+                            return (
+                                <React.Fragment key={idx}>
+                                    <span className="text-[10px] text-gray-600 dark:text-gray-300">{nameObj}{nameObj ? ` (${codeObj || '-'})` : (codeObj || '-')}</span>
+                                    <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap text-right">
+                                        : {item.quantity} {item.unit || '-'}
+                                    </span>
+                                </React.Fragment>
+                            )
+                        })}
+
+                        {aggregatedItems.length > 2 && (() => {
+                            const others = aggregatedItems.slice(2);
+                            const unitSums = others.reduce((acc, curr) => {
+                                const unit = curr.unit || '-';
+                                acc[unit] = (acc[unit] || 0) + curr.quantity;
+                                return acc;
+                            }, {} as Record<string, number>);
+
+                            const summaryText = Object.entries(unitSums)
+                                .map(([unit, qty]) => `${qty} ${unit}`)
+                                .join(' và ');
+
+                            return (
+                                <React.Fragment>
+                                    <span className="text-[10px] text-gray-500 dark:text-gray-400 italic">Các mặt hàng khác</span>
+                                    <span className="text-[10px] font-mono text-blue-500 dark:text-blue-500 font-bold whitespace-nowrap text-right">
+                                        : {summaryText}
+                                    </span>
+                                </React.Fragment>
+                            );
+                        })()}
+                    </div>
+                </div>
+            ) : (
+                <div className="flex-1 flex items-center justify-center">
+                    <span className="text-[10px] text-gray-400 font-medium italic">Ô lớn trống — gán LOT để sử dụng</span>
+                </div>
+            )}
+
+            {/* Footer: original position codes */}
+            <div className="flex items-center gap-1 mt-1 pt-1 border-t border-indigo-200/50 dark:border-indigo-700/30 overflow-hidden">
+                <span className="text-[7px] text-gray-400 dark:text-gray-500 shrink-0">Gồm:</span>
+                <div className="flex gap-0.5 overflow-hidden whitespace-nowrap">
+                    {originalCodes.map((code: string, i: number) => (
+                        <span key={i} className="text-[7px] px-0.5 bg-white/60 dark:bg-gray-800/40 rounded text-gray-500 dark:text-gray-400 font-mono">
+                            {code}
+                        </span>
+                    ))}
+                </div>
+            </div>
+        </div>
+    )
+}, (prev, next) => {
+    return prev.pos.id === next.pos.id &&
+        prev.pos.lot_id === next.pos.lot_id &&
+        prev.isMobile === next.isMobile &&
+        prev.isOccupied === next.isOccupied &&
+        prev.isSelected === next.isSelected &&
+        prev.isTargetLot === next.isTargetLot &&
+        prev.aggregatedItems === next.aggregatedItems &&
+        prev.isAssignmentMode === next.isAssignmentMode &&
+        prev.isHighlightBlinking === next.isHighlightBlinking &&
+        prev.displayInternalCode === next.displayInternalCode
+})
+
 interface FlexibleZoneGridProps {
     zones: Zone[]
     positions: PositionWithZone[]
@@ -248,6 +434,8 @@ interface FlexibleZoneGridProps {
     onPrintZone?: (zoneId: string) => void
     displayInternalCode?: boolean
     isGrouped?: boolean
+    mergedZones?: Set<string>
+    onToggleMergeZone?: (zoneId: string) => void
 }
 
 export default function FlexibleZoneGrid({
@@ -273,7 +461,9 @@ export default function FlexibleZoneGrid({
     onTogglePageBreak,
     onPrintZone,
     displayInternalCode = false,
-    isGrouped = false
+    isGrouped = false,
+    mergedZones = new Set(),
+    onToggleMergeZone
 }: FlexibleZoneGridProps) {
     const [isMobile, setIsMobile] = React.useState(false)
 
@@ -361,13 +551,34 @@ export default function FlexibleZoneGrid({
 
     function renderPositionCell(pos: any, cellHeight: number, cellWidth: number) {
         const realIds = pos.realIds || [pos.id]
-        const isOccupied = realIds.some((id: string) => occupiedIds.has(id))
+        const isOccupied = realIds.some((id: string) => occupiedIds.has(id)) || !!pos.lot_id
         const isSelected = realIds.some((id: string) => selectedPositionIds.has(id))
         const isTargetLot = highlightLotId ? realIds.some((id: string) => {
             const lotId = (pos.lot_id)
             return lotId === highlightLotId
         }) : false
         const isHighlightBlinking = realIds.some((id: string) => highlightingPositionIds.has(id))
+
+        // Render merged big cell for virtual positions
+        if (pos.isVirtual && pos.mergedCount > 1) {
+            return (
+                <MergedBigCell
+                    key={pos.id}
+                    pos={pos}
+                    isMobile={isMobile}
+                    isOccupied={isOccupied}
+                    isSelected={isSelected}
+                    isTargetLot={isTargetLot}
+                    aggregatedItems={pos.lot_id && lotInfo[pos.lot_id]?.items ? lotInfo[pos.lot_id].items : []}
+                    isAssignmentMode={isAssignmentMode}
+                    isHighlightBlinking={isHighlightBlinking}
+                    displayInternalCode={displayInternalCode}
+                    onPositionSelect={onPositionSelect}
+                    onViewDetails={onViewDetails}
+                    onPositionMenu={onPositionMenu}
+                />
+            )
+        }
 
         return (
             <MemoizedPositionCell
@@ -388,6 +599,104 @@ export default function FlexibleZoneGrid({
                 onViewDetails={onViewDetails}
                 onPositionMenu={onPositionMenu}
             />
+        )
+    }
+
+    // Build a virtual merged position from an array of positions
+    function buildMergedPosition(positions: any[]) {
+        const sorted = [...positions].sort((a, b) =>
+            (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
+        )
+        const codes = sorted.map((p: any) => p.code || p.id.slice(0, 6))
+        const mergedCode = codes.length <= 3
+            ? codes.join(' + ')
+            : `${codes[0]} ~ ${codes[codes.length - 1]}`
+
+        // Determine lot_id: use the most common lot_id
+        const lotIdCounts = new Map<string, number>()
+        sorted.forEach((p: any) => {
+            if (p.lot_id) lotIdCounts.set(p.lot_id, (lotIdCounts.get(p.lot_id) || 0) + 1)
+        })
+        let bestLotId: string | null = null
+        let bestCount = 0
+        lotIdCounts.forEach((count, lotId) => {
+            if (count > bestCount) { bestLotId = lotId; bestCount = count }
+        })
+
+        return {
+            ...sorted[0],
+            id: `v-pos-merged-${sorted.map((p: any) => p.id).join('-').slice(0, 40)}`,
+            code: mergedCode,
+            lot_id: bestLotId,
+            realIds: sorted.map((p: any) => p.id),
+            isVirtual: true,
+            mergedCount: sorted.length,
+            originalCodes: codes
+        }
+    }
+
+    // Render positions grid — if zone is merged, render as single big cell
+    function renderPositionsGrid(zone: any, cellHeight: number, cellWidth: number, positionColumns: number, breadcrumb?: string[]) {
+        const isMerged = mergedZones.has(zone.id) && zone.positions.length > 1
+
+        if (isMerged) {
+            const mergedPos = buildMergedPosition(zone.positions)
+            const realIds = mergedPos.realIds
+            const isOccupied = realIds.some((id: string) => occupiedIds.has(id)) || !!mergedPos.lot_id
+            const isSelected = realIds.some((id: string) => selectedPositionIds.has(id))
+            const isTargetLot = highlightLotId ? mergedPos.lot_id === highlightLotId : false
+            const isHighlightBlinking = realIds.some((id: string) => highlightingPositionIds.has(id))
+
+            // Aggregate all lot items from all real positions
+            const itemMap = new Map<string, { product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string }>()
+            zone.positions.forEach((p: any) => {
+                if (p.lot_id && lotInfo[p.lot_id]?.items) {
+                    lotInfo[p.lot_id].items.forEach((item: any) => {
+                        const key = `${item.sku || ''}_${item.unit || ''}`
+                        const existing = itemMap.get(key)
+                        if (existing) {
+                            existing.quantity += (item.quantity || 0)
+                        } else {
+                            itemMap.set(key, { ...item, quantity: item.quantity || 0 })
+                        }
+                    })
+                }
+            })
+            const aggregatedItems = Array.from(itemMap.values())
+
+            return (
+                <div className="grid gap-1.5" style={{ gridTemplateColumns: '1fr' }}>
+                    <MergedBigCell
+                        key={mergedPos.id}
+                        pos={mergedPos}
+                        isMobile={isMobile}
+                        isOccupied={isOccupied}
+                        isSelected={isSelected}
+                        isTargetLot={isTargetLot}
+                        aggregatedItems={aggregatedItems}
+                        isAssignmentMode={isAssignmentMode}
+                        isHighlightBlinking={isHighlightBlinking}
+                        displayInternalCode={displayInternalCode}
+                        zoneBreadcrumb={breadcrumb}
+                        onPositionSelect={onPositionSelect}
+                        onViewDetails={onViewDetails}
+                        onPositionMenu={onPositionMenu}
+                    />
+                </div>
+            )
+        }
+
+        return (
+            <div
+                className="grid gap-1.5"
+                style={{
+                    gridTemplateColumns: cellWidth > 0
+                        ? `repeat(${positionColumns}, ${cellWidth}px)`
+                        : `repeat(${positionColumns}, minmax(0, 1fr))`
+                }}
+            >
+                {zone.positions.map((pos: any) => renderPositionCell(pos, cellHeight, cellWidth))}
+            </div>
         )
     }
 
@@ -604,6 +913,23 @@ export default function FlexibleZoneGrid({
                                 </div>
                             </div>
                             <div className="flex items-center gap-2 print:hidden">
+                                {isGrouped && isLevelUnderBin && zone.positions.length > 1 && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onToggleMergeZone?.(zone.id)
+                                        }}
+                                        className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-all ${
+                                            mergedZones.has(zone.id)
+                                                ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
+                                                : 'bg-white/80 text-indigo-600 border border-indigo-200 hover:bg-indigo-50'
+                                        }`}
+                                        title={mergedZones.has(zone.id) ? "Tắt gộp ô lớn" : "Gộp thành ô lớn (hàng cồng kềnh)"}
+                                    >
+                                        <Maximize2 size={11} />
+                                        {mergedZones.has(zone.id) ? 'Đang gộp' : 'Gộp ô'}
+                                    </button>
+                                )}
                                 {depth === 0 && onUpdateCollapsedZones && (
                                     <div className="flex items-center gap-1 mr-2 bg-black/10 rounded overflow-hidden">
                                         <button
@@ -708,16 +1034,7 @@ export default function FlexibleZoneGrid({
                         <div className="p-2">
                             {!isCollapsed && (
                                 <div className="p-2 bg-emerald-50/10 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800">
-                                    <div
-                                        className="grid gap-1.5"
-                                        style={{
-                                            gridTemplateColumns: cellWidth > 0
-                                                ? `repeat(${positionColumns}, ${cellWidth}px)`
-                                                : `repeat(${positionColumns}, minmax(0, 1fr))`
-                                        }}
-                                    >
-                                        {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth))}
-                                    </div>
+                                    {hasPositions && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
                                     {hasChildren && (
                                         <div className="mt-2 space-y-1.5 px-1 pb-1">
                                             {zone.children.map(child => renderZone(child as any, depth + 1, currentBreadcrumb))}
@@ -796,6 +1113,23 @@ export default function FlexibleZoneGrid({
                                 </div>
                             </div>
                             <div className="flex items-center gap-2 print:hidden">
+                                {isGrouped && isLevelUnderBin && zone.positions.length > 1 && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onToggleMergeZone?.(zone.id)
+                                        }}
+                                        className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-all ${
+                                            mergedZones.has(zone.id)
+                                                ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
+                                                : 'bg-white/80 text-indigo-600 border border-indigo-200 hover:bg-indigo-50'
+                                        }`}
+                                        title={mergedZones.has(zone.id) ? "Tắt gộp ô lớn" : "Gộp thành ô lớn (hàng cồng kềnh)"}
+                                    >
+                                        <Maximize2 size={11} />
+                                        {mergedZones.has(zone.id) ? 'Đang gộp' : 'Gộp ô'}
+                                    </button>
+                                )}
                                 {depth === 0 && onUpdateCollapsedZones && (
                                     <div className="flex items-center gap-1 mr-2 bg-black/10 rounded overflow-hidden">
                                         <button
@@ -899,18 +1233,7 @@ export default function FlexibleZoneGrid({
 
                         {!isCollapsed && (
                             <div className="p-2 bg-emerald-50/10 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800">
-                                {hasPositions && (
-                                    <div
-                                        className="grid gap-1"
-                                        style={{
-                                            gridTemplateColumns: cellWidth > 0
-                                                ? `repeat(${positionColumns}, ${cellWidth}px)`
-                                                : `repeat(${positionColumns}, minmax(auto, 1fr))`
-                                        }}
-                                    >
-                                        {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth))}
-                                    </div>
-                                )}
+                                {hasPositions && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
                                 {hasChildren && (
                                     <div
                                         className={
@@ -1008,6 +1331,24 @@ export default function FlexibleZoneGrid({
                                 )}
                             </div>
 
+                            {isGrouped && isLevelUnderBin && zone.positions.length > 1 && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        onToggleMergeZone?.(zone.id)
+                                    }}
+                                    className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-all ${
+                                        mergedZones.has(zone.id)
+                                            ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
+                                            : 'bg-white/80 text-indigo-600 border border-indigo-200 hover:bg-indigo-50'
+                                    }`}
+                                    title={mergedZones.has(zone.id) ? "Tắt gộp ô lớn" : "Gộp thành ô lớn (hàng cồng kềnh)"}
+                                >
+                                    <Maximize2 size={11} />
+                                    {mergedZones.has(zone.id) ? 'Đang gộp' : 'Gộp ô'}
+                                </button>
+                            )}
+
                             {depth === 0 && onUpdateCollapsedZones && (
                                 <div className="flex items-center gap-1 mr-2 bg-black/10 rounded overflow-hidden">
                                     <button
@@ -1077,18 +1418,7 @@ export default function FlexibleZoneGrid({
 
                         {!isCollapsed && (
                             <div className="p-1.5 bg-emerald-50/5 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800">
-                                {hasPositions && (
-                                    <div
-                                        className="grid gap-1 mb-1.5"
-                                        style={{
-                                            gridTemplateColumns: cellWidth > 0
-                                                ? `repeat(${positionColumns}, ${cellWidth}px)`
-                                                : `repeat(${positionColumns}, minmax(auto, 1fr))`
-                                        }}
-                                    >
-                                        {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth))}
-                                    </div>
-                                )}
+                                {hasPositions && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
                                 {hasChildren && (
                                     <div className="space-y-1.5">
                                         {zone.children.map(child => renderZone(child as any, depth + 1, currentBreadcrumb))}
