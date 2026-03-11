@@ -466,9 +466,9 @@ export default function InternalInventoryPage() {
         }
     }
 
-    const loadDetail = useCallback(async (session: Session) => {
+    const loadDetail = useCallback(async (session: Session, silent = false) => {
         if (!systemType) return
-        setDetailLoading(true)
+        if (!silent) setDetailLoading(true)
         setSelectedSession(session)
         try {
             let virtualWhId: string | null = null
@@ -606,6 +606,8 @@ export default function InternalInventoryPage() {
         setEditingLot(null)
         setEditingPositionId(null)
 
+        showToast('Đang cập nhật dữ liệu...', 'info')
+
         // Find which position was affected
         const affectedPosId = posId || positions.find(p => p.lot_id === updatedLot.id)?.id
         if (!affectedPosId) return
@@ -634,9 +636,9 @@ export default function InternalInventoryPage() {
 
             console.log('Upsert success, record:', data)
 
-            // Refresh detailed data
-            loadDetail(selectedSession)
-            showToast('Đã cập nhật thông tin LOT và đánh dấu thay đổi', 'success')
+            // Refresh detailed data silently to preserve UX
+            loadDetail(selectedSession, true)
+            showToast('Đã cập nhật thông tin LOT thành công', 'success')
         } catch (e: any) {
             console.error('Catch error:', e)
             showToast('Lỗi cập nhật trạng thái: ' + e.message, 'error')
