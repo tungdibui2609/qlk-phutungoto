@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, Printer, Download, FileSpreadsheet } from 'lucide-react'
+import { Loader2, Printer, Download, FileSpreadsheet, Scissors } from 'lucide-react'
 import { toJpeg } from 'html-to-image'
 import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { formatQuantityFull } from '@/lib/numberUtils'
@@ -137,6 +137,17 @@ export default function PrintInventoryPage() {
     const [signPerson1, setSignPerson1] = useState('')
     const [signPerson2, setSignPerson2] = useState('')
     const [signPerson3, setSignPerson3] = useState('')
+
+    // Page breaks state
+    const [pageBreaks, setPageBreaks] = useState<Set<string>>(new Set())
+    const togglePageBreak = (key: string) => {
+        setPageBreaks(prev => {
+            const next = new Set(prev)
+            if (next.has(key)) next.delete(key)
+            else next.add(key)
+            return next
+        })
+    }
 
     // Capture and snapshot state
     const [isDownloading, setIsDownloading] = useState(false)
@@ -376,15 +387,17 @@ export default function PrintInventoryPage() {
                         })
                     }
 
-                    // Client-side search filtering
-                    const searchLower = searchTerm.toLowerCase()
+                    // Client-side search filtering (multi-keyword via ;)
+                    const keywords = searchTerm ? searchTerm.split(';').map(k => k.trim().toLowerCase()).filter(Boolean) : []
                     const filtered = mapped.filter(item =>
-                        !searchTerm ||
-                        item.lotCode.toLowerCase().includes(searchLower) ||
-                        item.productName.toLowerCase().includes(searchLower) ||
-                        (item.internalName && item.internalName.toLowerCase().includes(searchLower)) ||
-                        item.productSku.toLowerCase().includes(searchLower) ||
-                        (item.internalCode && item.internalCode.toLowerCase().includes(searchLower))
+                        keywords.length === 0 ||
+                        keywords.some(key =>
+                            item.lotCode.toLowerCase().includes(key) ||
+                            item.productName.toLowerCase().includes(key) ||
+                            (item.internalName && item.internalName.toLowerCase().includes(key)) ||
+                            item.productSku.toLowerCase().includes(key) ||
+                            (item.internalCode && item.internalCode.toLowerCase().includes(key))
+                        )
                     )
 
                     setLotItems(filtered)
@@ -632,6 +645,23 @@ export default function PrintInventoryPage() {
                     }
                 `}} />
             )}
+            {/* Print page break styles */}
+            <style dangerouslySetInnerHTML={{
+                __html: `
+                @media print {
+                    @page {
+                        margin: 10mm 8mm;
+                    }
+                    thead { display: table-header-group; }
+                    tfoot { display: table-footer-group; }
+                    tr { page-break-inside: avoid; break-inside: avoid; }
+                    .break-inside-avoid { page-break-inside: avoid; break-inside: avoid; }
+                    #print-ready {
+                        width: 100% !important;
+                        padding: 0 !important;
+                    }
+                }
+                `}} />
             {/* Toolbar */}
             <div className={`fixed top-4 right-4 z-50 print:hidden flex gap-2 ${isSnapshotMode ? 'hidden' : ''}`}>
                 <button
@@ -721,21 +751,39 @@ export default function PrintInventoryPage() {
                             {accountingItems.map((item, idx) => {
                                 const displayCode = isInternalCodeDisplay && item.internalCode ? item.internalCode : item.productCode || 'N/A'
                                 const displayName = isInternalCodeDisplay && item.internalName ? item.internalName : item.productName
+                                const breakKey = `acc-${idx}`
+                                const hasBreak = pageBreaks.has(breakKey)
 
                                 return (
-                                    <tr key={`${item.id}-${idx}`} className={item.isUnconvertible ? 'bg-orange-100 print:bg-transparent' : ''}>
-                                        <td className="border border-black p-1 text-center">{idx + 1}</td>
-                                        <td className="border border-black p-1">
-                                            {displayName}
-                                            {item.isUnconvertible && <span className="ml-1 text-[10px] italic text-red-600 print:text-black">(*)</span>}
-                                        </td>
-                                        <td className="border border-black p-1">{displayCode}</td>
-                                        <td className="border border-black p-2 text-center text-stone-600 font-bold">{item.unit}</td>
-                                        <td className="border border-black p-1 text-right">{formatQuantityFull(item.opening)}</td>
-                                        <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyIn)}</td>
-                                        <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyOut)}</td>
-                                        <td className="border border-black p-1 text-right font-bold">{formatQuantityFull(item.balance)}</td>
-                                    </tr>
+                                    <React.Fragment key={`${item.id}-${idx}`}>
+                                        {idx > 0 && (
+                                            <tr className={`print:hidden ${hasBreak ? '' : 'h-0'}`}>
+                                                <td colSpan={8} className="p-0 border-0 relative">
+                                                    <button
+                                                        onClick={() => togglePageBreak(breakKey)}
+                                                        className={`w-full flex items-center justify-center gap-1 text-[10px] py-0.5 transition-all group hover:bg-blue-50 ${hasBreak ? 'bg-blue-100 border-y-2 border-dashed border-blue-500' : 'opacity-0 hover:opacity-100'}`}
+                                                    >
+                                                        <Scissors size={10} className={hasBreak ? 'text-blue-600' : 'text-stone-400'} />
+                                                        <span className={hasBreak ? 'text-blue-600 font-bold' : 'text-stone-400'}>{hasBreak ? '✂ Ngắt trang' : 'Ngắt trang'}</span>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        )}
+                                        {hasBreak && <tr className="hidden print:table-row" style={{ pageBreakBefore: 'always' }}><td colSpan={8} className="p-0 border-0 h-0"></td></tr>}
+                                        <tr className={item.isUnconvertible ? 'bg-orange-100 print:bg-transparent' : ''}>
+                                            <td className="border border-black p-1 text-center">{idx + 1}</td>
+                                            <td className="border border-black p-1">
+                                                {displayName}
+                                                {item.isUnconvertible && <span className="ml-1 text-[10px] italic text-red-600 print:text-black">(*)</span>}
+                                            </td>
+                                            <td className="border border-black p-1">{displayCode}</td>
+                                            <td className="border border-black p-2 text-center text-stone-600 font-bold">{item.unit}</td>
+                                            <td className="border border-black p-1 text-right">{formatQuantityFull(item.opening)}</td>
+                                            <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyIn)}</td>
+                                            <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyOut)}</td>
+                                            <td className="border border-black p-1 text-right font-bold">{formatQuantityFull(item.balance)}</td>
+                                        </tr>
+                                    </React.Fragment>
                                 )
                             })}
                         </tbody>
@@ -772,8 +820,26 @@ export default function PrintInventoryPage() {
                                     const hasRealVariants = variantEntries.length > 1 || (variantEntries.length === 1 && variantEntries[0][0] !== 'Không có mã phụ')
                                     const totalVariantRows = variantEntries.length
 
+                                    const breakKey = `lot-${gIdx}`
+                                    const hasBreak = pageBreaks.has(breakKey)
+
                                     return (
                                         <React.Fragment key={group.key}>
+                                            {/* Page break button */}
+                                            {gIdx > 0 && (
+                                                <tr className={`print:hidden ${hasBreak ? '' : 'h-0'}`}>
+                                                    <td colSpan={7} className="p-0 border-0 relative">
+                                                        <button
+                                                            onClick={() => togglePageBreak(breakKey)}
+                                                            className={`w-full flex items-center justify-center gap-1 text-[10px] py-0.5 transition-all group hover:bg-blue-50 ${hasBreak ? 'bg-blue-100 border-y-2 border-dashed border-blue-500' : 'opacity-0 hover:opacity-100'}`}
+                                                        >
+                                                            <Scissors size={10} className={hasBreak ? 'text-blue-600' : 'text-stone-400'} />
+                                                            <span className={hasBreak ? 'text-blue-600 font-bold' : 'text-stone-400'}>{hasBreak ? '✂ Ngắt trang' : 'Ngắt trang'}</span>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                            {hasBreak && <tr className="hidden print:table-row" style={{ pageBreakBefore: 'always' }}><td colSpan={7} className="p-0 border-0 h-0"></td></tr>}
                                             {/* 1. Main Product Summary Row */}
                                             <tr className="bg-white font-bold h-10">
                                                 <td className="border border-black p-2 text-center text-stone-500">{gIdx + 1}</td>

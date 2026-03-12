@@ -209,7 +209,7 @@ export default function InventoryPage() {
                                     type="text"
                                     value={q}
                                     onChange={e => setQ(e.target.value)}
-                                    placeholder="Mã SP, tên SP..."
+                                    placeholder="Mã SP, tên, danh mục... (dùng ; để tìm nhiều)"
                                     className="w-full pl-9 pr-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500"
                                 />
                             </div>

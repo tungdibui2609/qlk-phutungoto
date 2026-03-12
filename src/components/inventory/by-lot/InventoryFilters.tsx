@@ -110,7 +110,7 @@ export function InventoryFilters({
                             type="text"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
-                            placeholder="Mã hàng, Tên hàng, Mã phụ..."
+                            placeholder="Mã, tên, danh mục, mã phụ... (dùng ; để tìm nhiều)"
                             className="w-full pl-9 pr-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                     </div>

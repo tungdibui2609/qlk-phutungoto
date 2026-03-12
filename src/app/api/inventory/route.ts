@@ -176,10 +176,14 @@ export async function GET(request: Request) {
         const productsData = await fetchAllWithPagination('products');
         const unitsData = await fetchAllWithPagination('units');
         const prodUnitsData = await fetchAllWithPagination('product_units');
+        const categoriesData = await fetchAllWithPagination('categories');
 
         // Maps for O(1) Access
         const productMap = new Map<string, any>()
-            ; (productsData as any[])?.forEach(p => productMap.set(p.id, p))
+        ; (productsData as any[])?.forEach(p => productMap.set(p.id, p))
+
+        const categoryMap = new Map<string, string>() // ID -> Name
+        ; (categoriesData as any[])?.forEach(c => categoryMap.set(c.id, c.name))
 
         const unitNameMap = new Map<string, string>() // Name -> ID
         const unitIdMap = new Map<string, string>()   // ID -> Name
@@ -281,13 +285,22 @@ export async function GET(request: Request) {
         // Filter and Sort
         let result = Array.from(inventoryMap.values())
         if (q) {
-            result = result.filter(i =>
-                i.productCode.toLowerCase().includes(q) ||
-                i.productName.toLowerCase().includes(q) ||
-                (i.internalCode && i.internalCode.toLowerCase().includes(q)) ||
-                (i.internalName && i.internalName.toLowerCase().includes(q)) ||
-                i.productId === q
-            )
+            const keywords = q.split(';').map(k => k.trim().toLowerCase()).filter(Boolean)
+            if (keywords.length > 0) {
+                result = result.filter(i => {
+                    const prod = productMap.get(i.productId)
+                    const categoryName = prod?.category_id ? categoryMap.get(prod.category_id)?.toLowerCase() || '' : ''
+                    
+                    return keywords.some(key => 
+                        i.productCode.toLowerCase().includes(key) ||
+                        i.productName.toLowerCase().includes(key) ||
+                        (i.internalCode && i.internalCode.toLowerCase().includes(key)) ||
+                        (i.internalName && i.internalName.toLowerCase().includes(key)) ||
+                        i.productId === key ||
+                        categoryName.includes(key)
+                    )
+                })
+            }
         }
 
         // Sort: Convertible/Normal first, Unconvertible last

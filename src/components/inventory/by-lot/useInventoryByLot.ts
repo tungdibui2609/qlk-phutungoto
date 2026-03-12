@@ -16,6 +16,7 @@ export function useInventoryByLot(units: any[]) {
     const [posToZoneMap, setPosToZoneMap] = useState<Record<string, string>>({})
     const [zoneHierarchy, setZoneHierarchy] = useState<Record<string, string | null>>({})
     const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
+    const [categoryMap, setCategoryMap] = useState<Record<string, string>>({})
 
     const { systemType } = useSystem()
     const { convertUnit, unitNameMap, conversionMap } = useUnitConversion()
@@ -124,6 +125,15 @@ export function useInventoryByLot(units: any[]) {
             })
             setPosToZoneMap(mapping)
 
+            // 1c. Fetch ALL Categories
+            const { data: catData, error: catError } = await supabase
+                .from('categories')
+                .select('id, name')
+            if (catError) throw catError
+            const cMap: Record<string, string> = {}
+            catData?.forEach(c => cMap[c.id] = c.name)
+            setCategoryMap(cMap)
+
             // 2. Fetch LOTs
             while (true) {
                 const { data: pageData, error: pageError } = await supabase
@@ -138,12 +148,13 @@ export function useInventoryByLot(units: any[]) {
                             products (
                                 name,
                                 unit,
-                                sku,
-                                product_code:id,
-                                system_type
-                            )
-                        ),
-                        products (name, unit, product_code:id, sku, system_type),
+                                 sku,
+                                 product_code:id,
+                                 system_type,
+                                 category_id
+                             )
+                         ),
+                         products (name, unit, product_code:id, sku, system_type, category_id),
                         suppliers(name),
                         positions!positions_lot_id_fkey(id, code),
                         lot_tags(tag, lot_item_id)
@@ -219,17 +230,25 @@ export function useInventoryByLot(units: any[]) {
             // If LOT has items, they will be filtered individually later
             if (!searchTerm) return true
 
-            const matchInLot = (
-                lot.code.toLowerCase().includes(searchLower) ||
-                (lot.products?.name?.toLowerCase() || '').includes(searchLower) ||
-                (lot.suppliers?.name?.toLowerCase() || '').includes(searchLower) ||
-                (lot.lot_tags?.some(t => t.tag.toLowerCase().includes(searchLower)))
+            const keywords = searchTerm.split(';').map(k => k.trim().toLowerCase()).filter(Boolean)
+            if (keywords.length === 0) return true
+
+            const matchInLot = keywords.some(key => 
+                lot.code.toLowerCase().includes(key) ||
+                (lot.products?.name?.toLowerCase() || '').includes(key) ||
+                (lot.products?.sku?.toLowerCase() || '').includes(key) ||
+                (lot.products?.category_id && categoryMap[lot.products.category_id]?.toLowerCase().includes(key)) ||
+                (lot.suppliers?.name?.toLowerCase() || '').includes(key) ||
+                (lot.lot_tags?.some(t => t.tag.toLowerCase().includes(key)))
             )
             
             // If lot items exist, we check if any item matches
             const matchInItems = lot.lot_items?.some(item => 
-                (item.products?.name?.toLowerCase() || '').includes(searchLower) ||
-                (item.products?.sku?.toLowerCase() || '').includes(searchLower)
+                keywords.some(key => 
+                    (item.products?.name?.toLowerCase() || '').includes(key) ||
+                    (item.products?.sku?.toLowerCase() || '').includes(key) ||
+                    (item.products?.category_id && categoryMap[item.products.category_id]?.toLowerCase().includes(key))
+                )
             )
 
             return matchInLot || matchInItems
@@ -246,16 +265,27 @@ export function useInventoryByLot(units: any[]) {
                 qty: number,
                 itemId: string | null,
                 productId: string | null,
-                baseUnit: string | null
+                baseUnit: string | null,
+                categoryId: string | null
             ) => {
                 // Secondary Search Filter on specific Variant/Item data
                 if (searchTerm) {
-                    const matchesNameOrSku = name.toLowerCase().includes(searchLower) || sku.toLowerCase().includes(searchLower)
-                    const itemTags = lot.lot_tags?.filter(t => t.lot_item_id === itemId || !t.lot_item_id).map(t => t.tag.toLowerCase()) || []
-                    const matchesTags = itemTags.some(t => t.includes(searchLower))
-                    
-                    if (!matchesNameOrSku && !matchesTags && !lot.code.toLowerCase().includes(searchLower)) {
-                        return // Skip this variant/item if it doesn't match search
+                    const keywords = searchTerm.split(';').map(k => k.trim().toLowerCase()).filter(Boolean)
+                    if (keywords.length > 0) {
+                        const matchesFields = keywords.some(key => 
+                            name.toLowerCase().includes(key) || 
+                            sku.toLowerCase().includes(key) ||
+                            (categoryId && categoryMap[categoryId]?.toLowerCase().includes(key))
+                        )
+                        
+                        const itemTags = lot.lot_tags?.filter(t => t.lot_item_id === itemId || !t.lot_item_id).map(t => t.tag.toLowerCase()) || []
+                        const matchesTags = keywords.some(key => itemTags.some(t => t.includes(key)))
+                        
+                        const matchesLotCode = keywords.some(key => lot.code.toLowerCase().includes(key))
+
+                        if (!matchesFields && !matchesTags && !matchesLotCode) {
+                            return // Skip this variant/item if it doesn't match search
+                        }
                     }
                 }
 
@@ -312,29 +342,31 @@ export function useInventoryByLot(units: any[]) {
                             item.products.sku,
                             item.products.name,
                             item.unit || item.products.unit,
-                            item.quantity || 0,
-                            item.id,
-                            item.product_id,
-                            item.products.unit
-                        )
-                    }
-                })
-            } else if (lot.products) {
-                processItem(
-                    lot.products.sku,
-                    lot.products.name,
-                    lot.products.unit,
-                    lot.quantity || 0,
-                    null,
-                    lot.product_id,
-                    lot.products.unit
-                )
-            }
+                             item.quantity || 0,
+                             item.id,
+                             item.product_id,
+                             item.products.unit,
+                             item.products.category_id ?? null
+                         )
+                     }
+                 })
+             } else if (lot.products) {
+                 processItem(
+                     lot.products.sku,
+                     lot.products.name,
+                     lot.products.unit,
+                     lot.quantity || 0,
+                     null,
+                     lot.product_id,
+                     lot.products.unit,
+                     lot.products.category_id ?? null
+                 )
+             }
         })
 
         return Array.from(groups.values()).sort((a, b) => a.productSku.localeCompare(b.productSku))
 
-    }, [lots, searchTerm, targetUnitId, unitNameMap, conversionMap, units, convertUnit, selectedZoneId, posToZoneMap, zoneHierarchy])
+    }, [lots, searchTerm, targetUnitId, unitNameMap, conversionMap, units, convertUnit, selectedZoneId, posToZoneMap, zoneHierarchy, categoryMap])
 
     const toggleExpand = (key: string) => {
         const newSet = new Set(expandedProducts)

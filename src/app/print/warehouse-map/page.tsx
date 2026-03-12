@@ -880,28 +880,28 @@ export default function WarehouseMapPrintPage() {
                                 #print-ready {
                                     width: ${orientation === 'landscape' ? '297mm' : '210mm'} !important;
                                     max-width: none !important;
-                                    margin: 0 !important;
-                                    padding: 8mm !important;
+                                    margin: 0 auto !important;
+                                    padding: 0 !important;
+                                    display: block !important;
                                     box-shadow: none !important;
-                                    border-radius: 0 !important;
-                                    ring: none !important;
-                                    display: block !important; /* Chuyển sang block để ngắt trang ổn định */
+                                }
+
+                                #print-ready div, #print-ready section, #print-ready article { 
                                     height: auto !important;
                                     min-height: 0 !important;
+                                    max-height: none !important;
                                 }
-                                #print-ready * { 
-                                    min-height: 0 !important;
+
+                                /* Force content to stay close to top */
+                                #print-ready > div:first-of-type {
+                                    margin-top: 0 !important;
+                                    padding-top: 0 !important;
                                 }
-                                /* Giữ nguyên Grid/Flex lồng nhau để h-full/stretch hoạt động */
-                                #print-ready .grid, #print-ready [class*="grid-"] {
-                                    display: grid !important;
-                                }
-                                #print-ready .flex {
-                                    display: flex !important;
-                                }
-                                body { background: white !important; }
-                                .min-h-screen { min-height: 0 !important; }
+
+                                body { background: white !important; margin: 0 !important; padding: 0 !important; }
+                                .min-h-screen { min-height: 0 !important; height: auto !important; }
                                 [class*="space-y-"] { margin-top: 0 !important; }
+                                * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                             }
                         `
                     }} />
@@ -927,11 +927,11 @@ export default function WarehouseMapPrintPage() {
                 `}} />
                     )}
 
-                    <div className="mb-3">
+                    <div className="mb-1 print:mb-0">
                         <PrintHeader companyInfo={companyInfo} logoSrc={logoSrc} size="compact" />
                     </div>
 
-                    <div className="text-center mb-3">
+                    <div className="text-center mb-1 print:mb-0">
                         <EditableText
                             value={editReportTitle}
                             onChange={setEditReportTitle}
@@ -949,7 +949,7 @@ export default function WarehouseMapPrintPage() {
                     </div>
 
                     {/* The Map Grid OR Data Table View */}
-                    <div className="mb-8 print:mb-4">
+                    <div className="mb-8 print:mb-0">
                         {!showTable ? (
                             <div className="mt-4 print:mt-0">
                                 <FlexibleZoneGrid
@@ -1030,7 +1030,7 @@ export default function WarehouseMapPrintPage() {
 
                                                 // Case 2: Empty position
                                                 return (
-                                                    <tr key={p.id} className="text-[12px] hover:bg-gray-50/50 transition-colors break-inside-avoid italic text-gray-400 bg-gray-50/5">
+                                                    <tr key={p.id} className="text-[12px] hover:bg-gray-50/50 transition-colors italic text-gray-400 bg-gray-50/5">
                                                         <td className="px-3 py-2 border-r border-gray-300 font-bold not-italic text-gray-600">
                                                             {p.code}
                                                         </td>
@@ -1047,7 +1047,7 @@ export default function WarehouseMapPrintPage() {
                     </div>
 
                     {/* Footer Signatures */}
-                    <div className="flex justify-between mt-12 break-inside-avoid">
+                    <div className="flex justify-between mt-12">
                         {[
                             { title: signTitle1, setTitle: setSignTitle1, person: signPerson1, setPerson: setSignPerson1 },
                             { title: signTitle2, setTitle: setSignTitle2, person: signPerson2, setPerson: setSignPerson2 },
@@ -1070,11 +1070,9 @@ export default function WarehouseMapPrintPage() {
                                 margin: 10mm; 
                             }
                             body { background: white !important; }
-                            .print-hidden { display: none !important; }
+                            .print-hidden, .hide-on-real-print { display: none !important; }
                         }
-                        #print-ready .grid {
-                            page-break-inside: avoid;
-                        }
+
                         .print-break-before-page {
                             break-before: page;
                             page-break-before: always;
