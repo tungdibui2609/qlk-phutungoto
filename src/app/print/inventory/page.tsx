@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, Printer, Download } from 'lucide-react'
+import { Loader2, Printer, Download, FileSpreadsheet } from 'lucide-react'
 import { toJpeg } from 'html-to-image'
 import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { formatQuantityFull } from '@/lib/numberUtils'
@@ -11,6 +11,7 @@ import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { PrintHeader } from '@/components/print/PrintHeader'
 import { EditableText } from '@/components/print/PrintHelpers'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { exportInventoryReportToExcel } from '@/lib/inventoryReportExcelExport'
 
 // Types
 interface InventoryItem {
@@ -284,7 +285,8 @@ export default function PrintInventoryPage() {
                             *,
                             lot_items (
                                 id, quantity, unit, product_id,
-                                products (name, unit, sku, product_code:id, internal_code, internal_name, system_type)
+                                products (name, unit, sku, product_code:id, internal_code, internal_name, system_type),
+                                lot_tags(tag)
                             ),
                             products(name, unit, product_code:id, sku, system_type, internal_code, internal_name),
                             suppliers(name),
@@ -329,19 +331,23 @@ export default function PrintInventoryPage() {
                         }
 
                         if (lot.lot_items && lot.lot_items.length > 0) {
-                            return lot.lot_items.map((item: any, idx: number) => ({
-                                ...lotData,
-                                id: item.id || `${lot.id}-item-${idx}`,
-                                productSku: item.products?.sku || 'N/A',
-                                productName: item.products?.name || 'Unknown',
-                                internalCode: item.products?.internal_code || null,
-                                internalName: item.products?.internal_name || null,
-                                productUnit: item.unit || item.products?.unit || '-',
-                                quantity: item.quantity,
-                                kg: 0,
-                                productId: item.product_id || item.products?.product_code || '',
-                                baseUnit: item.products?.unit || ''
-                            }))
+                            return lot.lot_items.map((item: any, idx: number) => {
+                                const itemTags = (item.lot_tags || []).map((t: any) => t.tag).filter(Boolean) as string[]
+                                return {
+                                    ...lotData,
+                                    id: item.id || `${lot.id}-item-${idx}`,
+                                    productSku: item.products?.sku || 'N/A',
+                                    productName: item.products?.name || 'Unknown',
+                                    internalCode: item.products?.internal_code || null,
+                                    internalName: item.products?.internal_name || null,
+                                    productUnit: item.unit || item.products?.unit || '-',
+                                    quantity: item.quantity,
+                                    kg: 0,
+                                    productId: item.product_id || item.products?.product_code || '',
+                                    baseUnit: item.products?.unit || '',
+                                    tags: itemTags.length > 0 ? itemTags : lotTags
+                                }
+                            })
                         } else if (lot.products) {
                             return [{
                                 ...lotData,
@@ -429,8 +435,9 @@ export default function PrintInventoryPage() {
                         g.totalKg += item.kg || 0
                         g.items.push(item)
 
-                        // Variant (Composite Tag)
-                        const compositeTag = item.tags.length > 0 ? item.tags.join('; ') : 'Không có mã phụ'
+                        // Variant (Composite Tag) - Format: Remove '@' and replace '>' sequences with '; '
+                        const cleanTags = item.tags.map(t => t.replace(/@/g, '').replace(/>+/g, '; ').trim()).filter(Boolean);
+                        const compositeTag = cleanTags.length > 0 ? cleanTags.join('; ') : 'Không có mã phụ'
                         const currentV = g.variants.get(compositeTag) || { totalQuantity: 0, totalKg: 0, items: [] }
                         g.variants.set(compositeTag, {
                             totalQuantity: currentV.totalQuantity + (displayQty || 0),
@@ -571,6 +578,25 @@ export default function PrintInventoryPage() {
 
     const handleDownload = () => handleCapture(false, `bao-cao-ton-${dateTo}.jpg`)
 
+    const handleExportExcel = async () => {
+        let dateTitle = ''
+        if (type === 'accounting') {
+            dateTitle = `Từ ngày: ${dateFrom ? new Date(dateFrom).toLocaleDateString('vi-VN') : '...'} đến ngày: ${new Date(dateTo).toLocaleDateString('vi-VN')}`
+        } else if (type === 'lot') {
+            dateTitle = `Ngày báo cáo: ${new Date(dateTo).toLocaleDateString('vi-VN')}`
+        } else {
+            dateTitle = `Ngày báo cáo: ${new Date().toLocaleDateString('vi-VN')}`
+        }
+
+        await exportInventoryReportToExcel({
+            type: type as any,
+            dateTitle,
+            warehouse: warehouse || 'Tất cả',
+            items: type === 'accounting' ? accountingItems : type === 'lot' ? groupedLots : reconcileItems,
+            companyInfo
+        })
+    }
+
     if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin mr-2" /> Đang tải dữ liệu...</div>
 
     if (error) return <div id="print-ready" data-ready="true" className="flex h-screen items-center justify-center text-red-600 font-bold">Lỗi tải dữ liệu: {error}</div>
@@ -592,7 +618,7 @@ export default function PrintInventoryPage() {
                 `}} />
             )}
             {/* Toolbar */}
-            <div className={`fixed top-4 right-4 print:hidden flex gap-2 ${isSnapshotMode ? 'hidden' : ''}`}>
+            <div className={`fixed top-4 right-4 z-50 print:hidden flex gap-2 ${isSnapshotMode ? 'hidden' : ''}`}>
                 <button
                     onClick={handleDownload}
                     disabled={isDownloadingState}
@@ -609,6 +635,12 @@ export default function PrintInventoryPage() {
                             Tải ảnh phiếu
                         </>
                     )}
+                </button>
+                <button
+                    onClick={handleExportExcel}
+                    className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 shadow-lg"
+                >
+                    <FileSpreadsheet size={20} /> Xuất Excel
                 </button>
                 <button
                     onClick={handlePrint}
@@ -734,11 +766,7 @@ export default function PrintInventoryPage() {
                                                 <td className="border border-black p-2" colSpan={2}>{displayName}</td>
                                                 <td className="border border-black p-2 text-center text-stone-600 font-bold">
                                                     <div>{group.productUnit}</div>
-                                                    {group.kgRate && group.kgRate !== 1 && (
-                                                        <div className="text-[9px] text-stone-400 font-normal leading-tight">
-                                                            (1 {group.productUnit} = {formatQuantityFull(group.kgRate)} Kg)
-                                                        </div>
-                                                    )}
+
                                                 </td>
                                                 <td className="border border-black p-2 text-right">{formatQuantityFull(group.totalQuantity)}</td>
                                                 <td className="border border-black p-2 text-right text-stone-700 font-bold bg-stone-50/50">{formatQuantityFull(group.totalKg)}</td>
@@ -762,11 +790,7 @@ export default function PrintInventoryPage() {
                                                                 </td>
                                                                 <td className="border border-black p-2 text-center text-stone-600 font-bold">
                                                                     <div>{group.productUnit}</div>
-                                                                    {group.kgRate && group.kgRate !== 1 && (
-                                                                        <div className="text-[8px] text-stone-400 font-normal leading-tight">
-                                                                            (1 {group.productUnit} = {formatQuantityFull(group.kgRate)} Kg)
-                                                                        </div>
-                                                                    )}
+
                                                                 </td>
                                                                 <td className="border border-black p-2 text-right text-stone-600 font-medium">
                                                                     {formatQuantityFull(data.totalQuantity)}

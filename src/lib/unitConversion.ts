@@ -32,7 +32,20 @@ export function toBaseAmount(
     // Step 1: Exact match (e.g. "thùng")
     let uid = unitNameMap.get(normInput);
 
-    // Step 2: If no exact match, try stripping parentheses (e.g. "thùng (20 kg)" -> "thùng")
+    // Step 2: Extract weight from name if possible (e.g. "thùng (13 Kg)" -> 13)
+    // Priority: If the name contains something like "(13 kg)" and base is kg, use that 13 directly
+    const kgNames = ['kg', 'kilogram', 'ki-lo-gam', 'kgs'];
+    if (kgNames.includes(normBase)) {
+        const weightMatch = normInput.match(/\(\s*(\d+(\.\d+)?)\s*k?g\s*\)/i);
+        if (weightMatch) {
+            const weight = parseFloat(weightMatch[1]);
+            if (!isNaN(weight)) {
+                return Number((qty * weight).toFixed(6));
+            }
+        }
+    }
+
+    // Step 3: If no exact match and no weight extraction, try stripping parentheses (e.g. "thùng (20 kg)" -> "thùng")
     if (!uid) {
         const stripped = normInput.replace(/\s*\([^)]*\)/g, '');
         uid = unitNameMap.get(stripped);
@@ -40,7 +53,7 @@ export function toBaseAmount(
 
     if (!uid) return qty;
 
-    // Look up rate
+    // Look up rate from database
     const rates = conversionMap.get(productId);
     if (rates && rates.has(uid)) {
         const result = qty * rates.get(uid)!;
