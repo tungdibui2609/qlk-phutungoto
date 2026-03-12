@@ -886,9 +886,8 @@ export default function WarehouseMapPrintPage() {
                                     box-shadow: none !important;
                                 }
 
+                                /* Allow stretching in print */
                                 #print-ready div, #print-ready section, #print-ready article { 
-                                    height: auto !important;
-                                    min-height: 0 !important;
                                     max-height: none !important;
                                 }
 
