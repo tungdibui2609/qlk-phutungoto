@@ -1,6 +1,6 @@
 'use client'
 import React, { useMemo } from 'react'
-import { ChevronDown, ChevronRight, Package, Settings, Eye, MoreHorizontal, Printer, Maximize2 } from 'lucide-react'
+import { Loader2, Printer, Download, Search, Check, ChevronDown, ChevronRight, MapPin, X, Settings, Layout, Monitor, Layers, Maximize2, MoreHorizontal, Eye, Package } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { InView } from 'react-intersection-observer'
@@ -28,11 +28,12 @@ const MemoizedPositionCell = React.memo<{
     isGrouped?: boolean,
     onPositionSelect?: (id: string | string[]) => void,
     onViewDetails?: (lotId: string) => void,
-    onPositionMenu?: (pos: any, event: React.MouseEvent) => void
+    onPositionMenu?: (pos: any, event: React.MouseEvent) => void,
+    isPrintPage?: boolean
 }>(({
     pos, cellHeight, cellWidth, isMobile, isOccupied, isSelected,
     isTargetLot, lotDetail, isAssignmentMode, isHighlightBlinking, displayInternalCode, isGrouped,
-    onPositionSelect, onViewDetails, onPositionMenu
+    onPositionSelect, onViewDetails, onPositionMenu, isPrintPage
 }) => {
     const ids = (pos as any).realIds || [pos.id]
     let bgClass = 'bg-white dark:bg-gray-700'
@@ -67,7 +68,7 @@ const MemoizedPositionCell = React.memo<{
             `}
             onClick={() => isAssignmentMode && onPositionSelect?.(ids)}
         >
-            {!isAssignmentMode && (
+            {!isAssignmentMode && !isPrintPage && (
                 <button
                     onClick={(e) => {
                         e.stopPropagation()
@@ -93,7 +94,7 @@ const MemoizedPositionCell = React.memo<{
             )}
 
             <div className="flex justify-center items-start w-full relative mb-1 shrink-0">
-                {!isAssignmentMode && isOccupied && lotDetail && (
+                {!isAssignmentMode && isOccupied && lotDetail && !isPrintPage && (
                     <button
                         onClick={(e) => {
                             e.stopPropagation()
@@ -110,7 +111,7 @@ const MemoizedPositionCell = React.memo<{
                     {pos.code}
                 </div>
 
-                {!isAssignmentMode && (
+                {!isAssignmentMode && !isPrintPage && (
                     <button
                         onClick={(e) => {
                             e.preventDefault()
@@ -124,11 +125,11 @@ const MemoizedPositionCell = React.memo<{
                     </button>
                 )}
 
-                <div className={`flex gap-0.5 absolute ${!isAssignmentMode ? 'right-5' : 'right-0'} top-0`}>
+                <div className={`flex gap-0.5 absolute ${!isAssignmentMode && !isPrintPage ? 'right-5' : 'right-0'} top-0`}>
                     {isTargetLot && (
                         <div title="Đang chọn" className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
                     )}
-                    {isOccupied && !isTargetLot && (
+                    {isOccupied && !isTargetLot && !isPrintPage && (
                         <div title="Có hàng">
                             <Package size={10} className="text-amber-500 dark:text-amber-400" />
                         </div>
@@ -221,7 +222,8 @@ const MemoizedPositionCell = React.memo<{
         prev.isAssignmentMode === next.isAssignmentMode &&
         prev.isHighlightBlinking === next.isHighlightBlinking &&
         prev.displayInternalCode === next.displayInternalCode &&
-        prev.isGrouped === next.isGrouped
+        prev.isGrouped === next.isGrouped &&
+        prev.isPrintPage === next.isPrintPage
 })
 
 const MergedBigCell = React.memo<{
@@ -237,8 +239,11 @@ const MergedBigCell = React.memo<{
     zoneBreadcrumb?: string[],
     onPositionSelect?: (id: string | string[]) => void,
     onViewDetails?: (lotId: string) => void,
-    onPositionMenu?: (pos: any, event: React.MouseEvent) => void
-}>(({ pos, isMobile, isOccupied, isSelected, isTargetLot, aggregatedItems, isAssignmentMode, isHighlightBlinking, displayInternalCode, zoneBreadcrumb, onPositionSelect, onViewDetails, onPositionMenu }) => {
+    onPositionMenu?: (pos: any, event: React.MouseEvent) => void,
+    mergedLevels?: string[],
+    levelGroups?: Array<{ name: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string }> }>,
+    isPrintPage?: boolean
+}>(({ pos, isMobile, isOccupied, isSelected, isTargetLot, aggregatedItems, isAssignmentMode, isHighlightBlinking, displayInternalCode, zoneBreadcrumb, onPositionSelect, onViewDetails, onPositionMenu, mergedLevels, levelGroups, isPrintPage }) => {
     const ids = pos.realIds || [pos.id]
     const mergedCount = pos.mergedCount || ids.length
     const originalCodes = pos.originalCodes || [pos.code]
@@ -264,8 +269,8 @@ const MergedBigCell = React.memo<{
         <div
             style={{ gridColumn: '1 / -1', minHeight: isMobile ? '110px' : '150px' }}
             className={`
-                relative ${isAssignmentMode ? 'cursor-pointer' : ''} p-2.5 rounded-xl border-2 transition-all
-                flex flex-col overflow-hidden
+                relative ${isAssignmentMode ? 'cursor-pointer' : ''} p-2.5 print:p-1.5 rounded-xl border-2 transition-all
+                flex flex-col h-full overflow-hidden print:overflow-visible print:!min-h-0
                 ${bgClass} ${borderClass} ${ringClass}
                 ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.01] hover:z-10' : ''}
                 ${isHighlightBlinking ? 'animate-highlight-blink' : ''}
@@ -276,7 +281,7 @@ const MergedBigCell = React.memo<{
             <div className="flex items-center justify-between gap-2 mb-1.5">
                 <div className="flex items-center gap-2 min-w-0">
                     {/* Checkbox */}
-                    {!isAssignmentMode && (
+                    {!isAssignmentMode && !isPrintPage && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onPositionSelect?.(ids) }}
                             className={`w-5 h-5 rounded shrink-0 border-2 transition-all flex items-center justify-center
@@ -305,13 +310,16 @@ const MergedBigCell = React.memo<{
                             }
                         </span>
                         <span className="text-[9px] bg-indigo-100 dark:bg-indigo-800/50 text-indigo-600 dark:text-indigo-300 px-1.5 py-0.5 rounded-full font-bold shrink-0 whitespace-nowrap">
-                            {mergedCount} ô gộp
+                            {mergedLevels && mergedLevels.length > 0 
+                                ? `Gộp ${mergedLevels.length} tầng`
+                                : `${mergedCount} ô gộp`
+                            }
                         </span>
                     </div>
                 </div>
 
                 <div className="flex items-center gap-1 shrink-0">
-                    {!isAssignmentMode && isOccupied && aggregatedItems.length > 0 && (
+                    {!isAssignmentMode && isOccupied && aggregatedItems.length > 0 && !isPrintPage && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onViewDetails?.(pos.lot_id!) }}
                             className="text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors"
@@ -320,13 +328,13 @@ const MergedBigCell = React.memo<{
                             <Eye size={14} />
                         </button>
                     )}
-                    {isOccupied && (
+                    {isOccupied && !isPrintPage && (
                         <Package size={14} className="text-amber-500 dark:text-amber-400" />
                     )}
                     {isTargetLot && (
                         <div className="w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse" />
                     )}
-                    {!isAssignmentMode && (
+                    {!isAssignmentMode && !isPrintPage && (
                         <button
                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPositionMenu?.(pos, e) }}
                             className="text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
@@ -339,44 +347,74 @@ const MergedBigCell = React.memo<{
             </div>
 
             {/* Content: Aggregated product summary */}
-            {aggregatedItems.length > 0 ? (
-                <div className="flex flex-col gap-0.5 flex-1">
-                    <div className="grid gap-y-0.5 items-start" style={{ gridTemplateColumns: '1fr auto', columnGap: '6px' }}>
-                        {aggregatedItems.slice(0, 2).map((item, idx) => {
-                            const nameObj = displayInternalCode && item.internal_name ? item.internal_name : item.product_name;
-                            const codeObj = displayInternalCode && item.internal_code ? item.internal_code : item.sku;
-                            return (
-                                <React.Fragment key={idx}>
-                                    <span className="text-[10px] text-gray-600 dark:text-gray-300">{nameObj}{nameObj ? ` (${codeObj || '-'})` : (codeObj || '-')}</span>
-                                    <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap text-right">
-                                        : {item.quantity} {item.unit || '-'}
-                                    </span>
-                                </React.Fragment>
-                            )
-                        })}
+            {aggregatedItems.length > 0 || (levelGroups && levelGroups.length > 0) ? (
+                <div className="flex flex-col gap-1.5 flex-1 overflow-y-auto custom-scrollbar pr-1">
+                    {levelGroups && levelGroups.length > 0 ? (
+                        <div className="space-y-2">
+                            {levelGroups.map((group, gIdx) => (
+                                <div key={gIdx} className="border-l-2 border-indigo-200 dark:border-indigo-800 pl-2 py-0.5 bg-indigo-50/30 dark:bg-indigo-900/10 rounded-r">
+                                    <div className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 mb-1 flex items-center gap-1">
+                                        <Layers size={10} /> {group.name}
+                                    </div>
+                                    <div className="grid gap-y-0.5 items-start" style={{ gridTemplateColumns: '1fr auto', columnGap: '6px' }}>
+                                        {group.items.length > 0 ? (
+                                            group.items.map((item, idx) => {
+                                                const nameObj = displayInternalCode && item.internal_name ? item.internal_name : item.product_name;
+                                                const codeObj = displayInternalCode && item.internal_code ? item.internal_code : item.sku;
+                                                return (
+                                                    <React.Fragment key={idx}>
+                                                        <span className="text-[10px] text-gray-600 dark:text-gray-300 line-clamp-1">{nameObj}{nameObj ? ` (${codeObj || '-'})` : (codeObj || '-')}</span>
+                                                        <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap text-right">
+                                                            : {item.quantity} {item.unit || '-'}
+                                                        </span>
+                                                    </React.Fragment>
+                                                )
+                                            })
+                                        ) : (
+                                            <span className="text-[10px] text-gray-400 dark:text-gray-500 italic col-span-2">Trống</span>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="grid gap-y-0.5 items-start" style={{ gridTemplateColumns: '1fr auto', columnGap: '6px' }}>
+                            {aggregatedItems.slice(0, isMobile ? 3 : 5).map((item, idx) => {
+                                const nameObj = displayInternalCode && item.internal_name ? item.internal_name : item.product_name;
+                                const codeObj = displayInternalCode && item.internal_code ? item.internal_code : item.sku;
+                                return (
+                                    <React.Fragment key={idx}>
+                                        <span className="text-[10px] text-gray-600 dark:text-gray-300">{nameObj}{nameObj ? ` (${codeObj || '-'})` : (codeObj || '-')}</span>
+                                        <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap text-right">
+                                            : {item.quantity} {item.unit || '-'}
+                                        </span>
+                                    </React.Fragment>
+                                )
+                            })}
 
-                        {aggregatedItems.length > 2 && (() => {
-                            const others = aggregatedItems.slice(2);
-                            const unitSums = others.reduce((acc, curr) => {
-                                const unit = curr.unit || '-';
-                                acc[unit] = (acc[unit] || 0) + curr.quantity;
-                                return acc;
-                            }, {} as Record<string, number>);
+                            {aggregatedItems.length > (isMobile ? 3 : 5) && (() => {
+                                const others = aggregatedItems.slice(isMobile ? 3 : 5);
+                                const unitSums = others.reduce((acc: any, curr: any) => {
+                                    const unit = curr.unit || '-';
+                                    acc[unit] = (acc[unit] || 0) + curr.quantity;
+                                    return acc;
+                                }, {} as Record<string, number>);
 
-                            const summaryText = Object.entries(unitSums)
-                                .map(([unit, qty]) => `${qty} ${unit}`)
-                                .join(' và ');
+                                const summaryText = Object.entries(unitSums)
+                                    .map(([unit, qty]) => `${qty} ${unit}`)
+                                    .join(' và ');
 
-                            return (
-                                <React.Fragment>
-                                    <span className="text-[10px] text-gray-500 dark:text-gray-400 italic">Các mặt hàng khác</span>
-                                    <span className="text-[10px] font-mono text-blue-500 dark:text-blue-500 font-bold whitespace-nowrap text-right">
-                                        : {summaryText}
-                                    </span>
-                                </React.Fragment>
-                            );
-                        })()}
-                    </div>
+                                return (
+                                    <React.Fragment>
+                                        <span className="text-[10px] text-gray-500 dark:text-gray-400 italic">Các mặt hàng khác</span>
+                                        <span className="text-[10px] font-mono text-blue-500 dark:text-blue-500 font-bold whitespace-nowrap text-right">
+                                            : {summaryText}
+                                        </span>
+                                    </React.Fragment>
+                                );
+                            })()}
+                        </div>
+                    )}
                 </div>
             ) : (
                 <div className="flex-1 flex items-center justify-center">
@@ -384,17 +422,19 @@ const MergedBigCell = React.memo<{
                 </div>
             )}
 
-            {/* Footer: original position codes */}
-            <div className="flex items-center gap-1 mt-1 pt-1 border-t border-indigo-200/50 dark:border-indigo-700/30 overflow-hidden">
-                <span className="text-[7px] text-gray-400 dark:text-gray-500 shrink-0">Gồm:</span>
-                <div className="flex gap-0.5 overflow-hidden whitespace-nowrap">
-                    {originalCodes.map((code: string, i: number) => (
-                        <span key={i} className="text-[7px] px-0.5 bg-white/60 dark:bg-gray-800/40 rounded text-gray-500 dark:text-gray-400 font-mono">
-                            {code}
-                        </span>
-                    ))}
+            {/* Footer: original position codes - Hide in print view */}
+            {!isPrintPage && (
+                <div className="flex items-center gap-1 mt-1 pt-1 border-t border-indigo-200/50 dark:border-indigo-700/30 overflow-hidden">
+                    <span className="text-[7px] text-gray-400 dark:text-gray-500 shrink-0">Gồm:</span>
+                    <div className="flex gap-0.5 overflow-hidden whitespace-nowrap">
+                        {originalCodes.map((code: string, i: number) => (
+                            <span key={i} className="text-[7px] px-0.5 bg-white/60 dark:bg-gray-800/40 rounded text-gray-500 dark:text-gray-400 font-mono">
+                                {code}
+                            </span>
+                        ))}
+                    </div>
                 </div>
-            </div>
+            )}
         </div>
     )
 }, (prev, next) => {
@@ -407,7 +447,8 @@ const MergedBigCell = React.memo<{
         prev.aggregatedItems === next.aggregatedItems &&
         prev.isAssignmentMode === next.isAssignmentMode &&
         prev.isHighlightBlinking === next.isHighlightBlinking &&
-        prev.displayInternalCode === next.displayInternalCode
+        prev.displayInternalCode === next.displayInternalCode &&
+        prev.isPrintPage === next.isPrintPage
 })
 
 interface FlexibleZoneGridProps {
@@ -436,6 +477,8 @@ interface FlexibleZoneGridProps {
     isGrouped?: boolean
     mergedZones?: Set<string>
     onToggleMergeZone?: (zoneId: string) => void
+    isCapturing?: boolean
+    isPrintPage?: boolean
 }
 
 export default function FlexibleZoneGrid({
@@ -463,7 +506,9 @@ export default function FlexibleZoneGrid({
     displayInternalCode = false,
     isGrouped = false,
     mergedZones = new Set(),
-    onToggleMergeZone
+    onToggleMergeZone,
+    isCapturing = false,
+    isPrintPage = false
 }: FlexibleZoneGridProps) {
     const [isMobile, setIsMobile] = React.useState(false)
 
@@ -576,6 +621,7 @@ export default function FlexibleZoneGrid({
                     onPositionSelect={onPositionSelect}
                     onViewDetails={onViewDetails}
                     onPositionMenu={onPositionMenu}
+                    isPrintPage={isPrintPage}
                 />
             )
         }
@@ -594,16 +640,16 @@ export default function FlexibleZoneGrid({
                 isAssignmentMode={isAssignmentMode}
                 isHighlightBlinking={isHighlightBlinking}
                 displayInternalCode={displayInternalCode}
-                isGrouped={isGrouped}
                 onPositionSelect={onPositionSelect}
                 onViewDetails={onViewDetails}
                 onPositionMenu={onPositionMenu}
+                isPrintPage={isPrintPage}
             />
         )
     }
 
     // Build a virtual merged position from an array of positions
-    function buildMergedPosition(positions: any[]) {
+    function buildMergedPosition(positions: any[], mergedLevels?: string[]) {
         const sorted = [...positions].sort((a, b) =>
             (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
         )
@@ -631,16 +677,75 @@ export default function FlexibleZoneGrid({
             realIds: sorted.map((p: any) => p.id),
             isVirtual: true,
             mergedCount: sorted.length,
-            originalCodes: codes
+            originalCodes: codes,
+            mergedLevels: mergedLevels
         }
     }
 
     // Render positions grid — if zone is merged, render as single big cell
     function renderPositionsGrid(zone: any, cellHeight: number, cellWidth: number, positionColumns: number, breadcrumb?: string[]) {
-        const isMerged = mergedZones.has(zone.id) && zone.positions.length > 1
+        const nameUpper = zone.name.toUpperCase()
+        const isSanh = nameUpper.startsWith('SẢNH') || nameUpper.startsWith('SÀNH') || nameUpper.startsWith('SANH')
+        const isBinMerged = mergedZones.has(zone.id) || (isGrouped && isSanh)
+        
+        const isBigBin = isGrouped && (zone.id.startsWith('v-bin-') || zone.name.startsWith('Ô ') || isSanh)
+        
+        let targetPositions = zone.positions || []
+        if (isBinMerged && isBigBin) {
+            // Collect all positions from all descendant levels
+            const allPositions: any[] = [...zone.positions]
+            const collectFromChildren = (node: any) => {
+                node.children.forEach((child: any) => {
+                    allPositions.push(...child.positions)
+                    collectFromChildren(child)
+                })
+            }
+            collectFromChildren(zone)
+            targetPositions = allPositions
+        }
+
+        const isMerged = isBinMerged && targetPositions.length > 1
 
         if (isMerged) {
-            const mergedPos = buildMergedPosition(zone.positions)
+            const levelNames: string[] = []
+            const levelGroups: Array<{ name: string, items: any[] }> = []
+
+            if (isBinMerged && isBigBin) {
+                const collectFromChildren = (node: any) => {
+                    node.children.forEach((child: any) => {
+                        levelNames.push(child.name)
+                        
+                        // Collect items for this level
+                        const levelItemMap = new Map<string, any>()
+                        child.positions.forEach((p: any) => {
+                            if (p.lot_id && lotInfo[p.lot_id]?.items) {
+                                lotInfo[p.lot_id].items.forEach((item: any) => {
+                                    const key = `${item.sku || ''}_${item.unit || ''}`
+                                    const existing = levelItemMap.get(key)
+                                    if (existing) {
+                                        existing.quantity += (item.quantity || 0)
+                                    } else {
+                                        levelItemMap.set(key, { ...item, quantity: item.quantity || 0 })
+                                    }
+                                })
+                            }
+                        })
+                        
+                        // Always push level, if size is 0 and it's print page, it will show "Trống"
+                        if (levelItemMap.size > 0 || isPrintPage) {
+                            levelGroups.push({
+                                name: child.name,
+                                items: Array.from(levelItemMap.values())
+                            })
+                        }
+
+                        collectFromChildren(child)
+                    })
+                }
+                collectFromChildren(zone)
+            }
+
+            const mergedPos = buildMergedPosition(targetPositions, levelNames)
             const realIds = mergedPos.realIds
             const isOccupied = realIds.some((id: string) => occupiedIds.has(id)) || !!mergedPos.lot_id
             const isSelected = realIds.some((id: string) => selectedPositionIds.has(id))
@@ -649,7 +754,7 @@ export default function FlexibleZoneGrid({
 
             // Aggregate all lot items from all real positions
             const itemMap = new Map<string, { product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string }>()
-            zone.positions.forEach((p: any) => {
+            targetPositions.forEach((p: any) => {
                 if (p.lot_id && lotInfo[p.lot_id]?.items) {
                     lotInfo[p.lot_id].items.forEach((item: any) => {
                         const key = `${item.sku || ''}_${item.unit || ''}`
@@ -665,7 +770,7 @@ export default function FlexibleZoneGrid({
             const aggregatedItems = Array.from(itemMap.values())
 
             return (
-                <div className="grid gap-1.5" style={{ gridTemplateColumns: '1fr' }}>
+                <div className="grid gap-1.5 print:gap-0.5 h-full" style={{ gridTemplateColumns: '1fr' }}>
                     <MergedBigCell
                         key={mergedPos.id}
                         pos={mergedPos}
@@ -681,6 +786,9 @@ export default function FlexibleZoneGrid({
                         onPositionSelect={onPositionSelect}
                         onViewDetails={onViewDetails}
                         onPositionMenu={onPositionMenu}
+                        mergedLevels={levelNames}
+                        levelGroups={levelGroups}
+                        isPrintPage={isPrintPage}
                     />
                 </div>
             )
@@ -688,7 +796,7 @@ export default function FlexibleZoneGrid({
 
         return (
             <div
-                className="grid gap-1.5"
+                className="grid gap-1.5 print:gap-0.5"
                 style={{
                     gridTemplateColumns: cellWidth > 0
                         ? `repeat(${positionColumns}, ${cellWidth}px)`
@@ -711,8 +819,11 @@ export default function FlexibleZoneGrid({
         const hasChildren = zone.children.length > 0
         const hasPositions = zone.positions.length > 0
 
-        const isBigBin = isGrouped && (zone.id.startsWith('v-bin-') || zone.name.startsWith('Ô '))
+        const nameUpper = zone.name.toUpperCase()
+        const isSanh = nameUpper.startsWith('SẢNH') || nameUpper.startsWith('SÀNH') || nameUpper.startsWith('SANH')
+        const isBigBin = isGrouped && (zone.id.startsWith('v-bin-') || zone.name.toUpperCase().startsWith('Ô ') || isSanh)
         const isLevelUnderBin = isGrouped && (zone.id.startsWith('v-lvl-') || zone.name.toUpperCase().startsWith('TẦNG '))
+        const shouldRenderGrid = hasPositions || (mergedZones.has(zone.id) && isBigBin)
 
         let positionColumns = layout?.position_columns ?? 8
         if (isMobile && positionColumns > 2) {
@@ -851,7 +962,7 @@ export default function FlexibleZoneGrid({
                 return (
                     <div
                         key={zone.id}
-                        className={`rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800 ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
+                        className={`flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden print:overflow-visible bg-white dark:bg-gray-800  print:break-inside-avoid-page ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
                     >
                         {pageBreakIds.has(zone.id) && (
                             <div className="hidden print:block text-center border-b border-dashed border-gray-300 mb-4 pb-2 text-[10px] text-gray-400 italic">
@@ -859,7 +970,7 @@ export default function FlexibleZoneGrid({
                             </div>
                         )}
                         <div
-                            className={`flex items-center justify-between px-4 border-b ${isLevelUnderBin ? 'py-1' : isBigBin ? 'py-1.5' : 'py-3'} ${collapsible ? 'cursor-pointer hover:bg-emerald-50/50' : ''}`}
+                            className={`flex items-center justify-between px-4 border-b print:py-1 ${isLevelUnderBin ? 'py-1' : isBigBin ? 'py-1.5' : 'py-3'} ${collapsible ? 'cursor-pointer hover:bg-emerald-50/50' : ''}`}
                             style={headerColor
                                 ? { backgroundColor: headerColor, borderColor: headerColor }
                                 : { background: 'linear-gradient(to right, rgb(236 253 245), white)' }
@@ -877,7 +988,7 @@ export default function FlexibleZoneGrid({
                                     style={{ backgroundColor: headerTextColor || (headerColor ? 'rgba(255,255,255,0.8)' : '#22c55e') }}
                                 />
                                 <div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 print-break-after-avoid">
                                         {!isAssignmentMode && totalSelectableCount > 0 && onBulkSelect && (
                                             <div className="flex items-center justify-center shrink-0" onClick={e => e.stopPropagation()}>
                                                 <input
@@ -912,8 +1023,9 @@ export default function FlexibleZoneGrid({
                                     )}
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2 print:hidden">
-                                {isGrouped && isLevelUnderBin && zone.positions.length > 1 && (
+                            <div className={`flex items-center gap-2 print:hidden ${isCapturing ? "hidden" : ""}`}>
+                                {/* Hide manual merge button in print view */}
+                                {false && isPrintPage && isGrouped && (isLevelUnderBin || isBigBin) && (zone.positions.length > 1 || zone.totalPositions > 1) && (
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation()
@@ -921,8 +1033,8 @@ export default function FlexibleZoneGrid({
                                         }}
                                         className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-all ${
                                             mergedZones.has(zone.id)
-                                                ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                                                : 'bg-white/80 text-indigo-600 border border-indigo-200 hover:bg-indigo-50'
+                                                ? (headerColor ? 'bg-white text-black' : 'bg-indigo-600 text-white shadow-sm')
+                                                : (headerColor ? 'bg-black/20 text-white border border-white/30' : 'bg-white/80 text-indigo-600 border border-indigo-200 hover:bg-indigo-50')
                                         }`}
                                         title={mergedZones.has(zone.id) ? "Tắt gộp ô lớn" : "Gộp thành ô lớn (hàng cồng kềnh)"}
                                     >
@@ -982,15 +1094,15 @@ export default function FlexibleZoneGrid({
                                         </button>
                                     </div>
                                 )}
-                                {onTogglePageBreak && (
+                                {false && isPrintPage && onTogglePageBreak && (
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation()
-                                            onTogglePageBreak(zone.id)
+                                            onTogglePageBreak?.(zone.id)
                                         }}
                                         className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${pageBreakIds.has(zone.id)
                                             ? 'bg-orange-500 text-white hover:bg-orange-600'
-                                            : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                                            : (headerColor ? 'bg-black/20 text-white border border-white/30' : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200')
                                             }`}
                                         title={pageBreakIds.has(zone.id) ? "Bỏ ngắt trang" : "Ngắt trang tại đây"}
                                     >
@@ -1003,7 +1115,7 @@ export default function FlexibleZoneGrid({
                                         {pageBreakIds.has(zone.id) ? 'Đã ngắt trang' : 'Ngắt trang'}
                                     </button>
                                 )}
-                                {onPrintZone && (
+                                {!isPrintPage && onPrintZone && depth <= 1 && (
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation()
@@ -1031,12 +1143,12 @@ export default function FlexibleZoneGrid({
                             </div>
                         </div>
 
-                        <div className="p-2">
+                        <div className="p-2 flex-1 flex flex-col print:flex-none print:h-auto">
                             {!isCollapsed && (
-                                <div className="p-2 bg-emerald-50/10 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800">
-                                    {hasPositions && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
-                                    {hasChildren && (
-                                        <div className="mt-2 space-y-1.5 px-1 pb-1">
+                                <div className="p-3 flex-1 flex flex-col bg-white/50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-800 print:flex-none print:h-auto">
+                                    {shouldRenderGrid && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
+                                    {hasChildren && !mergedZones.has(zone.id) && (
+                                        <div className="mt-2 print:mt-0 space-y-1.5 px-1 pb-1">
                                             {zone.children.map(child => renderZone(child as any, depth + 1, currentBreadcrumb))}
                                         </div>
                                     )}
@@ -1050,7 +1162,7 @@ export default function FlexibleZoneGrid({
                 return (
                     <div
                         key={zone.id}
-                        className={`rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800 ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
+                        className={`flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden print:overflow-visible bg-white dark:bg-gray-800  print:break-inside-avoid-page ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
                         style={overrideBgStyle}
                     >
                         {pageBreakIds.has(zone.id) && (
@@ -1059,7 +1171,7 @@ export default function FlexibleZoneGrid({
                             </div>
                         )}
                         <div
-                            className={`flex items-center justify-between px-4 border-b cursor-pointer ${isLevelUnderBin ? 'py-1' : isBigBin ? 'py-1.5' : 'py-3'}`}
+                            className={`flex items-center justify-between px-4 border-b cursor-pointer print-break-after-avoid print:py-1 ${isLevelUnderBin ? 'py-1' : isBigBin ? 'py-1.5' : 'py-3'}`}
                             style={headerColor
                                 ? { backgroundColor: headerColor, borderColor: headerColor }
                                 : { background: 'linear-gradient(to right, rgb(236 253 245), white)' }
@@ -1112,8 +1224,9 @@ export default function FlexibleZoneGrid({
                                     )}
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2 print:hidden">
-                                {isGrouped && isLevelUnderBin && zone.positions.length > 1 && (
+                            <div className={`flex items-center gap-2 print:hidden ${isCapturing ? "hidden" : ""}`}>
+                                {/* Hide manual merge button in print view */}
+                                {false && isPrintPage && isGrouped && (isLevelUnderBin || isBigBin) && (zone.positions.length > 1 || zone.totalPositions > 1) && (
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation()
@@ -1121,8 +1234,8 @@ export default function FlexibleZoneGrid({
                                         }}
                                         className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-all ${
                                             mergedZones.has(zone.id)
-                                                ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                                                : 'bg-white/80 text-indigo-600 border border-indigo-200 hover:bg-indigo-50'
+                                                ? (headerColor ? 'bg-white text-black' : 'bg-indigo-600 text-white shadow-sm')
+                                                : (headerColor ? 'bg-black/20 text-white border border-white/30' : 'bg-white/80 text-indigo-600 border border-indigo-200 hover:bg-indigo-50')
                                         }`}
                                         title={mergedZones.has(zone.id) ? "Tắt gộp ô lớn" : "Gộp thành ô lớn (hàng cồng kềnh)"}
                                     >
@@ -1182,15 +1295,15 @@ export default function FlexibleZoneGrid({
                                         </button>
                                     </div>
                                 )}
-                                {onTogglePageBreak && (
+                                {false && isPrintPage && onTogglePageBreak && (
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation()
-                                            onTogglePageBreak(zone.id)
+                                            onTogglePageBreak?.(zone.id)
                                         }}
                                         className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${pageBreakIds.has(zone.id)
                                             ? 'bg-orange-500 text-white hover:bg-orange-600'
-                                            : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                                            : (headerColor ? 'bg-black/20 text-white border border-white/30' : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200')
                                             }`}
                                         title={pageBreakIds.has(zone.id) ? "Bỏ ngắt trang" : "Ngắt trang tại đây"}
                                     >
@@ -1203,7 +1316,7 @@ export default function FlexibleZoneGrid({
                                         {pageBreakIds.has(zone.id) ? 'Đã ngắt trang' : 'Ngắt trang'}
                                     </button>
                                 )}
-                                {onPrintZone && (
+                                {!isPrintPage && onPrintZone && depth <= 1 && (
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation()
@@ -1232,16 +1345,16 @@ export default function FlexibleZoneGrid({
                         </div>
 
                         {!isCollapsed && (
-                            <div className="p-2 bg-emerald-50/10 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800">
-                                {hasPositions && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
-                                {hasChildren && (
+                            <div className="p-2 flex-1 flex flex-col bg-emerald-50/10 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800 print:flex-none print:h-auto print:overflow-visible">
+                                {shouldRenderGrid && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
+                                {hasChildren && !mergedZones.has(zone.id) && (
                                     <div
                                         className={
                                             childLayout === 'horizontal'
                                                 ? 'flex gap-1.5 overflow-x-auto pb-2'
                                                 : childLayout === 'grid'
-                                                    ? `grid gap-1.5`
-                                                    : 'space-y-1.5'
+                                                    ? `grid gap-1.5 print:gap-0.5`
+                                                    : 'space-y-1.5 print:space-y-0.5'
                                         }
                                         style={
                                             childLayout === 'grid' && childColumns > 0
@@ -1259,7 +1372,7 @@ export default function FlexibleZoneGrid({
                                             return (
                                                 <div
                                                     key={child.id}
-                                                    className={childLayout === 'horizontal' ? 'shrink-0 grow' : ''}
+                                                    className={childLayout === 'horizontal' ? 'shrink-0 grow' : (childLayout === 'grid' ? 'h-full print:flex-none' : 'print:h-auto print:flex-none')}
                                                     style={childLayout === 'horizontal' && childWidth > 0 ? { width: `${childWidth}px` } : undefined}
                                                 >
                                                     {renderZone(child as any, depth + 1, currentBreadcrumb, rowStyle)}
@@ -1278,11 +1391,11 @@ export default function FlexibleZoneGrid({
                 return (
                     <div
                         key={zone.id}
-                        className={`group rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden ${depth === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50'}`}
+                        className={`group flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden print:overflow-visible ${isPrintPage ? 'h-full' : ''} print:break-inside-avoid-page ${depth === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50'}`}
                         style={overrideBgStyle}
                     >
                         <div
-                            className={`flex items-center justify-between px-4 border-b cursor-pointer transition-colors ${isLevelUnderBin ? 'py-1' : isBigBin ? 'py-1.5' : 'py-2'} ${headerColor ? '' : `border-gray-100 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/50 ${depth === 0 ? 'bg-gray-50 dark:bg-gray-900/50' : ''}`}`}
+                            className={`flex items-center justify-between px-4 border-b cursor-pointer transition-colors print-break-after-avoid print:py-1 ${isLevelUnderBin ? 'py-1' : isBigBin ? 'py-1.5' : 'py-2'} ${headerColor ? '' : `border-gray-100 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/50 ${depth === 0 ? 'bg-gray-50 dark:bg-gray-900/50' : ''}`}`}
                             style={headerColor
                                 ? { backgroundColor: headerColor, borderColor: headerColor }
                                 : undefined
@@ -1331,95 +1444,136 @@ export default function FlexibleZoneGrid({
                                 )}
                             </div>
 
-                            {isGrouped && isLevelUnderBin && zone.positions.length > 1 && (
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        onToggleMergeZone?.(zone.id)
-                                    }}
-                                    className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-all ${
-                                        mergedZones.has(zone.id)
-                                            ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                                            : 'bg-white/80 text-indigo-600 border border-indigo-200 hover:bg-indigo-50'
-                                    }`}
-                                    title={mergedZones.has(zone.id) ? "Tắt gộp ô lớn" : "Gộp thành ô lớn (hàng cồng kềnh)"}
-                                >
-                                    <Maximize2 size={11} />
-                                    {mergedZones.has(zone.id) ? 'Đang gộp' : 'Gộp ô'}
-                                </button>
-                            )}
+                            <div className={`flex items-center gap-2 print:hidden ${isCapturing ? 'hidden' : ''}`}>
+                                {/* Hide manual merge button in print view */}
+                                {false && isPrintPage && isGrouped && (isLevelUnderBin || isBigBin) && (zone.positions.length > 1 || zone.totalPositions > 1) && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onToggleMergeZone?.(zone.id)
+                                        }}
+                                        className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-all ${
+                                            (mergedZones.has(zone.id) || (isGrouped && isSanh))
+                                                ? (headerColor ? 'bg-white text-black' : 'bg-indigo-600 text-white shadow-sm')
+                                                : (headerColor ? 'bg-black/20 text-white border border-white/30' : 'bg-white/80 text-indigo-600 border border-indigo-200 hover:bg-indigo-50')
+                                        }`}
+                                        title={mergedZones.has(zone.id) ? "Tắt gộp ô lớn" : "Gộp thành ô lớn (hàng cồng kềnh)"}
+                                    >
+                                        <Maximize2 size={11} />
+                                        { (mergedZones.has(zone.id) || (isGrouped && isSanh)) ? 'Đang gộp' : 'Gộp ô'}
+                                    </button>
+                                )}
 
-                            {depth === 0 && onUpdateCollapsedZones && (
-                                <div className="flex items-center gap-1 mr-2 bg-black/10 rounded overflow-hidden">
+                                {false && isPrintPage && onTogglePageBreak && (
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation()
-                                            const descendantIds = zone.descendantIds
-                                            onUpdateCollapsedZones(prev => {
-                                                const next = new Set(prev)
-                                                next.delete(zone.id)
-                                                descendantIds.forEach(id => next.add(id))
-                                                return next
-                                            })
+                                            onTogglePageBreak?.(zone.id)
                                         }}
-                                        className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
-                                        title="Bung Dãy/Sảnh (Giấu Vị trí)"
+                                        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${pageBreakIds.has(zone.id)
+                                            ? 'bg-orange-500 text-white hover:bg-orange-600'
+                                            : (headerColor ? 'bg-black/20 text-white border border-white/30' : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200')
+                                            }`}
+                                        title={pageBreakIds.has(zone.id) ? "Bỏ ngắt trang" : "Ngắt trang tại đây"}
                                     >
-                                        Mở Dãy
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M3 14h18" />
+                                            <path d="M3 10h18" />
+                                            <path d="M12 3v4" />
+                                            <path d="M12 17v4" />
+                                        </svg>
+                                        {pageBreakIds.has(zone.id) ? 'Đã ngắt trang' : 'Ngắt trang'}
                                     </button>
-                                    <div className="w-px h-3 bg-white/30"></div>
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation()
-                                            const descendantIds = zone.descendantIds
-                                            onUpdateCollapsedZones(prev => {
-                                                const next = new Set(prev)
-                                                next.delete(zone.id)
-                                                descendantIds.forEach(id => next.delete(id))
-                                                return next
-                                            })
-                                        }}
-                                        className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
-                                        title="Mở bung toàn bộ lưới Vị trí"
-                                    >
-                                        Mở Hết
-                                    </button>
-                                    <div className="w-px h-3 bg-white/30"></div>
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation()
-                                            onUpdateCollapsedZones(prev => {
-                                                const next = new Set(prev)
-                                                next.add(zone.id)
-                                                return next
-                                            })
-                                        }}
-                                        className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
-                                        title="Gập gọn Kho này lại"
-                                    >
-                                        Thu Gọn
-                                    </button>
-                                </div>
-                            )}
+                                )}
 
-                            {isDesignMode && (
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        onConfigureZone?.(zone)
-                                    }}
-                                    className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-xs font-medium transition-colors"
-                                >
-                                    <Settings size={12} />
-                                    Cấu hình
-                                </button>
-                            )}
+                                {depth === 0 && onUpdateCollapsedZones && (
+                                    <div className="flex items-center gap-1 mr-2 bg-black/10 rounded overflow-hidden">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                const descendantIds = zone.descendantIds
+                                                onUpdateCollapsedZones(prev => {
+                                                    const next = new Set(prev)
+                                                    next.delete(zone.id)
+                                                    descendantIds.forEach(id => next.add(id))
+                                                    return next
+                                                })
+                                            }}
+                                            className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
+                                            title="Bung Dãy/Sảnh (Giấu Vị trí)"
+                                        >
+                                            Mở Dãy
+                                        </button>
+                                        <div className="w-px h-3 bg-white/30"></div>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                const descendantIds = zone.descendantIds
+                                                onUpdateCollapsedZones(prev => {
+                                                    const next = new Set(prev)
+                                                    next.delete(zone.id)
+                                                    descendantIds.forEach(id => next.delete(id))
+                                                    return next
+                                                })
+                                            }}
+                                            className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
+                                            title="Mở bung toàn bộ lưới Vị trí"
+                                        >
+                                            Mở Hết
+                                        </button>
+                                        <div className="w-px h-3 bg-white/30"></div>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                onUpdateCollapsedZones(prev => {
+                                                    const next = new Set(prev)
+                                                    next.add(zone.id)
+                                                    return next
+                                                })
+                                            }}
+                                            className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
+                                            title="Gập gọn Kho này lại"
+                                        >
+                                            Thu Gọn
+                                        </button>
+                                    </div>
+                                )}
+
+                                {!isPrintPage && onPrintZone && depth <= 1 && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onPrintZone(zone.id)
+                                        }}
+                                        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
+                                            headerColor ? 'bg-black/20 text-white border border-white/30' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                                        }`}
+                                        title="In sơ đồ zone này"
+                                    >
+                                        <Printer size={12} />
+                                        In sơ đồ
+                                    </button>
+                                )}
+
+                                {isDesignMode && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onConfigureZone?.(zone)
+                                        }}
+                                        className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-xs font-medium transition-colors"
+                                    >
+                                        <Settings size={12} />
+                                        Cấu hình
+                                    </button>
+                                )}
+                            </div>
                         </div>
 
                         {!isCollapsed && (
-                            <div className="p-1.5 bg-emerald-50/5 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800">
-                                {hasPositions && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
-                                {hasChildren && (
+                            <div className="p-1.5 flex-1 flex flex-col bg-emerald-50/5 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800 print:flex-none print:h-auto print:overflow-visible">
+                                {shouldRenderGrid && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
+                                {hasChildren && !mergedZones.has(zone.id) && (
                                     <div className="space-y-1.5">
                                         {zone.children.map(child => renderZone(child as any, depth + 1, currentBreadcrumb))}
                                     </div>
@@ -1432,8 +1586,11 @@ export default function FlexibleZoneGrid({
     }
 
     return (
-        <div className="space-y-2">
+        <div className="space-y-2 print:space-y-0">
             {zoneTree.map(root => renderZone(root as any))}
         </div>
     )
 }
+
+
+

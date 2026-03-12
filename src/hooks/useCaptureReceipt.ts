@@ -38,14 +38,18 @@ export function useCaptureReceipt({
             const node = document.getElementById(nodeId)
             if (!node) throw new Error(`Không tìm thấy vùng in (node #${nodeId})`)
 
-            const width = isLandscape ? landscapeWidth : portraitWidth
+            // Measure the actual internal size of the content
+            const scrollWidth = node.scrollWidth
+            const scrollHeight = node.scrollHeight
 
             const dataUrl = await toJpeg(node, {
                 quality,
                 backgroundColor: '#ffffff',
                 cacheBust: true,
                 pixelRatio,
-                width,
+                // Add a small buffer to the width to prevent right-edge clipping
+                width: scrollWidth + 40, 
+                height: scrollHeight
             })
 
             const a = document.createElement('a')

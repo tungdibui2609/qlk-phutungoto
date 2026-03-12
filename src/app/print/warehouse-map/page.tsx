@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, Printer, Download, Search, Check, ChevronDown, ChevronRight, MapPin, X, Settings as SettingsIcon, Layout, Monitor, Layers } from 'lucide-react'
+import { Loader2, Printer, Download, Search, Check, ChevronDown, ChevronRight, MapPin, X, Settings as SettingsIcon, Layout, Monitor, Layers, Maximize2 } from 'lucide-react'
 import { toJpeg } from 'html-to-image'
 import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
@@ -12,6 +12,8 @@ import { EditableText } from '@/components/print/PrintHelpers'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
 import { Database } from '@/lib/database.types'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
+import { exportWarehouseToExcel, exportWarehouseGridToExcel } from '@/lib/warehouseExcelExport'
+import { FileSpreadsheet } from 'lucide-react'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -73,7 +75,17 @@ export default function WarehouseMapPrintPage() {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false)
     const [zoneSearchTerm, setZoneSearchTerm] = useState('')
     const [expandedZoneIds, setExpandedZoneIds] = useState<Set<string>>(new Set())
-    const [isGrouped, setIsGrouped] = useState(false)
+    const [isGrouped, setIsGrouped] = useState(true)
+    const [mergedZones, setMergedZones] = useState<Set<string>>(new Set())
+
+    const toggleMergeZone = (zoneId: string) => {
+        setMergedZones(prev => {
+            const next = new Set(prev)
+            if (next.has(zoneId)) next.delete(zoneId)
+            else next.add(zoneId)
+            return next
+        })
+    }
 
     const [pageBreakZoneIds, setPageBreakZoneIds] = useState<Set<string>>(new Set())
 
@@ -117,6 +129,13 @@ export default function WarehouseMapPrintPage() {
         initialCompanyInfo,
         fallbackToProfile: !initialCompanyInfo
     })
+
+    useEffect(() => {
+        const pageBreaks = searchParams.get('pageBreaks')
+        if (pageBreaks) {
+            setPageBreakZoneIds(new Set(pageBreaks.split(',')))
+        }
+    }, [searchParams])
 
     useEffect(() => {
         fetchData()
@@ -273,6 +292,23 @@ export default function WarehouseMapPrintPage() {
     const displayZones = groupedData.zones
     const displayPositions = groupedData.positions
 
+    // Auto-merge eligible zones on load
+    useEffect(() => {
+        if (loading || displayZones.length === 0) return
+        
+        // Only run this once when data is first loaded or when system/zone changes
+        const autoMerged = new Set<string>()
+        displayZones.forEach((z: any) => {
+            const level = z.level || 0
+            const isLevelUnderBin = level >= 10
+            const isBigBin = z.type === 'big-bin'
+            if ((isLevelUnderBin || isBigBin) && (z.positions?.length > 1 || (z.totalPositions || 0) > 1)) {
+                autoMerged.add(z.id)
+            }
+        })
+        setMergedZones(autoMerged)
+    }, [loading, systemType, selectedZoneId, displayZones.length]) // Use displayZones.length as a proxy for data readiness
+
     // Helper for O(1) zone filtering
     const descendantIdSet = useMemo(() => {
         if (!selectedZoneId) return null
@@ -366,6 +402,167 @@ export default function WarehouseMapPrintPage() {
 
     const handleDownload = () => handleCapture(orientation === 'landscape', `so-do-kho-${new Date().toISOString().split('T')[0]}.jpg`)
 
+    const getZonePath = (zoneId: string, zoneMap: Record<string, Zone>) => {
+        const path: Zone[] = []
+        let currentId = zoneId
+        while (currentId) {
+            const z = zoneMap[currentId]
+            if (!z) break
+            path.unshift(z) // Add to beginning to get Root -> Child
+            currentId = z.parent_id || ''
+        }
+        return path
+    }
+
+    const handleExportExcelTable = async () => {
+        const zoneMap = Object.fromEntries(zones.map(z => [z.id, z]))
+
+        const excelPositions = filteredPositions.flatMap(p => {
+            const lot = p.lot_id ? lotInfo[p.lot_id] : null
+            const path = p.zone_id ? getZonePath(p.zone_id, zoneMap) : []
+            
+            const warehouse = path[0]?.name || '-'
+            const row = path[1]?.name || '-'
+            const bin = path[2]?.name || '-'
+            const level = path[3]?.name || (path.length > 4 ? path[path.length - 1].name : '-')
+
+            if (!lot) {
+                return [{
+                    code: p.code,
+                    warehouse,
+                    row,
+                    bin,
+                    level
+                }]
+            }
+            return lot.items.map((item: any) => ({
+                code: p.code,
+                warehouse,
+                row,
+                bin,
+                level,
+                lotCode: lot.code,
+                productName: displayInternalCode && item.internal_name ? item.internal_name : item.product_name,
+                sku: displayInternalCode && item.internal_code ? item.internal_code : item.sku,
+                unit: item.unit,
+                quantity: item.quantity,
+                tags: [item.tags?.join(', '), lot.batch_code ? `Lô: ${lot.batch_code}` : null]
+                    .filter(Boolean)
+                    .join(' | ') || '-'
+            }))
+        })
+
+        await exportWarehouseToExcel({
+            systemName: systemType || 'KHO',
+            zoneName: displayZones.find(z => z.id === selectedZoneId)?.name,
+            searchTerm: searchTerm,
+            positions: excelPositions
+        })
+    }
+
+    const handleExportExcelGrid = async () => {
+        const grids: any[] = []
+
+        // Find root containers in the current filtered view (e.g., Row/Dãy)
+        const roots = filteredZones.filter(z => !z.parent_id || !filteredZones.find(pz => pz.id === z.parent_id))
+
+        roots.forEach(root => {
+            // Find all bins under this root
+            const bins = filteredZones.filter(z => z.parent_id === root.id)
+            if (bins.length === 0) return
+
+            // Sort Bins numerically/alphabetically
+            bins.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+
+            // Identify all unique Level names in these bins
+            const levelNamesSet = new Set<string>()
+            bins.forEach(bin => {
+                const levels = filteredZones.filter(z => z.parent_id === bin.id)
+                levels.forEach(lvl => levelNamesSet.add(lvl.name))
+            })
+            
+            // Sort Levels descending (Top level first)
+            const sortedLevels = Array.from(levelNamesSet).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+
+            const cells: any[] = []
+            bins.forEach((bin, binIdx) => {
+                const isBinMerged = mergedZones.has(bin.id)
+                
+                if (isBinMerged) {
+                    // One big cell for all levels in this bin
+                    const items: any[] = []
+                    const collect = (zoneId: string) => {
+                        const pos = filteredPositions.filter(p => p.zone_id === zoneId)
+                        pos.forEach(p => {
+                            const lot = p.lot_id ? lotInfo[p.lot_id] : null
+                            if (lot?.items) {
+                                lot.items.forEach((it: any) => items.push({
+                                    productName: it.internal_name || it.product_name,
+                                    sku: it.internal_code || it.sku,
+                                    unit: it.unit,
+                                    quantity: it.quantity,
+                                    lotCode: lot.code
+                                }))
+                            }
+                        })
+                        filteredZones.filter(z => z.parent_id === zoneId).forEach(child => collect(child.id))
+                    }
+                    collect(bin.id)
+
+                    cells.push({
+                        binIndex: binIdx,
+                        levelIndex: 0,
+                        items,
+                        isMerged: true,
+                        rowSpan: sortedLevels.length || 1
+                    })
+                } else {
+                    // Individual cells for each level
+                    sortedLevels.forEach((lvlName, lvlIdx) => {
+                        const levelZone = filteredZones.find(z => z.parent_id === bin.id && z.name === lvlName)
+                        const items: any[] = []
+                        
+                        if (levelZone) {
+                            const pos = filteredPositions.filter(p => p.zone_id === levelZone.id)
+                            pos.forEach(p => {
+                                const lot = p.lot_id ? lotInfo[p.lot_id] : null
+                                if (lot?.items) {
+                                    lot.items.forEach((it: any) => items.push({
+                                        productName: it.internal_name || it.product_name,
+                                        sku: it.internal_code || it.sku,
+                                        unit: it.unit,
+                                        quantity: it.quantity,
+                                        lotCode: lot.code
+                                    }))
+                                }
+                            })
+                        }
+                        
+                        cells.push({
+                            binIndex: binIdx,
+                            levelIndex: lvlIdx,
+                            items
+                        })
+                    })
+                }
+            })
+
+            grids.push({
+                name: root.name,
+                bins: bins.map(b => b.name),
+                levels: sortedLevels,
+                cells
+            })
+        })
+
+        if (grids.length > 0) {
+            await exportWarehouseGridToExcel({
+                systemName: systemType || 'KHO',
+                grids
+            })
+        }
+    }
+
     if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin mr-2" /> Đang tải dữ liệu...</div>
     if (error) return <div className="flex h-screen items-center justify-center text-red-600 font-bold">Lỗi: {error}</div>
 
@@ -402,8 +599,8 @@ export default function WarehouseMapPrintPage() {
                                         <span className="truncate flex-1 text-left">
                                             {displayZones.find(z => z.id === selectedZoneId)?.name || 'Tất cả Zone'}
                                         </span>
-                                        <ChevronRight size={14} className={`text-gray-400 transition-transform ${isZonePickerOpen ? 'rotate-90' : ''}`} />
                                     </button>
+                                    <div id="receipt-content" className={`bg-white text-gray-900 mx-auto transition-all duration-300 mt-4 ${orientation === 'landscape' ? 'print-page-a4-landscape p-4' : 'print-page-a4 p-8'}`}></div>
 
                                     {isZonePickerOpen && (
                                         <div className="absolute right-full mr-2 top-0 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[400px] z-[60]">
@@ -574,6 +771,46 @@ export default function WarehouseMapPrintPage() {
                                 </button>
                                 <p className="text-[10px] text-gray-400 italic">Gộp các ô có chung hậu tố số (A01, B01 {"->"} Ô 01) để thu gọn sơ đồ.</p>
                             </div>
+
+                            {/* 5. Merging Toggle */}
+                            {isGrouped && (
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-[11px] font-bold uppercase text-gray-400 flex items-center gap-2">
+                                        <Maximize2 size={12} /> Chế độ gộp ô
+                                    </label>
+                                    <button
+                                        onClick={() => {
+                                            const { zones: displayZones } = groupWarehouseData(filteredZones, filteredPositions)
+                                            const mergeableZoneIds = displayZones
+                                                .filter(z => {
+                                                    const nameUpper = z.name.toUpperCase()
+                                                    const isSanh = nameUpper.startsWith('SẢNH') || nameUpper.startsWith('SÀNH') || nameUpper.startsWith('SANH')
+                                                    return z.id.startsWith('v-lvl-') || z.id.startsWith('v-bin-') || z.name.startsWith('Ô ') || z.name.toUpperCase().startsWith('TẦNG ') || isSanh
+                                                })
+                                                .map(z => z.id)
+                                            
+                                            const allMerged = mergeableZoneIds.length > 0 && mergeableZoneIds.every(id => mergedZones.has(id))
+                                            
+                                            if (allMerged) {
+                                                setMergedZones(new Set())
+                                            } else {
+                                                setMergedZones(prev => {
+                                                    const next = new Set(prev)
+                                                    mergeableZoneIds.forEach(id => next.add(id))
+                                                    return next
+                                                })
+                                            }
+                                        }}
+                                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-all cursor-pointer ${mergedZones.size > 0 ? 'bg-purple-50 border-purple-200 text-purple-700' : 'bg-gray-50 border-gray-200 text-gray-600'}`}
+                                    >
+                                        <span className="text-xs font-semibold">{mergedZones.size > 0 ? 'Đang bật Gộp ô' : 'Đang tắt Gộp ô'}</span>
+                                        <div className={`w-8 h-4 rounded-full relative transition-colors ${mergedZones.size > 0 ? 'bg-purple-600' : 'bg-gray-300'}`}>
+                                            <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${mergedZones.size > 0 ? 'left-4.5' : 'left-0.5'}`} />
+                                        </div>
+                                    </button>
+                                    <p className="text-[10px] text-gray-400 italic">Gộp tất cả các tầng trong một ô thành một khối duy nhất (hàng cồng kềnh).</p>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -586,6 +823,20 @@ export default function WarehouseMapPrintPage() {
                     >
                         {isCapturing ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
                         Tải ảnh phiếu
+                    </button>
+                    <button
+                        onClick={handleExportExcelTable}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-colors cursor-pointer shadow-sm"
+                    >
+                        <FileSpreadsheet size={16} />
+                        Excel (Bảng)
+                    </button>
+                    <button
+                        onClick={handleExportExcelGrid}
+                        className="px-4 py-2 bg-purple-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-purple-700 transition-colors cursor-pointer shadow-sm"
+                    >
+                        <Layers size={16} />
+                        Excel (Sơ đồ)
                     </button>
                     <button
                         onClick={handlePrint}
@@ -609,7 +860,7 @@ export default function WarehouseMapPrintPage() {
             )}
 
             {/* Main Wrapper for better screen presentation */}
-            <div className={`min-h-screen bg-gray-100/50 print:bg-white py-8 print:py-0 ${isCapturing ? '!p-0 !bg-white' : ''}`}>
+            <div className={`min-h-screen print:min-h-0 bg-gray-100/50 print:bg-white py-8 print:py-0 ${isCapturing ? '!p-0 !bg-white' : ''}`}>
                 <div
                     id="print-ready"
                     data-ready="true"
@@ -617,13 +868,11 @@ export default function WarehouseMapPrintPage() {
                         bg-white mx-auto text-black p-4 print:p-2 text-[13px] transition-all duration-500
                         ${isCapturing ? 'shadow-none !p-4' : 'shadow-2xl rounded-xl ring-1 ring-black/5'}
                         ${orientation === 'landscape'
-                            ? (isCapturing ? '!w-[1400px]' : 'w-[98%] max-w-[1700px]')
-                            : (isCapturing ? '!w-[1100px]' : 'w-[95%] max-w-[1300px]')
+                            ? (isCapturing ? '!min-w-max' : 'w-[98%] max-w-[1700px]')
+                            : (isCapturing ? '!min-w-max' : 'w-[95%] max-w-[1300px]')
                         }
                     `}
-                    style={!isCapturing ? {
-                        minHeight: orientation === 'landscape' ? '210mm' : '297mm'
-                    } : undefined}
+                    style={undefined}
                 >
                     <style dangerouslySetInnerHTML={{
                         __html: `
@@ -632,12 +881,27 @@ export default function WarehouseMapPrintPage() {
                                     width: ${orientation === 'landscape' ? '297mm' : '210mm'} !important;
                                     max-width: none !important;
                                     margin: 0 !important;
-                                    padding: 10mm !important;
+                                    padding: 8mm !important;
                                     box-shadow: none !important;
                                     border-radius: 0 !important;
                                     ring: none !important;
+                                    display: block !important; /* Chuyển sang block để ngắt trang ổn định */
+                                    height: auto !important;
+                                    min-height: 0 !important;
+                                }
+                                #print-ready * { 
+                                    min-height: 0 !important;
+                                }
+                                /* Giữ nguyên Grid/Flex lồng nhau để h-full/stretch hoạt động */
+                                #print-ready .grid, #print-ready [class*="grid-"] {
+                                    display: grid !important;
+                                }
+                                #print-ready .flex {
+                                    display: flex !important;
                                 }
                                 body { background: white !important; }
+                                .min-h-screen { min-height: 0 !important; }
+                                [class*="space-y-"] { margin-top: 0 !important; }
                             }
                         `
                     }} />
@@ -645,13 +909,20 @@ export default function WarehouseMapPrintPage() {
                         <style dangerouslySetInnerHTML={{
                             __html: `
                     #print-ready {
-                        width: ${orientation === 'landscape' ? '1400px' : '1100px'} !important;
+                        min-width: max-content !important;
+                        width: max-content !important;
                         margin: 0 !important;
-                        padding: 40px 60px !important;
+                        padding: 60px 80px !important; /* Increased symmetrical padding */
                         display: flex !important;
                         flex-direction: column !important;
                         align-items: stretch !important;
                         box-sizing: border-box !important;
+                        background: white !important;
+                    }
+                    /* Ensure parents don't clip at all */
+                    .min-h-screen, body, html { 
+                        overflow: visible !important;
+                        width: auto !important;
                     }
                 `}} />
                     )}
@@ -680,7 +951,7 @@ export default function WarehouseMapPrintPage() {
                     {/* The Map Grid OR Data Table View */}
                     <div className="mb-8 print:mb-4">
                         {!showTable ? (
-                            <div className="mt-8">
+                            <div className="mt-4 print:mt-0">
                                 <FlexibleZoneGrid
                                     zones={filteredZones}
                                     positions={filteredPositions}
@@ -692,11 +963,15 @@ export default function WarehouseMapPrintPage() {
                                     onToggleCollapse={() => { }}
                                     onPositionSelect={() => { }}
                                     pageBreakIds={pageBreakZoneIds}
-                                    onTogglePageBreak={isGrouped ? undefined : handleTogglePageBreak}
+                                    onTogglePageBreak={handleTogglePageBreak}
                                     displayInternalCode={displayInternalCode}
                                     isDesignMode={false}
-                                    onPrintZone={isGrouped ? undefined : () => { }}
+                                    onPrintZone={() => { }}
                                     isGrouped={isGrouped}
+                                    mergedZones={mergedZones}
+                                    onToggleMergeZone={toggleMergeZone}
+                                    isCapturing={isCapturing}
+                                    isPrintPage={true}
                                 />
                             </div>
                         ) : (

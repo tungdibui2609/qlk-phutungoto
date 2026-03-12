@@ -91,6 +91,7 @@ function WarehouseMapContent() {
     const [qrLot, setQrLot] = useState<any>(null)
     const [bulkPrintLotIds, setBulkPrintLotIds] = useState<string[] | null>(null)
     const [isMapControlsOpen, setIsMapControlsOpen] = useState(false)
+    const [pageBreakZoneIds, setPageBreakZoneIds] = useState<Set<string>>(new Set())
     const [isGrouped, setIsGrouped] = useState(false)
     const [mergedZones, setMergedZones] = useState<Set<string>>(new Set())
 
@@ -585,7 +586,14 @@ function WarehouseMapContent() {
         }
     }
 
-    // --- Render ---
+    const handleTogglePageBreak = (zoneId: string) => {
+        setPageBreakZoneIds(prev => {
+            const next = new Set(prev)
+            if (next.has(zoneId)) next.delete(zoneId)
+            else next.add(zoneId)
+            return next
+        })
+    }
 
     // Convert layouts array to record for FlexibleZoneGrid
     const layoutRecord = useMemo(() => {
@@ -689,6 +697,8 @@ function WarehouseMapContent() {
                                 displayInternalCode={displayInternalCode}
                                 isGrouped={isGrouped}
                                 onBulkSelect={handleBulkSelect}
+                                pageBreakIds={pageBreakZoneIds}
+                                onTogglePageBreak={handleTogglePageBreak}
                                 mergedZones={mergedZones}
                                 onToggleMergeZone={toggleMergeZone}
                                 onPrintZone={(zoneId) => {
@@ -697,6 +707,7 @@ function WarehouseMapContent() {
                                     params.set('zoneId', zoneId)
                                     if (searchTerm) params.set('search', searchTerm)
                                     if (displayInternalCode) params.set('internalCode', 'true')
+                                    if (pageBreakZoneIds.size > 0) params.set('pageBreaks', Array.from(pageBreakZoneIds).join(','))
                                     window.open(`/print/warehouse-map?${params.toString()}`, '_blank')
                                 }}
                             />

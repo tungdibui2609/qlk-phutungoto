@@ -366,3 +366,21 @@ body::before {
 .print-page-a4 {
   page: a4-page;
 }
+
+/* === Print Utilities === */
+@media print {
+  .print-break-before-page {
+    break-before: page !important;
+    page-break-before: always !important;
+  }
+
+  .print-break-inside-avoid {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .print-break-after-avoid {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+}
