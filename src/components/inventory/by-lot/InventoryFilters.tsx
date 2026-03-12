@@ -1,5 +1,5 @@
 import React from 'react'
-import { Search, Warehouse, ChevronDown, Printer } from 'lucide-react'
+import { Search, Warehouse, ChevronDown, Printer, FileSpreadsheet } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 
@@ -40,6 +40,37 @@ export function InventoryFilters({
     const handlePrint = async () => {
         const params = new URLSearchParams()
         params.set('type', 'lot')
+        if (systemType) params.set('systemType', systemType)
+        if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
+        if (searchTerm) params.set('search', searchTerm)
+        if (targetUnitId) params.set('targetUnitId', targetUnitId)
+        if (selectedZoneId) params.set('zoneId', selectedZoneId)
+        params.set('to', new Date().toISOString().split('T')[0])
+
+        // Pass auth token
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+            params.set('token', session.access_token)
+        }
+
+        // Pass company info directly
+        if (companyInfo) {
+            if (companyInfo.name) params.set('cmp_name', companyInfo.name)
+            if (companyInfo.address) params.set('cmp_address', companyInfo.address)
+            if (companyInfo.phone) params.set('cmp_phone', companyInfo.phone)
+            if (companyInfo.email) params.set('cmp_email', companyInfo.email)
+            if (companyInfo.logo_url) params.set('cmp_logo', companyInfo.logo_url)
+            if (companyInfo.short_name) params.set('cmp_short', companyInfo.short_name)
+        }
+
+        const url = `/print/inventory?${params.toString()}`
+        window.open(url, '_blank')
+    }
+
+    const handleExportExcel = async () => {
+        const params = new URLSearchParams()
+        params.set('type', 'lot')
+        params.set('export', 'excel')
         if (systemType) params.set('systemType', systemType)
         if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
         if (searchTerm) params.set('search', searchTerm)
@@ -121,6 +152,14 @@ export function InventoryFilters({
                         </div>
                     </div>
 
+                    <button
+                        onClick={handleExportExcel}
+                        disabled={loadingCompany}
+                        className={`p-2 mt-6 border border-stone-300 dark:border-stone-700 rounded-md transition-all ${loadingCompany ? 'opacity-50 cursor-wait bg-stone-100' : 'text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 active:scale-95'}`}
+                        title={loadingCompany ? "Đang tải thông tin..." : "Xuất Excel"}
+                    >
+                        <FileSpreadsheet className="w-5 h-5" />
+                    </button>
                     <button
                         onClick={handlePrint}
                         disabled={loadingCompany}

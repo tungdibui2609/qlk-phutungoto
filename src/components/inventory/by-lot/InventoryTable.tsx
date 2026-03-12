@@ -119,7 +119,7 @@ export function InventoryTable({
                                                                 <div className="flex items-center gap-2 text-sm">
                                                                     <ChevronRight size={14} className="text-stone-400" />
                                                                     {isNoTag ? (
-                                                                        <span className="italic text-stone-400">{item.productSku} (còn lại)</span>
+                                                                        <span className="italic text-stone-400">Gốc ( còn lại )</span>
                                                                     ) : (
                                                                         <TagDisplay
                                                                             tags={[tag]}

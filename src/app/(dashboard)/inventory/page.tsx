@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useMemo } from 'react'
-import { Search, Loader2, Printer, Warehouse, ChevronDown, Hash } from 'lucide-react'
+import { Search, Loader2, Printer, Warehouse, ChevronDown, Hash, FileSpreadsheet } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
@@ -278,6 +278,45 @@ export default function InventoryPage() {
                                     title={displayInternalCode ? "Đang hiển thị mã nội bộ" : "Hiển thị mã nội bộ"}
                                 >
                                     <Hash className="w-5 h-5" />
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        if (loadingCompany) return
+
+                                        const params = new URLSearchParams()
+                                        params.set('type', 'accounting')
+                                        params.set('export', 'excel')
+                                        if (systemType) params.set('systemType', systemType)
+                                        if (dateFrom) params.set('from', dateFrom)
+                                        if (dateTo) params.set('to', dateTo)
+                                        if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
+                                        if (q) params.set('search', q)
+                                        if (targetUnitId) params.set('targetUnitId', targetUnitId)
+                                        if (displayInternalCode) params.set('internalCode', 'true')
+
+                                        // Pass auth token
+                                        const { data: { session } } = await supabase.auth.getSession()
+                                        if (session?.access_token) {
+                                            params.set('token', session.access_token)
+                                        }
+
+                                        // Pass company info directly
+                                        if (companyInfo) {
+                                            if (companyInfo.name) params.set('cmp_name', companyInfo.name)
+                                            if (companyInfo.address) params.set('cmp_address', companyInfo.address)
+                                            if (companyInfo.phone) params.set('cmp_phone', companyInfo.phone)
+                                            if (companyInfo.email) params.set('cmp_email', companyInfo.email)
+                                            if (companyInfo.logo_url) params.set('cmp_logo', companyInfo.logo_url)
+                                            if (companyInfo.short_name) params.set('cmp_short', companyInfo.short_name)
+                                        }
+
+                                        window.open(`/print/inventory?${params.toString()}`, '_blank')
+                                    }}
+                                    disabled={loadingCompany}
+                                    className={`p-2 mt-6 border border-stone-300 dark:border-stone-700 rounded-md transition-all ${loadingCompany ? 'opacity-50 cursor-wait bg-stone-100' : 'text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 active:scale-95'}`}
+                                    title={loadingCompany ? "Đang tải thông tin..." : "Xuất Excel"}
+                                >
+                                    <FileSpreadsheet className="w-5 h-5" />
                                 </button>
                                 <button
                                     onClick={async () => {

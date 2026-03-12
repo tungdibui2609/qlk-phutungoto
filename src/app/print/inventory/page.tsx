@@ -597,6 +597,21 @@ export default function PrintInventoryPage() {
         })
     }
 
+    // Auto-export if requested via URL
+    useEffect(() => {
+        const exportType = searchParams.get('export')
+        if (!loading && !error && (accountingItems.length > 0 || groupedLots.length > 0 || reconcileItems.length > 0) && exportType === 'excel') {
+            const timer = setTimeout(() => {
+                handleExportExcel()
+                // Remove the export param from URL to prevent infinite loop on refresh
+                const newUrl = new URL(window.location.href)
+                newUrl.searchParams.delete('export')
+                window.history.replaceState({}, '', newUrl.toString())
+            }, 500)
+            return () => clearTimeout(timer)
+        }
+    }, [loading, error, accountingItems, groupedLots, reconcileItems])
+
     if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin mr-2" /> Đang tải dữ liệu...</div>
 
     if (error) return <div id="print-ready" data-ready="true" className="flex h-screen items-center justify-center text-red-600 font-bold">Lỗi tải dữ liệu: {error}</div>
@@ -786,7 +801,7 @@ export default function PrintInventoryPage() {
                                                                 {/* Merged Tag Name cell with indent char to fill the space */}
                                                                 <td className="border border-black p-2 text-xs font-bold text-stone-600 bg-white" colSpan={2}>
                                                                     <span className="text-stone-300 mr-2 ml-4 font-mono">└</span>
-                                                                    {tag === 'Không có mã phụ' ? 'Mặc định' : tag}
+                                                                    {tag === 'Không có mã phụ' ? 'Gốc ( còn lại )' : tag}
                                                                 </td>
                                                                 <td className="border border-black p-2 text-center text-stone-600 font-bold">
                                                                     <div>{group.productUnit}</div>

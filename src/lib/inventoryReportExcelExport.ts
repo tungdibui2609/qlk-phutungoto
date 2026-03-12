@@ -10,6 +10,12 @@ interface InventoryReportExportData {
     companyInfo: CompanyInfo | null;
 }
 
+// Helper: clean number values to avoid trailing dots in Excel
+function cleanNum(val: any): number {
+    const n = Number(val) || 0;
+    return Math.round(n * 100) / 100; // Round to 2 decimal places
+}
+
 export async function exportInventoryReportToExcel(data: InventoryReportExportData) {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Bao Cao Ton Kho');
@@ -131,10 +137,10 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
                 item.productName,
                 item.productCode,
                 item.unit,
-                item.opening,
-                item.qtyIn,
-                item.qtyOut,
-                item.balance
+                cleanNum(item.opening),
+                cleanNum(item.qtyIn),
+                cleanNum(item.qtyOut),
+                cleanNum(item.balance)
             ]);
             row.eachCell(cell => {
                 cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
@@ -142,7 +148,7 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
             // Align quantity columns
             [5, 6, 7, 8].forEach(col => {
                 row.getCell(col).alignment = { horizontal: 'right' };
-                row.getCell(col).numFmt = '#,##0.##';
+                row.getCell(col).numFmt = '#,##0';
             });
         });
     } else if (data.type === 'lot') {
@@ -156,8 +162,8 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
                 group.productName,
                 '', // Tag is empty for main group
                 group.productUnit,
-                group.totalQuantity,
-                group.totalKg
+                cleanNum(group.totalQuantity),
+                cleanNum(group.totalKg)
             ]);
             mainRow.font = { bold: true };
             mainRow.eachCell(cell => {
@@ -165,30 +171,37 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
             });
             [6, 7].forEach(col => {
                 mainRow.getCell(col).alignment = { horizontal: 'right' };
-                mainRow.getCell(col).numFmt = '#,##0.64;[Red]-#,##0.64;0'; // Flexible format
+                mainRow.getCell(col).numFmt = '#,##0';
             });
 
             // Variants
-            const variantEntries = Array.from(group.variants.entries() as any[]);
+            let variantEntries = Array.from(group.variants.entries() as any[]);
             const hasRealVariants = variantEntries.length > 1 || (variantEntries.length === 1 && variantEntries[0][0] !== 'Không có mã phụ');
             
             if (hasRealVariants) {
+                // Sort to put 'Không có mã phụ' at the end
+                variantEntries.sort((a, b) => {
+                    if (a[0] === 'Không có mã phụ') return 1;
+                    if (b[0] === 'Không có mã phụ') return -1;
+                    return a[0].localeCompare(b[0]);
+                });
+
                 variantEntries.forEach(([tag, vData]: any) => {
                     const vRow = worksheet.addRow([
                         '',
                         '',
                         '',
-                        tag === 'Không có mã phụ' ? 'Mặc định' : tag,
+                        tag === 'Không có mã phụ' ? 'Gốc ( còn lại )' : tag,
                         group.productUnit,
-                        vData.totalQuantity,
-                        vData.totalKg
+                        cleanNum(vData.totalQuantity),
+                        cleanNum(vData.totalKg)
                     ]);
                     vRow.eachCell(cell => {
                         cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
                     });
                     [6, 7].forEach(col => {
                         vRow.getCell(col).alignment = { horizontal: 'right' };
-                        vRow.getCell(col).numFmt = '#,##0.64;[Red]-#,##0.64;0';
+                        vRow.getCell(col).numFmt = '#,##0';
                     });
                     vRow.getCell(4).font = { italic: true };
                 });
@@ -200,16 +213,16 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
                 item.productCode,
                 item.productName,
                 item.unit,
-                item.accountingBalance,
-                item.lotBalance,
-                item.diff
+                cleanNum(item.accountingBalance),
+                cleanNum(item.lotBalance),
+                cleanNum(item.diff)
             ]);
             row.eachCell(cell => {
                 cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
             });
             [4, 5, 6].forEach(col => {
                 row.getCell(col).alignment = { horizontal: 'right' };
-                row.getCell(col).numFmt = '#,##0.##';
+                row.getCell(col).numFmt = '#,##0';
             });
         });
     }
