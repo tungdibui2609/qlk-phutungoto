@@ -600,7 +600,7 @@ export default function WarehouseMapPrintPage() {
                                             {displayZones.find(z => z.id === selectedZoneId)?.name || 'Tất cả Zone'}
                                         </span>
                                     </button>
-                                    <div id="receipt-content" className={`bg-white text-gray-900 mx-auto transition-all duration-300 mt-4 ${orientation === 'landscape' ? 'print-page-a4-landscape p-4' : 'print-page-a4 p-8'}`}></div>
+                                    <div id="receipt-content" className={`bg-white text-gray-900 mx-auto transition-all duration-300 mt-4 p-4`}></div>
 
                                     {isZonePickerOpen && (
                                         <div className="absolute right-full mr-2 top-0 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[400px] z-[60]">
@@ -874,36 +874,7 @@ export default function WarehouseMapPrintPage() {
                     `}
                     style={undefined}
                 >
-                    <style dangerouslySetInnerHTML={{
-                        __html: `
-                            @media print {
-                                #print-ready {
-                                    width: ${orientation === 'landscape' ? '297mm' : '210mm'} !important;
-                                    max-width: none !important;
-                                    margin: 0 auto !important;
-                                    padding: 0 !important;
-                                    display: block !important;
-                                    box-shadow: none !important;
-                                }
-
-                                /* Allow stretching in print */
-                                #print-ready div, #print-ready section, #print-ready article { 
-                                    max-height: none !important;
-                                }
-
-                                /* Force content to stay close to top */
-                                #print-ready > div:first-of-type {
-                                    margin-top: 0 !important;
-                                    padding-top: 0 !important;
-                                }
-
-                                body { background: white !important; margin: 0 !important; padding: 0 !important; }
-                                .min-h-screen { min-height: 0 !important; height: auto !important; }
-                                [class*="space-y-"] { margin-top: 0 !important; }
-                                * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-                            }
-                        `
-                    }} />
+                     {/* Print & Capture Styles moved/consolidated */}
                     {isCapturing && (
                         <style dangerouslySetInnerHTML={{
                             __html: `
@@ -1066,10 +1037,40 @@ export default function WarehouseMapPrintPage() {
                         @media print {
                             @page { 
                                 size: A4 ${orientation}; 
-                                margin: 10mm; 
+                                margin: 0 !important; 
                             }
-                            body { background: white !important; }
+                            
+                            html, body {
+                                margin: 0 !important;
+                                padding: 0 !important;
+                                background: white !important;
+                                -webkit-print-color-adjust: exact !important;
+                                print-color-adjust: exact !important;
+                            }
+
+                            #print-ready {
+                                width: ${orientation === 'landscape' ? '297mm' : '210mm'} !important;
+                                min-width: ${orientation === 'landscape' ? '297mm' : '210mm'} !important;
+                                margin: 0 !important;
+                                padding: 10mm !important;
+                                display: block !important;
+                                box-shadow: none !important;
+                                overflow: visible !important;
+                                position: relative !important;
+                            }
+
+                            /* Fix nested elements that might cause paging issues */
+                            .min-h-screen { min-height: 0 !important; height: auto !important; overflow: visible !important; }
+                            
+                            /* Maintain stretching behavior */
+                            #print-ready div, #print-ready section { 
+                                max-height: none !important;
+                            }
+
                             .print-hidden, .hide-on-real-print { display: none !important; }
+                            
+                            /* Force visibility of complex elements */
+                            * { print-color-adjust: exact !important; -webkit-print-color-adjust: exact !important; }
                         }
 
                         .print-break-before-page {
