@@ -339,7 +339,7 @@ export default function FlexibleZoneGrid({
             const aggregatedItems = Array.from(itemMap.values())
 
             return (
-                <div className="grid gap-1.5 print:gap-1 h-full" style={{ gridTemplateColumns: '1fr' }}>
+                <div className="flex flex-col flex-1 h-full min-h-0 gap-1.5 print:gap-1">
                     <MergedBigCell
                         key={mergedPos.id}
                         pos={mergedPos}
@@ -368,8 +368,9 @@ export default function FlexibleZoneGrid({
 
         return (
             <div
-                className={`grid gap-1.5 print:gap-1.5 ${mergedZones?.has(zone.id) ? 'h-full' : 'h-auto'}`}
+                className={`flex flex-col flex-1 ${mergedZones?.has(zone.id) ? 'h-full min-h-0' : 'h-auto'} gap-1.5 print:gap-1.5`}
                 style={{
+                    display: 'grid',
                     gridTemplateColumns: cellWidth > 0
                         ? `repeat(${positionColumns}, ${cellWidth}px)`
                         : `repeat(${positionColumns}, minmax(0, 1fr))`
@@ -535,7 +536,7 @@ export default function FlexibleZoneGrid({
                 return (
                     <div
                         key={zone.id}
-                        className={`flex flex-col ${mergedZones.has(zone.id) ? 'h-full' : 'h-auto'} rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden print:overflow-visible bg-white dark:bg-gray-800 print:break-inside-avoid ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
+                        className={`flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1 min-h-0' : 'h-auto'} rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden print:overflow-visible bg-white dark:bg-gray-800 print:break-inside-avoid ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
                     >
                         {pageBreakIds.has(zone.id) && (
                             <div className="hidden print:block text-center border-b border-dashed border-gray-300 mb-4 pb-2 text-[10px] text-gray-400 italic">
@@ -716,9 +717,9 @@ export default function FlexibleZoneGrid({
                             </div>
                         </div>
 
-                        <div className="p-2 flex-1 flex flex-col print:flex-none print:h-auto">
+                        <div className={`p-2 flex-1 flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1' : 'h-auto'} ${isPrintPage ? 'print:flex-1 print:min-h-0 print:h-full' : ''}`}>
                             {!isCollapsed && (
-                                <div className="p-3 flex-1 flex flex-col bg-white/50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-800 print:flex-none print:h-auto">
+                                <div className={`p-3 flex-1 flex flex-col bg-white/50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-800 ${mergedZones.has(zone.id) ? 'h-full flex-1' : 'h-auto'} ${isPrintPage ? 'print:flex-1 print:h-full' : ''}`}>
                                     {shouldRenderGrid && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
                                     {hasChildren && !mergedZones.has(zone.id) && (
                                         <div className="mt-2 print:mt-0 space-y-1.5 px-1 pb-1">
@@ -936,7 +937,7 @@ export default function FlexibleZoneGrid({
                         </div>
 
                         {!isCollapsed && (
-                            <div className={`p-2 ${isBinMerged ? 'flex-1 flex flex-col h-full print:flex-none print:h-auto' : 'flex flex-col h-auto'} bg-emerald-50/10 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800 print:overflow-visible`}>
+                            <div className={`p-2 ${mergedZones.has(zone.id) ? 'flex-1 flex flex-col h-full min-h-0' : 'flex flex-col h-auto'} bg-emerald-50/10 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800 print:overflow-visible ${isPrintPage && mergedZones.has(zone.id) ? 'print:flex-1 print:h-full print:min-h-0' : ''}`}>
                                 {shouldRenderGrid && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
                                 {hasChildren && !isBinMerged && (
                                     <div
@@ -944,8 +945,8 @@ export default function FlexibleZoneGrid({
                                             childLayout === 'horizontal'
                                                 ? 'flex gap-1.5 overflow-x-auto pb-2'
                                                 : childLayout === 'grid'
-                                                    ? `grid gap-1.5 print:gap-1.5 ${mergedZones.has(zone.id) ? 'h-full' : 'h-auto'} ${isPrintPage ? 'print:h-auto' : ''}`
-                                                    : `space-y-1.5 print:space-y-1 ${mergedZones.has(zone.id) ? 'h-full' : 'h-auto'} ${isPrintPage ? 'print:h-auto' : ''}`
+                                                    ? `grid items-stretch gap-1.5 ${mergedZones.has(zone.id) ? 'flex-1 h-full' : 'h-auto'}`
+                                                    : `space-y-1.5 print:space-y-1 ${mergedZones.has(zone.id) ? 'flex-1 h-full' : 'h-auto'}`
                                         }
                                         style={
                                             childLayout === 'grid' && childColumns > 0
@@ -987,7 +988,7 @@ export default function FlexibleZoneGrid({
                                                         </>
                                                     )}
                                                     <div
-                                                        className={childLayout === 'horizontal' ? 'shrink-0 grow flex flex-col print:flex' : (childLayout === 'grid' ? (mergedZones.has(zone.id) ? 'h-full flex flex-col print:h-auto' : 'h-auto flex flex-col') : (mergedZones.has(zone.id) ? 'h-full flex flex-col print:h-auto' : 'h-auto flex flex-col'))}
+                                                        className={childLayout === 'horizontal' ? 'shrink-0 grow flex flex-col print:flex' : (childLayout === 'grid' ? (mergedZones.has(child.id) || isPrintPage ? 'h-full flex flex-col flex-1 min-h-0 print:flex-1 print:min-w-[32%]' : 'h-auto flex flex-col') : (mergedZones.has(child.id) ? 'h-full flex flex-col flex-1 min-h-0' : 'h-auto flex flex-col'))}
                                                         style={childLayout === 'horizontal' && childWidth > 0 ? { width: `${childWidth}px` } : undefined}
                                                     >
                                                         {renderZone(child as any, depth + 1, currentBreadcrumb, rowStyle)}
@@ -1007,7 +1008,7 @@ export default function FlexibleZoneGrid({
                 return (
                     <div
                         key={zone.id}
-                        className={`group flex flex-col ${mergedZones.has(zone.id) ? 'h-full' : 'h-auto'} rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden print:overflow-visible ${depth === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50'}`}
+                        className={`group flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1 min-h-0' : 'h-auto'} rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden print:overflow-visible ${depth === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50'}`}
                         style={overrideBgStyle}
                     >
                         <div
@@ -1187,7 +1188,7 @@ export default function FlexibleZoneGrid({
                         </div>
 
                         {!isCollapsed && (
-                            <div className={`p-1.5 ${isBinMerged ? 'flex-1 flex flex-col h-full print:flex-none print:h-auto' : 'flex flex-col h-auto'} bg-emerald-50/5 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800 print:overflow-visible`}>
+                            <div className={`p-1.5 ${isBinMerged ? 'flex-1 flex flex-col h-full print:flex-1 print:h-full print:min-h-0' : 'flex flex-col h-auto'} bg-emerald-50/5 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800 print:overflow-visible`}>
                                 {shouldRenderGrid && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
                                 {hasChildren && !isBinMerged && (
                                     <div className="space-y-1.5 print:space-y-1">

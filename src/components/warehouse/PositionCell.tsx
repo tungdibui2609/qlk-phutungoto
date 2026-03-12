@@ -56,7 +56,7 @@ const PositionCell = React.memo<{
             style={{
                 height: cellHeight > 0 
                     ? `${cellHeight}px` 
-                    : (isPrintPage ? (isSanh ? 'auto' : '125px') : (isMobile ? '100px' : '125px')),
+                    : (isPrintPage ? '100%' : (isMobile ? '100px' : '125px')),
                 minHeight: cellHeight > 0 
                     ? `${cellHeight}px` 
                     : (isPrintPage ? (isSanh ? '60px' : '125px') : (isMobile ? '100px' : '125px')),

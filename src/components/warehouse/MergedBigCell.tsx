@@ -48,12 +48,12 @@ const MergedBigCell = React.memo<{
         <div
             style={{ 
                 gridColumn: '1 / -1', 
-                minHeight: isPrintPage ? (isSanh ? '60px' : (isManualMerge ? '180px' : '125px')) : (isMobile ? '110px' : '150px'),
-                height: isPrintPage ? (isSanh ? 'auto' : (isManualMerge ? 'auto' : '125px')) : '100%'
+                minHeight: isPrintPage ? (isSanh ? '60px' : (isManualMerge ? '250px' : '125px')) : (isMobile ? '110px' : '150px'),
+                height: isPrintPage ? '100%' : '100%'
             }}
             className={`
                 relative ${isAssignmentMode ? 'cursor-pointer' : ''} p-2.5 print:p-1.5 rounded-xl border-2 transition-all
-                flex flex-col h-full print:!h-${(isSanh || isManualMerge) ? 'auto' : '[125px]'} print:!min-h-${isSanh ? '0' : (isManualMerge ? '[180px]' : '[125px]')} overflow-hidden print:overflow-visible
+                flex flex-col flex-1 h-full min-h-0 overflow-hidden print:overflow-visible
                 ${bgClass} ${borderClass} ${ringClass}
                 ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.01] hover:z-10' : ''}
                 ${isHighlightBlinking ? 'animate-highlight-blink' : ''}
