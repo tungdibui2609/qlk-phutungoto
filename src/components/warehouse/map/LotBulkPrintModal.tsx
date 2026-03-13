@@ -14,6 +14,9 @@ interface BulkPrintItem {
     unit: string
     printQuantity: number
     positions: string[]
+    zoneCode: string
+    zoneOrder: number
+    primaryPositionCode: string
     fullData: any // Full lot data for LotLabel
 }
 
@@ -48,23 +51,85 @@ export function LotBulkPrintModal({ lotIds, onClose }: LotBulkPrintModalProps) {
                         unit, 
                         products(name, sku, unit)
                     ),
-                    positions!positions_lot_id_fkey(code),
+                    positions!positions_lot_id_fkey(
+                        code,
+                        zone_positions(
+                            zones(code, display_order)
+                        )
+                    ),
                     lot_tags(tag, lot_item_id)
                 `)
                 .in('id', lotIds)
 
             if (error) throw error
 
-            const items: BulkPrintItem[] = ((data || []) as any[]).map(lot => ({
-                id: lot.id,
-                code: lot.code,
-                productName: lot.lot_items?.[0]?.products?.name || 'SP',
-                quantity: lot.lot_items?.[0]?.quantity || 0,
-                unit: lot.lot_items?.[0]?.unit || lot.lot_items?.[0]?.products?.unit || '',
-                printQuantity: 1,
-                positions: lot.positions?.map((p: any) => p.code) || [],
-                fullData: lot
-            }))
+            const items: BulkPrintItem[] = ((data || []) as any[]).map(lot => {
+                // Stabilize primary position by sorting codes within the lot
+                const posCodes = lot.positions?.map((p: any) => p.code) || []
+                posCodes.sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }))
+                
+                const primaryCode = posCodes[0] || ''
+                const primaryPos = lot.positions?.find((p: any) => p.code === primaryCode)
+                const zone = primaryPos?.zone_positions?.[0]?.zones
+                
+                return {
+                    id: lot.id,
+                    code: lot.code,
+                    productName: lot.lot_items?.[0]?.products?.name || 'SP',
+                    quantity: lot.lot_items?.[0]?.quantity || 0,
+                    unit: lot.lot_items?.[0]?.unit || lot.lot_items?.[0]?.products?.unit || '',
+                    printQuantity: 1,
+                    positions: lot.positions?.map((p: any) => p.code) || [],
+                    zoneCode: zone?.code || 'ZZZ',
+                    zoneOrder: zone?.display_order ?? 999999,
+                    primaryPositionCode: primaryCode,
+                    fullData: lot
+                }
+            })
+
+            // Helper to parse position code (K1D1B01T302) for Cross-Bay Horizontal Traverse
+            const parsePos = (code: string) => {
+                // Format: K{index}D{index}{Letter}{Number}T{Floor}{Position}
+                // Example: K1D1B01T302 -> K=1, D=1, BayLetter=B, BayNum=01, Floor=3, Pos=02
+                // We assume Position is always the last 2 digits after 'T'
+                const match = code.match(/K(\d+)?D(\d+)?([A-Z]+)?(\d+)?T(\d+)(\d{2})/)
+                if (!match) return { k: 99, d: 99, f: 99, bNum: 99, bLet: 'ZZZ', p: 99 }
+                
+                return {
+                    k: parseInt(match[1] || '99'),
+                    d: parseInt(match[2] || '99'),
+                    bLet: match[3] || 'ZZZ',        // Bay Letter (A, B, C)
+                    bNum: parseInt(match[4] || '99'), // Bay Number (01, 02)
+                    f: parseInt(match[5] || '99'),   // Floor (T3 -> 3)
+                    p: parseInt(match[6] || '99')    // Position (02 -> 2)
+                }
+            }
+
+            // Enhanced Sort logic: Floor -> Bay Number -> Bay Letter -> Position
+            items.sort((a, b) => {
+                if (a.primaryPositionCode || b.primaryPositionCode) {
+                    if (!a.primaryPositionCode) return 1
+                    if (!b.primaryPositionCode) return -1
+                    
+                    const pa = parsePos(a.primaryPositionCode)
+                    const pb = parsePos(b.primaryPositionCode)
+
+                    if (pa.k !== pb.k) return pa.k - pb.k
+                    if (pa.d !== pb.d) return pa.d - pb.d
+                    if (pa.f !== pb.f) return pa.f - pb.f      // Level 1: Tầng (Floor)
+                    if (pa.bNum !== pb.bNum) return pa.bNum - pb.bNum // Level 2: Chỉ số Bay (01, 02)
+                    if (pa.bLet !== pb.bLet) return pa.bLet.localeCompare(pb.bLet) // Level 3: Chữ cái Bay (A, B, C)
+                    if (pa.p !== pb.p) return pa.p - pb.p      // Level 4: Vị trí cuối (01, 02)
+                    
+                    return 0
+                }
+                
+                // Priority 2: Zone Order (Fallback for items without positions)
+                if (a.zoneOrder !== b.zoneOrder) return a.zoneOrder - b.zoneOrder
+                
+                // Priority 3: Lot Code
+                return a.code.localeCompare(b.code, undefined, { numeric: true })
+            })
 
             setLots(items)
         } catch (error: any) {

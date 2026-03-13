@@ -4,9 +4,10 @@ import { supabase } from '@/lib/supabaseClient'
 import { logActivity } from '@/lib/audit'
 import AuditLogViewer from '@/components/shared/AuditLogViewer'
 import Link from 'next/link'
-import { Plus, Search, Users, Edit, Shield, CheckCircle, XCircle, History, Copy } from 'lucide-react'
+import { Plus, Search, Users, Edit, Shield, CheckCircle, XCircle, History, Copy, Trash2 } from 'lucide-react'
 import Protected from '@/components/auth/Protected'
 import MobileUserList from '@/components/users/MobileUserList'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useUser } from '@/contexts/UserContext'
 
 interface Role {
@@ -38,6 +39,7 @@ export default function SanxuatUsersPage() {
     const [searchTerm, setSearchTerm] = useState('')
     const [filterRole, setFilterRole] = useState<string>('all')
     const [viewingHistoryId, setViewingHistoryId] = useState<string | null>(null)
+    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
     async function fetchUsers() {
         if (!profile) return
@@ -94,6 +96,31 @@ export default function SanxuatUsersPage() {
                     newData: { is_active: !currentStatus }
                 })
             }
+            fetchUsers()
+        }
+    }
+    
+    async function handleDelete(id: string) {
+        const oldUser = users.find(u => u.id === id);
+
+        const { error } = await supabase.from('user_profiles')
+            .delete()
+            .eq('id', id)
+
+        if (error) {
+            alert('Lỗi khi xóa người dùng: ' + error.message)
+        } else {
+            if (oldUser) {
+                await logActivity({
+                    supabase,
+                    tableName: 'user_profiles',
+                    recordId: id,
+                    action: 'DELETE',
+                    oldData: oldUser,
+                    newData: null
+                })
+            }
+            setConfirmDeleteId(null)
             fetchUsers()
         }
     }
@@ -175,7 +202,11 @@ export default function SanxuatUsersPage() {
             ) : (
                 <>
                     <div className="md:hidden">
-                        <MobileUserList users={filteredUsers} onToggleStatus={toggleUserStatus} />
+                        <MobileUserList 
+                            users={filteredUsers} 
+                            onToggleStatus={toggleUserStatus} 
+                            onDelete={(id) => setConfirmDeleteId(id)}
+                        />
                     </div>
 
                     <div className="hidden md:block bg-white rounded-xl border border-stone-200 overflow-hidden">
@@ -285,6 +316,13 @@ export default function SanxuatUsersPage() {
                                                     >
                                                         <History size={14} />
                                                     </button>
+                                                    <button
+                                                        onClick={() => setConfirmDeleteId(user.id)}
+                                                        className="p-1.5 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                        title="Xóa người dùng"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
                                                 </Protected>
                                             </div>
                                         </td>
@@ -301,6 +339,17 @@ export default function SanxuatUsersPage() {
                 isOpen={!!viewingHistoryId}
                 onClose={() => setViewingHistoryId(null)}
                 title="Nhật ký hoạt động người dùng"
+            />
+
+            <ConfirmDialog
+                isOpen={!!confirmDeleteId}
+                title="Xác nhận xóa"
+                message="Bạn có chắc chắn muốn xóa người dùng này? Hành động này không thể hoàn tác."
+                confirmText="Xóa"
+                cancelText="Hủy"
+                variant="danger"
+                onConfirm={() => confirmDeleteId && handleDelete(confirmDeleteId)}
+                onCancel={() => setConfirmDeleteId(null)}
             />
 
             <div className="text-xs text-stone-500 text-right">
