@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Edit, Shield, CheckCircle, XCircle, Mail, Phone, User } from 'lucide-react'
+import { Edit, Shield, CheckCircle, XCircle, Mail, Phone, User, Trash2 } from 'lucide-react'
 import Protected from '@/components/auth/Protected'
 
 interface Role {
@@ -26,9 +26,10 @@ interface UserProfile {
 interface MobileUserListProps {
     users: UserProfile[]
     onToggleStatus: (id: string, currentStatus: boolean) => void
+    onDelete: (id: string) => void
 }
 
-export default function MobileUserList({ users, onToggleStatus }: MobileUserListProps) {
+export default function MobileUserList({ users, onToggleStatus, onDelete }: MobileUserListProps) {
     const getRoleBadgeColor = (code?: string) => {
         switch (code) {
             case 'admin': return 'bg-red-100 text-red-700'
@@ -123,6 +124,16 @@ export default function MobileUserList({ users, onToggleStatus }: MobileUserList
                             >
                                 <Edit size={20} />
                             </Link>
+                        </Protected>
+
+                        <Protected permission="user.manage">
+                            <button
+                                onClick={() => onDelete(user.id)}
+                                className="flex items-center justify-center p-2.5 rounded-xl bg-stone-50 text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors border border-stone-100"
+                                title="Xóa người dùng"
+                            >
+                                <Trash2 size={20} />
+                            </button>
                         </Protected>
                     </div>
                 </div>
