@@ -634,6 +634,52 @@ type UserProfilesTable = {
     ]
 }
 
+type ProductCategoryRelTable = {
+    Row: {
+        id: string
+        product_id: string
+        category_id: string
+        system_type: string
+        company_id: string | null
+        is_primary: boolean
+        created_at: string
+    }
+    Insert: {
+        id?: string
+        product_id: string
+        category_id: string
+        system_type: string
+        company_id?: string | null
+        is_primary?: boolean
+        created_at?: string
+    }
+    Update: {
+        id?: string
+        product_id?: string
+        category_id?: string
+        system_type?: string
+        company_id?: string | null
+        is_primary?: boolean
+        created_at?: string
+    }
+    Relationships: [
+        {
+            foreignKeyName: "product_category_rel_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+        },
+        {
+            foreignKeyName: "product_category_rel_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+        }
+    ]
+}
+
 // Extend the existing Tables type using intersection
 type TypedTables = Database['public']['Tables'] & {
     audit_logs: AuditLogsTable
@@ -648,6 +694,7 @@ type TypedTables = Database['public']['Tables'] & {
     roles: RolesTable
     internal_inventory_sessions: InternalInventorySessionsTable
     internal_inventory_items: InternalInventoryItemsTable
+    product_category_rel: ProductCategoryRelTable
 }
 
 // Manually extend the Database type

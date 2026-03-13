@@ -77,7 +77,7 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
     // Data Fetching Logic...
     async function fetchProductCategoryRels() {
         if (!initialData) return
-        const { data } = await (supabase.from('product_category_rel') as any)
+        const { data } = await supabase.from('product_category_rel')
             .select('category_id, is_primary')
             .eq('product_id', initialData.id)
         
@@ -262,7 +262,7 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
             // Save Category Relations
             if (productId) {
                 // Delete existing rels
-                await (supabase.from('product_category_rel') as any).delete().eq('product_id', productId)
+                await supabase.from('product_category_rel').delete().eq('product_id', productId)
                 
                 if (primary_category_id || (secondary_category_ids && secondary_category_ids.length > 0)) {
                     const rels = []
@@ -293,7 +293,7 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
                     }
 
                     if (rels.length > 0) {
-                        const { error: relErr } = await (supabase.from('product_category_rel') as any).insert(rels)
+                        const { error: relErr } = await supabase.from('product_category_rel').insert(rels)
                         if (relErr) throw relErr
                     }
                 }
