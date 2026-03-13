@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Plus, Search, FolderTree, Edit, Trash2, Save, X, Loader2 } from 'lucide-react'
@@ -21,6 +21,8 @@ export default function CategoriesPage() {
     const [showAddForm, setShowAddForm] = useState(false)
     const [newName, setNewName] = useState('')
     const [newDescription, setNewDescription] = useState('')
+    const [newParentId, setNewParentId] = useState<string | null>(null)
+    const [editParentId, setEditParentId] = useState<string | null>(null)
     const [saving, setSaving] = useState(false)
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
@@ -46,7 +48,7 @@ export default function CategoriesPage() {
         if (!newName.trim()) return
         setSaving(true)
 
-        const { error } = await (supabase.from('categories') as any).insert([{
+        const { error } = await supabase.from('categories').insert([{
             name: newName.trim(),
             description: newDescription.trim() || null,
             system_type: systemType,
@@ -68,7 +70,7 @@ export default function CategoriesPage() {
         if (!editName.trim()) return
         setSaving(true)
 
-        const { error } = await (supabase.from('categories') as any).update({
+        const { error } = await supabase.from('categories').update({
             name: editName.trim(),
             description: editDescription.trim() || null
         }).eq('id', id)
@@ -212,22 +214,24 @@ export default function CategoriesPage() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-stone-100">
-                            {filteredCategories.map((cat) => (
-                                <tr key={cat.id} className="hover:bg-stone-50 transition-colors">
+                            {filteredCategories.map(cat => (
+                                <tr key={cat.id} className="hover:bg-stone-50 transition-colors group">
                                     <td className="px-5 py-4">
-                                        {editingId === cat.id ? (
-                                            <input
-                                                value={editName}
-                                                onChange={(e) => setEditName(e.target.value)}
-                                                className="w-full p-2 rounded-lg border border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
-                                                autoFocus
-                                            />
-                                        ) : (
-                                            <div className="flex items-center gap-2">
-                                                <FolderTree size={16} className="text-orange-500" />
-                                                <span className="font-medium text-stone-800">{cat.name}</span>
-                                            </div>
-                                        )}
+                                        <div className="flex items-center gap-2">
+                                            {editingId === cat.id ? (
+                                                <input
+                                                    value={editName}
+                                                    onChange={(e) => setEditName(e.target.value)}
+                                                    className="w-full p-2 rounded-lg border border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                                                    autoFocus
+                                                />
+                                            ) : (
+                                                <>
+                                                    <FolderTree size={16} className="text-orange-500" />
+                                                    <span className="font-medium text-stone-800">{cat.name}</span>
+                                                </>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="px-5 py-4 text-stone-600">
                                         {editingId === cat.id ? (
@@ -235,6 +239,7 @@ export default function CategoriesPage() {
                                                 value={editDescription}
                                                 onChange={(e) => setEditDescription(e.target.value)}
                                                 className="w-full p-2 rounded-lg border border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                                                placeholder="Mô tả..."
                                             />
                                         ) : (
                                             cat.description || '-'
@@ -263,13 +268,13 @@ export default function CategoriesPage() {
                                                     <Protected permission="category.manage">
                                                         <button
                                                             onClick={() => startEdit(cat)}
-                                                            className="p-2 rounded-lg text-stone-500 hover:bg-orange-50 hover:text-orange-600 transition-colors"
+                                                            className="p-2 rounded-lg text-stone-400 hover:bg-orange-50 hover:text-orange-600 transition-colors opacity-0 group-hover:opacity-100"
                                                         >
                                                             <Edit size={16} />
                                                         </button>
                                                         <button
                                                             onClick={() => handleDeleteClick(cat.id)}
-                                                            className="p-2 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                            className="p-2 rounded-lg text-stone-400 hover:bg-red-50 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100"
                                                         >
                                                             <Trash2 size={16} />
                                                         </button>

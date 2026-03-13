@@ -52,13 +52,17 @@ export default function SanxuatProductsPage() {
         setSearchTerm,
         refresh
     } = useListingData<ProductWithCategory>('products', {
-        select: `*, categories ( name ), product_media ( url, type ), product_units ( conversion_rate, unit_id )`,
+        select: `*, product_category_rel(category_id, is_primary, categories(id, name)), product_media ( url, type ), product_units ( conversion_rate, unit_id )`,
         orderBy: { column: 'created_at', ascending: false }
     })
 
     const displayedProducts = React.useMemo(() => {
         if (selectedCategory === 'all') return products
-        return products.filter(p => p.category_id === selectedCategory)
+        return products.filter(p => {
+            // Check if product is in selected category via n-n relation
+            const rels = (p as any).product_category_rel || []
+            return rels.some((r: any) => r.categories?.id === selectedCategory) || p.category_id === selectedCategory
+        })
     }, [products, selectedCategory])
 
     const handleViewProduct = (product: ProductWithCategory) => {
@@ -207,9 +211,31 @@ export default function SanxuatProductsPage() {
                                             </div>
                                         </td>
                                         <td className="p-5">
-                                            <span className="px-3 py-1 rounded-full bg-stone-100 text-stone-600 text-[11px] font-bold uppercase tracking-wider">
-                                                {item.categories?.name || 'Chưa phân loại'}
-                                            </span>
+                                            <div className="flex flex-wrap gap-1">
+                                                {(item.product_category_rel && item.product_category_rel.length > 0) ? (
+                                                    item.product_category_rel
+                                                        .sort((a: any, b: any) => (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0))
+                                                        .map((rel: any, idx: number) => (
+                                                            <span 
+                                                                key={idx} 
+                                                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-sm ${
+                                                                    rel.is_primary 
+                                                                        ? 'bg-orange-100 text-orange-700 border-orange-200' 
+                                                                        : 'bg-stone-100 text-stone-500 border-stone-200'
+                                                                }`}
+                                                                title={rel.is_primary ? 'Danh mục chính' : 'Danh mục phụ'}
+                                                            >
+                                                                {rel.categories?.name}
+                                                            </span>
+                                                        ))
+                                                ) : item.categories?.name ? (
+                                                    <span className="px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 text-[10px] font-bold uppercase tracking-wider border border-orange-200">
+                                                        {item.categories.name}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-stone-400 text-[10px] italic">Chưa phân loại</span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="p-5 text-right">
                                             <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">

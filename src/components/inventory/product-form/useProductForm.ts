@@ -38,7 +38,8 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
         // Basic
         sku: initialData?.sku || '',
         name: initialData?.name || '',
-        category_id: initialData?.category_id || '',
+        primary_category_id: '' as string, // [NEW] Mandatory primary category
+        secondary_category_ids: [] as string[], // [NEW] Optional secondary categories
         description: initialData?.description || '',
         // Images (Legacy/Thumbnail)
         image_url: initialData?.image_url || '',
@@ -64,13 +65,35 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
             fetchCategories()
         }
         fetchUnits()
-        if (isEditMode && initialData) fetchProductUnits()
+        if (isEditMode && initialData) {
+            fetchProductUnits()
+            fetchProductCategoryRels() // [NEW]
+        }
         if (hasModule('images') && isEditMode && initialData) {
             fetchMedia()
         }
     }, [systemType])
 
     // Data Fetching Logic...
+    async function fetchProductCategoryRels() {
+        if (!initialData) return
+        const { data } = await (supabase.from('product_category_rel') as any)
+            .select('category_id, is_primary')
+            .eq('product_id', initialData.id)
+        
+        if (data && data.length > 0) {
+            const primary = data.find((d: any) => d.is_primary)?.category_id || ''
+            const secondary = data.filter((d: any) => !d.is_primary).map((d: any) => d.category_id)
+            setFormData(prev => ({ 
+                ...prev, 
+                primary_category_id: primary || (initialData.category_id as string || ''),
+                secondary_category_ids: secondary 
+            }))
+        } else if (initialData.category_id) {
+            setFormData(prev => ({ ...prev, primary_category_id: initialData.category_id as string }))
+        }
+    }
+
     async function fetchMedia() {
         if (!initialData) return
         const { data } = await (supabase.from('product_media') as any).select('*').eq('product_id', initialData.id).order('sort_order')
@@ -215,8 +238,12 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         setLoading(true)
+        
+        // Remove categories from main product payload
+        const { primary_category_id, secondary_category_ids, ...baseData } = formData
         const payload = {
-            ...formData,
+            ...baseData,
+            category_id: primary_category_id || null, // Primary category in legacy field
             system_type: systemType,
             company_id: profile?.company_id || null
         }
@@ -230,6 +257,46 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
                 const { data, error } = await (supabase.from('products') as any).insert([payload]).select().single()
                 if (error) throw error
                 productId = data.id
+            }
+
+            // Save Category Relations
+            if (productId) {
+                // Delete existing rels
+                await (supabase.from('product_category_rel') as any).delete().eq('product_id', productId)
+                
+                if (primary_category_id || (secondary_category_ids && secondary_category_ids.length > 0)) {
+                    const rels = []
+                    
+                    if (primary_category_id) {
+                        rels.push({
+                            product_id: productId,
+                            category_id: primary_category_id,
+                            is_primary: true,
+                            system_type: systemType,
+                            company_id: profile?.company_id || null
+                        })
+                    }
+
+                    if (secondary_category_ids && secondary_category_ids.length > 0) {
+                        secondary_category_ids.forEach(catId => {
+                            // Don't add if already added as primary (extreme case)
+                            if (catId !== primary_category_id) {
+                                rels.push({
+                                    product_id: productId,
+                                    category_id: catId,
+                                    is_primary: false,
+                                    system_type: systemType,
+                                    company_id: profile?.company_id || null
+                                })
+                            }
+                        })
+                    }
+
+                    if (rels.length > 0) {
+                        const { error: relErr } = await (supabase.from('product_category_rel') as any).insert(rels)
+                        if (relErr) throw relErr
+                    }
+                }
             }
 
             // Save Units
@@ -313,7 +380,7 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
         generateSku,
         hasModule,
         currentSystem,
-        profile, // [NEW]
+        profile,
         handleSubmit
     }
 }

@@ -69,9 +69,21 @@ export default function MobileProductList({
                                     </span>
                                 )}
                             </div>
-                            <p className="text-xs text-stone-500 line-clamp-1">
-                                {item.categories?.name || '---'}
-                            </p>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                                {(item.product_category_rel && item.product_category_rel.length > 0) ? (
+                                    item.product_category_rel.map((rel, idx) => (
+                                        <span key={idx} className="text-[10px] bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded border border-orange-100">
+                                            {rel.categories?.name}
+                                        </span>
+                                    ))
+                                ) : item.categories?.name ? (
+                                    <span className="text-[10px] bg-stone-50 text-stone-500 px-1.5 py-0.5 rounded border border-stone-100">
+                                        {item.categories.name}
+                                    </span>
+                                ) : (
+                                    <span className="text-[10px] text-stone-400 italic">Chưa phân loại</span>
+                                )}
+                            </div>
                         </div>
                     </div>
 
