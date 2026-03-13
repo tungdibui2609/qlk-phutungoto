@@ -1017,16 +1017,16 @@ export default function WarehouseMapPrintPage() {
                     </div>
 
                     {/* Footer Signatures */}
-                    <div className="flex justify-between mt-12">
+                    <div id="print-signatures" className="flex justify-between mt-12 print:mt-6 print:break-inside-avoid print:block">
                         {[
                             { title: signTitle1, setTitle: setSignTitle1, person: signPerson1, setPerson: setSignPerson1 },
                             { title: signTitle2, setTitle: setSignTitle2, person: signPerson2, setPerson: setSignPerson2 },
                             { title: signTitle3, setTitle: setSignTitle3, person: signPerson3, setPerson: setSignPerson3, extra: '(Ký, họ tên, đóng dấu)' }
                         ].map((s, i) => (
-                            <div key={i} className="text-center w-1/3">
+                            <div key={i} className="text-center w-1/3 print:w-[33%] print:inline-block print:align-top">
                                 <EditableText value={s.title} onChange={s.setTitle} className="font-bold text-center w-full mb-1" isSnapshot={isSnapshotMode} />
                                 <p className="italic text-xs">{s.extra || '(Ký, họ tên)'}</p>
-                                <div className="h-24"></div>
+                                <div className="h-24 print:h-16"></div>
                                 <EditableText value={s.person} onChange={s.setPerson} className="font-bold text-center w-full" placeholder="Nhập tên..." isSnapshot={isSnapshotMode} />
                             </div>
                         ))}
@@ -1037,7 +1037,7 @@ export default function WarehouseMapPrintPage() {
                         @media print {
                             @page { 
                                 size: A4 ${orientation}; 
-                                margin: 0 !important; 
+                                margin: 10mm !important; 
                             }
                             
                             html, body {
@@ -1049,12 +1049,16 @@ export default function WarehouseMapPrintPage() {
                             }
 
                             #print-ready {
-                                width: ${orientation === 'landscape' ? '297mm' : '210mm'} !important;
-                                min-width: ${orientation === 'landscape' ? '297mm' : '210mm'} !important;
+                                width: 100% !important;
+                                min-width: 100% !important;
+                                max-width: none !important;
                                 margin: 0 !important;
-                                padding: 10mm !important;
+                                padding: 0 !important;
                                 display: block !important;
                                 box-shadow: none !important;
+                                border: none !important;
+                                border-radius: 0 !important;
+                                outline: none !important;
                                 overflow: visible !important;
                                 position: relative !important;
                             }

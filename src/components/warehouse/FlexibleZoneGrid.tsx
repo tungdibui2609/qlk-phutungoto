@@ -536,7 +536,7 @@ export default function FlexibleZoneGrid({
                 return (
                     <div
                         key={zone.id}
-                        className={`flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1 min-h-0' : 'h-auto'} rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden print:overflow-visible bg-white dark:bg-gray-800 print:break-inside-avoid ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
+                        className={`flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1 min-h-0' : 'h-auto'} rounded-xl border border-gray-200 dark:border-gray-700 print:border-none overflow-hidden print:overflow-visible bg-white dark:bg-gray-800 print:break-inside-avoid ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
                     >
                         {pageBreakIds.has(zone.id) && (
                             <div className="hidden print:block text-center border-b border-dashed border-gray-300 mb-4 pb-2 text-[10px] text-gray-400 italic">
@@ -717,12 +717,12 @@ export default function FlexibleZoneGrid({
                             </div>
                         </div>
 
-                        <div className={`p-2 flex-1 flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1' : 'h-auto'} ${isPrintPage ? 'print:flex-1 print:min-h-0 print:h-full' : ''}`}>
+                        <div className={`p-2 flex-1 flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1' : 'h-auto'} print:flex print:flex-col print:h-auto`}>
                             {!isCollapsed && (
-                                <div className={`p-3 flex-1 flex flex-col bg-white/50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-800 ${mergedZones.has(zone.id) ? 'h-full flex-1' : 'h-auto'} ${isPrintPage ? 'print:flex-1 print:h-full' : ''}`}>
+                                <div className={`p-3 flex-1 flex flex-col bg-white/50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-800 print:border-t-none print:flex print:flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1' : 'h-auto'} print:h-auto`}>
                                     {shouldRenderGrid && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
                                     {hasChildren && !mergedZones.has(zone.id) && (
-                                        <div className="mt-2 print:mt-0 space-y-1.5 px-1 pb-1">
+                                        <div className="mt-2 print:mt-0 space-y-1.5 px-1 pb-1 print:block">
                                             {zone.children.map((child, idx) => (
                                                 <React.Fragment key={child.id}>
                                                     {isPrintPage && onTogglePageBreak && idx > 0 && (
@@ -736,10 +736,12 @@ export default function FlexibleZoneGrid({
                                                                     <span className={pageBreakIds.has(child.id) ? 'text-blue-600 font-bold' : 'text-stone-400'}>{pageBreakIds.has(child.id) ? '✂ Ngắt trang' : 'Ngắt trang'}</span>
                                                                 </button>
                                                             </div>
-                                                            {pageBreakIds.has(child.id) && <div className="hidden print:block print-break-before-page" />}
+                                                            {pageBreakIds.has(child.id) && <div className="hidden print:block print-break-before-page print:w-full" style={{ height: 0, padding: 0, margin: 0, border: 0 }} />}
                                                         </>
                                                     )}
-                                                    {renderZone(child as any, depth + 1, currentBreadcrumb)}
+                                                    <div className="print:block">
+                                                        {renderZone(child as any, depth + 1, currentBreadcrumb)}
+                                                    </div>
                                                 </React.Fragment>
                                             ))}
                                         </div>
@@ -754,7 +756,7 @@ export default function FlexibleZoneGrid({
                 return (
                     <div
                         key={zone.id}
-                        className={`flex flex-col print:block rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden print:overflow-visible bg-white dark:bg-gray-800  print:break-inside-auto ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
+                        className={`flex flex-col print:block rounded-xl border border-gray-200 dark:border-gray-700 print:border-none overflow-hidden print:overflow-visible bg-white dark:bg-gray-800  print:break-inside-auto ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
                         style={overrideBgStyle}
                     >
                         {pageBreakIds.has(zone.id) && (
@@ -937,26 +939,37 @@ export default function FlexibleZoneGrid({
                         </div>
 
                         {!isCollapsed && (
-                            <div className={`p-2 ${mergedZones.has(zone.id) ? 'flex-1 flex flex-col h-full min-h-0' : 'flex flex-col h-auto'} bg-emerald-50/10 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800 print:overflow-visible ${isPrintPage && mergedZones.has(zone.id) ? 'print:flex-1 print:h-full print:min-h-0' : ''}`}>
+                            <div className={`p-2 ${mergedZones.has(zone.id) ? 'flex-1 flex flex-col h-full min-h-0' : 'flex flex-col h-auto'} bg-emerald-50/10 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800 print:border-t-none print:flex print:flex-col print:overflow-visible print:h-auto`}>
                                 {shouldRenderGrid && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
                                 {hasChildren && !isBinMerged && (
-                                    <div
-                                        className={
-                                            childLayout === 'horizontal'
-                                                ? 'flex gap-1.5 overflow-x-auto pb-2'
-                                                : childLayout === 'grid'
-                                                    ? `grid items-stretch gap-1.5 ${mergedZones.has(zone.id) ? 'flex-1 h-full' : 'h-auto'}`
-                                                    : `space-y-1.5 print:space-y-1 ${mergedZones.has(zone.id) ? 'flex-1 h-full' : 'h-auto'}`
-                                        }
-                                        style={
-                                            childLayout === 'grid' && childColumns > 0
-                                                ? { gridTemplateColumns: `repeat(${childColumns}, minmax(0, 1fr))` }
-                                                : childLayout === 'grid'
-                                                    ? { gridTemplateColumns: `repeat(auto-fill, minmax(300px, 1fr))` }
-                                                    : undefined
-                                        }
-                                    >
-                                        {zone.children.map((child, idx) => {
+                                    <div className="w-full">
+                                        {(() => {
+                                            const printGridWidthClass = 
+                                                effectiveChildCols === 1 ? 'print:w-full print:mb-2 print:flex-none' :
+                                                effectiveChildCols === 2 ? 'print:w-[48%] print:mb-2 print:flex-none' :
+                                                effectiveChildCols === 3 ? 'print:w-[32%] print:mb-2 print:flex-none' :
+                                                effectiveChildCols === 4 ? 'print:w-[23%] print:mb-2 print:flex-none' :
+                                                effectiveChildCols === 5 ? 'print:w-[18%] print:mb-2 print:flex-none' :
+                                                'print:w-[15%] print:mb-2 print:flex-none';
+                                            
+                                            return (
+                                                <div
+                                                    className={
+                                                        childLayout === 'horizontal'
+                                                            ? 'flex gap-1.5 overflow-x-auto pb-2 print:flex print:flex-wrap print:gap-1.5'
+                                                            : childLayout === 'grid'
+                                                                ? `grid items-stretch gap-1.5 ${mergedZones.has(zone.id) ? 'flex-1 h-full' : 'h-auto'} print:flex print:flex-wrap print:gap-[2%]`
+                                                                : `space-y-1.5 print:space-y-1 ${mergedZones.has(zone.id) ? 'flex-1 h-full' : 'h-auto'} print:block`
+                                                    }
+                                                    style={
+                                                        childLayout === 'grid' && childColumns > 0
+                                                            ? { gridTemplateColumns: `repeat(${childColumns}, minmax(0, 1fr))` }
+                                                            : childLayout === 'grid'
+                                                                ? { gridTemplateColumns: `repeat(auto-fill, minmax(300px, 1fr))` }
+                                                                : undefined
+                                                    }
+                                                >
+                                                    {zone.children.map((child, idx) => {
                                             const rowIdx = childLayout === 'grid' ? Math.floor(idx / effectiveChildCols) : 0
                                             const rowStyle: React.CSSProperties | undefined = alternatingRows && childLayout === 'grid' && rowIdx % 2 !== 0
                                                 ? { backgroundColor: 'rgba(219, 234, 254, 0.55)', borderColor: 'rgba(147, 197, 253, 0.4)' }
@@ -981,14 +994,14 @@ export default function FlexibleZoneGrid({
                                                             </div>
                                                             {pageBreakIds.has(child.id) && (
                                                                 <div 
-                                                                    className="hidden print:block print-break-before-page" 
-                                                                    style={childLayout === 'grid' ? { gridColumn: '1 / -1', height: 0, padding: 0 } : { height: 0, padding: 0 }}
+                                                                    className="hidden print:block print-break-before-page print:w-full" 
+                                                                    style={{ height: 0, padding: 0, margin: 0, border: 0 }}
                                                                 />
                                                             )}
                                                         </>
                                                     )}
                                                     <div
-                                                        className={childLayout === 'horizontal' ? 'shrink-0 grow flex flex-col print:flex' : (childLayout === 'grid' ? (mergedZones.has(child.id) || isPrintPage ? 'h-full flex flex-col flex-1 min-h-0 print:flex-1 print:min-w-[32%]' : 'h-auto flex flex-col') : (mergedZones.has(child.id) ? 'h-full flex flex-col flex-1 min-h-0' : 'h-auto flex flex-col'))}
+                                                        className={childLayout === 'horizontal' ? 'shrink-0 grow flex flex-col print:flex print:w-full print:mb-2 print:flex-none' : (childLayout === 'grid' ? (mergedZones.has(child.id) || isPrintPage ? `h-full flex flex-col flex-1 min-h-0 print:h-auto ${printGridWidthClass}` : 'h-auto flex flex-col') : (mergedZones.has(child.id) ? 'h-full flex flex-col flex-1 min-h-0 print:block print:flex-none' : 'h-auto flex flex-col print:block print:flex-none'))}
                                                         style={childLayout === 'horizontal' && childWidth > 0 ? { width: `${childWidth}px` } : undefined}
                                                     >
                                                         {renderZone(child as any, depth + 1, currentBreadcrumb, rowStyle)}
@@ -996,6 +1009,9 @@ export default function FlexibleZoneGrid({
                                                 </React.Fragment>
                                             )
                                         })}
+                                                </div>
+                                            )
+                                        })()}
                                     </div>
                                 )}
                             </div>
@@ -1008,7 +1024,7 @@ export default function FlexibleZoneGrid({
                 return (
                     <div
                         key={zone.id}
-                        className={`group flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1 min-h-0' : 'h-auto'} rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden print:overflow-visible ${depth === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50'}`}
+                        className={`group flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1 min-h-0' : 'h-auto'} rounded-xl border border-gray-200 dark:border-gray-700 print:border-none overflow-hidden print:overflow-visible ${depth === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50'}`}
                         style={overrideBgStyle}
                     >
                         <div
@@ -1188,10 +1204,10 @@ export default function FlexibleZoneGrid({
                         </div>
 
                         {!isCollapsed && (
-                            <div className={`p-1.5 ${isBinMerged ? 'flex-1 flex flex-col h-full print:flex-1 print:h-full print:min-h-0' : 'flex flex-col h-auto'} bg-emerald-50/5 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800 print:overflow-visible`}>
+                            <div className={`p-1.5 ${isBinMerged ? 'flex-1 flex flex-col h-full print:h-auto' : 'flex flex-col h-auto'} bg-emerald-50/5 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800 print:border-t-none print:flex print:flex-col print:overflow-visible`}>
                                 {shouldRenderGrid && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
                                 {hasChildren && !isBinMerged && (
-                                    <div className="space-y-1.5 print:space-y-1">
+                                    <div className="space-y-1.5 print:space-y-1 print:block">
                                         {zone.children.map((child, idx) => (
                                             <React.Fragment key={child.id}>
                                                 {isPrintPage && onTogglePageBreak && idx > 0 && (
@@ -1205,10 +1221,12 @@ export default function FlexibleZoneGrid({
                                                                 <span className={pageBreakIds.has(child.id) ? 'text-blue-600 font-bold' : 'text-stone-400'}>{pageBreakIds.has(child.id) ? '✂ Ngắt trang' : 'Ngắt trang'}</span>
                                                             </button>
                                                         </div>
-                                                        {pageBreakIds.has(child.id) && <div className="hidden print:block print-break-before-page" />}
+                                                        {pageBreakIds.has(child.id) && <div className="hidden print:block print-break-before-page print:w-full" style={{ height: 0, padding: 0, margin: 0, border: 0 }} />}
                                                     </>
                                                 )}
-                                                {renderZone(child as any, depth + 1, currentBreadcrumb)}
+                                                <div className="print:block">
+                                                    {renderZone(child as any, depth + 1, currentBreadcrumb)}
+                                                </div>
                                             </React.Fragment>
                                         ))}
                                     </div>
