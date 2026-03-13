@@ -4,7 +4,9 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Calendar, Download, Loader2, Printer } from 'lucide-react'
-import { ExportMapDiagram } from '@/components/export/ExportMapDiagram'
+import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
+import { groupWarehouseData } from '@/lib/warehouseUtils'
+import { Database } from '@/lib/database.types'
 import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
@@ -12,6 +14,14 @@ import { PrintHeader } from '@/components/print/PrintHeader'
 import { EditableText } from '@/components/print/PrintHelpers'
 import { format } from 'date-fns'
 import { TagDisplay } from '@/components/lots/TagDisplay'
+
+type Position = Database['public']['Tables']['positions']['Row']
+type Zone = Database['public']['Tables']['zones']['Row']
+type ZoneLayout = Database['public']['Tables']['zone_layouts']['Row']
+
+interface PositionWithZone extends Position {
+    zone_id?: string | null
+}
 
 interface ExportOrderItem {
     id: string
@@ -81,6 +91,13 @@ function ExportOrderPrintContent() {
     const [loading, setLoading] = useState(true)
     const [task, setTask] = useState<ExportTask | null>(null)
     const [items, setItems] = useState<ExportOrderItem[]>([])
+    const [zones, setZones] = useState<Zone[]>([])
+    const [positions, setPositions] = useState<PositionWithZone[]>([])
+    const [layouts, setLayouts] = useState<Record<string, ZoneLayout>>({})
+    const [lotInfo, setLotInfo] = useState<Record<string, any>>({})
+    const [occupiedIds, setOccupiedIds] = useState<Set<string>>(new Set())
+    const [displayInternalCode, setDisplayInternalCode] = useState(false)
+    const [mergedZones, setMergedZones] = useState<Set<string>>(new Set())
 
     // Use shared hook for company info
     const { companyInfo, logoSrc } = usePrintCompanyInfo({
@@ -100,6 +117,7 @@ function ExportOrderPrintContent() {
     const [editDay, setEditDay] = useState('')
     const [editMonth, setEditMonth] = useState('')
     const [editYear, setEditYear] = useState('')
+    const [notes, setNotes] = useState('')
 
     // Editable signature fields
     const [signTitle1, setSignTitle1] = useState('Người lập phiếu')
@@ -119,6 +137,35 @@ function ExportOrderPrintContent() {
             }
 
             try {
+                const fetchAll = async (table: string, filter?: (query: any) => any, select = '*', limit = 1000) => {
+                    let allRecs: any[] = []
+                    let from = 0
+                    while (true) {
+                        let query = supabase.from(table as any).select(select).range(from, from + limit - 1)
+                        if (filter) query = filter(query)
+                        const { data, error } = await query
+                        if (error) throw error
+                        if (!data || data.length === 0) break
+                        allRecs = [...allRecs, ...data]
+                        if (data.length < limit) break
+                        from += limit
+                    }
+                    if (['positions', 'zones', 'zone_layouts', 'lots'].includes(table)) {
+                        const uniqueMap = new Map()
+                        for (const item of allRecs) {
+                            if (item.id) uniqueMap.set(item.id, item)
+                        }
+                        return Array.from(uniqueMap.values())
+                    } else if (table === 'zone_positions') {
+                        const uniqueMap = new Map()
+                        for (const item of allRecs) {
+                            uniqueMap.set(`${item.zone_id}-${item.position_id}`, item)
+                        }
+                        return Array.from(uniqueMap.values())
+                    }
+                    return allRecs
+                }
+
                 // Fetch Task
                 let { data: taskData, error: taskError } = await supabase
                     .from('export_tasks')
@@ -144,10 +191,6 @@ function ExportOrderPrintContent() {
                     setTask(taskData)
                 }
 
-                // Fetch Zones for recursive is_hall calculation
-                const { data: zonesData } = await supabase.from('zones').select('*')
-                const currentZones = zonesData || []
-
                 // Fetch Items
                 const { data: itemsDataRaw, error: itemsError } = await supabase
                     .from('export_task_items')
@@ -158,6 +201,7 @@ function ExportOrderPrintContent() {
                         status,
                         position_id,
                         lots (
+                            id,
                             code,
                             inbound_date, 
                             notes, 
@@ -168,67 +212,214 @@ function ExportOrderPrintContent() {
                             )
                         ),
                         positions!export_task_items_position_id_fkey (code),
-                        products (name, sku)
+                        products (name, sku, internal_code, internal_name)
                     `)
                     .eq('task_id', taskId)
 
                 if (itemsError) throw itemsError
 
-                // Map the data to include fallback position and computed_status
-                const itemsData = (itemsDataRaw || []).map((item: any) => {
-                    let originalPosCode = item.positions?.code || 'N/A'
-                    let currentPosCode = 'N/A'
-                    let isHall = false
-
-                    if (item.lots?.positions && item.lots.positions.length > 0) {
-                        currentPosCode = item.lots.positions[0].code
-
-                        // Recursive is_hall check
-                        const isHallRelation = item.lots.positions[0].is_hall
-                        const leafZoneId = Array.isArray(isHallRelation)
-                            ? isHallRelation[0]?.zone_id
-                            : isHallRelation?.zone_id
-
-                        if (leafZoneId) {
-                            let currId = leafZoneId
-                            while (currId) {
-                                const z = currentZones.find((x: any) => x.id === currId)
-                                if (!z) break
-                                if (z.is_hall) {
-                                    isHall = true
-                                    break
-                                }
-                                currId = z.parent_id
-                            }
-                        }
-                    }
-
-                    if (originalPosCode === 'N/A' && currentPosCode !== 'N/A') {
-                        originalPosCode = currentPosCode
-                    }
-
-                    let displayStatus = item.status === 'Exported' ? 'Exported' : 'Pending'
-                    if (displayStatus === 'Pending' && originalPosCode !== currentPosCode) {
-                        displayStatus = isHall ? 'Moved to Hall' : 'Changed Position'
-                    }
-
-                    return {
-                        ...item,
-                        positions: { code: originalPosCode },
-                        current_position_code: currentPosCode,
-                        computed_status: displayStatus
-                    }
-                })
-
+                const initialItemsData = itemsDataRaw || []
+                
                 // Sắp xếp theo mã vị trí (A-Z) để gom nhóm các khu vực gần nhau
-                itemsData.sort((a: any, b: any) => {
+                initialItemsData.sort((a: any, b: any) => {
                     const posA = a.positions?.code || ''
                     const posB = b.positions?.code || ''
                     return posA.localeCompare(posB)
                 })
 
                 // Explicitly cast or handle potential nulls if needed, though interface update should handle it
-                setItems(itemsData as unknown as ExportOrderItem[] || [])
+                setItems(initialItemsData as unknown as ExportOrderItem[] || [])
+
+                // Process Structure for Grid
+                const systemCode = (taskData as any).system_code
+                if (systemCode) {
+                    const [posDataRaw, zoneDataRaw, zpDataRaw, layoutDataRaw] = await Promise.all([
+                        fetchAll('positions', q => q.eq('system_type', systemCode).order('code', { numeric: true }).order('id')),
+                        fetchAll('zones', q => q.eq('system_type', systemCode).order('level').order('display_order').order('code').order('id')),
+                        fetchAll('zone_positions', q => q.select('zone_id, position_id, positions!inner(system_type)').eq('positions.system_type', systemCode).order('zone_id', { ascending: true }).order('position_id', { ascending: true })),
+                        fetchAll('zone_layouts', q => q.order('id')),
+                    ])
+
+                    // Fetch Zones for recursive is_hall calculation
+                    const currentZones = zoneDataRaw || []
+
+                    const zpLookup: Record<string, string> = {}
+                    zpDataRaw.forEach((zp: any) => {
+                        if (zp.position_id && zp.zone_id) zpLookup[zp.position_id] = zp.zone_id
+                    })
+
+                    const posWithZone: PositionWithZone[] = (posDataRaw as any[]).map(pos => ({
+                        ...pos, zone_id: zpLookup[pos.id] || null
+                    }))
+
+                    const layoutsMap: Record<string, ZoneLayout> = {}
+                    layoutDataRaw.forEach((l: any) => { if (l.zone_id) layoutsMap[l.zone_id] = l })
+                    setLayouts(layoutsMap)
+
+                    const { zones: groupedZones, positions: groupedPositions } = groupWarehouseData(zoneDataRaw as any, posWithZone)
+
+                    const exportedPosIds = new Set(initialItemsData.map((i: any) => i.position_id).filter(Boolean))
+
+                    const parentMap = new Map<string, string>()
+                    groupedZones.forEach(z => {
+                        if (z.parent_id) parentMap.set(z.id, z.parent_id)
+                    })
+
+                    const relevantZIds = new Set<string>()
+                    groupedPositions.forEach(p => {
+                        if (exportedPosIds.has(p.id) && p.zone_id) {
+                            let curr: string | null = p.zone_id
+                            while (curr) {
+                                relevantZIds.add(curr)
+                                curr = parentMap.get(curr) || null
+                            }
+                        }
+                    })
+
+                    const isBin = (z: Zone) => z.id.startsWith('v-bin-') || z.name.toUpperCase().startsWith('Ô ') || z.name.toUpperCase().startsWith('SẢNH')
+                    
+                    // First, identify all level zones (Tầng) that contain out items
+                    const levelIdsWithItems = new Set<string>()
+                    groupedPositions.forEach(p => {
+                        if (exportedPosIds.has(p.id) && p.zone_id) {
+                            let curr: string | null = p.zone_id
+                            while (curr) {
+                                const z = groupedZones.find(x => x.id === curr)
+                                if (z && (z.name.toUpperCase().startsWith('TẦNG') || z.id.startsWith('v-lvl-'))) {
+                                    levelIdsWithItems.add(z.id)
+                                }
+                                curr = parentMap.get(curr) || null
+                            }
+                        }
+                    })
+
+                    groupedZones.forEach(z => {
+                        if (relevantZIds.has(z.id) && isBin(z)) {
+                            const addDescendants = (parentId: string) => {
+                                groupedZones.forEach(child => {
+                                    if (child.parent_id === parentId) {
+                                        // Only add to relevant if it's NOT a level, OR if it's a level that has items
+                                        const isLevel = child.name.toUpperCase().startsWith('TẦNG') || child.id.startsWith('v-lvl-')
+                                        if (!isLevel || levelIdsWithItems.has(child.id)) {
+                                            relevantZIds.add(child.id)
+                                            addDescendants(child.id)
+                                        }
+                                    }
+                                })
+                            }
+                            addDescendants(z.id)
+                        }
+                    })
+
+                    const finalZones = groupedZones.filter(z => relevantZIds.has(z.id))
+                    
+                    const finalZoneIds = new Set(finalZones.map(z => z.id))
+                    
+                    // Position is relevant if it belongs to a zone we kept
+                    // However if it belongs to a zone we kept, we only keep it if it is an export item OR if its zone is a level zone (so we see empty slots on THAT level)
+                    const finalPositions = groupedPositions.filter(p => {
+                        if (!p.zone_id || !finalZoneIds.has(p.zone_id)) return false
+                        
+                        // We also want to keep empty slots, but ONLY for the levels we kept
+                        return true
+                    })
+
+                    const lotInfoMap: Record<string, any> = {}
+                    const occupied = new Set<string>()
+
+                    finalPositions.forEach(p => {
+                        const exportItem = initialItemsData.find((i: any) => i.position_id === p.id)
+                        if (exportItem && exportItem.lots) {
+                            p.lot_id = exportItem.lots.id
+                            occupied.add(p.id)
+                            
+                            const tags = exportItem.lots.lot_tags
+                                ? exportItem.lots.lot_tags
+                                    .filter((t: any) => !t.tag.startsWith('SPLIT_TO:') && !t.tag.startsWith('MERGED_TO:'))
+                                    .map((t: any) => t.tag.replace(/@/g, exportItem.products?.sku || ''))
+                                : []
+
+                            lotInfoMap[exportItem.lots.id] = {
+                                code: exportItem.lots.code,
+                                inbound_date: exportItem.lots.inbound_date,
+                                tags: tags,
+                                items: [{
+                                    product_name: exportItem.products?.name,
+                                    sku: exportItem.products?.sku,
+                                    internal_code: exportItem.products?.internal_code,
+                                    internal_name: exportItem.products?.internal_name,
+                                    unit: exportItem.unit,
+                                    quantity: exportItem.quantity,
+                                    tags: tags
+                                }]
+                            }
+                        } else {
+                            p.lot_id = null
+                        }
+                    })
+
+                    const autoMerged = new Set<string>()
+                    finalZones.forEach(z => {
+                        const level = z.level || 0
+                        const isLevelUnderBin = level >= 10
+                        const isBigBin = (z as any).type === 'big-bin'
+                        if ((isLevelUnderBin || isBigBin) && ((z as any).positions?.length > 1 || ((z as any).totalPositions || 0) > 1)) {
+                            autoMerged.add(z.id)
+                        }
+                    })
+
+                    setZones(finalZones)
+                    setPositions(finalPositions)
+                    setLotInfo(lotInfoMap)
+                    setOccupiedIds(occupied)
+                    setMergedZones(autoMerged)
+                    
+                    // Recompute itemsData computed_status here using currentZones
+                    const finalItemsData = initialItemsData.map((item: any) => {
+                        let originalPosCode = item.positions?.code || 'N/A'
+                        let currentPosCode = 'N/A'
+                        let isHall = false
+
+                        if (item.lots?.positions && item.lots.positions.length > 0) {
+                            currentPosCode = item.lots.positions[0].code
+
+                            const isHallRelation = item.lots.positions[0].is_hall
+                            const leafZoneId = Array.isArray(isHallRelation)
+                                ? isHallRelation[0]?.zone_id
+                                : isHallRelation?.zone_id
+
+                            if (leafZoneId) {
+                                let currId = leafZoneId
+                                while (currId) {
+                                    const z = currentZones.find((x: any) => x.id === currId)
+                                    if (!z) break
+                                    if (z.is_hall) {
+                                        isHall = true
+                                        break
+                                    }
+                                    currId = z.parent_id
+                                }
+                            }
+                        }
+
+                        if (originalPosCode === 'N/A' && currentPosCode !== 'N/A') {
+                            originalPosCode = currentPosCode
+                        }
+
+                        let displayStatus = item.status === 'Exported' ? 'Exported' : 'Pending'
+                        if (displayStatus === 'Pending' && originalPosCode !== currentPosCode) {
+                            displayStatus = isHall ? 'Moved to Hall' : 'Changed Position'
+                        }
+
+                        return {
+                            ...item,
+                            positions: { code: originalPosCode },
+                            current_position_code: currentPosCode,
+                            computed_status: displayStatus
+                        }
+                    })
+                    setItems(finalItemsData as unknown as ExportOrderItem[] || [])
+                }
 
                 // Initialize editable fields
                 if (taskData) {
@@ -237,11 +428,25 @@ function ExportOrderPrintContent() {
 
                     setEditMonth((d.getMonth() + 1).toString())
                     setEditYear(d.getFullYear().toString())
+                    setNotes(taskData.notes || '')
 
-                    // @ts-expect-error: Access joined relation
-                    if (taskData.created_by_profile?.full_name) {
+                    // Lấy thông tin người đăng nhập hiện tại
+                    const { data: { user } } = await supabase.auth.getUser()
+                    let loggedInName = ''
+                    if (user) {
+                        const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', user.id).single()
+                        if (profile && profile.full_name) loggedInName = profile.full_name
+                    }
+
+                    if (loggedInName) {
+                        setSignPerson1(loggedInName)
+                        setTask(prev => prev ? { ...prev, created_by_profile: { full_name: loggedInName } } : null)
+                    } else {
                         // @ts-expect-error: Access joined relation
-                        setSignPerson1(taskData.created_by_profile.full_name)
+                        if (taskData.created_by_profile?.full_name) {
+                            // @ts-expect-error: Access joined relation
+                            setSignPerson1(taskData.created_by_profile.full_name as string)
+                        }
                     }
                 }
 
@@ -381,6 +586,18 @@ function ExportOrderPrintContent() {
                     <div>- Trạng thái: {task.status === 'Pending' ? 'Mới' : task.status}</div>
                     <div>- Người tạo: {task.created_by_profile?.full_name || '...'}</div>
                     <div>- Ngày tạo: {new Date(task.created_at).toLocaleString('vi-VN')}</div>
+                    <div className="flex gap-1 items-start">
+                        <span className="shrink-0">- Ghi chú:</span>
+                        <div className="flex-1">
+                            <EditableText
+                                value={notes}
+                                onChange={setNotes}
+                                placeholder=""
+                                className="w-full !text-red-600 font-bold italic h-5"
+                                isSnapshot={isSnapshotMode}
+                            />
+                        </div>
+                    </div>
                 </div>
 
                 <h3 className="font-bold text-sm mb-2">Chi tiết hàng hóa xuất kho</h3>
@@ -538,7 +755,25 @@ function ExportOrderPrintContent() {
             {/* PAGE 2: DIAGRAM */}
             <div className={`landscape-section pt-8 px-8 pb-8 print:p-0 w-full max-w-[297mm] print:max-w-none bg-white shadow-md print:shadow-none ${isCapturing ? 'w-[297mm]' : ''} page-break`}>
                 <h2 className="font-bold text-lg mb-4 text-center uppercase border-b border-black pb-2">Sơ đồ vị trí xuất kho</h2>
-                <ExportMapDiagram items={items} />
+                {zones.length > 0 && (
+                    <FlexibleZoneGrid
+                        zones={zones}
+                        positions={positions}
+                        layouts={layouts}
+                        occupiedIds={occupiedIds}
+                        lotInfo={lotInfo as any}
+                        collapsedZones={new Set()}
+                        selectedPositionIds={new Set()}
+                        onToggleCollapse={() => { }}
+                        pageBreakIds={new Set()}
+                        displayInternalCode={displayInternalCode}
+                        isDesignMode={false}
+                        isGrouped={true}
+                        mergedZones={mergedZones}
+                        isCapturing={isCapturing}
+                        isPrintPage={true}
+                    />
+                )}
             </div>
         </div>
     )

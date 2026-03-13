@@ -11,6 +11,7 @@ type ZoneLayout = Database['public']['Tables']['zone_layouts']['Row']
 
 import PositionCell from './PositionCell'
 import MergedBigCell from './MergedBigCell'
+import { EditableText } from '@/components/print/PrintHelpers'
 
 interface PositionWithZone extends Position {
     zone_id?: string | null
@@ -76,6 +77,7 @@ export default function FlexibleZoneGrid({
     isPrintPage = false
 }: FlexibleZoneGridProps) {
     const [isMobile, setIsMobile] = React.useState(false)
+    const [localNotes, setLocalNotes] = React.useState<Record<string, string>>({})
 
     React.useEffect(() => {
         const checkMobile = () => setIsMobile(window.innerWidth < 768)
@@ -578,7 +580,7 @@ export default function FlexibleZoneGrid({
                                             </div>
                                         )}
                                         <h2
-                                            className={`font-bold tracking-tight ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-sm' : 'text-lg'}`}
+                                            className={`font-bold tracking-tight whitespace-nowrap shrink-0 ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-sm' : 'text-lg'}`}
                                             style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
                                         >
                                             {isLevelUnderBin
@@ -586,10 +588,21 @@ export default function FlexibleZoneGrid({
                                                 : (isMobile || isGrouped ? zone.name : currentBreadcrumb.join(' • '))
                                             }
                                         </h2>
+                                        {isPrintPage && (
+                                            <div className="ml-2 flex items-center shrink-0">
+                                                <EditableText
+                                                    value={localNotes[zone.id] || ''}
+                                                    onChange={(val: string) => setLocalNotes(prev => ({ ...prev, [zone.id]: val }))}
+                                                    placeholder=""
+                                                    className="!text-red-600 font-bold italic text-sm print:text-red-600 !border-b-stone-300"
+                                                    isSnapshot={isCapturing}
+                                                />
+                                            </div>
+                                        )}
                                     </div>
                                     {!isLevelUnderBin && totalPositions > 0 && (
                                         <p
-                                            className="text-xs"
+                                            className="text-xs whitespace-nowrap shrink-0"
                                             style={{ color: headerTextColor ? `${headerTextColor}cc` : (headerColor ? 'rgba(255,255,255,0.8)' : undefined) }}
                                         >
                                             {totalPositions} ô / <span className="font-semibold text-blue-600 dark:text-blue-400">{totalSelectableCount} có hàng</span>
@@ -799,7 +812,7 @@ export default function FlexibleZoneGrid({
                                             </div>
                                         )}
                                         <h2
-                                            className={`font-bold tracking-tight ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-sm' : 'text-lg'}`}
+                                            className={`font-bold tracking-tight whitespace-nowrap shrink-0 ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-sm' : 'text-lg'}`}
                                             style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
                                         >
                                             {isLevelUnderBin
@@ -807,10 +820,21 @@ export default function FlexibleZoneGrid({
                                                 : (isMobile || isGrouped ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • '))
                                             }
                                         </h2>
+                                        {isPrintPage && (
+                                            <div className="ml-2 flex items-center shrink-0">
+                                                <EditableText
+                                                    value={localNotes[zone.id] || ''}
+                                                    onChange={(val: string) => setLocalNotes(prev => ({ ...prev, [zone.id]: val }))}
+                                                    placeholder=""
+                                                    className="!text-red-600 font-bold italic text-sm print:text-red-600 !border-b-stone-300"
+                                                    isSnapshot={isCapturing}
+                                                />
+                                            </div>
+                                        )}
                                     </div>
                                     {!isLevelUnderBin && totalPositions > 0 && (
                                         <p
-                                            className="text-xs"
+                                            className="text-xs whitespace-nowrap shrink-0"
                                             style={{ color: headerTextColor ? `${headerTextColor}cc` : (headerColor ? 'rgba(255,255,255,0.8)' : undefined) }}
                                         >
                                             {totalPositions} ô / <span className="font-semibold text-blue-600 dark:text-blue-400">{totalSelectableCount} có hàng</span>
@@ -1056,7 +1080,7 @@ export default function FlexibleZoneGrid({
                                     </div>
                                 )}
                                 <span
-                                    className={`font-bold tracking-tight ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-base' : depth === 0 ? 'text-base' : 'text-sm'}`}
+                                    className={`font-bold tracking-tight whitespace-nowrap shrink-0 ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-base' : depth === 0 ? 'text-base' : 'text-sm'}`}
                                     style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
                                 >
                                     {isLevelUnderBin
@@ -1064,9 +1088,20 @@ export default function FlexibleZoneGrid({
                                         : (isMobile || isGrouped ? zone.name : currentBreadcrumb.join(' • '))
                                     }
                                 </span>
+                                {isPrintPage && (
+                                    <div className="ml-2 flex items-center shrink-0">
+                                        <EditableText
+                                            value={localNotes[zone.id] || ''}
+                                            onChange={(val: string) => setLocalNotes(prev => ({ ...prev, [zone.id]: val }))}
+                                            placeholder=""
+                                            className="!text-red-600 font-bold italic text-sm print:text-red-600 !border-b-stone-300"
+                                            isSnapshot={isCapturing}
+                                        />
+                                    </div>
+                                )}
                                 {!isLevelUnderBin && totalPositions > 0 && (
                                     <span
-                                        className={`px-1.5 py-0.5 rounded-full ${isLevelUnderBin ? 'text-[10px]' : 'text-xs'} ${headerColor || headerTextColor ? '' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300'}`}
+                                        className={`px-1.5 py-0.5 rounded-full whitespace-nowrap shrink-0 ${isLevelUnderBin ? 'text-[10px]' : 'text-xs'} ${headerColor || headerTextColor ? '' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300'}`}
                                         style={{
                                             backgroundColor: headerTextColor ? `${headerTextColor}33` : (headerColor ? 'rgba(255,255,255,0.2)' : undefined),
                                             color: headerTextColor || (headerColor ? 'white' : undefined)
