@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { matchSearch, normalizeSearchString, calculateSearchScore } from '@/lib/searchUtils'
 import { matchDateRange } from '@/lib/dateUtils'
 import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
+import { SearchMode } from '@/app/(dashboard)/warehouses/map/_hooks/useMapFilters'
 
 export type Lot = Database['public']['Tables']['lots']['Row'] & {
     system_code?: string
@@ -46,6 +47,7 @@ export function useLotManagement() {
     const [unassignedTotal, setUnassignedTotal] = useState(0)
 
     const [searchTerm, setSearchTerm] = useState('')
+    const [searchMode, setSearchMode] = useState<SearchMode>('all')
     const [positionFilter, setPositionFilter] = useState<'all' | 'assigned' | 'unassigned'>('all')
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [dateFilterField, setDateFilterField] = useState<DateFilterField>('created_at')
@@ -119,7 +121,7 @@ export function useLotManagement() {
         }, 500)
 
         return () => clearTimeout(timer)
-    }, [searchTerm, positionFilter, selectedZoneId, dateFilterField, startDate, endDate, fifoActive])
+    }, [searchTerm, searchMode, positionFilter, selectedZoneId, dateFilterField, startDate, endDate, fifoActive])
 
     // Effect for page change ONLY
     useEffect(() => {
@@ -311,46 +313,119 @@ export function useLotManagement() {
                     qcIds = qcs?.map(q => q.id) || [];
                 }
 
-                // Tags - fetch paginated lot_ids by tag to bypass 1000-row limit
-                const tagLots = await fetchAllPaginated('lot_tags', (q) => (q as any).ilike('tag', `%${normalizedTerm}%`), 'lot_id');
-                const tagLotIds = (tagLots || []).map((t: any) => t.lot_id).filter(Boolean);
+                // Advanced parser for server-side
+                const orQueries = searchTerm.split(';').map(q => q.trim()).filter(Boolean);
+                let finalOrConditions: string[] = [];
 
-                // Find lots that have items with the matching products (chunked to avoid URL length)
-                let itemLotIds: string[] = [];
-                if (prodIds.length > 0) {
-                    const CHUNK = 500;
-                    for (let i = 0; i < prodIds.length; i += CHUNK) {
-                        const slice = prodIds.slice(i, i + CHUNK);
-                        const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', slice);
-                        if (items) itemLotIds.push(...items.map(i => i.lot_id));
-                    }
+                for (const orQuery of orQueries) {
+                    const andParts = orQuery.split('&').map(q => q.trim()).filter(Boolean);
+                    if (andParts.length === 0) continue;
+
+                    // For each OR group, we want to find lots that match ALL andParts
+                    // Since Supabase .or() is (A OR B OR C), we need to resolve ANDs first.
+                    // A simple way is to find lot IDs that match each part and then intersect them.
                     
-                    // Also search in lots.product_id directly (for lots created without lot_items)
-                    const { data: lotsWithProductId } = await supabase.from('lots')
-                        .select('id')
-                        .in('product_id', prodIds)
-                        .eq('system_code', currentSystem.code);
-                    if (lotsWithProductId) {
-                        itemLotIds.push(...lotsWithProductId.map(l => l.id));
+                    let groupLotIds: string[] | null = null;
+
+                    for (const part of andParts) {
+                        const partNormalized = normalizeSearchString(part);
+                        const partTerm = `%${part}%`;
+                        const partUnaccented = `%${normalizeSearchString(part, true)}%`;
+                        
+                        let currentMatchIds: string[] = [];
+
+                        if (searchMode === 'all') {
+                            // Fetch all IDs for this part
+                            const { data: pMatched } = await supabase.from('products').select('id').or(`name.ilike.${partTerm},sku.ilike.${partTerm},internal_code.ilike.${partTerm}`).eq('system_code', currentSystem.code);
+                            const pIds = pMatched?.map(p => p.id) || [];
+                            
+                            const tagLots = await fetchAllPaginated('lot_tags', (q) => (q as any).ilike('tag', `%${partNormalized}%`), 'lot_id');
+                            const tagLotIds = (tagLots || []).map((t: any) => t.lot_id).filter(Boolean);
+
+                            let itemLotIds: string[] = [];
+                            if (pIds.length > 0) {
+                                const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', pIds);
+                                if (items) itemLotIds.push(...items.map(i => i.lot_id));
+                                const { data: direct } = await supabase.from('lots').select('id').in('product_id', pIds).eq('system_code', currentSystem.code);
+                                if (direct) itemLotIds.push(...direct.map(l => l.id));
+                            }
+                            
+                            const { data: posLots } = await supabase.from('positions').select('lot_id').ilike('code', partTerm).not('lot_id', 'is', null);
+                            const posIds = (posLots?.map(p => p.lot_id).filter(Boolean) || []) as string[];
+
+                            const { data: lotsDirect } = await supabase.from('lots').select('id')
+                                .or(`code.ilike.${partTerm},notes.ilike.${partTerm}`)
+                                .eq('system_code', currentSystem.code);
+                            const directIds = lotsDirect?.map(l => l.id) || [];
+
+                            currentMatchIds = Array.from(new Set([...itemLotIds, ...tagLotIds, ...posIds, ...directIds]));
+                        }
+                        else if (searchMode === 'name') {
+                            const { data: pMatched } = await supabase.from('products').select('id').or(`name.ilike.${partTerm},internal_name.ilike.${partTerm}`).eq('system_type', currentSystem.code);
+                            const pIds = pMatched?.map(p => p.id) || [];
+                            if (pIds.length > 0) {
+                                const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', pIds);
+                                if (items) currentMatchIds.push(...items.map(i => i.lot_id));
+                                const { data: direct } = await supabase.from('lots').select('id').in('product_id', pIds).eq('system_code', currentSystem.code);
+                                if (direct) currentMatchIds.push(...direct.map(l => l.id));
+                            }
+                        }
+                        else if (searchMode === 'code') {
+                            const { data: pMatched } = await supabase.from('products').select('id').or(`sku.ilike.${partTerm},internal_code.ilike.${partTerm}`).eq('system_type', currentSystem.code);
+                            const pIds = pMatched?.map(p => p.id) || [];
+                            const { data: lotsDirect } = await supabase.from('lots').select('id').ilike('code', partTerm).eq('system_code', currentSystem.code);
+                            const directIds = lotsDirect?.map(l => l.id) || [];
+                            
+                            let itemLotIds: string[] = [];
+                            if (pIds.length > 0) {
+                                const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', pIds);
+                                if (items) itemLotIds.push(...items.map(i => i.lot_id));
+                            }
+                            currentMatchIds = Array.from(new Set([...itemLotIds, ...directIds]));
+                        }
+                        else if (searchMode === 'tag') {
+                            const tagLots = await fetchAllPaginated('lot_tags', (q) => (q as any).ilike('tag', `%${partNormalized}%`), 'lot_id');
+                            currentMatchIds = (tagLots || []).map((t: any) => t.lot_id).filter(Boolean);
+                        }
+                        else if (searchMode === 'position') {
+                            const { data: posLots } = await supabase.from('positions').select('lot_id').ilike('code', partTerm).not('lot_id', 'is', null);
+                            currentMatchIds = (posLots?.map(p => p.lot_id).filter(Boolean) || []) as string[];
+                        }
+                        else if (searchMode === 'category') {
+                             const { data: matchedCats } = await supabase.from('categories').select('id').or(`name.ilike.${partTerm},name.ilike.${partUnaccented}`).eq('system_type', currentSystem.code);
+                             const catIds = matchedCats?.map(c => c.id) || [];
+                             if (catIds.length > 0) {
+                                 const { data: rels } = await supabase.from('product_category_rel').select('product_id').in('category_id', catIds);
+                                 const pIds = rels?.map(r => r.product_id) || [];
+                                 if (pIds.length > 0) {
+                                     const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', pIds);
+                                     if (items) currentMatchIds.push(...items.map(i => i.lot_id));
+                                     const { data: directLots } = await supabase.from('lots').select('id').in('product_id', pIds).eq('system_code', currentSystem.code);
+                                     if (directLots) currentMatchIds.push(...directLots.map(l => l.id));
+                                 }
+                             }
+                        }
+
+                        // Intersect IDs for AND
+                        if (groupLotIds === null) groupLotIds = currentMatchIds;
+                        else groupLotIds = groupLotIds.filter(id => currentMatchIds.includes(id));
+                        
+                        if (groupLotIds.length === 0) break; // Optimization
+                    }
+
+                    if (groupLotIds && groupLotIds.length > 0) {
+                        finalOrConditions.push(`id.in.(${groupLotIds.slice(0, 500).join(',')})`);
+                    } else if (andParts.length > 0) {
+                        // If no lots match this AND group, we add a dummy filter so the OR doesn't ignore the failure
+                        finalOrConditions.push(`id.eq.00000000-0000-0000-0000-000000000000`);
                     }
                 }
 
-                // Combine all lot IDs found from children records
-                const combinedLotIds = Array.from(new Set([...itemLotIds, ...tagLotIds])).slice(0, 300); // prevent 414 errors
-                const safeSuppIds = suppIds.slice(0, 50);
-                const safeQcIds = qcIds.slice(0, 50);
-
-                // Construct OR filter for top-level lots
-                let orConditions = [
-                    `code.ilike.${term}`,
-                    `notes.ilike.${term}`,
-                    `metadata->>extra_info.ilike.${term}`
-                ];
-                if (combinedLotIds.length > 0) orConditions.push(`id.in.(${combinedLotIds.join(',')})`);
-                if (safeSuppIds.length > 0) orConditions.push(`supplier_id.in.(${safeSuppIds.join(',')})`);
-                if (safeQcIds.length > 0) orConditions.push(`qc_id.in.(${safeQcIds.join(',')})`);
-
-                query = query.or(orConditions.join(','));
+                if (finalOrConditions.length > 0) {
+                    query = query.or(finalOrConditions.join(','));
+                } else {
+                    query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+                }
             }
 
             // 2. Date Range
@@ -817,6 +892,8 @@ export function useLotManagement() {
         loading,
         searchTerm,
         setSearchTerm,
+        searchMode,
+        setSearchMode,
         positionFilter,
         setPositionFilter,
         setSelectedZoneId, // Zone filter effectively disabled for now or needs updates

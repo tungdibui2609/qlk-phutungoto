@@ -45,7 +45,7 @@ export function useWarehouseData() {
 
         const { data: l, error } = await supabase
             .from('lots')
-            .select('*, suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name)), lot_tags(tag, lot_item_id)')
+            .select('*, suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)')
             .eq('id', lotId)
             .single()
 
@@ -157,7 +157,7 @@ export function useWarehouseData() {
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
                 fetchAllZonesPos(),
                 fetchAll('zone_layouts', q => q.order('id')),
-                fetchAll('lots', undefined, '*, suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name)), lot_tags(tag, lot_item_id)')
+                fetchAll('lots', q => q.eq('system_code', systemType), '*, suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)')
             ])
 
             // Create lookup map for positions -> zone_id
@@ -185,6 +185,11 @@ export function useWarehouseData() {
                             .map((t: any) => t.tag.replace(/@/g, item.products?.sku || ''))
                             .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
                         accumulatedTags.push(...itemTags)
+                        const rel = (item.products as any)?.product_category_rel
+                        const categoryNames = Array.isArray(rel) 
+                            ? rel.map((r: any) => r.categories?.name).filter(Boolean)
+                            : (rel?.categories?.name ? [rel.categories.name] : [])
+
                         return {
                             product_name: item.products?.name,
                             sku: item.products?.sku,
@@ -192,14 +197,20 @@ export function useWarehouseData() {
                             internal_name: item.products?.internal_name,
                             unit: item.unit || item.products?.unit,
                             quantity: item.quantity,
-                            tags: itemTags
-                        }
+                            tags: itemTags,
+                            categoryNames: categoryNames
+                        } as any
                     })
                 } else if (l.products) {
                     const itemTags = allTags
                         .map((t: any) => t.tag.replace(/@/g, l.products?.sku || ''))
                         .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
                     accumulatedTags.push(...itemTags)
+                    const rel = (l.products as any)?.product_category_rel
+                    const categoryNames = Array.isArray(rel) 
+                        ? rel.map((r: any) => r.categories?.name).filter(Boolean)
+                        : (rel?.categories?.name ? [rel.categories.name] : [])
+
                     items = [{
                         product_name: l.products.name,
                         sku: l.products.sku,
@@ -207,8 +218,9 @@ export function useWarehouseData() {
                         internal_name: l.products.internal_name,
                         unit: l.products.unit,
                         quantity: l.quantity,
-                        tags: itemTags
-                    }]
+                        tags: itemTags,
+                        categoryNames: categoryNames
+                    } as any]
                 }
 
                 lotInfoMap[l.id] = {

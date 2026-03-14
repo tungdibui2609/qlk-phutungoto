@@ -63,6 +63,7 @@ function WarehouseMapContent() {
     const {
         selectedZoneId, setSelectedZoneId,
         searchTerm, setSearchTerm,
+        searchMode, setSearchMode,
         dateFilterField, setDateFilterField,
         startDate, setStartDate,
         endDate, setEndDate,
@@ -640,6 +641,8 @@ function WarehouseMapContent() {
             <MapFilterBar
                 searchTerm={searchTerm}
                 onSearchChange={setSearchTerm}
+                searchMode={searchMode}
+                onSearchModeChange={setSearchMode}
                 selectedZoneId={selectedZoneId}
                 onZoneSelect={setSelectedZoneId}
                 dateFilterField={dateFilterField}

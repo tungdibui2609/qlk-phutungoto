@@ -31,6 +31,8 @@ export function LotPageManager() {
         loading,
         searchTerm,
         setSearchTerm,
+        searchMode,
+        setSearchMode,
         positionFilter,
         setPositionFilter,
         dateFilterField,
@@ -215,6 +217,8 @@ export function LotPageManager() {
             <LotFilter
                 searchTerm={searchTerm}
                 onSearchChange={setSearchTerm}
+                searchMode={searchMode}
+                onSearchModeChange={setSearchMode}
                 positionFilter={positionFilter}
                 onPositionFilterChange={setPositionFilter}
                 selectedZoneId={selectedZoneId}

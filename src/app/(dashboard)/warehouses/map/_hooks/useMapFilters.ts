@@ -11,9 +11,12 @@ interface UseMapFiltersProps {
     isFifoEnabled?: boolean
 }
 
+export type SearchMode = 'all' | 'name' | 'code' | 'tag' | 'position' | 'category'
+
 export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseMapFiltersProps) {
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [searchTerm, setSearchTerm] = useState('')
+    const [searchMode, setSearchMode] = useState<SearchMode>('all')
 
     // Date Filters
     const [dateFilterField, setDateFilterField] = useState<DateFilterField>('created_at')
@@ -66,11 +69,13 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
                 const matchesTag = (p: PositionWithZone, term: string): boolean => {
                     const lot = p.lot_id ? lotInfo[p.lot_id] : null
                     if (!lot) return false
-                    if (lot.tags && Array.isArray(lot.tags)) {
-                        if (lot.tags.some((t: string) => t.toLowerCase().includes(term))) return true
+                    // Search in lot_tags
+                    if (lot.lot_tags && Array.isArray(lot.lot_tags)) {
+                        if (lot.lot_tags.some((t: any) => t.tag?.toLowerCase().includes(term))) return true
                     }
-                    if (lot.items && Array.isArray(lot.items)) {
-                        for (const item of lot.items) {
+                    // Search in items tags if any
+                    if (lot.lot_items && Array.isArray(lot.lot_items)) {
+                        for (const item of lot.lot_items) {
                             if (item.tags && Array.isArray(item.tags)) {
                                 if (item.tags.some((t: string) => t.toLowerCase().includes(term))) return true
                             }
@@ -79,36 +84,73 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
                     return false
                 }
 
-                // Determine search mode based on separators present
-                const hasSemicolon = trimmed.includes(';')
-                const hasAmpersand = trimmed.includes('&')
+                // Helper: match only positions
+                const matchesPosition = (p: PositionWithZone, term: string): boolean => {
+                    return p.code.toLowerCase().includes(term)
+                }
 
-                if (hasSemicolon || hasAmpersand) {
-                    // Advanced mode: split by ";" for OR groups
-                    const queries = trimmed.split(';').map(q => q.trim()).filter(Boolean)
+                // Helper: match only codes (Lot Code, SKU, etc.)
+                const matchesCode = (p: PositionWithZone, term: string): boolean => {
+                    const lot = p.lot_id ? lotInfo[p.lot_id] : null
+                    if (!lot) return false
+                    const lotMatch = lot.code?.toLowerCase().includes(term)
+                    const itemMatch = lot.lot_items?.some((it: any) =>
+                        it.products?.sku?.toLowerCase().includes(term) ||
+                        it.products?.internal_code?.toLowerCase().includes(term)
+                    )
+                    return !!(lotMatch || itemMatch)
+                }
 
-                    result = result.filter(p => {
-                        return queries.some(query => {
-                            // Check for "&" (AND: product & tag)
-                            if (query.includes('&')) {
-                                const parts = query.split('&').map(s => s.trim().toLowerCase())
-                                const productTerm = parts[0]
-                                const tagTerm = parts.slice(1).join('&')
-                                if (!productTerm && !tagTerm) return false
-                                const productMatch = productTerm ? matchesProduct(p, productTerm) : true
-                                const tagMatch = tagTerm ? matchesTag(p, tagTerm) : true
-                                return productMatch && tagMatch
+                // Helper: match name
+                const matchesName = (p: PositionWithZone, term: string): boolean => {
+                    const lot = p.lot_id ? lotInfo[p.lot_id] : null
+                    if (!lot) return false
+                    return lot.lot_items?.some((it: any) =>
+                        it.products?.name?.toLowerCase().includes(term) ||
+                        it.products?.internal_name?.toLowerCase().includes(term)
+                    )
+                }
+
+                // Helper: match category
+                const matchesCategory = (p: PositionWithZone, term: string): boolean => {
+                    const lot = p.lot_id ? lotInfo[p.lot_id] : null
+                    if (!lot) return false
+                    
+                    // Search in categoryNames using the robust matchSearch utility
+                    return lot.items?.some((it: any) => 
+                        it.categoryNames?.some((cat: string) => matchSearch(cat, term))
+                    )
+                }
+
+                // Advanced parser for ALL modes
+                const orQueries = trimmed.split(';').map(q => q.trim()).filter(Boolean)
+
+                result = result.filter(p => {
+                    // Overall OR condition: any of the semicolon-separated queries must match
+                    return orQueries.some(orQuery => {
+                        // AND condition: split by "&"
+                        const andParts = orQuery.split('&').map(q => q.trim()).filter(Boolean)
+                        if (andParts.length === 0) return false
+
+                        // All parts in the "&" group must match
+                        return andParts.every(part => {
+                            const term = part.toLowerCase()
+                            switch (searchMode) {
+                                case 'name': return matchesName(p, term)
+                                case 'code': return matchesCode(p, term)
+                                case 'tag': return matchesTag(p, term)
+                                case 'position': return matchesPosition(p, term)
+                                case 'category': return matchesCategory(p, part) // matchSearch handles case
+                                case 'all':
+                                default:
+                                    // Special space-separated logic for 'all' mode
+                                    if (!part.includes(' ')) return matchesAll(p, term)
+                                    const spaceTerms = term.split(/\s+/).filter(Boolean)
+                                    return spaceTerms.some(t => matchesAll(p, t))
                             }
-                            // Plain term (no &), match everything
-                            const term = query.toLowerCase()
-                            return matchesAll(p, term)
                         })
                     })
-                } else {
-                    // Simple mode: space-separated terms (OR for position codes)
-                    const rawTerms = trimmed.toLowerCase().split(/\s+/).filter(Boolean)
-                    result = result.filter(p => rawTerms.some(term => matchesAll(p, term)))
-                }
+                })
             }
         }
 
@@ -155,7 +197,7 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
         }
 
         return result
-    }, [positions, selectedZoneId, searchTerm, zones, lotInfo, startDate, endDate, dateFilterField, isFifoActive])
+    }, [positions, selectedZoneId, searchTerm, searchMode, zones, lotInfo, startDate, endDate, dateFilterField, isFifoActive])
 
     // Filter zones to pass to grid based on selection
     const filteredZones = useMemo(() => {
@@ -184,6 +226,7 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
     return {
         selectedZoneId, setSelectedZoneId,
         searchTerm, setSearchTerm,
+        searchMode, setSearchMode,
         dateFilterField, setDateFilterField,
         startDate, setStartDate,
         endDate, setEndDate,

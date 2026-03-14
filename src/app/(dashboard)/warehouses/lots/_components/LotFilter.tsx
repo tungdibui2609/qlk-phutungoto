@@ -1,10 +1,15 @@
-import { Search, Filter, Warehouse } from 'lucide-react'
+import { Search, Filter, Warehouse, HelpCircle, Tag, Package, Hash, MapPin, Layers, LayoutGrid } from 'lucide-react'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { DateRangeFilter, DateFilterField } from '@/components/warehouse/DateRangeFilter'
+import { SearchHelpModal } from '@/components/shared/SearchHelpModal'
+import { useState } from 'react'
+import { SearchMode } from '@/app/(dashboard)/warehouses/map/_hooks/useMapFilters'
 
 interface LotFilterProps {
     searchTerm: string
     onSearchChange: (value: string) => void
+    searchMode: SearchMode
+    onSearchModeChange: (mode: SearchMode) => void
     positionFilter: 'all' | 'assigned' | 'unassigned'
     onPositionFilterChange: (value: 'all' | 'assigned' | 'unassigned') => void
     selectedZoneId: string | null
@@ -22,6 +27,8 @@ interface LotFilterProps {
 export function LotFilter({
     searchTerm,
     onSearchChange,
+    searchMode,
+    onSearchModeChange,
     positionFilter,
     onPositionFilterChange,
     selectedZoneId,
@@ -35,20 +42,62 @@ export function LotFilter({
     showMobileFilters,
     toggleMobileFilters
 }: LotFilterProps) {
+    const [isHelpOpen, setIsHelpOpen] = useState(false)
+
     return (
         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-2.5 shadow-sm space-y-2">
             {/* Row 1: Search, Status & Date Filters (Consolidated for space) */}
             <div className="flex flex-wrap items-center gap-2 w-full">
                 {/* Search - Flexible & Primary */}
-                <div className="relative flex-[3.5] min-w-[280px]">
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                    <input
-                        type="text"
-                        placeholder="Tìm kiếm mã LOT, lô hàng..."
-                        value={searchTerm}
-                        onChange={(e) => onSearchChange(e.target.value)}
-                        className="w-full pl-10 pr-4 py-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all font-medium text-xs lg:text-sm"
-                    />
+                <div className="relative flex-[3.5] min-w-[280px] flex items-center bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-orange-500/20 focus-within:border-orange-500 transition-all">
+                    <div className="flex items-center border-r border-slate-200 dark:border-slate-700 px-2 lg:px-3">
+                        {searchMode === 'all' && <Layers size={14} className="text-slate-400 mr-1.5" />}
+                        {searchMode === 'name' && <Package size={14} className="text-blue-500 mr-1.5" />}
+                        {searchMode === 'code' && <Hash size={14} className="text-purple-500 mr-1.5" />}
+                        {searchMode === 'tag' && <Tag size={14} className="text-emerald-500 mr-1.5" />}
+                        {searchMode === 'position' && <MapPin size={14} className="text-orange-500 mr-1.5" />}
+                        {searchMode === 'category' && <LayoutGrid size={14} className="text-indigo-500 mr-1.5" />}
+                        
+                        <select
+                            value={searchMode}
+                            onChange={(e) => onSearchModeChange(e.target.value as SearchMode)}
+                            className="bg-transparent border-none text-[10px] lg:text-[11px] font-bold text-slate-600 dark:text-slate-300 focus:ring-0 cursor-pointer p-0 pr-4 appearance-none"
+                        >
+                            <option value="all">Tổng hợp</option>
+                            <option value="name">Theo Tên</option>
+                            <option value="code">Theo Mã</option>
+                            <option value="tag">Mã phụ</option>
+                            <option value="position">Vị trí</option>
+                            <option value="category">Danh mục</option>
+                        </select>
+                    </div>
+
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                        <input
+                            type="text"
+                            placeholder={
+                                searchMode === 'name' ? "Tên sản phẩm..." :
+                                searchMode === 'code' ? "Mã Lot, SKU..." :
+                                searchMode === 'tag' ? "Mã phụ (tag)..." :
+                                searchMode === 'position' ? "Mã vị trí..." :
+                                searchMode === 'category' ? "Tên danh mục..." :
+                                "Tìm kiếm..."
+                            }
+                            value={searchTerm}
+                            onChange={(e) => onSearchChange(e.target.value)}
+                            className="w-full pl-9 pr-8 py-1.5 bg-transparent border-none outline-none font-medium text-xs lg:text-sm"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setIsHelpOpen(true)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-orange-500 transition-colors rounded-full p-0.5"
+                            title="Hướng dẫn tìm kiếm"
+                        >
+                            <HelpCircle size={14} />
+                        </button>
+                    </div>
+                    <SearchHelpModal isOpen={isHelpOpen} onOpenChange={setIsHelpOpen} />
                 </div>
 
                 {/* Extra Filters Wrapper - Groups them to wrap together and fills space */}
