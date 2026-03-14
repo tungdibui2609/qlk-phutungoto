@@ -54,6 +54,8 @@ export type ProductWithCategory = {
     } | null
     category_id: string | null
     product_category_rel?: {
+        category_id: string
+        is_primary: boolean
         categories: {
             id: string
             name: string

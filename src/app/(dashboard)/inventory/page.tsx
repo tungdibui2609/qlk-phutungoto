@@ -107,12 +107,18 @@ export default function InventoryPage() {
 
     // Load Categories
     useEffect(() => {
+        if (!systemType) return
         async function fetchCategories() {
-            const { data } = await supabase.from('categories').select('id, name').order('name')
+            const { data } = await supabase
+                .from('categories')
+                .select('id, name')
+                .eq('system_type', systemType)
+                .order('name')
             if (data) setCategories(data)
         }
         fetchCategories()
-    }, [])
+        setSelectedCategoryIds([]) // Reset selected categories when system changes
+    }, [systemType])
 
     // Date defaults
     useEffect(() => {
@@ -373,33 +379,33 @@ export default function InventoryPage() {
 
                     {/* Row 2: Category Multi-select (Full Width) */}
                     <div className="w-full">
-                        <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block flex items-center gap-2">
-                            <span>Danh mục</span>
-                            <span className="text-[10px] bg-stone-100 dark:bg-stone-800 px-1.5 py-0.5 rounded text-stone-500">Chọn nhiều</span>
+                        <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">
+                            Danh mục
                         </label>
-                        <div className="relative group">
-                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none group-focus-within:text-orange-500 transition-colors" />
-                            <div className="flex flex-wrap gap-2 p-2 min-h-[42px] w-full border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus-within:ring-2 focus-within:ring-orange-500 transition-all overflow-hidden hover:overflow-y-auto scrollbar-thin scrollbar-thumb-stone-300 dark:scrollbar-thumb-stone-700">
-                                {selectedCategoryIds.length === 0 && (
-                                    <span className="text-stone-400 text-sm px-2 py-1 italic">Tất cả danh mục sản phẩm (sẽ hiển thị toàn bộ nếu không chọn)</span>
-                                )}
-                                {selectedCategoryIds.map(id => {
-                                    const cat = categories.find(c => c.id === id)
-                                    return (
-                                        <span key={id} className="bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 text-xs pl-2.5 pr-1.5 py-1 rounded-full border border-orange-200 dark:border-orange-800/50 flex items-center gap-1.5 group/chip hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors">
-                                            {cat?.name || id}
-                                            <button 
-                                                onClick={(e) => {
-                                                    e.preventDefault()
-                                                    setSelectedCategoryIds(prev => prev.filter(x => x !== id))
-                                                }}
-                                                className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-orange-200 dark:hover:bg-orange-800 text-orange-400 hover:text-orange-800 dark:hover:text-orange-100 transition-colors font-bold"
-                                            >
-                                                ×
-                                            </button>
-                                        </span>
-                                    )
-                                })}
+                        <div className="relative group min-h-[42px] w-full border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus-within:ring-2 focus-within:ring-orange-500 transition-all flex flex-wrap gap-2 p-2">
+                            {selectedCategoryIds.length === 0 && (
+                                <span className="text-stone-400 text-sm px-2 py-1 italic">Tất cả danh mục sản phẩm (hoặc chọn bên dưới)</span>
+                            )}
+                            {selectedCategoryIds.map(id => {
+                                const cat = categories.find(c => c.id === id)
+                                return (
+                                    <span key={id} className="relative z-20 bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 text-xs pl-2.5 pr-1.5 py-1 rounded-full border border-orange-200 dark:border-orange-800/50 flex items-center gap-1.5 group/chip hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors">
+                                        {cat?.name || id}
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                e.preventDefault()
+                                                setSelectedCategoryIds(prev => prev.filter(x => x !== id))
+                                            }}
+                                            className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-orange-200 dark:hover:bg-orange-800 text-orange-400 hover:text-orange-800 dark:hover:text-orange-100 transition-colors font-bold cursor-pointer"
+                                        >
+                                            ×
+                                        </button>
+                                    </span>
+                                )
+                            })}
+                            
+                            <div className="relative flex-1 min-w-[120px]">
                                 <select
                                     className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10"
                                     onChange={(e) => {
@@ -415,16 +421,19 @@ export default function InventoryPage() {
                                         <option key={c.id} value={c.id}>{c.name}</option>
                                     ))}
                                 </select>
+                                <div className="text-sm text-orange-500 py-1 px-2 flex items-center gap-1 pointer-events-none">
+                                    <span className="text-lg">+</span> Thêm...
+                                </div>
                             </div>
+                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none group-focus-within:text-orange-500 transition-colors" />
                         </div>
                     </div>
 
                     {/* Row 3: Zone selector (Only for LOT tab) */}
                     {activeTab === 'lot' && (
                         <div className="w-full pt-2 border-t border-stone-100 dark:border-stone-800">
-                            <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-2 block flex items-center gap-2">
-                                <span>Khu vực / Dãy hàng</span>
-                                <span className="text-[10px] bg-stone-100 dark:bg-stone-800 px-1.5 py-0.5 rounded text-stone-500">Phân cấp</span>
+                            <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-2 block">
+                                Khu vực / Dãy hàng
                             </label>
                             <HorizontalZoneFilter
                                 selectedZoneId={selectedZoneId}

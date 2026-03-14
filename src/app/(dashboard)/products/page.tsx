@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Package, Search, Edit, Trash2, Eye, Filter } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
+import { useSystem } from '@/contexts/SystemContext'
 import Protected from '@/components/auth/Protected'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import ProductDetailModal from '@/components/inventory/ProductDetailModal'
@@ -20,6 +21,7 @@ type Product = Database['public']['Tables']['products']['Row']
 
 export default function InventoryPage() {
     const { showToast, showConfirm } = useToast()
+    const { systemType } = useSystem()
     const [categories, setCategories] = useState<any[]>([])
     const [selectedCategory, setSelectedCategory] = useState<string>('all')
     const [unitsMap, setUnitsMap] = useState<Record<string, string>>({})
@@ -31,10 +33,11 @@ export default function InventoryPage() {
 
     // Load Units dictionary & Categories
     useEffect(() => {
+        if (!systemType) return
         async function fetchCommonData() {
             const [unitsRes, catsRes] = await Promise.all([
                 supabase.from('units').select('id, name'),
-                supabase.from('categories').select('id, name').order('name')
+                supabase.from('categories').select('id, name').eq('system_type', systemType).order('name')
             ])
 
             if (unitsRes.data) {
@@ -47,7 +50,7 @@ export default function InventoryPage() {
             }
         }
         fetchCommonData()
-    }, [])
+    }, [systemType])
 
     const {
         filteredData: products,
@@ -56,16 +59,17 @@ export default function InventoryPage() {
         setSearchTerm,
         refresh
     } = useListingData<ProductWithCategory>('products', {
-        select: `*, product_category_rel(category_id, is_primary, categories(id, name)), product_media ( url, type ), product_units ( conversion_rate, unit_id )`,
+        select: `*, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name)), product_media ( url, type ), product_units ( conversion_rate, unit_id )`,
         orderBy: { column: 'created_at', ascending: false }
     })
 
     const displayedProducts = React.useMemo(() => {
         if (selectedCategory === 'all') return products
         return products.filter(p => {
-             // Check if product is in selected category via n-n relation
+             // Check if product is in selected category via n-n relation or legacy field
              const rels = p.product_category_rel || []
-             return rels.some(r => r.categories?.id === selectedCategory) || p.category_id === selectedCategory
+             const matchesRel = rels.some(r => r.category_id === selectedCategory || r.categories?.id === selectedCategory)
+             return matchesRel || p.category_id === selectedCategory
         })
     }, [products, selectedCategory])
 

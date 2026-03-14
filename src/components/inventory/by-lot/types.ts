@@ -21,5 +21,5 @@ export interface GroupedProduct {
     totalQuantity: number
     variants: Map<string, number> // CompositeTag -> Quantity
     lotCodes: string[]
-    categoryId?: string | null
+    categoryIds?: string[]
 }

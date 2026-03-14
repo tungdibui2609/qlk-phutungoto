@@ -2,7 +2,42 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
-import { Lot, GroupedProduct } from './types'
+interface ProductInfo {
+    name: string
+    unit: string
+    product_code?: string
+    sku: string
+    system_type: string
+    category_id?: string | null
+    product_category_rel?: { category_id: string }[]
+}
+
+export interface Lot {
+    id: string
+    code: string
+    product_id: string | null
+    quantity: number | null
+    status: string | null
+    warehouse_name: string | null
+    created_at: string
+    lot_items?: any[]
+    products?: ProductInfo | null
+    suppliers?: { name: string } | null
+    positions?: { id: string, code: string }[]
+    lot_tags?: { tag: string, lot_item_id: string | null }[]
+}
+
+export interface GroupedProduct {
+    key: string
+    productSku: string
+    productCode: string
+    productName: string
+    unit: string
+    totalQuantity: number
+    variants: Map<string, number>
+    lotCodes: string[]
+    categoryIds: string[]
+}
 import { groupWarehouseData } from '@/lib/warehouseUtils'
 
 export function useInventoryByLot(
@@ -206,7 +241,7 @@ export function useInventoryByLot(
                     .from('lots')
                     .select(`
                         *,
-                        lot_items (
+                         lot_items (
                             id,
                             quantity,
                             unit,
@@ -217,10 +252,19 @@ export function useInventoryByLot(
                                  sku,
                                  product_code:id,
                                  system_type,
-                                 category_id
+                                 category_id,
+                                 product_category_rel(category_id)
                              )
                          ),
-                         products (name, unit, product_code:id, sku, system_type, category_id),
+                         products (
+                            name,
+                            unit,
+                            product_code:id,
+                            sku,
+                            system_type,
+                            category_id,
+                            product_category_rel(category_id)
+                        ),
                         suppliers(name),
                         positions!positions_lot_id_fkey(id, code),
                         lot_tags(tag, lot_item_id)
@@ -299,8 +343,24 @@ export function useInventoryByLot(
 
             // 🟢 Category Filter
             if (selectedCategoryIds.length > 0) {
-                const matchesCategory = lot.products?.category_id && selectedCategoryIds.includes(lot.products.category_id)
-                const matchesItemCategory = lot.lot_items?.some(item => item.products?.category_id && selectedCategoryIds.includes(item.products.category_id))
+                const getProductCategoryIds = (p: any) => {
+                    if (!p) return []
+                    const ids = []
+                    if (p.category_id) ids.push(p.category_id)
+                    if (p.product_category_rel) {
+                        p.product_category_rel.forEach((rel: any) => ids.push(rel.category_id))
+                    }
+                    return ids
+                }
+
+                const lotCatIds = getProductCategoryIds(lot.products)
+                const matchesCategory = lotCatIds.some(id => selectedCategoryIds.includes(id))
+                
+                const matchesItemCategory = lot.lot_items?.some(item => {
+                    const itemCatIds = getProductCategoryIds(item.products)
+                    return itemCatIds.some(id => selectedCategoryIds.includes(id))
+                })
+
                 if (!matchesCategory && !matchesItemCategory) return false
             }
 
@@ -311,23 +371,41 @@ export function useInventoryByLot(
             const keywords = searchTerm.split(';').map(k => k.trim().toLowerCase()).filter(Boolean)
             if (keywords.length === 0) return true
 
-            const matchInLot = keywords.some(key => 
-                lot.code.toLowerCase().includes(key) ||
-                (lot.products?.name?.toLowerCase() || '').includes(key) ||
-                (lot.products?.sku?.toLowerCase() || '').includes(key) ||
-                (lot.products?.category_id && categoryMap[lot.products.category_id]?.toLowerCase().includes(key)) ||
-                (lot.suppliers?.name?.toLowerCase() || '').includes(key) ||
-                (lot.lot_tags?.some(t => t.tag.toLowerCase().includes(key)))
-            )
+            const matchInLot = keywords.some(key => {
+                const p = lot.products
+                const catNames: string[] = []
+                if (p?.category_id && categoryMap[p.category_id]) catNames.push(categoryMap[p.category_id].toLowerCase())
+                if (p?.product_category_rel) {
+                    p.product_category_rel.forEach((rel: any) => {
+                        if (categoryMap[rel.category_id]) catNames.push(categoryMap[rel.category_id].toLowerCase())
+                    })
+                }
+
+                return lot.code.toLowerCase().includes(key) ||
+                    (p?.name?.toLowerCase() || '').includes(key) ||
+                    (p?.sku?.toLowerCase() || '').includes(key) ||
+                    catNames.some(cn => cn.includes(key)) ||
+                    (lot.suppliers?.name?.toLowerCase() || '').includes(key) ||
+                    (lot.lot_tags?.some(t => t.tag.toLowerCase().includes(key)))
+            })
             
             // If lot items exist, we check if any item matches
-            const matchInItems = lot.lot_items?.some(item => 
-                keywords.some(key => 
-                    (item.products?.name?.toLowerCase() || '').includes(key) ||
-                    (item.products?.sku?.toLowerCase() || '').includes(key) ||
-                    (item.products?.category_id && categoryMap[item.products.category_id]?.toLowerCase().includes(key))
+            const matchInItems = lot.lot_items?.some(item => {
+                const p = item.products
+                const catNames: string[] = []
+                if (p?.category_id && categoryMap[p.category_id]) catNames.push(categoryMap[p.category_id].toLowerCase())
+                if (p?.product_category_rel) {
+                    p.product_category_rel.forEach((rel: any) => {
+                        if (categoryMap[rel.category_id]) catNames.push(categoryMap[rel.category_id].toLowerCase())
+                    })
+                }
+
+                return keywords.some(key => 
+                    (p?.name?.toLowerCase() || '').includes(key) ||
+                    (p?.sku?.toLowerCase() || '').includes(key) ||
+                    catNames.some(cn => cn.includes(key))
                 )
-            )
+            })
 
             return matchInLot || matchInItems
         })
@@ -344,7 +422,8 @@ export function useInventoryByLot(
                 itemId: string | null,
                 productId: string | null,
                 baseUnit: string | null,
-                categoryId: string | null
+                categoryId: string | null,
+                productCategoryRel?: { category_id: string }[]
             ) => {
                 // Secondary Search Filter on specific Variant/Item data
                 if (searchTerm) {
@@ -385,6 +464,12 @@ export function useInventoryByLot(
                     key = `${sku}__${unit}__UNCONVERTIBLE`
                 }
 
+                const catIds: string[] = []
+                if (categoryId) catIds.push(categoryId)
+                productCategoryRel?.forEach(rel => {
+                    if (rel.category_id && !catIds.includes(rel.category_id)) catIds.push(rel.category_id)
+                })
+
                 if (!groups.has(key)) {
                     groups.set(key, {
                         key,
@@ -395,12 +480,17 @@ export function useInventoryByLot(
                         totalQuantity: 0,
                         variants: new Map(),
                         lotCodes: [],
-                        categoryId: categoryId
+                        categoryIds: catIds
                     })
                 }
                 const group = groups.get(key)!
                 group.totalQuantity += displayQty
                 if (!group.lotCodes.includes(lot.code)) group.lotCodes.push(lot.code)
+                
+                // Ensure all categories are collected if they differ between lots (unlikely but safe)
+                catIds.forEach(cid => {
+                    if (!group.categoryIds.includes(cid)) group.categoryIds.push(cid)
+                })
 
                 let tags: string[] = []
                 if (lot.lot_tags) {
@@ -425,7 +515,8 @@ export function useInventoryByLot(
                              item.id,
                              item.product_id,
                              item.products.unit,
-                             item.products.category_id ?? null
+                             item.products.category_id ?? null,
+                             item.products.product_category_rel
                          )
                      }
                  })
@@ -438,7 +529,8 @@ export function useInventoryByLot(
                      null,
                      lot.product_id,
                      lot.products.unit,
-                     lot.products.category_id ?? null
+                     lot.products.category_id ?? null,
+                     lot.products.product_category_rel
                  )
              }
         })

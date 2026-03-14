@@ -109,6 +109,34 @@ export function calculateSearchScore(data: any, term: string): number {
             if (val.includes(normalizedTerm)) score += 200;
             else if (unaccentedVal.includes(unaccentedTerm)) score += 100;
         }
+
+        // 1b. Deep search for categories (Special handling for nested objects)
+        const checkCategoryMatch = (obj: any) => {
+            if (!obj) return 0;
+            let catScore = 0;
+            const name = normalizeSearchString(String(obj.name || ''));
+            const unaccentedName = normalizeSearchString(name, true);
+
+            if (name === normalizedTerm) catScore += 1000;
+            else if (name.startsWith(normalizedTerm)) catScore += 400;
+            else if (name.includes(normalizedTerm)) catScore += 150;
+            
+            return catScore;
+        }
+
+        // Check primary category
+        if (data.categories) {
+            score += checkCategoryMatch(data.categories);
+        }
+
+        // Check multiple categories in rel
+        if (Array.isArray(data.product_category_rel)) {
+            data.product_category_rel.forEach((rel: any) => {
+                if (rel.categories) {
+                    score += checkCategoryMatch(rel.categories);
+                }
+            });
+        }
     }
 
     // 2. Fallback sang so sánh chuỗi toàn bộ (đã tính ở trên)

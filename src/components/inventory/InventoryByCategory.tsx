@@ -32,17 +32,26 @@ export default function InventoryByCategory({
         const summaries: Record<string, CategorySummary> = {}
 
         groupedInventory.forEach(item => {
-            const catName = item.categoryId ? categoryMap[item.categoryId] || 'Chưa phân loại' : 'Chưa phân loại'
+            let ids: (string | null)[] = item.categoryIds && item.categoryIds.length > 0 ? item.categoryIds : [null];
             
-            if (!summaries[catName]) {
-                summaries[catName] = {
-                    name: catName,
-                    totalQuantity: 0,
-                    items: []
-                }
+            // If user has specific categories selected, only show summary for those
+            if (selectedCategoryIds.length > 0) {
+                ids = ids.filter(id => id && selectedCategoryIds.includes(id))
             }
-            summaries[catName].totalQuantity += item.totalQuantity
-            summaries[catName].items.push(item)
+
+            ids.forEach(cid => {
+                const catName = cid ? categoryMap[cid] || 'Chưa phân loại' : 'Chưa phân loại'
+                
+                if (!summaries[catName]) {
+                    summaries[catName] = {
+                        name: catName,
+                        totalQuantity: 0,
+                        items: []
+                    }
+                }
+                summaries[catName].totalQuantity += item.totalQuantity
+                summaries[catName].items.push(item)
+            })
         })
 
         return Object.values(summaries).sort((a, b) => a.name.localeCompare(b.name))
