@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
-import { matchSearch, normalizeSearchString, calculateSearchScore } from '@/lib/searchUtils'
+import { matchSearch, advancedMatchSearch, normalizeSearchString, calculateSearchScore } from '@/lib/searchUtils'
 import { matchDateRange } from '@/lib/dateUtils'
 import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { SearchMode } from '@/app/(dashboard)/warehouses/map/_hooks/useMapFilters'
@@ -194,14 +194,15 @@ export function useLotManagement() {
             cost_price,
             internal_code,
             internal_name,
-            product_code: id
+            product_code: id,
+            product_category_rel(categories(name))
         ),
         unit
     ),
     suppliers(name),
     qc_info(name),
     lot_tags(tag, lot_item_id),
-    products(name, unit, sku, cost_price, internal_code, internal_name)
+    products(name, unit, sku, cost_price, internal_code, internal_name, product_category_rel(categories(name)))
         `
 
             let query: any;
@@ -492,13 +493,57 @@ export function useLotManagement() {
                 let sortedLots = data as unknown as Lot[];
 
                 if (searchTerm) {
+                    const getSearchable = (l: Lot) => {
+                        const res: string[] = []
+                        if (l.code) res.push(l.code)
+                        if (l.suppliers?.name) res.push(l.suppliers.name)
+                        if (l.qc_info?.name) res.push(l.qc_info.name)
+                        
+                        const extractProductSearchVals = (p: any) => {
+                            if (!p) return
+                            if (p.name) res.push(p.name)
+                            if (p.internal_name) res.push(p.internal_name)
+                            if (p.sku) res.push(p.sku)
+                            if (p.internal_code) res.push(p.internal_code)
+                            
+                            // Categories
+                            const rel = p.product_category_rel
+                            if (Array.isArray(rel)) {
+                                rel.forEach((r: any) => {
+                                    if (r.categories?.name) res.push(r.categories.name)
+                                })
+                            } else if (rel?.categories?.name) {
+                                res.push(rel.categories.name)
+                            }
+                        }
+
+                        // From lot_items
+                        l.lot_items?.forEach((it: any) => {
+                            extractProductSearchVals(it.products)
+                        })
+
+                        // From direct products property (fallback)
+                        if (l.products) {
+                            extractProductSearchVals(l.products)
+                        }
+
+                        if (l.notes) res.push(l.notes)
+                        l.lot_tags?.forEach((t: any) => res.push(t.tag))
+                        l.positions?.forEach((p: any) => res.push(p.code))
+                        return res
+                    }
+
+                    // Client-side refinement for Cross-field AND logic
+                    // This ensures "Xoai & A-01" works even if server-side OR was too broad
+                    sortedLots = sortedLots.filter(l => advancedMatchSearch(getSearchable(l), searchTerm))
+
                     sortedLots.sort((a, b) => {
                         return calculateSearchScore(b, searchTerm) - calculateSearchScore(a, searchTerm)
                     });
                 }
 
                 setLots(sortedLots)
-                setTotalLots(count || 0)
+                setTotalLots(searchTerm ? sortedLots.length : (count || 0))
 
                 // Also fetch a separate count for unassigned if not currently filtered by unassigned
                 if (positionFilter === 'unassigned') {

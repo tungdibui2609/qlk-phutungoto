@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { matchDateRange } from '@/lib/dateUtils'
 import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { PositionWithZone } from './useWarehouseData'
-import { matchSearch } from '@/lib/searchUtils'
+import { matchSearch, advancedMatchSearch } from '@/lib/searchUtils'
 
 interface UseMapFiltersProps {
     positions: PositionWithZone[]
@@ -39,117 +39,57 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
         if (searchTerm) {
             const trimmed = searchTerm.trim()
             if (trimmed) {
-                // Helper: match position code, lot code, product, supplier, qc, tags (everything)
-                const matchesAll = (p: PositionWithZone, term: string): boolean => {
+                const getSearchableVals = (p: PositionWithZone, mode: SearchMode) => {
                     const lot = p.lot_id ? lotInfo[p.lot_id] : null
-                    const searchPayload = {
-                        positionCode: p.code,
-                        ...(lot || {})
-                    }
-                    return matchSearch(searchPayload, term)
-                }
+                    const res: string[] = []
 
-                // Helper: match only product-related fields (name, SKU, internal code, lot code, position code)
-                const matchesProduct = (p: PositionWithZone, term: string): boolean => {
-                    const lot = p.lot_id ? lotInfo[p.lot_id] : null
-                    const searchPayload = {
-                        positionCode: p.code,
-                        lotCode: lot?.code,
-                        ...(lot?.products || {}),
-                        items: lot?.items?.map((it: any) => ({
-                            product_name: it.product_name,
-                            sku: it.sku,
-                            internal_code: it.internal_code
-                        }))
-                    }
-                    return matchSearch(searchPayload, term)
-                }
+                    // Luôn cho phép tìm mã vị trí
+                    if (mode === 'all' || mode === 'position') res.push(p.code)
 
-                // Helper: match only tags (mã phụ)
-                const matchesTag = (p: PositionWithZone, term: string): boolean => {
-                    const lot = p.lot_id ? lotInfo[p.lot_id] : null
-                    if (!lot) return false
-                    // Search in lot_tags
-                    if (lot.lot_tags && Array.isArray(lot.lot_tags)) {
-                        if (lot.lot_tags.some((t: any) => t.tag?.toLowerCase().includes(term))) return true
-                    }
-                    // Search in items tags if any
-                    if (lot.lot_items && Array.isArray(lot.lot_items)) {
-                        for (const item of lot.lot_items) {
-                            if (item.tags && Array.isArray(item.tags)) {
-                                if (item.tags.some((t: string) => t.toLowerCase().includes(term))) return true
-                            }
+                    if (lot) {
+                        // Lot code
+                        if (mode === 'all' || mode === 'code') {
+                            if (lot.code) res.push(lot.code)
                         }
-                    }
-                    return false
-                }
 
-                // Helper: match only positions
-                const matchesPosition = (p: PositionWithZone, term: string): boolean => {
-                    return p.code.toLowerCase().includes(term)
-                }
-
-                // Helper: match only codes (Lot Code, SKU, etc.)
-                const matchesCode = (p: PositionWithZone, term: string): boolean => {
-                    const lot = p.lot_id ? lotInfo[p.lot_id] : null
-                    if (!lot) return false
-                    const lotMatch = lot.code?.toLowerCase().includes(term)
-                    const itemMatch = lot.lot_items?.some((it: any) =>
-                        it.products?.sku?.toLowerCase().includes(term) ||
-                        it.products?.internal_code?.toLowerCase().includes(term)
-                    )
-                    return !!(lotMatch || itemMatch)
-                }
-
-                // Helper: match name
-                const matchesName = (p: PositionWithZone, term: string): boolean => {
-                    const lot = p.lot_id ? lotInfo[p.lot_id] : null
-                    if (!lot) return false
-                    return lot.lot_items?.some((it: any) =>
-                        it.products?.name?.toLowerCase().includes(term) ||
-                        it.products?.internal_name?.toLowerCase().includes(term)
-                    )
-                }
-
-                // Helper: match category
-                const matchesCategory = (p: PositionWithZone, term: string): boolean => {
-                    const lot = p.lot_id ? lotInfo[p.lot_id] : null
-                    if (!lot) return false
-                    
-                    // Search in categoryNames using the robust matchSearch utility
-                    return lot.items?.some((it: any) => 
-                        it.categoryNames?.some((cat: string) => matchSearch(cat, term))
-                    )
-                }
-
-                // Advanced parser for ALL modes
-                const orQueries = trimmed.split(';').map(q => q.trim()).filter(Boolean)
-
-                result = result.filter(p => {
-                    // Overall OR condition: any of the semicolon-separated queries must match
-                    return orQueries.some(orQuery => {
-                        // AND condition: split by "&"
-                        const andParts = orQuery.split('&').map(q => q.trim()).filter(Boolean)
-                        if (andParts.length === 0) return false
-
-                        // All parts in the "&" group must match
-                        return andParts.every(part => {
-                            const term = part.toLowerCase()
-                            switch (searchMode) {
-                                case 'name': return matchesName(p, term)
-                                case 'code': return matchesCode(p, term)
-                                case 'tag': return matchesTag(p, term)
-                                case 'position': return matchesPosition(p, term)
-                                case 'category': return matchesCategory(p, part) // matchSearch handles case
-                                case 'all':
-                                default:
-                                    // Special space-separated logic for 'all' mode
-                                    if (!part.includes(' ')) return matchesAll(p, term)
-                                    const spaceTerms = term.split(/\s+/).filter(Boolean)
-                                    return spaceTerms.some(t => matchesAll(p, t))
+                        // Items data (Already contains product name, sku, internal codes, categories)
+                        lot.items?.forEach((it: any) => {
+                            if (mode === 'all' || mode === 'name') {
+                                if (it.product_name) res.push(it.product_name)
+                                if (it.internal_name) res.push(it.internal_name)
+                            }
+                            if (mode === 'all' || mode === 'code') {
+                                if (it.sku) res.push(it.sku)
+                                if (it.internal_code) res.push(it.internal_code)
+                            }
+                            if (mode === 'all' || mode === 'category') {
+                                it.categoryNames?.forEach((cn: string) => res.push(cn))
                             }
                         })
-                    })
+
+                        // Tags
+                        if (mode === 'all' || mode === 'tag') {
+                            lot.tags?.forEach((t: string) => res.push(t))
+                            // Fallback to lot_tags if tags array is empty but raw lot_tags exist
+                            if (!lot.tags?.length && lot.lot_tags) {
+                                lot.lot_tags.forEach((t: any) => res.push(t.tag))
+                            }
+                        }
+
+                        // Other fields
+                        if (mode === 'all') {
+                            if (lot.supplier_name) res.push(lot.supplier_name)
+                            if (lot.qc_name) res.push(lot.qc_name)
+                            if (lot.notes) res.push(lot.notes)
+                            if (lot.warehouse_name) res.push(lot.warehouse_name)
+                        }
+                    }
+                    return res
+                }
+
+                result = result.filter(p => {
+                    const searchableVals = getSearchableVals(p, searchMode)
+                    return advancedMatchSearch(searchableVals, searchTerm)
                 })
             }
         }

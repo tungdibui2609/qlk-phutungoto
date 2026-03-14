@@ -102,7 +102,7 @@ export function SearchHelpModal({ isOpen, onOpenChange }: SearchHelpModalProps) 
                                             </li>
                                             <li className="flex gap-2">
                                                 <span className="font-mono text-orange-600 font-bold">&</span>
-                                                <span>Dùng dấu và để tìm <b>VÀ</b> (Bắt buộc thỏa mãn cả hai). <br/>Ví dụ chế độ Tên: <code className="bg-muted px-1 rounded">Xoài & Cửa hàng</code></span>
+                                                <span>Dùng dấu và để tìm <b>VÀ</b> (Khớp cả hai). Hỗ trợ tìm <b>chéo trường</b> (ví dụ: vừa khớp Tên, vừa khớp Vị trí). <br/>Ví dụ: <code className="bg-muted px-1 rounded">Xoài & A01</code></span>
                                             </li>
                                             <li className="flex gap-2">
                                                 <span className="font-mono text-orange-600 font-bold">Dấu cách</span>

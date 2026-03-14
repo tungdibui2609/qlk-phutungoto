@@ -47,16 +47,16 @@ export function MapFilterBar({
         setLocalSearchTerm(searchTerm)
     }, [searchTerm])
 
-    // Debounce effect
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            if (localSearchTerm !== searchTerm) {
-                onSearchChange(localSearchTerm)
-            }
-        }, 500) // 500ms delay
+    // Manual trigger function
+    const handleSearch = () => {
+        onSearchChange(localSearchTerm)
+    }
 
-        return () => clearTimeout(timer)
-    }, [localSearchTerm, onSearchChange, searchTerm])
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            handleSearch()
+        }
+    }
 
     return (
         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-2.5 shadow-sm space-y-2">
@@ -86,7 +86,7 @@ export function MapFilterBar({
                         </select>
                     </div>
 
-                    <div className="relative flex-1">
+                    <div className="relative flex-1 flex items-center">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
                             type="text"
@@ -100,16 +100,27 @@ export function MapFilterBar({
                             }
                             value={localSearchTerm}
                             onChange={(e) => setLocalSearchTerm(e.target.value)}
-                            className="w-full pl-9 pr-8 py-1.5 bg-transparent border-none outline-none font-medium text-xs lg:text-sm"
+                            onKeyDown={handleKeyDown}
+                            className="w-full pl-9 pr-20 py-1.5 bg-transparent border-none outline-none font-medium text-xs lg:text-sm"
                         />
-                        <button
-                            type="button"
-                            onClick={() => setIsHelpOpen(true)}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-orange-500 transition-colors rounded-full p-0.5"
-                            title="Hướng dẫn tìm kiếm"
-                        >
-                            <HelpCircle size={14} />
-                        </button>
+                        <div className="absolute right-1 flex items-center gap-1">
+                            <button
+                                type="button"
+                                onClick={() => setIsHelpOpen(true)}
+                                className="text-slate-400 hover:text-orange-500 transition-colors rounded-full p-1"
+                                title="Hướng dẫn tìm kiếm"
+                            >
+                                <HelpCircle size={14} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSearch}
+                                className="bg-orange-500 hover:bg-orange-600 text-white text-[10px] lg:text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all shadow-sm active:scale-95 flex items-center gap-1"
+                            >
+                                <Search size={12} />
+                                Tìm
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <SearchHelpModal isOpen={isHelpOpen} onOpenChange={setIsHelpOpen} />

@@ -67,6 +67,36 @@ export function matchSearch(data: any, term: string): boolean {
 }
 
 /**
+ * Bộ máy tìm kiếm nâng cao hỗ trợ toán tử AND (&) và OR (;, ,)
+ * Hỗ trợ tìm kiếm chéo trường nếu truyền vào vals là một mảng các chuỗi.
+ */
+export function advancedMatchSearch(vals: string | string[] | null | undefined, query: string): boolean {
+    if (!query) return true;
+    if (!vals) return false;
+
+    const normalize = (s: string) => normalizeSearchString(s, true);
+    
+    // Đảm bảo vals luôn là mảng các chuỗi đã chuẩn hóa
+    const normalizedVals = Array.isArray(vals) 
+        ? vals.map(v => normalize(String(v || ''))) 
+        : [normalize(String(vals || ''))];
+
+    // Tách theo toán tử OR (; hoặc ,)
+    const orParts = query.split(/[;,]/).map(p => p.trim()).filter(Boolean);
+    
+    return orParts.some(orPart => {
+        // Tách theo toán tử AND (&)
+        const andParts = orPart.split('&').map(p => p.trim()).filter(Boolean);
+        
+        // Tất cả các phần AND phải được tìm thấy trong tập hợp normalizedVals
+        return andParts.every(andPart => {
+            const nPart = normalize(andPart);
+            return normalizedVals.some(v => v.includes(nPart));
+        });
+    });
+}
+
+/**
  * Calculates a relevance score for a search term against a data object or string.
  * Higher score means better match.
  */

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
-import { normalizeSearchString } from '@/lib/searchUtils'
+import { normalizeSearchString, advancedMatchSearch } from '@/lib/searchUtils'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
 
 interface ProductInfo {
@@ -324,22 +324,70 @@ export function useInventoryByLot(
 
     const groupedInventory = useMemo(() => {
         const searchVal = searchTerm || ''
+        console.log(`[Search Debug] Run: val="${searchVal}", mode="${searchMode}", lots=${lots.length}`)
         
-        const internalMatchSearch = (val: string | string[] | null | undefined, query: string) => {
-            if (!query) return true
-            if (!val) return false
-            const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
-            
-            const vals = Array.isArray(val) ? val.map(normalize) : [normalize(val)]
-            
-            const orParts = query.split(/[;,]/).map(p => p.trim()).filter(Boolean)
-            return orParts.some(orPart => {
-                const andParts = orPart.split('&').map(p => p.trim()).filter(Boolean)
-                return andParts.every(andPart => {
-                    const nPart = normalize(andPart)
-                    return vals.some(v => v.includes(nPart))
+        const getCatNames = (p: any) => {
+            if (!p) return []
+            const names: string[] = []
+            if (p.category_id && categoryMap[p.category_id]) names.push(categoryMap[p.category_id])
+            if (p.product_category_rel) {
+                p.product_category_rel.forEach((rel: any) => {
+                    if (rel.category_id && categoryMap[rel.category_id]) names.push(categoryMap[rel.category_id])
                 })
-            })
+            }
+            return names
+        }
+
+        const getCatIds = (p: any) => {
+            if (!p) return []
+            const ids: string[] = []
+            if (p.category_id) ids.push(p.category_id)
+            if (p.product_category_rel) {
+                p.product_category_rel.forEach((rel: any) => {
+                    if (rel.category_id) ids.push(rel.category_id)
+                })
+            }
+            return ids
+        }
+        const getSearchable = (p: any, l: any, mode: string) => {
+            const res: string[] = []
+            
+            // 1. Mã (Lot, SKU, Internal Code)
+            if (mode === 'all' || mode === 'code') {
+                if (l.code) res.push(l.code)
+                if (p?.sku) res.push(p.sku)
+                if (p?.internal_code) res.push(p.internal_code)
+            }
+
+            // 2. Tên (Sản phẩm, Tên nội bộ)
+            if (mode === 'all' || mode === 'name') {
+                if (p?.name) res.push(p.name)
+                if (p?.internal_name) res.push(p.internal_name)
+            }
+
+            // 3. Mã phụ (Tags)
+            if (mode === 'all' || mode === 'tag') {
+                l.lot_tags?.forEach((t: any) => res.push(t.tag))
+            }
+
+            // 4. Vị trí
+            if (mode === 'all' || mode === 'position') {
+                l.positions?.forEach((pos: any) => res.push(pos.code))
+            }
+
+            // 5. Danh mục
+            if (mode === 'all' || mode === 'category') {
+                getCatNames(p).forEach(cn => res.push(cn))
+            }
+
+            // 6. Các trường khác (Chỉ cho mode 'all')
+            if (mode === 'all') {
+                if (l.suppliers?.name) res.push(l.suppliers.name)
+                if (l.notes) res.push(l.notes)
+                if (l.warehouse_name) res.push(l.warehouse_name)
+            }
+
+            return res
         }
 
         // 1. Helper for Zone Filtering
@@ -366,60 +414,17 @@ export function useInventoryByLot(
 
             // 🟢 Category Filter
             if (selectedCategoryIds.length > 0) {
-                const getProductCategoryIds = (p: any) => {
-                    if (!p) return []
-                    const ids = []
-                    if (p.category_id) ids.push(p.category_id)
-                    if (p.product_category_rel) {
-                        p.product_category_rel.forEach((rel: any) => ids.push(rel.category_id))
-                    }
-                    return ids
-                }
-
-                const lotCatIds = getProductCategoryIds(lot.products)
+                const lotCatIds = getCatIds(lot.products)
                 const matchesCategory = lotCatIds.some(id => selectedCategoryIds.includes(id))
-                
-                const matchesItemCategory = lot.lot_items?.some(item => {
-                    const itemCatIds = getProductCategoryIds(item.products)
-                    return itemCatIds.some(id => selectedCategoryIds.includes(id))
-                })
-
+                const matchesItemCategory = lot.lot_items?.some(item => getCatIds(item.products).some(id => selectedCategoryIds.includes(id)))
                 if (!matchesCategory && !matchesItemCategory) return false
             }
 
-            // Simple Search Filter on Lot level (to keep relevant lots)
+            // Generic Matcher 
             if (!searchVal) return true
-
-            const getProductCategoryNames = (p: any) => {
-                if (!p) return []
-                const names: string[] = []
-                if (p.category_id && categoryMap[p.category_id]) names.push(categoryMap[p.category_id])
-                if (p.product_category_rel) {
-                    p.product_category_rel.forEach((rel: any) => {
-                        if (rel.category_id && categoryMap[rel.category_id]) names.push(categoryMap[rel.category_id])
-                    })
-                }
-                return names
-            }
-
-            const matchInLot = 
-               ((searchMode === 'all' || searchMode === 'code') && internalMatchSearch(lot.code, searchVal)) || 
-               ((searchMode === 'all' || searchMode === 'name') && (lot.products && internalMatchSearch(lot.products.name, searchVal))) ||
-               ((searchMode === 'all' || searchMode === 'code') && (lot.products && internalMatchSearch(lot.products.sku, searchVal))) ||
-               ((searchMode === 'all') && (lot.suppliers?.name && internalMatchSearch(lot.suppliers.name, searchVal))) ||
-               ((searchMode === 'all' || searchMode === 'tag') && internalMatchSearch(lot.lot_tags?.map((t: any) => t.tag) || [], searchVal)) ||
-               ((searchMode === 'all' || searchMode === 'category') && internalMatchSearch(getProductCategoryNames(lot.products), searchVal)) ||
-               ((searchMode === 'all' || searchMode === 'position') && internalMatchSearch(lot.positions?.map((p: any) => p.code) || [], searchVal))
-
-            const matchInItems = lot.lot_items?.some(item => {
-                const p = item.products
-                if (!p) return false
-                return (
-                    ((searchMode === 'all' || searchMode === 'name') && internalMatchSearch(p.name, searchVal)) ||
-                    ((searchMode === 'all' || searchMode === 'code') && internalMatchSearch(p.sku, searchVal)) ||
-                    ((searchMode === 'all' || searchMode === 'category') && internalMatchSearch(getProductCategoryNames(p), searchVal))
-                )
-            })
+            
+            const matchInLot = advancedMatchSearch(getSearchable(lot.products, lot, searchMode), searchVal)
+            const matchInItems = lot.lot_items?.some(item => advancedMatchSearch(getSearchable(item.products, lot, searchMode), searchVal))
 
             return matchInLot || matchInItems
         })
@@ -439,28 +444,9 @@ export function useInventoryByLot(
                 categoryId: string | null,
                 productCategoryRel?: { category_id: string }[]
             ) => {
-                // Secondary Search Filter on specific Variant/Item data
                 if (searchVal) {
-                    const matchesFields = (searchMode === 'all' || searchMode === 'name') && internalMatchSearch(name, searchVal)
-                    const matchesCode = (searchMode === 'all' || searchMode === 'code') && (internalMatchSearch(sku, searchVal) || internalMatchSearch(lot.code, searchVal))
-                    
-                    const itemCatNames: string[] = []
-                    if (categoryId && categoryMap[categoryId]) itemCatNames.push(categoryMap[categoryId])
-                    productCategoryRel?.forEach(rel => {
-                        if (rel.category_id && categoryMap[rel.category_id]) {
-                            itemCatNames.push(categoryMap[rel.category_id])
-                        }
-                    })
-                    const matchesCat = (searchMode === 'all' || searchMode === 'category') && internalMatchSearch(itemCatNames, searchVal)
-                    
-                    const itemTags = lot.lot_tags?.filter((t: any) => t.lot_item_id === itemId || !t.lot_item_id).map((t: any) => t.tag) || []
-                    const matchesTags = (searchMode === 'all' || searchMode === 'tag') && internalMatchSearch(itemTags, searchVal)
-                    
-                    const matchesPos = (searchMode === 'all' || searchMode === 'position') && internalMatchSearch(lot.positions?.map((p: any) => p.code) || [], searchVal)
-
-                    if (!matchesFields && !matchesCode && !matchesCat && !matchesTags && !matchesPos) {
-                        return // Skip this variant/item if it doesn't match search
-                    }
+                    const itemSearchVals = getSearchable(productCategoryRel ? { name, sku, category_id: categoryId, product_category_rel: productCategoryRel } : { name, sku, category_id: categoryId }, lot, searchMode)
+                    if (!advancedMatchSearch(itemSearchVals, searchVal)) return
                 }
 
                 let displayQty = qty
