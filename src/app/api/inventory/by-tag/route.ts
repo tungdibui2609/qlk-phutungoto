@@ -40,6 +40,8 @@ export async function GET(req: NextRequest) {
         const systemParam = searchParams.get('systemType')
         const systemType = systemParam || cookieStore.get('systemType')?.value || 'FROZEN'
         const targetUnitId = searchParams.get('targetUnitId')
+        const q = searchParams.get('q')
+        const searchMode = searchParams.get('searchMode') || 'all'
 
         // Normalize systemType: Handle common mismatches
         let normalizedSystemType = systemType;
@@ -147,6 +149,21 @@ export async function GET(req: NextRequest) {
             isUnconvertible?: boolean;
         }>>();
 
+        const matchSearch = (val: string | null | undefined, query: string) => {
+            if (!query) return true
+            if (!val) return false
+            const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
+            const nVal = normalize(val)
+            
+            const orParts = query.split(';').map(p => p.trim()).filter(Boolean)
+            return orParts.some(orPart => {
+                const andParts = orPart.split('&').map(p => p.trim()).filter(Boolean)
+                return andParts.every(andPart => {
+                    return nVal.includes(normalize(andPart))
+                })
+            })
+        }
+
         const allTags = new Set<string>();
 
         lots.forEach((lot: any) => {
@@ -176,8 +193,15 @@ export async function GET(req: NextRequest) {
                 if (combinedTags.length === 0) combinedTags = ["Chưa gắn mã"];
 
                 combinedTags.forEach(currentTag => {
-                    // CASE-INSENSITIVE Filter
-                    if (tagFilter && currentTag.toLowerCase() !== tagFilter.toLowerCase()) return;
+                    // Search logic
+                    if (q) {
+                        const checkTag = (searchMode === 'all' || searchMode === 'tag') && matchSearch(currentTag, q)
+                        const checkProd = (searchMode === 'all' || searchMode === 'name') && matchSearch(prod.name, q)
+                        const checkCode = (searchMode === 'all' || searchMode === 'code') && (matchSearch(prod.sku, q) || matchSearch(lot.code, q))
+                        
+                        if (!checkTag && !checkProd && !checkCode) return
+                    }
+
                     if (currentTag !== "Chưa gắn mã") allTags.add(currentTag);
 
                     if (!tagInventory.has(currentTag)) {

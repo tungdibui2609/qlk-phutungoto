@@ -35,12 +35,16 @@ export default function InventoryByTag({
     units,
     systemType,
     selectedBranch,
-    targetUnitId
+    targetUnitId,
+    searchTerm,
+    searchMode
 }: {
     units: any[],
     systemType: string,
     selectedBranch: string,
-    targetUnitId: string | null
+    targetUnitId: string | null,
+    searchTerm?: string,
+    searchMode?: string
 }) {
     const [tagItems, setTagItems] = useState<TagInvItem[]>([])
     const [loading, setLoading] = useState(false)
@@ -55,6 +59,8 @@ export default function InventoryByTag({
                 if (systemType) params.set('systemType', systemType)
                 if (targetUnitId) params.set('targetUnitId', targetUnitId)
                 if (selectedBranch && selectedBranch !== "Tất cả") params.set('warehouse', selectedBranch)
+                if (searchTerm) params.set('q', searchTerm)
+                if (searchMode) params.set('searchMode', searchMode)
 
                 const res = await fetch(`/api/inventory/by-tag?${params.toString()}`)
                 const j = await res.json()
@@ -75,7 +81,7 @@ export default function InventoryByTag({
         if (systemType) {
             loadTagInventory()
         }
-    }, [systemType, targetUnitId, selectedBranch])
+    }, [systemType, targetUnitId, selectedBranch, searchTerm, searchMode])
 
     // Build hierarchical tree
     const hierarchicalTags = useMemo(() => {

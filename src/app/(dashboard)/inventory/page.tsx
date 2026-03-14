@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useMemo } from 'react'
-import { Search, Loader2, Printer, Warehouse, ChevronDown, Hash, FileSpreadsheet } from 'lucide-react'
+import { Search, Loader2, Printer, Warehouse, ChevronDown, Hash, FileSpreadsheet, HelpCircle, LayoutGrid, Package, Tag, MapPin, Layers } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
@@ -14,6 +14,7 @@ import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { useInventoryByLot } from '@/components/inventory/by-lot/useInventoryByLot'
 import { useUser } from '@/contexts/UserContext'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
+import { SearchHelpModal } from '@/components/shared/SearchHelpModal'
 
 // Types based on API response
 interface InventoryItem {
@@ -62,10 +63,24 @@ export default function InventoryPage() {
     const [categories, setCategories] = useState<any[]>([])
     const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([])
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
+    const [isHelpOpen, setIsHelpOpen] = useState(false)
+    const [searchMode, setSearchMode] = useState<'all' | 'name' | 'code' | 'tag' | 'position' | 'category'>('all')
+
+    const searchModes = [
+        { id: 'all', label: 'Tổng hợp', icon: LayoutGrid, color: 'text-blue-600' },
+        { id: 'name', label: 'Theo Tên', icon: Package, color: 'text-green-600' },
+        { id: 'code', label: 'Theo Mã', icon: Hash, color: 'text-amber-600' },
+        { id: 'tag', label: 'Mã phụ', icon: Tag, color: 'text-purple-600' },
+        { id: 'position', label: 'Vị trí', icon: MapPin, color: 'text-red-600' },
+        { id: 'category', label: 'Danh mục', icon: Layers, color: 'text-teal-600' },
+    ] as const
+
+    const currentMode = searchModes.find(m => m.id === searchMode) || searchModes[0]
 
     // LOT Hook for LOT and Category tabs
     const lotHookData = useInventoryByLot(units || [], {
         searchTerm: q,
+        searchMode: searchMode,
         selectedBranch: selectedBranch,
         selectedCategoryIds: selectedCategoryIds,
         targetUnitId: targetUnitId,
@@ -143,6 +158,7 @@ export default function InventoryPage() {
         try {
             const params = new URLSearchParams()
             if (q) params.set('q', q)
+            if (searchMode) params.set('searchMode', searchMode)
             if (dateFrom) params.set('dateFrom', dateFrom)
             if (dateTo) params.set('dateTo', dateTo)
             if (selectedBranch) params.set('warehouse', selectedBranch)
@@ -176,7 +192,7 @@ export default function InventoryPage() {
             }
         }, 300)
         return () => clearTimeout(timer)
-    }, [q, dateFrom, dateTo, activeTab, selectedBranch, systemType, targetUnitId, selectedCategoryIds])
+    }, [q, searchMode, dateFrom, dateTo, activeTab, selectedBranch, systemType, targetUnitId, selectedCategoryIds])
 
     // Calculate Totals
     const totals = useMemo(() => {
@@ -227,32 +243,59 @@ export default function InventoryPage() {
             {/* Global Filters - Visible for Accounting, Category, Lot tabs */}
             {(activeTab === 'accounting' || activeTab === 'category' || activeTab === 'lot') && (
                 <div className="flex flex-col gap-4 bg-white dark:bg-stone-900 p-4 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm">
-                    {/* Row 1: Search, Branch, Dates, Unit & Actions */}
-                    <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-end">
-                        {/* Search */}
-                        <div className="flex-1 w-full lg:w-auto">
-                            <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Tìm kiếm</label>
-                            <div className="relative">
+                    {/* Row 1: Search - Full Width */}
+                    <div className="w-full">
+                        <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block flex items-center gap-1">
+                            Tìm kiếm
+                            <button
+                                onClick={() => setIsHelpOpen(true)}
+                                className="p-1 text-orange-500 hover:text-orange-600 transition-colors"
+                                title="Hướng dẫn tìm kiếm"
+                            >
+                                <HelpCircle size={14} />
+                            </button>
+                        </label>
+                        <div className="flex gap-2">
+                            <div className="relative min-w-[130px]">
+                                <currentMode.icon size={16} className={`absolute left-3 top-1/2 -translate-y-1/2 ${currentMode.color}`} />
+                                <select
+                                    value={searchMode}
+                                    onChange={(e) => setSearchMode(e.target.value as any)}
+                                    className="w-full pl-9 pr-10 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors appearance-none focus:outline-none focus:ring-2 focus:ring-orange-500 cursor-pointer"
+                                >
+                                    {searchModes.map((mode) => (
+                                        <option key={mode.id} value={mode.id}>
+                                            {mode.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+                            </div>
+
+                            <div className="relative flex-1">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
                                 <input
                                     type="text"
                                     value={q}
                                     onChange={e => setQ(e.target.value)}
                                     className="w-full pl-9 pr-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500"
-                                    placeholder="Mã SP, tên, danh mục... (dùng ; để tìm nhiều)"
+                                    placeholder={`Tìm ${currentMode.label.toLowerCase()}... (dùng ; để tìm nhiều, dùng & để kết hợp điều kiện)`}
                                 />
                             </div>
                         </div>
+                    </div>
 
+                    {/* Row 2: Warehouse, Dates, Units & Actions */}
+                    <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-end">
                         {/* Branch */}
-                        <div className="w-full sm:w-auto lg:w-48">
+                        <div className="w-full sm:w-auto lg:w-64">
                             <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Chi nhánh / Kho</label>
                             <div className="relative">
                                 <Warehouse className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
                                 <select
                                     value={selectedBranch}
                                     onChange={e => setSelectedBranch(e.target.value)}
-                                    className="w-full pl-9 pr-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
+                                    className="w-full pl-9 pr-10 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
                                 >
                                     <option value="Tất cả">Tất cả chi nhánh</option>
                                     {branches.map(b => (
@@ -552,6 +595,8 @@ export default function InventoryPage() {
                         systemType={systemType}
                         selectedBranch={selectedBranch}
                         targetUnitId={targetUnitId}
+                        searchTerm={q}
+                        searchMode={searchMode}
                     />
                 )}
 
@@ -559,6 +604,11 @@ export default function InventoryPage() {
                     <InventoryReconciliation units={units} />
                 )}
             </div>
+
+            <SearchHelpModal
+                isOpen={isHelpOpen}
+                onOpenChange={setIsHelpOpen}
+            />
         </div>
     )
 }

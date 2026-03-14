@@ -36,7 +36,8 @@ export async function GET(request: Request) {
         const systemParam = searchParams.get('systemType')
         const systemType = systemParam || cookieStore.get('systemType')?.value || 'FROZEN'
 
-        const q = searchParams.get('q')?.toLowerCase()
+        const q = searchParams.get('q')
+        const searchMode = searchParams.get('searchMode') || 'all'
         const warehouse = searchParams.get('warehouse')
         const from = searchParams.get('dateFrom')
         const to = searchParams.get('dateTo')
@@ -178,10 +179,32 @@ export async function GET(request: Request) {
         const unitsData = await fetchAllWithPagination('units');
         const prodUnitsData = await fetchAllWithPagination('product_units');
         const categoriesData = await fetchAllWithPagination('categories');
+        const lotsData = await fetchAllWithPagination('lots');
+        const positionsData = await fetchAllWithPagination('positions');
+        const lotTagsData = await fetchAllWithPagination('lot_tags');
 
         // Maps for O(1) Access
         const productMap = new Map<string, any>()
         ; (productsData as any[])?.forEach(p => productMap.set(p.id, p))
+
+        const lotToPositions = new Map<string, any[]>()
+        ; (positionsData as any[])?.forEach(p => {
+            if (p.lot_id) {
+                if (!lotToPositions.has(p.lot_id)) lotToPositions.set(p.lot_id, [])
+                lotToPositions.get(p.lot_id)!.push(p)
+            }
+        })
+
+        const lotToTags = new Map<string, string[]>()
+        ; (lotTagsData as any[])?.forEach(t => {
+            if (t.lot_id) {
+                if (!lotToTags.has(t.lot_id)) lotToTags.set(t.lot_id, [])
+                lotToTags.get(t.lot_id)!.push(t.tag)
+            }
+        })
+
+        const lotMap = new Map<string, any>()
+        ; (lotsData as any[])?.forEach(l => lotMap.set(l.id, l))
 
         const categoryMap = new Map<string, string>() // ID -> Name
         ; (categoriesData as any[])?.forEach(c => categoryMap.set(c.id, c.name))
@@ -286,23 +309,45 @@ export async function GET(request: Request) {
 
         // Filter and Sort
         let result = Array.from(inventoryMap.values())
-        if (q) {
-            const keywords = q.split(';').map(k => k.trim().toLowerCase()).filter(Boolean)
-            if (keywords.length > 0) {
-                result = result.filter(i => {
-                    const prod = productMap.get(i.productId)
-                    const categoryName = prod?.category_id ? categoryMap.get(prod.category_id)?.toLowerCase() || '' : ''
-                    
-                    return keywords.some(key => 
-                        i.productCode.toLowerCase().includes(key) ||
-                        i.productName.toLowerCase().includes(key) ||
-                        (i.internalCode && i.internalCode.toLowerCase().includes(key)) ||
-                        (i.internalName && i.internalName.toLowerCase().includes(key)) ||
-                        i.productId === key ||
-                        categoryName.includes(key)
-                    )
+        const matchSearch = (val: string | null | undefined, query: string) => {
+            if (!query) return true
+            if (!val) return false
+            const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
+            const nVal = normalize(val)
+            
+            const orParts = query.split(';').map(p => p.trim()).filter(Boolean)
+            return orParts.some(orPart => {
+                const andParts = orPart.split('&').map(p => p.trim()).filter(Boolean)
+                return andParts.every(andPart => {
+                    return nVal.includes(normalize(andPart))
                 })
-            }
+            })
+        }
+
+        if (q) {
+            result = result.filter(i => {
+                const prod = productMap.get(i.productId)
+                const categoryName = prod?.category_id ? categoryMap.get(prod.category_id) || '' : ''
+                
+                // Find lots for this product in this warehouse to check tags/positions
+                const relatedLots = (lotsData as any[]).filter(l => l.product_id === i.productId && l.warehouse_name === i.warehouse)
+                const tags = relatedLots.flatMap(l => lotToTags.get(l.id) || [])
+                const positions = relatedLots.flatMap(l => lotToPositions.get(l.id) || [])
+
+                const checkName = matchSearch(i.productName, q) || matchSearch(i.internalName, q)
+                const checkCode = matchSearch(i.productCode, q) || matchSearch(i.internalCode, q) || relatedLots.some(l => matchSearch(l.code, q))
+                const checkCategory = matchSearch(categoryName, q)
+                const checkTag = tags.some(t => matchSearch(t, q))
+                const checkPos = positions.some(p => matchSearch(p.code, q))
+
+                if (searchMode === 'name') return checkName
+                if (searchMode === 'code') return checkCode
+                if (searchMode === 'category') return checkCategory
+                if (searchMode === 'tag') return checkTag
+                if (searchMode === 'position') return checkPos
+                
+                return checkName || checkCode || checkCategory || checkTag || checkPos
+            })
         }
 
         // 4. Filter by Category IDs if provided
