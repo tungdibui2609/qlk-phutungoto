@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -1133,6 +1133,10 @@ export type Database = {
           warranty_months: number | null
           weight_kg: number | null
           wholesale_price: number | null
+          internal_lvl1_id: string | null
+          internal_lvl2_id: string | null
+          internal_lvl3_id: string | null
+          internal_lvl4_id: string | null
         }
         Insert: {
           category_id?: string | null
@@ -1839,6 +1843,39 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           name?: string
+        }
+        Relationships: []
+      }
+      internal_product_code_rules: {
+        Row: {
+          created_at: string | null
+          description: string
+          id: string
+          level: number
+          prefix: string
+          sort_order: number | null
+          system_code: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description: string
+          id?: string
+          level: number
+          prefix: string
+          sort_order?: number | null
+          system_code: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string
+          id?: string
+          level?: number
+          prefix?: string
+          sort_order?: number | null
+          system_code?: string
+          updated_at?: string | null
         }
         Relationships: []
       }

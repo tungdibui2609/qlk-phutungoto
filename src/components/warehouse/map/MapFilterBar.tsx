@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, Filter, HelpCircle, Tag, Package, Hash, MapPin, Layers, LayoutGrid } from 'lucide-react'
+import { Search, Filter, HelpCircle, Tag, Package, Hash, MapPin, Layers, LayoutGrid, X } from 'lucide-react'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { DateRangeFilter, DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { SearchHelpModal } from '@/components/shared/SearchHelpModal'
@@ -101,9 +101,22 @@ export function MapFilterBar({
                             value={localSearchTerm}
                             onChange={(e) => setLocalSearchTerm(e.target.value)}
                             onKeyDown={handleKeyDown}
-                            className="w-full pl-9 pr-20 py-1.5 bg-transparent border-none outline-none font-medium text-xs lg:text-sm"
+                            className="w-full pl-9 pr-28 py-1.5 bg-transparent border-none outline-none font-medium text-xs lg:text-sm"
                         />
                         <div className="absolute right-1 flex items-center gap-1">
+                            {localSearchTerm && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setLocalSearchTerm('')
+                                        onSearchChange('')
+                                    }}
+                                    className="text-slate-400 hover:text-red-500 transition-colors rounded-full p-1"
+                                    title="Xóa tìm kiếm"
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
                             <button
                                 type="button"
                                 onClick={() => setIsHelpOpen(true)}

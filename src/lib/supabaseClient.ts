@@ -634,6 +634,40 @@ type UserProfilesTable = {
     ]
 }
 
+type InternalProductCodeRulesTable = {
+    Row: {
+        id: string
+        level: number
+        prefix: string
+        description: string
+        system_code: string
+        sort_order: number | null
+        created_at: string
+        updated_at: string
+    }
+    Insert: {
+        id?: string
+        level: number
+        prefix: string
+        description: string
+        system_code: string
+        sort_order?: number | null
+        created_at?: string
+        updated_at?: string
+    }
+    Update: {
+        id?: string
+        level?: number
+        prefix?: string
+        description?: string
+        system_code?: string
+        sort_order?: number | null
+        created_at?: string
+        updated_at?: string
+    }
+    Relationships: []
+}
+
 type ProductCategoryRelTable = {
     Row: {
         id: string
@@ -695,6 +729,7 @@ type TypedTables = Database['public']['Tables'] & {
     internal_inventory_sessions: InternalInventorySessionsTable
     internal_inventory_items: InternalInventoryItemsTable
     product_category_rel: ProductCategoryRelTable
+    internal_product_code_rules: InternalProductCodeRulesTable
 }
 
 // Manually extend the Database type

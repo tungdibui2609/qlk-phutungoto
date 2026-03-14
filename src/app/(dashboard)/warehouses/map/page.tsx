@@ -655,69 +655,80 @@ function WarehouseMapContent() {
                 toggleMobileFilters={() => setShowMobileFilters(!showMobileFilters)}
             />
 
-            <MapSearchStats
-                filteredPositions={filteredPositions}
-                zones={zones}
-                lotInfo={lotInfo}
-                searchTerm={searchTerm}
-                onPositionSelect={handlePositionSelect}
-                onPositionMenu={(pos, e) => handlePositionMenu(pos, e)}
-                onViewDetails={fetchFullLotDetails}
-                selectedPositionIds={selectedPositionIds}
-                onBulkSelect={handleBulkSelect}
-                isFifoEnabled={isFifoActive}
-                isFifoAvailable={isFifoAvailable}
-                onToggleFifo={toggleFifo}
-            />
+            {(() => {
+                const { zones: displayZones, positions: displayPositions } = isGrouped
+                    ? groupWarehouseData(filteredZones, filteredPositions)
+                    : { zones: filteredZones, positions: filteredPositions }
 
-            {/* Map Grid Area */}
-            <div className="space-y-4">
-                {/* Process grouped data if enabled */}
-                {(() => {
-                    const { zones: displayZones, positions: displayPositions } = isGrouped
-                        ? groupWarehouseData(filteredZones, filteredPositions)
-                        : { zones: filteredZones, positions: filteredPositions }
+                return (
+                    <MapSearchStats
+                        filteredPositions={displayPositions}
+                        zones={displayZones}
+                        lotInfo={lotInfo}
+                        searchTerm={searchTerm}
+                        onPositionSelect={handlePositionSelect}
+                        onPositionMenu={(pos, e) => handlePositionMenu(pos, e)}
+                        onViewDetails={fetchFullLotDetails}
+                        selectedPositionIds={selectedPositionIds}
+                        onBulkSelect={handleBulkSelect}
+                        isFifoEnabled={isFifoActive}
+                        isFifoAvailable={isFifoAvailable}
+                        onToggleFifo={toggleFifo}
+                        isGrouped={isGrouped}
+                    />
+                )
+            })()}
 
-                    return (
-                        <div className="min-w-0">
-                            <FlexibleZoneGrid
-                                zones={displayZones}
-                                positions={displayPositions}
-                                layouts={layoutRecord}
-                                lotInfo={lotInfo}
-                                occupiedIds={occupiedIds}
-                                selectedPositionIds={selectedPositionIds}
-                                collapsedZones={collapsedZones}
-                                onToggleCollapse={toggleZoneCollapse}
-                                onUpdateCollapsedZones={setCollapsedZones}
-                                onPositionSelect={handlePositionSelect}
-                                onPositionMenu={(pos, e) => handlePositionMenu(pos, e)}
-                                onViewDetails={(lotId) => fetchFullLotDetails(lotId)}
-                                isDesignMode={isDesignMode}
-                                onConfigureZone={setConfiguringZone}
-                                isAssignmentMode={!!assignLot}
-                                highlightingPositionIds={recentlyUpdatedPositionIds}
-                                displayInternalCode={displayInternalCode}
-                                isGrouped={isGrouped}
-                                onBulkSelect={handleBulkSelect}
-                                pageBreakIds={pageBreakZoneIds}
-                                onTogglePageBreak={handleTogglePageBreak}
-                                mergedZones={mergedZones}
-                                onToggleMergeZone={toggleMergeZone}
-                                onPrintZone={(zoneId) => {
-                                    const params = new URLSearchParams()
-                                    params.set('systemType', systemType)
-                                    params.set('zoneId', zoneId)
-                                    if (searchTerm) params.set('search', searchTerm)
-                                    if (displayInternalCode) params.set('internalCode', 'true')
-                                    if (pageBreakZoneIds.size > 0) params.set('pageBreaks', Array.from(pageBreakZoneIds).join(','))
-                                    window.open(`/print/warehouse-map?${params.toString()}`, '_blank')
-                                }}
-                            />
-                        </div>
-                    )
-                })()}
-            </div>
+            {/* Map Grid Area - Hide when searching */}
+            {!searchTerm && (
+                <div className="space-y-4">
+                    {/* Process grouped data if enabled */}
+                    {(() => {
+                        const { zones: displayZones, positions: displayPositions } = isGrouped
+                            ? groupWarehouseData(filteredZones, filteredPositions)
+                            : { zones: filteredZones, positions: filteredPositions }
+
+                        return (
+                            <div className="min-w-0">
+                                <FlexibleZoneGrid
+                                    zones={displayZones}
+                                    positions={displayPositions}
+                                    layouts={layoutRecord}
+                                    lotInfo={lotInfo}
+                                    occupiedIds={occupiedIds}
+                                    selectedPositionIds={selectedPositionIds}
+                                    collapsedZones={collapsedZones}
+                                    onToggleCollapse={toggleZoneCollapse}
+                                    onUpdateCollapsedZones={setCollapsedZones}
+                                    onPositionSelect={handlePositionSelect}
+                                    onPositionMenu={(pos, e) => handlePositionMenu(pos, e)}
+                                    onViewDetails={(lotId) => fetchFullLotDetails(lotId)}
+                                    isDesignMode={isDesignMode}
+                                    onConfigureZone={setConfiguringZone}
+                                    isAssignmentMode={!!assignLot}
+                                    highlightingPositionIds={recentlyUpdatedPositionIds}
+                                    displayInternalCode={displayInternalCode}
+                                    isGrouped={isGrouped}
+                                    onBulkSelect={handleBulkSelect}
+                                    pageBreakIds={pageBreakZoneIds}
+                                    onTogglePageBreak={handleTogglePageBreak}
+                                    mergedZones={mergedZones}
+                                    onToggleMergeZone={toggleMergeZone}
+                                    onPrintZone={(zoneId) => {
+                                        const params = new URLSearchParams()
+                                        params.set('systemType', systemType)
+                                        params.set('zoneId', zoneId)
+                                        if (searchTerm) params.set('search', searchTerm)
+                                        if (displayInternalCode) params.set('internalCode', 'true')
+                                        if (pageBreakZoneIds.size > 0) params.set('pageBreaks', Array.from(pageBreakZoneIds).join(','))
+                                        window.open(`/print/warehouse-map?${params.toString()}`, '_blank')
+                                    }}
+                                />
+                            </div>
+                        )
+                    })()}
+                </div>
+            )}
             <div className="fixed bottom-6 right-6 z-[60] shadow-2xl transition-all duration-300 hover:scale-[1.02] flex justify-end">
                 {!isMapControlsOpen ? (
                     <button

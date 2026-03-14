@@ -19,6 +19,7 @@ interface MapSearchStatsProps {
     isFifoEnabled?: boolean
     isFifoAvailable?: boolean
     onToggleFifo?: () => void
+    isGrouped?: boolean
 }
 
 interface PositionCardProps {
@@ -52,7 +53,7 @@ const MemoizedPositionCard = React.memo(function PositionCard({
 
     return (
         <div
-            className={`relative group flex flex-col p-1 rounded border ${bgClass} ${borderClass} aspect-square text-[10px] transition-all hover:shadow-md ${hasLot ? 'hover:border-blue-300' : ''}`}
+            className={`relative group flex flex-col p-1.5 rounded border ${bgClass} ${borderClass} aspect-square text-[10px] transition-all hover:shadow-md ${hasLot ? 'hover:border-blue-300' : ''} w-full`}
         >
             {onPositionSelect && (
                 <button
@@ -94,29 +95,39 @@ const MemoizedPositionCard = React.memo(function PositionCard({
                 </button>
             )}
 
-            <div className="font-bold text-center text-slate-700 dark:text-slate-200 mb-0.5 border-b border-slate-100 dark:border-slate-700/50 pb-0.5 truncate text-[10px] pt-4">
+            <div className="font-bold text-center text-slate-700 dark:text-slate-200 mb-0.5 border-b border-slate-100 dark:border-slate-700/50 pb-0.5 truncate text-[10px] pt-1 px-5">
                 {pos.code}
             </div>
             {lot ? (
-                <div className="flex flex-col gap-0.5 flex-1 justify-center overflow-hidden">
-                    {lot.items?.[0] ? (
-                        <>
-                            <div className="font-bold text-center text-teal-700 dark:text-teal-400 truncate text-[9px]">
-                                {lot.items[0].sku}
-                            </div>
-                            <div className="text-[9px] text-slate-500 line-clamp-2 text-center">
-                                {lot.items[0].product_name}
-                            </div>
-                            <div className="font-mono text-[9px] text-blue-600 dark:text-blue-400 mt-auto font-bold text-center">
-                                {lot.items[0].quantity} {lot.items[0].unit}
-                            </div>
-                        </>
+                <div className="flex flex-col gap-1 flex-1 justify-center overflow-hidden">
+                    {lot.items && lot.items.length > 0 ? (
+                        <div className="flex flex-col gap-1.5 overflow-y-auto max-h-full py-0.5">
+                            {lot.items.map((item: any, idx: number) => (
+                                <div key={idx} className={idx > 0 ? "border-t border-slate-100 dark:border-slate-800 pt-1" : ""}>
+                                    <div className="font-bold text-center text-teal-700 dark:text-teal-400 truncate text-[9px]">
+                                        {item.sku}
+                                    </div>
+                                    <div 
+                                        className="text-[9px] text-slate-500 text-left leading-tight px-0.5 break-words"
+                                        style={{ textAlignLast: 'center' } as any}
+                                    >
+                                        {item.product_name}
+                                    </div>
+                                    <div className="font-mono text-[9px] text-blue-600 dark:text-blue-400 font-bold text-center">
+                                        {item.quantity} {item.unit}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     ) : lot.products ? (
                         <>
                             <div className="font-bold text-center text-teal-700 dark:text-teal-400 truncate text-[9px]">
                                 {lot.products.sku}
                             </div>
-                            <div className="text-[9px] text-slate-500 line-clamp-2 text-center">
+                            <div 
+                                className="text-[9px] text-slate-500 text-left leading-tight px-0.5 break-words"
+                                style={{ textAlignLast: 'center' } as any}
+                            >
                                 {lot.products.name}
                             </div>
                             <div className="font-mono text-[9px] text-blue-600 dark:text-blue-400 mt-auto font-bold text-center">
@@ -126,8 +137,14 @@ const MemoizedPositionCard = React.memo(function PositionCard({
                     ) : null}
                     {/* Secondary Codes (Mã phụ) */}
                     {lot.tags && lot.tags.length > 0 && (
-                        <div className="text-[8px] text-purple-600 dark:text-purple-400 font-semibold text-center truncate border-t border-slate-100 dark:border-slate-700/50 pt-0.5 mt-0.5" title={lot.tags.join(', ')}>
+                        <div className="text-[8px] text-purple-600 dark:text-purple-400 font-semibold text-center truncate border-t border-slate-100 dark:border-slate-700/50 pt-0.5" title={lot.tags.join(', ')}>
                             {lot.tags.join(', ')}
+                        </div>
+                    )}
+                    {/* Lot Notes (Ghi chú) */}
+                    {lot.notes && (
+                        <div className="text-[8px] text-slate-500 dark:text-slate-400 italic text-center truncate border-t border-slate-50 dark:border-slate-800/50 pt-0.5 mt-0.5" title={lot.notes}>
+                            {lot.notes}
                         </div>
                     )}
                 </div>
@@ -174,7 +191,8 @@ export function MapSearchStats({
     onBulkSelect,
     isFifoEnabled,
     isFifoAvailable,
-    onToggleFifo
+    onToggleFifo,
+    isGrouped = false
 }: MapSearchStatsProps) {
     // Helper to build full zone path
     const getZonePath = (zoneId: string) => {
@@ -183,6 +201,7 @@ export function MapSearchStats({
         while (currentId) {
             const z = zones.find(z => z.id === currentId)
             if (z) {
+                // Skip virtual zone names if possible to keep it clean, but usually virtual zones have good names
                 parts.unshift(z.name)
                 currentId = z.parent_id
             } else {
@@ -195,7 +214,7 @@ export function MapSearchStats({
     const stats = useMemo(() => {
         if (!searchTerm) return null
 
-        const zoneStats: Record<string, { id: string; count: number; quantity: number; name: string; oldestDate: string | null; newestDate: string | null }> = {}
+        const groupingMap: Record<string, { id: string; count: number; quantity: number; name: string; oldestDate: string | null; newestDate: string | null; positionIds: string[] }> = {}
         let totalQty = 0
         let globalOldest: string | null = null
         let globalNewest: string | null = null
@@ -218,30 +237,38 @@ export function MapSearchStats({
                 if (!globalNewest || posDate > globalNewest) globalNewest = posDate
             }
 
-            // Group by Zone
-            if (pos.zone_id) {
-                if (!zoneStats[pos.zone_id]) {
-                    zoneStats[pos.zone_id] = {
-                        id: pos.zone_id,
-                        count: 0,
-                        quantity: 0,
-                        name: getZonePath(pos.zone_id),
-                        oldestDate: null,
-                        newestDate: null
-                    }
+            // Determine grouping ID
+            let groupId = pos.zone_id || 'unknown'
+            let groupName = ''
+
+            // Note: We don't override groupId with parent_id (Bin) anymore.
+            // By grouping by pos.zone_id (which is the Virtual Level when isGrouped is true),
+            // we correctly group A10, B10, C10 positions under the same "Ô 10 • Tầng X" header.
+
+            if (!groupingMap[groupId]) {
+                groupingMap[groupId] = {
+                    id: groupId,
+                    count: 0,
+                    quantity: 0,
+                    name: getZonePath(groupId),
+                    oldestDate: null,
+                    newestDate: null,
+                    positionIds: []
                 }
-                zoneStats[pos.zone_id].count++
-                zoneStats[pos.zone_id].quantity += qty
-                if (posDate) {
-                    const z = zoneStats[pos.zone_id]
-                    if (!z.oldestDate || posDate < z.oldestDate) z.oldestDate = posDate
-                    if (!z.newestDate || posDate > z.newestDate) z.newestDate = posDate
-                }
+            }
+            
+            const g = groupingMap[groupId]
+            g.count++
+            g.quantity += qty
+            g.positionIds.push(pos.id)
+            if (posDate) {
+                if (!g.oldestDate || posDate < g.oldestDate) g.oldestDate = posDate
+                if (!g.newestDate || posDate > g.newestDate) g.newestDate = posDate
             }
         })
 
-        // Sort zones
-        const sortedZones = Object.values(zoneStats).sort((a, b) => {
+        // Sort groups
+        const sortedGroups = Object.values(groupingMap).sort((a, b) => {
             if (isFifoEnabled) {
                 // If FIFO, sort by oldest date first
                 if (!a.oldestDate && !b.oldestDate) return 0;
@@ -257,7 +284,6 @@ export function MapSearchStats({
             const orderB = (zB as any)?.display_order ?? 0
             if (orderA !== orderB) return orderA - orderB
 
-            // If same order, try to extract numeric parts from the code for better sorting
             const codeA = zA?.code || '';
             const codeB = zB?.code || '';
             return codeA.localeCompare(codeB, undefined, { numeric: true });
@@ -266,11 +292,11 @@ export function MapSearchStats({
         return {
             totalPositions: filteredPositions.length,
             totalQuantity: totalQty,
-            zoneBreakdown: sortedZones,
+            zoneBreakdown: sortedGroups,
             oldestDate: globalOldest,
             newestDate: globalNewest
         }
-    }, [filteredPositions, zones, lotInfo, searchTerm, isFifoEnabled])
+    }, [filteredPositions, zones, lotInfo, searchTerm, isFifoEnabled, isGrouped])
 
     // State for expanded zones
     const [expandedZoneId, setExpandedZoneId] = useState<string | null>(null)
@@ -375,107 +401,108 @@ export function MapSearchStats({
                     >
                         {filteredPositions.every(p => selectedPositionIds.has(p.id)) ? (
                             <>
-                                <CheckSquare size={14} />
-                                Bỏ chọn tất cả ({filteredPositions.length})
-                            </>
-                        ) : (
-                            <>
-                                <Square size={14} />
-                                Chọn tất cả kết quả ({filteredPositions.length})
-                            </>
-                        )}
-                    </button>
-                )}
-            </div>
+                        </>
+                    ) : (
+                        <>
+                            <Square size={14} />
+                            Chọn tất cả kết quả ({filteredPositions.length})
+                        </>
+                    )}
+                </button>
+            )}
+        </div>
 
-            <div className="grid grid-cols-1 gap-2 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
-                {stats.zoneBreakdown.map((zone, idx) => {
-                    const isExpanded = expandedZoneId === zone.id
-                    // Filter positions for this zone
-                    const zonePositions = filteredPositions.filter(p => p.zone_id === zone.id)
-                    const allSelected = zonePositions.length > 0 && zonePositions.every(p => selectedPositionIds.has(p.id))
+        <div className="grid grid-cols-1 gap-2 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
+            {stats.zoneBreakdown.map((group, idx) => {
+                const isExpanded = expandedZoneId === group.id
+                // Get positions for this group using the cached IDs
+                const groupPositions = filteredPositions.filter(p => group.positionIds.includes(p.id))
+                const allSelected = groupPositions.length > 0 && groupPositions.every(p => selectedPositionIds.has(p.id))
 
-                    return (
-                        <div key={idx} className="flex flex-col bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 rounded overflow-hidden">
-                            {/* Zone Header Row */}
-                            <div
-                                className="flex items-center justify-between p-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none"
-                                onClick={() => toggleZone(zone.id)}
-                            >
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                    {onBulkSelect && (
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation()
-                                                onBulkSelect(
-                                                    zonePositions.map(p => p.id),
-                                                    !allSelected
-                                                )
-                                            }}
-                                            className={`p-0.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors ${allSelected ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
-                                            title={allSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
-                                        >
-                                            {allSelected ? <CheckSquare size={16} /> : <Square size={16} />}
-                                        </button>
-                                    )}
-                                    <ChevronDown size={14} className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                                    <span className="font-medium text-slate-700 dark:text-slate-300 truncate text-sm" title={zone.name}>
-                                        {zone.name}
+                return (
+                    <div key={idx} className="flex flex-col bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 rounded overflow-hidden">
+                        {/* Zone Header Row */}
+                        <div
+                            className="flex items-center justify-between p-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none"
+                            onClick={() => toggleZone(group.id)}
+                        >
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                                {onBulkSelect && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onBulkSelect(
+                                                group.positionIds,
+                                                !allSelected
+                                            )
+                                        }}
+                                        className={`p-0.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors ${allSelected ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+                                        title={allSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+                                    >
+                                        {allSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                                    </button>
+                                )}
+                                <ChevronDown size={14} className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                <span className="font-medium text-slate-700 dark:text-slate-300 truncate text-sm" title={group.name}>
+                                    {group.name}
+                                </span>
+                                {isFifoEnabled && (group.oldestDate || group.newestDate) && (
+                                    <div className="flex items-center gap-2 ml-2 shrink-0">
+                                        {group.oldestDate && (
+                                            <span className="text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded border border-red-100 dark:border-red-900/30">
+                                                Cũ nhất: {new Date(group.oldestDate).toLocaleDateString('vi-VN')}
+                                            </span>
+                                        )}
+                                        {group.newestDate && (
+                                            <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-900/30">
+                                                Mới nhất: {new Date(group.newestDate).toLocaleDateString('vi-VN')}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-3 text-xs shrink-0 ml-2">
+                                <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded">
+                                    {group.count} vt
+                                </span>
+                                {group.quantity > 0 && (
+                                    <span className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded">
+                                        {group.quantity.toLocaleString()}
                                     </span>
-                                </div>
-                                <div className="flex items-center gap-3 text-xs shrink-0 ml-2">
-                                    <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded">
-                                        {zone.count} vt
-                                    </span>
-                                    {zone.quantity > 0 && (
-                                        <span className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded">
-                                            {zone.quantity.toLocaleString()}
-                                        </span>
-                                    )}
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Expanded Position Grid */}
+                        {isExpanded && (
+                            <div className="p-2 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50">
+                                {isFifoEnabled && (
+                                    <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mb-1.5 flex items-center gap-1">
+                                        <ArrowUpDown size={10} />
+                                        Sắp xếp theo ngày nhập kho (cũ nhất trước)
+                                    </div>
+                                )}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                                    {groupPositions.sort((a, b) => {
+                                        if (isFifoEnabled) {
+                                            const lotA = a.lot_id ? lotInfo[a.lot_id] : null
+                                            const lotB = b.lot_id ? lotInfo[b.lot_id] : null
+                                            if (!lotA && !lotB) return 0
+                                            if (!lotA) return 1
+                                            if (!lotB) return -1
+                                            const dateA = lotA.inbound_date || lotA.created_at || ''
+                                            const dateB = lotB.inbound_date || lotB.created_at || ''
+                                            return dateA.localeCompare(dateB)
+                                        }
+                                        return (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
+                                    }).map(pos => renderPositionCard(pos))}
                                 </div>
                             </div>
-                            {/* Per-zone FIFO date info */}
-                            {isFifoEnabled && (zone.oldestDate || zone.newestDate) && (
-                                <div className="px-3 pb-1.5 -mt-0.5">
-                                    <div className="text-[11px] font-bold text-orange-600 dark:text-orange-400">
-                                        Ngày cũ nhất: {zone.oldestDate ? new Date(zone.oldestDate).toLocaleDateString('vi-VN') : '--'}
-                                    </div>
-                                    <div className="text-[11px] font-bold text-orange-600 dark:text-orange-400">
-                                        Ngày mới nhất: {zone.newestDate ? new Date(zone.newestDate).toLocaleDateString('vi-VN') : '--'}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Expanded Position Grid */}
-                            {isExpanded && (
-                                <div className="p-2 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                                    {isFifoEnabled && (
-                                        <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mb-1.5 flex items-center gap-1">
-                                            <ArrowUpDown size={10} />
-                                            Sắp xếp theo ngày nhập kho (cũ nhất trước)
-                                        </div>
-                                    )}
-                                    <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2">
-                                        {[...zonePositions].sort((a, b) => {
-                                            if (isFifoEnabled) {
-                                                const lotA = a.lot_id ? lotInfo[a.lot_id] : null
-                                                const lotB = b.lot_id ? lotInfo[b.lot_id] : null
-                                                if (!lotA && !lotB) return 0
-                                                if (!lotA) return 1
-                                                if (!lotB) return -1
-                                                const dateA = lotA.inbound_date || lotA.created_at || ''
-                                                const dateB = lotB.inbound_date || lotB.created_at || ''
-                                                return dateA.localeCompare(dateB)
-                                            }
-                                            return (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
-                                        }).map(pos => renderPositionCard(pos))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )
-                })}
-            </div>
+                        )}
+                    </div>
+                )
+            })}
         </div>
-    )
+    </div>
+)
 }
