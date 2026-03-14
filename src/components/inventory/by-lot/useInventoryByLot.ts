@@ -201,7 +201,16 @@ export function useInventoryByLot(
                 fetchAll('categories', 'id, name')
             ])
 
-            console.log(`Fetched component data: Lots: ${allLots.length}, Items: ${allLotItems.length}, Products: ${allProducts.length}, Categories: ${allCategories.length}`)
+            console.log(`[Inventory Data Debug]`, {
+                lots: allLots.length,
+                items: allLotItems.length,
+                products: allProducts.length,
+                categories: allCategories.length,
+                suppliers: allSuppliers.length,
+                tags: allTags.length,
+                positions: allLotPositions.length,
+                zones: allZonesData.length
+            })
 
             // 3. Build Maps for Efficiency
             const cMap: Record<string, string> = {}
@@ -316,17 +325,19 @@ export function useInventoryByLot(
     const groupedInventory = useMemo(() => {
         const searchVal = searchTerm || ''
         
-        const internalMatchSearch = (val: string | null | undefined, query: string) => {
+        const internalMatchSearch = (val: string | string[] | null | undefined, query: string) => {
             if (!query) return true
             if (!val) return false
             const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
-            const nVal = normalize(val)
+            
+            const vals = Array.isArray(val) ? val.map(normalize) : [normalize(val)]
             
             const orParts = query.split(/[;,]/).map(p => p.trim()).filter(Boolean)
             return orParts.some(orPart => {
                 const andParts = orPart.split('&').map(p => p.trim()).filter(Boolean)
                 return andParts.every(andPart => {
-                    return nVal.includes(normalize(andPart))
+                    const nPart = normalize(andPart)
+                    return vals.some(v => v.includes(nPart))
                 })
             })
         }
@@ -396,9 +407,9 @@ export function useInventoryByLot(
                ((searchMode === 'all' || searchMode === 'name') && (lot.products && internalMatchSearch(lot.products.name, searchVal))) ||
                ((searchMode === 'all' || searchMode === 'code') && (lot.products && internalMatchSearch(lot.products.sku, searchVal))) ||
                ((searchMode === 'all') && (lot.suppliers?.name && internalMatchSearch(lot.suppliers.name, searchVal))) ||
-               ((searchMode === 'all' || searchMode === 'tag') && (lot.lot_tags?.some(t => internalMatchSearch(t.tag, searchVal)))) ||
-               ((searchMode === 'all' || searchMode === 'category') && getProductCategoryNames(lot.products).some(name => internalMatchSearch(name, searchVal))) ||
-               ((searchMode === 'all' || searchMode === 'position') && lot.positions?.some(p => internalMatchSearch(p.code, searchVal)))
+               ((searchMode === 'all' || searchMode === 'tag') && internalMatchSearch(lot.lot_tags?.map((t: any) => t.tag) || [], searchVal)) ||
+               ((searchMode === 'all' || searchMode === 'category') && internalMatchSearch(getProductCategoryNames(lot.products), searchVal)) ||
+               ((searchMode === 'all' || searchMode === 'position') && internalMatchSearch(lot.positions?.map((p: any) => p.code) || [], searchVal))
 
             const matchInItems = lot.lot_items?.some(item => {
                 const p = item.products
@@ -406,7 +417,7 @@ export function useInventoryByLot(
                 return (
                     ((searchMode === 'all' || searchMode === 'name') && internalMatchSearch(p.name, searchVal)) ||
                     ((searchMode === 'all' || searchMode === 'code') && internalMatchSearch(p.sku, searchVal)) ||
-                    ((searchMode === 'all' || searchMode === 'category') && getProductCategoryNames(p).some(name => internalMatchSearch(name, searchVal)))
+                    ((searchMode === 'all' || searchMode === 'category') && internalMatchSearch(getProductCategoryNames(p), searchVal))
                 )
             })
 
@@ -440,12 +451,12 @@ export function useInventoryByLot(
                             itemCatNames.push(categoryMap[rel.category_id])
                         }
                     })
-                    const matchesCat = (searchMode === 'all' || searchMode === 'category') && itemCatNames.some(cn => internalMatchSearch(cn, searchVal))
+                    const matchesCat = (searchMode === 'all' || searchMode === 'category') && internalMatchSearch(itemCatNames, searchVal)
                     
                     const itemTags = lot.lot_tags?.filter((t: any) => t.lot_item_id === itemId || !t.lot_item_id).map((t: any) => t.tag) || []
-                    const matchesTags = (searchMode === 'all' || searchMode === 'tag') && itemTags.some(t => internalMatchSearch(t, searchVal))
+                    const matchesTags = (searchMode === 'all' || searchMode === 'tag') && internalMatchSearch(itemTags, searchVal)
                     
-                    const matchesPos = (searchMode === 'all' || searchMode === 'position') && lot.positions?.some((p: any) => internalMatchSearch(p.code, searchVal))
+                    const matchesPos = (searchMode === 'all' || searchMode === 'position') && internalMatchSearch(lot.positions?.map((p: any) => p.code) || [], searchVal)
 
                     if (!matchesFields && !matchesCode && !matchesCat && !matchesTags && !matchesPos) {
                         return // Skip this variant/item if it doesn't match search
