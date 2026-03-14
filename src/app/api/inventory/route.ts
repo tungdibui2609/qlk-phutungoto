@@ -151,6 +151,7 @@ export async function GET(request: Request) {
             qtyIn: number
             qtyOut: number
             balance: number
+            categoryName: string | null
             isUnconvertible?: boolean
         }
 
@@ -254,6 +255,7 @@ export async function GET(request: Request) {
                     qtyIn: 0,
                     qtyOut: 0,
                     balance: 0,
+                    categoryName: prod?.category_id ? categoryMap.get(prod.category_id) || null : null,
                     isUnconvertible
                 })
             }
@@ -299,6 +301,18 @@ export async function GET(request: Request) {
                         i.productId === key ||
                         categoryName.includes(key)
                     )
+                })
+            }
+        }
+
+        // 4. Filter by Category IDs if provided
+        const categoryIdsParam = searchParams.get('categoryIds')
+        if (categoryIdsParam) {
+            const selectedCategoryIds = new Set(categoryIdsParam.split(',').filter(Boolean))
+            if (selectedCategoryIds.size > 0) {
+                result = result.filter(i => {
+                    const prod = productMap.get(i.productId)
+                    return prod?.category_id && selectedCategoryIds.has(prod.category_id)
                 })
             }
         }

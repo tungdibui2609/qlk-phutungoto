@@ -8,7 +8,10 @@ import { useInventoryByLot } from './by-lot/useInventoryByLot'
 import { InventoryFilters } from './by-lot/InventoryFilters'
 import { InventoryTable } from './by-lot/InventoryTable'
 
-export default function InventoryByLot({ units }: { units: any[] }) {
+export default function InventoryByLot({ units, hookData, hideFilters }: { units: any[], hookData?: any, hideFilters?: boolean }) {
+    const internalHookData = useInventoryByLot(units)
+    const activeHookData = hookData || internalHookData
+
     const {
         loading,
         searchTerm,
@@ -25,7 +28,7 @@ export default function InventoryByLot({ units }: { units: any[] }) {
         expandedProducts,
         toggleExpand,
         systemType
-    } = useInventoryByLot(units)
+    } = activeHookData
 
     // Use company info for printing params (Managed here or could be moved to Filters)
     const { profile } = useUser()
@@ -36,22 +39,24 @@ export default function InventoryByLot({ units }: { units: any[] }) {
     return (
         <div className="space-y-4">
             {/* Filters */}
-            <InventoryFilters
-                searchTerm={searchTerm}
-                setSearchTerm={setSearchTerm}
-                selectedBranch={selectedBranch}
-                setSelectedBranch={setSelectedBranch}
-                branches={branches}
-                targetUnitId={targetUnitId}
-                setTargetUnitId={setTargetUnitId}
-                units={units}
-                systemType={systemType ?? ''}
-                companyInfo={companyInfo}
-                loadingCompany={loadingCompany}
-                selectedZoneId={selectedZoneId}
-                setSelectedZoneId={setSelectedZoneId}
-                allZones={allZones}
-            />
+            {!hideFilters && (
+                <InventoryFilters
+                    searchTerm={searchTerm}
+                    setSearchTerm={setSearchTerm}
+                    selectedBranch={selectedBranch}
+                    setSelectedBranch={setSelectedBranch}
+                    branches={branches}
+                    targetUnitId={targetUnitId}
+                    setTargetUnitId={setTargetUnitId}
+                    units={units}
+                    systemType={systemType ?? ''}
+                    companyInfo={companyInfo}
+                    loadingCompany={loadingCompany}
+                    selectedZoneId={selectedZoneId}
+                    setSelectedZoneId={setSelectedZoneId}
+                    allZones={allZones}
+                />
+            )}
 
             {/* Mobile List */}
             <div className="md:hidden">

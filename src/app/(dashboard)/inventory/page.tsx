@@ -8,8 +8,12 @@ import { formatQuantityFull } from '@/lib/numberUtils'
 import InventoryByLot from '@/components/inventory/InventoryByLot'
 import InventoryByTag from '@/components/inventory/InventoryByTag'
 import InventoryReconciliation from '@/components/inventory/InventoryReconciliation'
+import InventoryByCategory from '@/components/inventory/InventoryByCategory'
 import MobileInventoryList from '@/components/inventory/MobileInventoryList'
 import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
+import { useInventoryByLot } from '@/components/inventory/by-lot/useInventoryByLot'
+import { useUser } from '@/contexts/UserContext'
+import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 
 // Types based on API response
 interface InventoryItem {
@@ -23,6 +27,7 @@ interface InventoryItem {
     qtyIn: number
     qtyOut: number
     balance: number
+    categoryName: string | null
     isUnconvertible?: boolean
 }
 
@@ -32,17 +37,14 @@ interface Branch {
     is_default?: boolean
 }
 
-import { useUser } from '@/contexts/UserContext'
-
 export default function InventoryPage() {
     const { systemType } = useSystem()
     const { profile } = useUser()
-    // Use company info for printing params, prioritized from user profile
     const { companyInfo, loading: loadingCompany } = usePrintCompanyInfo({
         orderCompanyId: profile?.company_id
     })
 
-    const [activeTab, setActiveTab] = useState<'accounting' | 'lot' | 'tags' | 'reconciliation'>('accounting')
+    const [activeTab, setActiveTab] = useState<'accounting' | 'category' | 'lot' | 'tags' | 'reconciliation'>('accounting')
     const [items, setItems] = useState<InventoryItem[]>([])
     const [loading, setLoading] = useState(false)
     const [displayInternalCode, setDisplayInternalCode] = useState(false)
@@ -57,6 +59,18 @@ export default function InventoryPage() {
     const [dateTo, setDateTo] = useState('')
     const [units, setUnits] = useState<any[]>([])
     const [targetUnitId, setTargetUnitId] = useState<string | null>(null)
+    const [categories, setCategories] = useState<any[]>([])
+    const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([])
+    const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
+
+    // LOT Hook for LOT and Category tabs
+    const lotHookData = useInventoryByLot(units || [], {
+        searchTerm: q,
+        selectedBranch: selectedBranch,
+        selectedCategoryIds: selectedCategoryIds,
+        targetUnitId: targetUnitId,
+        selectedZoneId: selectedZoneId
+    })
 
     // Load Branches
     useEffect(() => {
@@ -73,7 +87,6 @@ export default function InventoryPage() {
             if (data) {
                 const branchList = data as Branch[]
                 setBranches(branchList)
-                // Set default branch
                 const defaultBranch = branchList.find(b => b.is_default)
                 if (defaultBranch) {
                     setSelectedBranch(defaultBranch.name)
@@ -92,7 +105,16 @@ export default function InventoryPage() {
         fetchUnits()
     }, [])
 
-    // Date defaults: Last 7 days to today
+    // Load Categories
+    useEffect(() => {
+        async function fetchCategories() {
+            const { data } = await supabase.from('categories').select('id, name').order('name')
+            if (data) setCategories(data)
+        }
+        fetchCategories()
+    }, [])
+
+    // Date defaults
     useEffect(() => {
         const formatDate = (date: Date) => {
             const year = date.getFullYear()
@@ -120,6 +142,9 @@ export default function InventoryPage() {
             if (selectedBranch) params.set('warehouse', selectedBranch)
             if (systemType) params.set('systemType', systemType)
             if (targetUnitId) params.set('targetUnitId', targetUnitId)
+            if (selectedCategoryIds.length > 0) {
+                params.set('categoryIds', selectedCategoryIds.join(','))
+            }
 
             const res = await fetch(`/api/inventory?${params.toString()}`)
             const data = await res.json()
@@ -145,7 +170,7 @@ export default function InventoryPage() {
             }
         }, 300)
         return () => clearTimeout(timer)
-    }, [q, dateFrom, dateTo, activeTab, selectedBranch, systemType, targetUnitId])
+    }, [q, dateFrom, dateTo, activeTab, selectedBranch, systemType, targetUnitId, selectedCategoryIds])
 
     // Calculate Totals
     const totals = useMemo(() => {
@@ -166,21 +191,18 @@ export default function InventoryPage() {
                 </div>
             </div>
 
-            {/* Tabs */}
             {/* Tabs Navigation */}
             <div className="border-b border-stone-200 dark:border-stone-800 overflow-x-auto">
                 <nav className="-mb-px flex space-x-4 md:space-x-8 min-w-max px-1" aria-label="Tabs">
-                    {(
-                        [
-                            { id: 'accounting', name: 'Tồn kho kế toán' },
-                            { id: 'lot', name: 'Tồn kho theo LOT' },
-                            { id: 'tags', name: 'Tồn theo Mã phụ' },
-                            { id: 'reconciliation', name: 'Đối chiếu' },
-                        ] as { id: string; name: string; disabled?: boolean }[]
-                    ).map((tab) => (
+                    {[
+                        { id: 'accounting', name: 'Tồn kho kế toán' },
+                        { id: 'category', name: 'Tồn theo danh mục' },
+                        { id: 'lot', name: 'Tồn kho theo LOT' },
+                        { id: 'tags', name: 'Tồn theo Mã phụ' },
+                        { id: 'reconciliation', name: 'Đối chiếu' },
+                    ].map((tab) => (
                         <button
                             key={tab.id}
-                            disabled={tab.disabled}
                             onClick={() => setActiveTab(tab.id as any)}
                             className={`
                                 py-3 md:py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap transition-colors
@@ -188,7 +210,6 @@ export default function InventoryPage() {
                                     ? 'border-orange-500 text-orange-600 dark:text-orange-500'
                                     : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300 cursor-pointer'
                                 }
-                                ${tab.disabled ? 'opacity-50 cursor-not-allowed' : ''}
                             `}
                         >
                             {tab.name}
@@ -197,11 +218,13 @@ export default function InventoryPage() {
                 </nav>
             </div>
 
-            {activeTab === 'accounting' && (
-                <div className="space-y-4">
-                    {/* Filters */}
-                    <div className="flex flex-col xl:flex-row gap-4 xl:items-end bg-white dark:bg-stone-900 p-4 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm">
-                        <div className="flex-1 w-full xl:w-auto">
+            {/* Global Filters - Visible for Accounting, Category, Lot tabs */}
+            {(activeTab === 'accounting' || activeTab === 'category' || activeTab === 'lot') && (
+                <div className="flex flex-col gap-4 bg-white dark:bg-stone-900 p-4 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm">
+                    {/* Row 1: Search, Branch, Dates, Unit & Actions */}
+                    <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-end">
+                        {/* Search */}
+                        <div className="flex-1 w-full lg:w-auto">
                             <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Tìm kiếm</label>
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
@@ -209,13 +232,14 @@ export default function InventoryPage() {
                                     type="text"
                                     value={q}
                                     onChange={e => setQ(e.target.value)}
-                                    placeholder="Mã SP, tên, danh mục... (dùng ; để tìm nhiều)"
                                     className="w-full pl-9 pr-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                    placeholder="Mã SP, tên, danh mục... (dùng ; để tìm nhiều)"
                                 />
                             </div>
                         </div>
 
-                        <div className="w-full md:w-1/2 xl:w-48">
+                        {/* Branch */}
+                        <div className="w-full sm:w-auto lg:w-48">
                             <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Chi nhánh / Kho</label>
                             <div className="relative">
                                 <Warehouse className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
@@ -229,11 +253,13 @@ export default function InventoryPage() {
                                         <option key={b.id} value={b.name}>{b.name}</option>
                                     ))}
                                 </select>
+                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
                             </div>
                         </div>
 
-                        <div className="flex flex-row gap-4 w-full md:w-auto">
-                            <div className="flex-1 md:w-40">
+                        {/* Dates */}
+                        <div className="flex flex-row gap-4 w-full sm:w-auto">
+                            <div className="flex-1 sm:w-40">
                                 <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Từ ngày</label>
                                 <input
                                     type="date"
@@ -242,8 +268,7 @@ export default function InventoryPage() {
                                     className="w-full px-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500"
                                 />
                             </div>
-
-                            <div className="flex-1 md:w-40">
+                            <div className="flex-1 sm:w-40">
                                 <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Đến ngày</label>
                                 <input
                                     type="date"
@@ -254,14 +279,15 @@ export default function InventoryPage() {
                             </div>
                         </div>
 
-                        <div className="flex items-center justify-between xl:justify-start gap-4 w-full xl:w-auto pt-2 xl:pt-0">
-                            <div className="w-full xl:w-48">
-                                <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Quy đổi đơn vị</label>
+                        {/* Unit & Actions */}
+                        <div className="flex items-end gap-4 w-full sm:w-auto">
+                            <div className="flex-1 min-w-[140px]">
+                                <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Quy đổi</label>
                                 <div className="relative">
                                     <select
                                         value={targetUnitId || ''}
                                         onChange={e => setTargetUnitId(e.target.value || null)}
-                                        className="w-full px-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
+                                        className="w-full pr-8 pl-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
                                     >
                                         <option value="">Đơn vị gốc</option>
                                         {units.map(u => (
@@ -271,18 +297,18 @@ export default function InventoryPage() {
                                     <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
                                 </div>
                             </div>
-                            <div className="flex gap-2 w-full sm:w-auto mt-6">
+
+                            <div className="flex gap-2">
                                 <button
                                     onClick={() => setDisplayInternalCode(!displayInternalCode)}
-                                    className={`p-2 border border-stone-300 dark:border-stone-700 rounded-md transition-all flex items-center justify-center w-10 sm:w-auto ${displayInternalCode ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 active:scale-95'}`}
+                                    className={`p-2 border border-stone-300 dark:border-stone-700 rounded-md transition-all flex items-center justify-center ${displayInternalCode ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 active:scale-95'}`}
                                     title={displayInternalCode ? "Đang hiển thị mã nội bộ" : "Hiển thị mã nội bộ"}
                                 >
-                                    <Hash className="w-5 h-5" />
+                                    <Hash className="w-5 h-4" />
                                 </button>
                                 <button
                                     onClick={async () => {
                                         if (loadingCompany) return
-
                                         const params = new URLSearchParams()
                                         params.set('type', 'accounting')
                                         params.set('export', 'excel')
@@ -293,14 +319,8 @@ export default function InventoryPage() {
                                         if (q) params.set('search', q)
                                         if (targetUnitId) params.set('targetUnitId', targetUnitId)
                                         if (displayInternalCode) params.set('internalCode', 'true')
-
-                                        // Pass auth token
                                         const { data: { session } } = await supabase.auth.getSession()
-                                        if (session?.access_token) {
-                                            params.set('token', session.access_token)
-                                        }
-
-                                        // Pass company info directly
+                                        if (session?.access_token) params.set('token', session.access_token)
                                         if (companyInfo) {
                                             if (companyInfo.name) params.set('cmp_name', companyInfo.name)
                                             if (companyInfo.address) params.set('cmp_address', companyInfo.address)
@@ -309,19 +329,17 @@ export default function InventoryPage() {
                                             if (companyInfo.logo_url) params.set('cmp_logo', companyInfo.logo_url)
                                             if (companyInfo.short_name) params.set('cmp_short', companyInfo.short_name)
                                         }
-
                                         window.open(`/print/inventory?${params.toString()}`, '_blank')
                                     }}
                                     disabled={loadingCompany}
-                                    className={`p-2 mt-6 border border-stone-300 dark:border-stone-700 rounded-md transition-all ${loadingCompany ? 'opacity-50 cursor-wait bg-stone-100' : 'text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 active:scale-95'}`}
-                                    title={loadingCompany ? "Đang tải thông tin..." : "Xuất Excel"}
+                                    className={`p-2 border border-stone-300 dark:border-stone-700 rounded-md transition-all ${loadingCompany ? 'opacity-50 cursor-wait bg-stone-100' : 'text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 active:scale-95'}`}
+                                    title="Xuất Excel"
                                 >
-                                    <FileSpreadsheet className="w-5 h-5" />
+                                    <FileSpreadsheet className="w-5 h-4" />
                                 </button>
                                 <button
                                     onClick={async () => {
                                         if (loadingCompany) return
-
                                         const params = new URLSearchParams()
                                         params.set('type', 'accounting')
                                         if (systemType) params.set('systemType', systemType)
@@ -331,14 +349,8 @@ export default function InventoryPage() {
                                         if (q) params.set('search', q)
                                         if (targetUnitId) params.set('targetUnitId', targetUnitId)
                                         if (displayInternalCode) params.set('internalCode', 'true')
-
-                                        // Pass auth token to ensure company info loads correctly in new tab
                                         const { data: { session } } = await supabase.auth.getSession()
-                                        if (session?.access_token) {
-                                            params.set('token', session.access_token)
-                                        }
-
-                                        // Pass company info directly to avoid fetching issues
+                                        if (session?.access_token) params.set('token', session.access_token)
                                         if (companyInfo) {
                                             if (companyInfo.name) params.set('cmp_name', companyInfo.name)
                                             if (companyInfo.address) params.set('cmp_address', companyInfo.address)
@@ -347,130 +359,197 @@ export default function InventoryPage() {
                                             if (companyInfo.logo_url) params.set('cmp_logo', companyInfo.logo_url)
                                             if (companyInfo.short_name) params.set('cmp_short', companyInfo.short_name)
                                         }
-
                                         window.open(`/print/inventory?${params.toString()}`, '_blank')
                                     }}
                                     disabled={loadingCompany}
-                                    className={`p-2 mt-6 border border-stone-300 dark:border-stone-700 rounded-md transition-all ${loadingCompany ? 'opacity-50 cursor-wait bg-stone-100' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 active:scale-95'}`}
-                                    title={loadingCompany ? "Đang tải thông tin..." : "In báo cáo"}
+                                    className={`p-2 border border-stone-300 dark:border-stone-700 rounded-md transition-all ${loadingCompany ? 'opacity-50 cursor-wait bg-stone-100' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 active:scale-95'}`}
+                                    title="In báo cáo"
                                 >
-                                    <Printer className="w-5 h-5" />
+                                    <Printer className="w-5 h-4" />
                                 </button>
                             </div>
                         </div>
                     </div>
 
-                    {/* Content */}
-                    {loading ? (
-                        <div className="p-8 text-center text-stone-500 bg-white dark:bg-stone-900 rounded-lg border border-stone-200 dark:border-stone-800">
-                            <div className="flex items-center justify-center gap-2">
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                                <span>Đang tải dữ liệu...</span>
+                    {/* Row 2: Category Multi-select (Full Width) */}
+                    <div className="w-full">
+                        <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block flex items-center gap-2">
+                            <span>Danh mục</span>
+                            <span className="text-[10px] bg-stone-100 dark:bg-stone-800 px-1.5 py-0.5 rounded text-stone-500">Chọn nhiều</span>
+                        </label>
+                        <div className="relative group">
+                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none group-focus-within:text-orange-500 transition-colors" />
+                            <div className="flex flex-wrap gap-2 p-2 min-h-[42px] w-full border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus-within:ring-2 focus-within:ring-orange-500 transition-all overflow-hidden hover:overflow-y-auto scrollbar-thin scrollbar-thumb-stone-300 dark:scrollbar-thumb-stone-700">
+                                {selectedCategoryIds.length === 0 && (
+                                    <span className="text-stone-400 text-sm px-2 py-1 italic">Tất cả danh mục sản phẩm (sẽ hiển thị toàn bộ nếu không chọn)</span>
+                                )}
+                                {selectedCategoryIds.map(id => {
+                                    const cat = categories.find(c => c.id === id)
+                                    return (
+                                        <span key={id} className="bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 text-xs pl-2.5 pr-1.5 py-1 rounded-full border border-orange-200 dark:border-orange-800/50 flex items-center gap-1.5 group/chip hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors">
+                                            {cat?.name || id}
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.preventDefault()
+                                                    setSelectedCategoryIds(prev => prev.filter(x => x !== id))
+                                                }}
+                                                className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-orange-200 dark:hover:bg-orange-800 text-orange-400 hover:text-orange-800 dark:hover:text-orange-100 transition-colors font-bold"
+                                            >
+                                                ×
+                                            </button>
+                                        </span>
+                                    )
+                                })}
+                                <select
+                                    className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10"
+                                    onChange={(e) => {
+                                        const val = e.target.value
+                                        if (val && !selectedCategoryIds.includes(val)) {
+                                            setSelectedCategoryIds(prev => [...prev, val])
+                                        }
+                                        e.target.value = ""
+                                    }}
+                                >
+                                    <option value="">+ Thêm danh mục...</option>
+                                    {categories.map(c => (
+                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                </select>
                             </div>
                         </div>
-                    ) : (
-                        <>
-                            {/* Mobile List */}
-                            <div className="md:hidden">
-                                <MobileInventoryList items={items} />
-                            </div>
+                    </div>
 
-                            {/* Desktop Table */}
-                            <div className="hidden md:block rounded-md border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 shadow-sm overflow-hidden">
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-sm text-left">
-                                        <thead className="bg-stone-50 dark:bg-stone-800/50 text-stone-500 dark:text-stone-400 font-medium">
-                                            <tr>
-                                                <th className="px-4 py-3">Kho</th>
-                                                <th className="px-4 py-3">Mã SP</th>
-                                                <th className="px-4 py-3">Tên sản phẩm</th>
-                                                <th className="px-4 py-3 text-right">Tồn đầu</th>
-                                                <th className="px-4 py-3 text-right">Nhập</th>
-                                                <th className="px-4 py-3 text-right">Xuất</th>
-                                                <th className="px-4 py-3 text-right">Tồn cuối</th>
-                                                <th className="px-4 py-3 text-center">ĐVT</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-stone-200 dark:divide-stone-800">
-                                            {items.length === 0 ? (
-                                                <tr>
-                                                    <td colSpan={8} className="px-4 py-8 text-center text-stone-500">
-                                                        Không có dữ liệu tồn kho trong giai đoạn này.
-                                                    </td>
-                                                </tr>
-                                            ) : (
-                                                <>
-                                                    {items.map((item, idx) => {
-                                                        const displayCode = displayInternalCode && item.internalCode ? item.internalCode : item.productCode || 'N/A'
-                                                        const displayName = displayInternalCode && item.internalName ? item.internalName : item.productName
-
-                                                        return (
-                                                            <tr
-                                                                key={idx}
-                                                                className={`
-                                                                    hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors
-                                                                    ${item.isUnconvertible ? 'bg-orange-50 dark:bg-orange-950/20' : ''}
-                                                                `}
-                                                            >
-                                                                <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{item.warehouse}</td>
-                                                                <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-400">{displayCode}</td>
-                                                                <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100 flex items-center gap-2">
-                                                                    {displayName}
-                                                                    {item.isUnconvertible && (
-                                                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-600 border border-orange-200">
-                                                                            Chưa thể quy đổi
-                                                                        </span>
-                                                                    )}
-                                                                </td>
-                                                                <td className="px-4 py-3 text-right tabular-nums text-stone-600">{formatQuantityFull(item.opening)}</td>
-                                                                <td className="px-4 py-3 text-right tabular-nums text-emerald-600 font-medium">+{formatQuantityFull(item.qtyIn)}</td>
-                                                                <td className="px-4 py-3 text-right tabular-nums text-rose-600 font-medium">-{formatQuantityFull(item.qtyOut)}</td>
-                                                                <td className="px-4 py-3 text-right tabular-nums font-bold text-stone-900 dark:text-stone-100">{formatQuantityFull(item.balance)}</td>
-                                                                <td className="px-4 py-3 text-center text-stone-500">
-                                                                    {item.unit}
-                                                                </td>
-                                                            </tr>
-                                                        )
-                                                    })}
-                                                    {/* Summary Row */}
-                                                    <tr className="bg-stone-100/50 dark:bg-stone-800 font-bold border-t-2 border-stone-300 dark:border-stone-700">
-                                                        <td colSpan={3} className="px-4 py-3 text-right text-stone-600 dark:text-stone-400">Tổng cộng:</td>
-                                                        <td className="px-4 py-3 text-right tabular-nums">{formatQuantityFull(totals.opening)}</td>
-                                                        <td className="px-4 py-3 text-right tabular-nums text-emerald-700">+{formatQuantityFull(totals.qtyIn)}</td>
-                                                        <td className="px-4 py-3 text-right tabular-nums text-rose-700">-{formatQuantityFull(totals.qtyOut)}</td>
-                                                        <td className="px-4 py-3 text-right tabular-nums text-stone-900 dark:text-white">{formatQuantityFull(totals.balance)}</td>
-                                                        <td></td>
-                                                    </tr>
-                                                </>
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </>
+                    {/* Row 3: Zone selector (Only for LOT tab) */}
+                    {activeTab === 'lot' && (
+                        <div className="w-full pt-2 border-t border-stone-100 dark:border-stone-800">
+                            <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-2 block flex items-center gap-2">
+                                <span>Khu vực / Dãy hàng</span>
+                                <span className="text-[10px] bg-stone-100 dark:bg-stone-800 px-1.5 py-0.5 rounded text-stone-500">Phân cấp</span>
+                            </label>
+                            <HorizontalZoneFilter
+                                selectedZoneId={selectedZoneId}
+                                onZoneSelect={setSelectedZoneId}
+                                zones={lotHookData.allZones}
+                                showSearch={false}
+                                variant="subtle"
+                                compact={true}
+                            />
+                        </div>
                     )}
                 </div>
             )}
 
-            {/* Placeholder for other tabs */}
-            {activeTab === 'lot' && (
-                <InventoryByLot units={units} />
-            )}
+            {/* Main Content Area */}
+            <div className="flex-1 overflow-hidden">
+                {activeTab === 'accounting' && (
+                    <div className="h-full space-y-4 overflow-y-auto">
+                        {loading ? (
+                            <div className="p-8 text-center text-stone-500 bg-white dark:bg-stone-900 rounded-lg border border-stone-200 dark:border-stone-800">
+                                <div className="flex items-center justify-center gap-2">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    <span>Đang tải dữ liệu...</span>
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="md:hidden">
+                                    <MobileInventoryList items={items} />
+                                </div>
 
-            {activeTab === 'tags' && (
-                <InventoryByTag
-                    units={units}
-                    systemType={systemType}
-                    selectedBranch={selectedBranch}
-                    targetUnitId={targetUnitId}
-                />
-            )}
+                                <div className="hidden md:block rounded-md border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 shadow-sm overflow-hidden">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="bg-stone-50 dark:bg-stone-800/50 text-stone-500 dark:text-stone-400 font-medium">
+                                                <tr>
+                                                    <th className="px-4 py-3">Kho</th>
+                                                    <th className="px-4 py-3">Mã SP</th>
+                                                    <th className="px-4 py-3">Tên sản phẩm</th>
+                                                    <th className="px-4 py-3 text-right">Tồn đầu</th>
+                                                    <th className="px-4 py-3 text-right">Nhập</th>
+                                                    <th className="px-4 py-3 text-right">Xuất</th>
+                                                    <th className="px-4 py-3 text-right">Tồn cuối</th>
+                                                    <th className="px-4 py-3 text-center">ĐVT</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-stone-200 dark:divide-stone-800">
+                                                {items.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={8} className="px-4 py-8 text-center text-stone-500">
+                                                            Không có dữ liệu tồn kho trong giai đoạn này.
+                                                        </td>
+                                                    </tr>
+                                                ) : (
+                                                    <>
+                                                        {items.map((item, idx) => {
+                                                            const displayCode = displayInternalCode && item.internalCode ? item.internalCode : item.productCode || 'N/A'
+                                                            const displayName = displayInternalCode && item.internalName ? item.internalName : item.productName
 
-            {activeTab === 'reconciliation' && (
-                <InventoryReconciliation units={units} />
-            )}
+                                                            return (
+                                                                <tr key={idx} className={`hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors ${item.isUnconvertible ? 'bg-orange-50 dark:bg-orange-950/20' : ''}`}>
+                                                                    <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{item.warehouse}</td>
+                                                                    <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-400">{displayCode}</td>
+                                                                    <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100 flex items-center gap-2">
+                                                                        {displayName}
+                                                                        {item.isUnconvertible && (
+                                                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-600 border border-orange-200">
+                                                                                Chưa thể quy đổi
+                                                                            </span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-right tabular-nums text-stone-600">{formatQuantityFull(item.opening)}</td>
+                                                                    <td className="px-4 py-3 text-right tabular-nums text-emerald-600 font-medium">+{formatQuantityFull(item.qtyIn)}</td>
+                                                                    <td className="px-4 py-3 text-right tabular-nums text-rose-600 font-medium">-{formatQuantityFull(item.qtyOut)}</td>
+                                                                    <td className="px-4 py-3 text-right tabular-nums font-bold text-stone-900 dark:text-stone-100">{formatQuantityFull(item.balance)}</td>
+                                                                    <td className="px-4 py-3 text-center text-stone-500">{item.unit}</td>
+                                                                </tr>
+                                                            )
+                                                        })}
+                                                        <tr className="bg-stone-100/50 dark:bg-stone-800 font-bold border-t-2 border-stone-300 dark:border-stone-700">
+                                                            <td colSpan={3} className="px-4 py-3 text-right text-stone-600 dark:text-stone-400">Tổng cộng:</td>
+                                                            <td className="px-4 py-3 text-right tabular-nums">{formatQuantityFull(totals.opening)}</td>
+                                                            <td className="px-4 py-3 text-right tabular-nums text-emerald-700">+{formatQuantityFull(totals.qtyIn)}</td>
+                                                            <td className="px-4 py-3 text-right tabular-nums text-rose-700">-{formatQuantityFull(totals.qtyOut)}</td>
+                                                            <td className="px-4 py-3 text-right tabular-nums text-stone-900 dark:text-white">{formatQuantityFull(totals.balance)}</td>
+                                                            <td></td>
+                                                        </tr>
+                                                    </>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
 
+                {activeTab === 'category' && (
+                    <InventoryByCategory 
+                        groupedInventory={lotHookData.groupedInventory} 
+                        loading={lotHookData.loading}
+                        categoryMap={lotHookData.categoryMap}
+                        displayInternalCode={displayInternalCode}
+                        selectedCategoryIds={selectedCategoryIds}
+                    />
+                )}
 
+                {activeTab === 'lot' && (
+                    <InventoryByLot units={units} hookData={lotHookData} hideFilters={true} />
+                )}
+
+                {activeTab === 'tags' && (
+                    <InventoryByTag
+                        units={units}
+                        systemType={systemType}
+                        selectedBranch={selectedBranch}
+                        targetUnitId={targetUnitId}
+                    />
+                )}
+
+                {activeTab === 'reconciliation' && (
+                    <InventoryReconciliation units={units} />
+                )}
+            </div>
         </div>
     )
 }

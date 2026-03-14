@@ -218,10 +218,10 @@ export default function HorizontalZoneFilter({
             {/* Level 1 & Controls Bar */}
             <div className={`bg-gray-50 dark:bg-gray-900/50 ${compact ? 'p-2 space-y-2' : 'p-3 space-y-3'} rounded-lg border border-gray-200 dark:border-gray-700`}>
                 {/* Zone Navigation: Level 1 Tabs & Deeper Dropdowns */}
-                <div className={`flex flex-col lg:flex-row lg:items-center ${compact ? 'gap-2' : 'gap-3'}`}>
+                <div className={`flex flex-col gap-3`}>
                     {/* Level 1 Tabs (e.g. Chambers/Ngăn) */}
                     {activeLevel0 && (
-                        <div className={`flex items-center ${compact ? 'gap-0.5' : 'gap-1'} overflow-x-auto no-scrollbar border-r border-gray-300 dark:border-gray-600 ${compact ? 'pr-2 mr-1' : 'pr-4 mr-2'}`}>
+                        <div className={`flex items-center ${compact ? 'gap-0.5' : 'gap-1'} overflow-x-auto no-scrollbar border-b border-gray-200 dark:border-gray-700 pb-2`}>
                             {/* 'All' Option */}
                             <button
                                 onClick={() => handleLevel1Select(null)}
@@ -257,23 +257,28 @@ export default function HorizontalZoneFilter({
                         </div>
                     )}
 
-                    {/* Deeper Levels Dropdowns */}
-                    <div className="flex flex-wrap items-center gap-2">
+                    {/* Deeper Levels Dropdowns - Now on a new line */}
+                    <div className="flex flex-wrap items-center gap-3">
                         {deeperLevels.map((lvl, idx) => (
-                            <div key={lvl.parentId} className="relative group">
-                                <select
-                                    value={lvl.activeId}
-                                    onChange={(e) => handleDropdownSelect(e.target.value, lvl.parentId)}
-                                    className={`appearance-none pl-3 pr-8 ${compact ? 'py-1' : 'py-1.5'} bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm min-w-[100px] focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:border-blue-400 transition-colors`}
-                                >
-                                    <option value="">Tất cả {lvl.level === 2 ? 'Ô' : lvl.level === 3 ? 'Dãy' : lvl.level === 4 ? 'Tầng' : 'Zone'}</option>
-                                    {lvl.children.map(c => (
-                                        <option key={c.id} value={c.id}>
-                                            {c.name}
-                                        </option>
-                                    ))}
-                                </select>
-                                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                            <div key={lvl.parentId} className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-stone-500 uppercase tracking-wider">
+                                    {lvl.level === 2 ? 'Ô' : lvl.level === 3 ? 'Tầng' : lvl.level === 4 ? 'Dãy' : 'Vị trí'}:
+                                </span>
+                                <div className="relative group">
+                                    <select
+                                        value={lvl.activeId}
+                                        onChange={(e) => handleDropdownSelect(e.target.value, lvl.parentId)}
+                                        className={`appearance-none pl-3 pr-8 ${compact ? 'py-1' : 'py-1.5'} bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm min-w-[140px] focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:border-blue-400 transition-colors shadow-sm`}
+                                    >
+                                        <option value="">Tất cả {lvl.level === 2 ? 'Ô' : lvl.level === 3 ? 'Tầng' : lvl.level === 4 ? 'Dãy' : 'Zone'}</option>
+                                        {lvl.children.map(c => (
+                                            <option key={c.id} value={c.id}>
+                                                {c.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                </div>
                             </div>
                         ))}
                     </div>

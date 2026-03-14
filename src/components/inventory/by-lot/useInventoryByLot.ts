@@ -3,14 +3,39 @@ import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { Lot, GroupedProduct } from './types'
+import { groupWarehouseData } from '@/lib/warehouseUtils'
 
-export function useInventoryByLot(units: any[]) {
+export function useInventoryByLot(
+    units: any[],
+    externalFilters?: {
+        searchTerm?: string
+        selectedBranch?: string
+        selectedCategoryIds?: string[]
+        targetUnitId?: string | null
+        selectedZoneId?: string | null
+    }
+) {
     const [lots, setLots] = useState<Lot[]>([])
     const [loading, setLoading] = useState(true)
-    const [searchTerm, setSearchTerm] = useState('')
-    const [selectedBranch, setSelectedBranch] = useState('Tất cả')
-    const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
-    const [targetUnitId, setTargetUnitId] = useState<string | null>(null)
+    const [internalSearchTerm, setInternalSearchTerm] = useState('')
+    const [internalBranch, setInternalBranch] = useState('Tất cả')
+    const [internalSelectedZoneId, setInternalSelectedZoneId] = useState<string | null>(null)
+    const [internalTargetUnitId, setInternalTargetUnitId] = useState<string | null>(null)
+    
+    // Sycn with external filters if provided
+    const searchTerm = externalFilters?.searchTerm !== undefined ? externalFilters.searchTerm : internalSearchTerm
+    const setSearchTerm = externalFilters?.searchTerm !== undefined ? (() => {}) : setInternalSearchTerm
+    
+    const selectedBranch = externalFilters?.selectedBranch !== undefined ? externalFilters.selectedBranch : internalBranch
+    const setSelectedBranch = externalFilters?.selectedBranch !== undefined ? (() => {}) : setInternalBranch
+
+    const targetUnitId = externalFilters?.targetUnitId !== undefined ? externalFilters.targetUnitId : internalTargetUnitId
+    const setTargetUnitId = externalFilters?.targetUnitId !== undefined ? (() => {}) : setInternalTargetUnitId
+
+    const selectedZoneId = externalFilters?.selectedZoneId !== undefined ? externalFilters.selectedZoneId : internalSelectedZoneId
+    const setSelectedZoneId = externalFilters?.selectedZoneId !== undefined ? (() => {}) : setInternalSelectedZoneId
+
+    const selectedCategoryIds = externalFilters?.selectedCategoryIds || []
     const [branches, setBranches] = useState<{ id: string, name: string }[]>([])
     const [allZones, setAllZones] = useState<any[]>([])
     const [posToZoneMap, setPosToZoneMap] = useState<Record<string, string>>({})
@@ -93,16 +118,26 @@ export function useInventoryByLot(units: any[]) {
                 if (data.length < PAGE_SIZE_MAP) break
                 zonesFrom += PAGE_SIZE_MAP
             }
+            console.log(`Fetched ${allZonesData.length} zones for system ${systemType}`)
             
-            setAllZones(allZonesData)
-            const hierarchy: Record<string, string | null> = {}
-            allZonesData.forEach((z: any) => {
-                hierarchy[z.id] = z.parent_id
-            })
-            setZoneHierarchy(hierarchy)
 
-            // 1b. Fetch ALL Zone-Position Mappings
-            let allZPData: any[] = []
+            // 1b. Fetch Positions and their Zone mappings
+            let positionsData: any[] = []
+            let posFrom = 0
+            while (true) {
+                const { data, error } = await supabase
+                    .from('positions')
+                    .select('id, code, system_type')
+                    .range(posFrom, posFrom + PAGE_SIZE_MAP - 1)
+                
+                if (error) throw error
+                if (!data || data.length === 0) break
+                positionsData = [...positionsData, ...data]
+                if (data.length < PAGE_SIZE_MAP) break
+                posFrom += PAGE_SIZE_MAP
+            }
+
+            let zpData: any[] = []
             let zpFrom = 0
             while (true) {
                 const { data, error } = await supabase
@@ -112,20 +147,51 @@ export function useInventoryByLot(units: any[]) {
                 
                 if (error) throw error
                 if (!data || data.length === 0) break
-                allZPData = [...allZPData, ...data]
+                zpData = [...zpData, ...data]
                 if (data.length < PAGE_SIZE_MAP) break
                 zpFrom += PAGE_SIZE_MAP
             }
 
-            const mapping: Record<string, string> = {}
-            allZPData.forEach((item: any) => {
+            // Create a mapping of position_id -> zone_id
+            const posToZoneInternal = new Map<string, string>()
+            zpData.forEach(item => {
                 if (item.position_id && item.zone_id) {
-                    mapping[item.position_id] = item.zone_id
+                    posToZoneInternal.set(item.position_id, item.zone_id)
+                }
+            })
+
+            // Attach zone_id to positions for the grouping util
+            const allPositionsData = positionsData.map(p => ({
+                ...p,
+                zone_id: posToZoneInternal.get(p.id) || null
+            }))
+
+            console.log(`Fetched ${allZonesData.length} zones, ${allPositionsData.length} positions and ${zpData.length} mappings`)
+
+            // 1c. Apply Grouping Logic (Gom ô)
+            console.log('Applying groupWarehouseData...')
+            const { zones: groupedZones, positions: groupedPositions } = groupWarehouseData(allZonesData, allPositionsData)
+            console.log(`Grouping complete. Zones: ${groupedZones.length}, Positions: ${groupedPositions.length}`)
+            
+            setAllZones(groupedZones)
+            
+            // Rebuild hierarchy from grouped zones
+            const hierarchy: Record<string, string | null> = {}
+            groupedZones.forEach((z: any) => {
+                hierarchy[z.id] = z.parent_id
+            })
+            setZoneHierarchy(hierarchy)
+
+            // Rebuild Position to Zone mapping using grouped positions
+            const mapping: Record<string, string> = {}
+            groupedPositions.forEach((p: any) => {
+                if (p.id && p.zone_id) {
+                    mapping[p.id] = p.zone_id
                 }
             })
             setPosToZoneMap(mapping)
 
-            // 1c. Fetch ALL Categories
+            // 1d. Fetch ALL Categories
             const { data: catData, error: catError } = await supabase
                 .from('categories')
                 .select('id, name')
@@ -194,8 +260,13 @@ export function useInventoryByLot(units: any[]) {
                 return true;
             });
             setLots(filtered as unknown as Lot[])
-        } catch (err) {
+        } catch (err: any) {
             console.error('Error in fetchLots loop:', err)
+            // Try to log more details if it's an Error object
+            if (err instanceof Error) {
+                console.error('Error message:', err.message)
+                console.error('Stack trace:', err.stack)
+            }
         } finally {
             setLoading(false)
         }
@@ -224,6 +295,13 @@ export function useInventoryByLot(units: any[]) {
                     return zId && isDescendantOrSelf(zId, selectedZoneId)
                 })
                 if (!matchesZone) return false
+            }
+
+            // 🟢 Category Filter
+            if (selectedCategoryIds.length > 0) {
+                const matchesCategory = lot.products?.category_id && selectedCategoryIds.includes(lot.products.category_id)
+                const matchesItemCategory = lot.lot_items?.some(item => item.products?.category_id && selectedCategoryIds.includes(item.products.category_id))
+                if (!matchesCategory && !matchesItemCategory) return false
             }
 
             // Simple Search Filter on Lot level (to keep relevant lots)
@@ -316,7 +394,8 @@ export function useInventoryByLot(units: any[]) {
                         unit: displayUnit,
                         totalQuantity: 0,
                         variants: new Map(),
-                        lotCodes: []
+                        lotCodes: [],
+                        categoryId: categoryId
                     })
                 }
                 const group = groups.get(key)!
@@ -366,7 +445,7 @@ export function useInventoryByLot(units: any[]) {
 
         return Array.from(groups.values()).sort((a, b) => a.productSku.localeCompare(b.productSku))
 
-    }, [lots, searchTerm, targetUnitId, unitNameMap, conversionMap, units, convertUnit, selectedZoneId, posToZoneMap, zoneHierarchy, categoryMap])
+    }, [lots, searchTerm, targetUnitId, unitNameMap, conversionMap, units, convertUnit, selectedZoneId, posToZoneMap, zoneHierarchy, categoryMap, selectedCategoryIds])
 
     const toggleExpand = (key: string) => {
         const newSet = new Set(expandedProducts)
@@ -391,6 +470,7 @@ export function useInventoryByLot(units: any[]) {
         groupedInventory,
         expandedProducts,
         toggleExpand,
-        systemType
+        systemType,
+        categoryMap
     }
 }
