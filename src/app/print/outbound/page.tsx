@@ -901,8 +901,12 @@ function OutboundPrintContent() {
                                         } else {
                                             const uConfig = product.product_units?.find((pu: any) => {
                                                 if (!pu.unit_id) return false
-                                                const mapVal = normalize(unitsMap[pu.unit_id])
-                                                return mapVal === itemUnit
+                                                const uName = unitsMap[pu.unit_id]
+                                                const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                                const labelStr = isBase
+                                                    ? uName
+                                                    : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
+                                                return normalize(labelStr) === itemUnit || normalize(uName) === itemUnit
                                             })
                                             if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
                                         }
@@ -913,8 +917,12 @@ function OutboundPrintContent() {
                                         } else {
                                             const targetConfig = product.product_units?.find((pu: any) => {
                                                 if (!pu.unit_id) return false
-                                                const mapVal = normalize(unitsMap[pu.unit_id])
-                                                return mapVal === tgtUnit
+                                                const uName = unitsMap[pu.unit_id]
+                                                const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                                const labelStr = isBase
+                                                    ? uName
+                                                    : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
+                                                return normalize(labelStr) === tgtUnit || normalize(uName) === tgtUnit
                                             })
                                             if (targetConfig) converted = baseQty / targetConfig.conversion_rate
                                         }
