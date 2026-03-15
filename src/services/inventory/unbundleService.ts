@@ -54,26 +54,63 @@ export const unbundleService = {
         const product = products.find(p => p.id === productId)
         if (!product || !unit) return { needsUnbundle: false }
 
-        const normReqUnit = unit.toLowerCase().trim()
+        const normalize = (s: string) => s.normalize('NFC').toLowerCase().trim()
+        const strip = (s: string) => s.replace(/\s*\([^)]*\)/g, '').trim()
+
+        const normReqUnit = normalize(unit)
+        const strippedReqUnit = strip(normReqUnit)
+
+        /**
+         * Robust stock lookup.
+         * Tries exact match, then tries match by stripped name if ambiguous.
+         */
+        const getStockByUnit = (targetUnit: string) => {
+            const nTarget = normalize(targetUnit)
+            const sTarget = strip(nTarget)
+
+            // 1. Exact match
+            let val = unitStockMap.get(`${productId}_${nTarget}`)
+            if (val !== undefined) return val
+
+            // 2. Fuzzy match (if multiple exist with same name but different capacity, we can't be sure, but we try)
+            for (const [key, qty] of unitStockMap.entries()) {
+                if (!key.startsWith(`${productId}_`)) continue
+                const unitPart = key.split(`${productId}_`)[1]
+                if (strip(unitPart) === sTarget) return qty
+            }
+            return 0
+        }
 
         // 1. Check direct liquid stock
-        // Note: unitStockMap keys are formatted as "productId_unitname"
-        const currentLiquid = unitStockMap.get(`${productId}_${normReqUnit}`) || 0
+        const currentLiquid = getStockByUnit(unit)
         if (currentLiquid >= qty - 0.000001) return { needsUnbundle: false }
 
         const deficit = qty - currentLiquid
-        const baseUnitName = (product.unit || '').toLowerCase().trim()
+        const baseUnitName = product.unit || ''
+        const normBaseName = normalize(baseUnitName)
+        const strippedBaseName = strip(normBaseName)
 
         // Case 1: Break Base Unit (Official Unit)
-        if (normReqUnit !== baseUnitName) {
-            const currentBase = unitStockMap.get(`${productId}_${baseUnitName}`) || 0
+        if (normReqUnit !== normBaseName && strippedReqUnit !== strippedBaseName) {
+            const currentBase = getStockByUnit(baseUnitName)
             if (currentBase > 0) {
-                // PRIORITY 1: Parse from name
-                let rateBaseToReq = this.parseRateFromName(unit)
+                // NEW LOGIC: Rate = Rate(Base) / Rate(Req)
+                const rateBaseVal = this.parseRateFromName(product.unit || '') || 1
+                const rateReqVal = this.parseRateFromName(unit) || 1
+                
+                let rateBaseToReq = rateBaseVal / rateReqVal
 
-                // PRIORITY 2: Map to ID
-                if (rateBaseToReq === null) {
+                // Fallback to conversionMap if name-based parsing fails to give a meaningful rate
+                if (!this.parseRateFromName(unit) && !this.parseRateFromName(product.unit || '')) {
                     let rUnitId = unitNameMap.get(normReqUnit)
+                    if (!rUnitId) {
+                        for (const [name, id] of unitNameMap.entries()) {
+                            if (name === normReqUnit) { // Exact match priority
+                                rUnitId = id
+                                break
+                            }
+                        }
+                    }
                     if (!rUnitId) {
                         for (const [name, id] of unitNameMap.entries()) {
                             if (name.startsWith(normReqUnit) || normReqUnit.startsWith(name)) {
@@ -88,7 +125,7 @@ export const unbundleService = {
                     }
                 }
 
-                if (rateBaseToReq && rateBaseToReq > 0) {
+                if (rateBaseToReq && rateBaseToReq > 1.000001) { // Only break if base is larger than req
                     const baseToBreak = Math.ceil(deficit / rateBaseToReq - 0.000001)
 
                     if (currentBase >= baseToBreak) {
@@ -107,11 +144,12 @@ export const unbundleService = {
         for (const pu of product.product_units || []) {
             const altUnitName = units.find(u => u.id === pu.unit_id)?.name
             if (!altUnitName) continue
-            const normAltUnit = altUnitName.toLowerCase().trim()
+            const normAltUnit = normalize(altUnitName)
+            const strippedAltUnit = strip(normAltUnit)
 
-            if (normAltUnit === normReqUnit) continue
+            if (normAltUnit === normReqUnit || strippedAltUnit === strippedReqUnit) continue
 
-            const currentAlt = unitStockMap.get(`${productId}_${normAltUnit}`) || 0
+            const currentAlt = getStockByUnit(altUnitName)
             if (currentAlt > 0) {
                 // PRIORITY 1: Parse rate from req unit name
                 let rateAltToReq = 0

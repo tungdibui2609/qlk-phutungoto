@@ -147,6 +147,7 @@ export function useInventoryByLot(
                     let query = supabase
                         .from(tableName as any)
                         .select(selectStr)
+                        .order('id', { ascending: true })
                         .range(from, from + PAGE_SIZE - 1)
                     
                     if (filterFn) {
@@ -164,7 +165,10 @@ export function useInventoryByLot(
             }
 
             // 2. Fetch all components separately
-            const sysCode = (systemType || 'FROZEN').trim().toUpperCase()
+            let sysCode = (systemType || 'FROZEN').trim().toUpperCase()
+            if (sysCode === 'FROZEN') sysCode = 'KHO_DONG_LANH'
+            else if (sysCode === 'DRY') sysCode = 'KHO_VAT_TU_BAO_BI'
+
             console.log('Fetching inventory data for system:', sysCode)
 
             // Define individual fetch promises to handle errors independently if needed

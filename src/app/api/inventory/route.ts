@@ -43,6 +43,11 @@ export async function GET(request: Request) {
         const to = searchParams.get('dateTo')
 
         const convertToKg = searchParams.get('convertToKg') === 'true'
+        
+        // Normalize systemType: Handle common mismatches (e.g., FROZEN -> KHO_DONG_LANH)
+        let normalizedSystemType = systemType;
+        if (systemType === 'FROZEN') normalizedSystemType = 'KHO_DONG_LANH';
+        else if (systemType === 'DRY') normalizedSystemType = 'KHO_VAT_TU_BAO_BI';
 
         // 1. Fetch ALL Inbound items (Status = 'Completed') using pagination
         let inboundItems: any[] = [];
@@ -66,7 +71,8 @@ export async function GET(request: Request) {
                     )
                 `)
                 .eq('order.status', 'Completed')
-                .eq('order.system_code', systemType)
+                .eq('order.system_code', normalizedSystemType)
+                .order('id', { ascending: true })
                 .range(inboundFrom, inboundFrom + PAGE_SIZE - 1);
 
             if (warehouse && warehouse !== 'Tất cả') {
@@ -113,7 +119,8 @@ export async function GET(request: Request) {
                     )
                 `)
                 .eq('order.status', 'Completed')
-                .eq('order.system_code', systemType)
+                .eq('order.system_code', normalizedSystemType)
+                .order('id', { ascending: true })
                 .range(outboundFrom, outboundFrom + PAGE_SIZE - 1);
 
             if (warehouse && warehouse !== 'Tất cả') {
@@ -165,6 +172,7 @@ export async function GET(request: Request) {
                 const { data, error } = await supabase
                     .from(tableName as any)
                     .select('*')
+                    .order('id', { ascending: true })
                     .range(currentFrom, currentFrom + LIMIT - 1);
                 if (error) throw error;
                 if (!data || data.length === 0) break;

@@ -27,6 +27,7 @@ interface System {
   outbound_modules?: string | string[]
   dashboard_modules?: string[] | null
   lot_modules?: string[] | null
+  utility_modules?: string[] | null
   is_active?: boolean
   sort_order?: number
   hidden_menus?: string[] | null
@@ -186,7 +187,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
           outbound_modules: getDefaults(sys.outbound_modules, OUTBOUND_MODULES),
           lot_modules: getDefaults(sys.lot_modules, LOT_MODULES),
           dashboard_modules: getDefaults(sys.dashboard_modules, DASHBOARD_MODULES),
-          utility_modules: getDefaults(sys.utility_modules, UTILITY_MODULES)
+          utility_modules: getDefaults(sys.utility_modules || sys.modules?.utility_modules, UTILITY_MODULES)
         }))
       }
 

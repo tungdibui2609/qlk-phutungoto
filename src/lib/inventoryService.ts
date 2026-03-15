@@ -54,6 +54,10 @@ export async function getLotInventoryForReconciliation(
     systemType: string,
     warehouseName?: string
 ) {
+    let normalizedSystemType = systemType;
+    if (systemType === 'FROZEN') normalizedSystemType = 'KHO_DONG_LANH';
+    else if (systemType === 'DRY') normalizedSystemType = 'KHO_VAT_TU_BAO_BI';
+
     let allData: any[] = []
     let from = 0
     const PAGE_SIZE = 1000
@@ -75,7 +79,7 @@ export async function getLotInventoryForReconciliation(
                 products (name, sku, unit, system_type)
             `)
             .eq('status', 'active')
-            .eq('system_code', systemType)
+            .eq('system_code', normalizedSystemType)
             .order('id') // Always order for deterministic pagination
             .range(from, from + PAGE_SIZE - 1)
 

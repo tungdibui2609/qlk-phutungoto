@@ -55,11 +55,13 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
 
 
     const isUtilityEnabled = (utilityId: string) => {
-        if (!currentSystem?.modules) return false
-        const modules = typeof currentSystem.modules === 'string'
-            ? JSON.parse(currentSystem.modules)
-            : currentSystem.modules
-        return Array.isArray(modules?.utility_modules) && modules.utility_modules.includes(utilityId)
+        // [ROBUST] Check both pre-parsed array and raw JSON structure
+        if (Array.isArray(currentSystem?.utility_modules) && currentSystem.utility_modules.includes(utilityId)) return true
+        
+        const rawUtils = (currentSystem?.modules as any)?.utility_modules
+        if (Array.isArray(rawUtils) && rawUtils.includes(utilityId)) return true
+
+        return false
     }
 
 
@@ -106,17 +108,27 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
             }
 
             if (order.items) {
-                const formattedItems = order.items.map((i: any) => ({
-                    id: crypto.randomUUID(), // New ID for frontend handling
-                    productId: i.product_id,
-                    productName: i.product_name,
-                    unit: i.unit,
-                    quantity: i.quantity,
-                    document_quantity: i.document_quantity,
-                    price: i.price,
-                    note: i.note,
-                    isDocQtyVisible: i.document_quantity !== i.quantity
-                }))
+                const formattedItems = order.items.map((i: any) => {
+                    const item = {
+                        id: crypto.randomUUID(), // New ID for frontend handling
+                        productId: i.product_id,
+                        productName: i.product_name,
+                        unit: i.unit,
+                        quantity: i.quantity,
+                        document_quantity: i.document_quantity,
+                        price: i.price,
+                        note: i.note,
+                        isDocQtyVisible: i.document_quantity !== i.quantity
+                    }
+                    
+                    // Check unbundle for existing items
+                    if (isUtilityEnabled('auto_unbundle_order')) {
+                        const { needsUnbundle, unbundleInfo } = checkUnbundle(item.productId, item.unit, item.quantity)
+                        return { ...item, needsUnbundle, unbundleInfo }
+                    }
+
+                    return item
+                })
                 setItems(formattedItems)
             }
 
