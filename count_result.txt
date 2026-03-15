@@ -1,3 +1,0 @@
-Total fetched: 128
-Truly unassigned count: 3
-Sample Codes: DL-LOT-260226-001, DL-LOT-280226-001, DL-LOT-280226-002

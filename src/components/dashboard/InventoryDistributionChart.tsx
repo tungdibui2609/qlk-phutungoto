@@ -4,7 +4,7 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { supabase } from '@/lib/supabaseClient'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
-import { Loader2, RefreshCw } from 'lucide-react'
+import { Loader2, RefreshCw, Settings2 } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import { Database } from '@/lib/database.types'
 import { formatQuantityFull } from '@/lib/numberUtils'
@@ -15,6 +15,9 @@ type LotItem = Database['public']['Tables']['lot_items']['Row'] & {
         sku: string
         name: string
         unit: string
+        internal_code: string | null
+        internal_name: string | null
+        product_category_rel?: { category_id: string }[]
     } | null
 }
 
@@ -25,6 +28,9 @@ type Lot = Database['public']['Tables']['lots']['Row'] & {
         sku: string
         name: string
         unit: string
+        internal_code: string | null
+        internal_name: string | null
+        product_category_rel?: { category_id: string }[]
     } | null
 }
 
@@ -42,54 +48,157 @@ const COLORS = [
 ]
 
 export default function InventoryDistributionChart() {
-    const { systemType } = useSystem()
+    const { systemType, currentSystem, refreshSystems } = useSystem()
     const [loading, setLoading] = useState(true)
     const [lots, setLots] = useState<Lot[]>([])
+    const [categories, setCategories] = useState<{ id: string, name: string }[]>([])
+    const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([])
+    const [allowedCategoryIds, setAllowedCategoryIds] = useState<string[] | null>(null) // null means all
+    const [showCategoryFilter, setShowCategoryFilter] = useState(false)
+    const [showSettings, setShowSettings] = useState(false)
     const { toBaseAmount, getBaseToKgRate, unitNameMap, conversionMap, loading: conversionLoading } = useUnitConversion()
 
     // Fetch Data
     const fetchData = async () => {
+        if (!systemType) return
         setLoading(true)
-        const { data, error } = await supabase
-            .from('lots')
-            .select(`
-                *,
-                lot_items (
-                    id,
-                    quantity,
-                    unit,
-                    product_id,
-                    products (
-                        sku,
-                        name,
-                        unit
-                    )
-                ),
-                products (
-                    sku,
-                    name,
-                    unit
-                )
-            `)
-            .eq('status', 'active')
-            .eq('system_code', systemType)
+        
+        try {
+            let allLots: Lot[] = []
+            let from = 0
+            const limit = 1000
+            let hasMore = true
 
-        if (data) {
-            setLots(data as unknown as Lot[])
+            while (hasMore) {
+                const { data, error } = await supabase
+                    .from('lots')
+                    .select(`
+                        id,
+                        code,
+                        status,
+                        system_code,
+                        product_id,
+                        quantity,
+                        lot_items (
+                            id,
+                            quantity,
+                            unit,
+                            product_id,
+                            products (
+                                sku,
+                                name,
+                                unit,
+                                internal_code,
+                                internal_name,
+                                product_category_rel (category_id)
+                            )
+                        ),
+                        products (
+                            sku,
+                            name,
+                            unit,
+                            internal_code,
+                            internal_name,
+                            product_category_rel (category_id)
+                        )
+                    `)
+                    .eq('status', 'active')
+                    .eq('system_code', systemType)
+                    .range(from, from + limit - 1)
+
+                if (error) throw error
+
+                if (data && data.length > 0) {
+                    allLots = [...allLots, ...data as unknown as Lot[]]
+                    if (data.length < limit) {
+                        hasMore = false
+                    } else {
+                        from += limit
+                    }
+                } else {
+                    hasMore = false
+                }
+            }
+
+            setLots(allLots)
+        } catch (err: any) {
+            console.error('Error fetching inventory distribution:', err)
+        } finally {
+            setLoading(false)
         }
-        setLoading(false)
     }
 
     useEffect(() => {
+        const fetchCategories = async () => {
+            if (!systemType) return
+            const { data } = await supabase
+                .from('categories')
+                .select('id, name')
+                .eq('system_type', systemType)
+            if (data) setCategories(data)
+        }
+
+        // Load configuration from current system in Database
+        const loadSystemConfig = () => {
+            if (!currentSystem || !currentSystem.modules) return
+            
+            const modules = currentSystem.modules as any
+            const dashboardConfig = modules.dashboard_config || {}
+            
+            if (dashboardConfig.allowed_category_ids) {
+                setAllowedCategoryIds(dashboardConfig.allowed_category_ids)
+            } else {
+                setAllowedCategoryIds(null)
+            }
+        }
+
         if (systemType) {
             fetchData()
+            fetchCategories()
+            loadSystemConfig()
         }
-    }, [systemType])
+    }, [systemType, currentSystem])
+
+    // Save configuration to Database (systems table)
+    const saveToDatabase = async (newAllowedIds: string[] | null) => {
+        if (!currentSystem?.id) return
+
+        try {
+            // Get latest modules to avoid overwritting other configs
+            const { data: sysData } = await supabase
+                .from('systems')
+                .select('modules')
+                .eq('id', currentSystem.id)
+                .single()
+            
+            const currentModules = (sysData?.modules as any) || {}
+            
+            const updatedModules = {
+                ...currentModules,
+                dashboard_config: {
+                    ...currentModules.dashboard_config,
+                    allowed_category_ids: newAllowedIds
+                }
+            }
+
+            const { error } = await supabase
+                .from('systems')
+                .update({ modules: updatedModules })
+                .eq('id', currentSystem.id)
+
+            if (error) throw error
+            
+            // Refresh systems context to sync globally
+            refreshSystems()
+        } catch (error) {
+            console.error('Error saving dashboard config to database:', error)
+        }
+    }
 
     const chartData = useMemo(() => {
         if (conversionLoading || lots.length === 0) return { data: [], totalWeight: 0 }
 
-        const aggregation = new Map<string, number>()
+        const aggregation = new Map<string, { value: number, internalName: string | null, internalCode: string | null, sku: string }>()
 
         lots.forEach(lot => {
             const process = (
@@ -97,16 +206,30 @@ export default function InventoryDistributionChart() {
                 sku: string,
                 qty: number,
                 unit: string,
-                baseUnit: string
+                baseUnit: string,
+                internalName: string | null,
+                internalCode: string | null,
+                categoryIds: string[]
             ) => {
+                // Category Filter
+                if (selectedCategoryIds.length > 0) {
+                    const hasMatch = categoryIds.some(id => selectedCategoryIds.includes(id)) || 
+                                   (categoryIds.length === 0 && selectedCategoryIds.includes('none'))
+                    if (!hasMatch) return
+                }
+
                 // Convert to KG
                 const kgRate = getBaseToKgRate(pid, baseUnit)
                 if (kgRate !== null) {
                     const baseQty = toBaseAmount(pid, unit, qty, baseUnit)
                     const kgQty = baseQty * kgRate
 
-                    const current = aggregation.get(sku) || 0
-                    aggregation.set(sku, current + kgQty)
+                    const key = internalCode || sku
+                    const current = aggregation.get(key) || { value: 0, internalName, internalCode, sku }
+                    aggregation.set(key, { 
+                        ...current, 
+                        value: current.value + kgQty 
+                    })
                 }
             }
 
@@ -114,28 +237,46 @@ export default function InventoryDistributionChart() {
                 lot.lot_items.forEach(item => {
                     if (item.products && item.products.sku) {
                         const u = item.unit || item.products.unit
-                        process(item.product_id, item.products.sku, item.quantity, u, item.products.unit)
+                        process(
+                            item.product_id, 
+                            item.products.sku, 
+                            item.quantity, 
+                            u, 
+                            item.products.unit,
+                            item.products.internal_name,
+                            item.products.internal_code,
+                            item.products.product_category_rel?.map(r => r.category_id) || []
+                        )
                     }
                 })
             } else if (lot.products && lot.products.sku) {
                 // Legacy
-                const u = lot.quantity ? (lot as any).unit || lot.products.unit : lot.products.unit // Assuming unit on lot if quantity exists
-                // Note: The 'lots' table doesn't strictly have a 'unit' column in types, but legacy might imply it matches product or is implicit.
-                // Let's rely on product unit if undefined.
+                const u = lot.quantity ? (lot as any).unit || lot.products.unit : lot.products.unit
                 const q = lot.quantity || 0
                 if (lot.product_id) {
-                    process(lot.product_id, lot.products.sku, q, u, lot.products.unit)
+                    process(
+                        lot.product_id, 
+                        lot.products.sku, 
+                        q, 
+                        u, 
+                        lot.products.unit,
+                        lot.products.internal_name,
+                        lot.products.internal_code,
+                        lot.products.product_category_rel?.map(r => r.category_id) || []
+                    )
                 }
             }
         })
 
         // Format for Chart
-        const totalWeight = Array.from(aggregation.values()).reduce((a, b) => a + b, 0)
+        const totalWeight = Array.from(aggregation.values()).reduce((a, b) => a + b.value, 0)
 
-        let data = Array.from(aggregation.entries()).map(([name, value]) => ({
-            name,
-            value,
-            percentage: totalWeight > 0 ? (value / totalWeight) * 100 : 0
+        let data = Array.from(aggregation.values()).map((item) => ({
+            name: item.internalName || item.sku,
+            code: item.internalCode || item.sku,
+            value: item.value,
+            percentage: totalWeight > 0 ? (item.value / totalWeight) * 100 : 0,
+            originalSku: item.sku
         }))
 
         // Sort descending
@@ -166,14 +307,186 @@ export default function InventoryDistributionChart() {
         <div className="bg-white rounded-2xl p-6 border border-stone-200">
             <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-semibold text-stone-800">Tỉ lệ phân bố hàng hóa tồn kho</h2>
-                <button
-                    onClick={fetchData}
-                    className="flex items-center gap-1 text-xs font-medium text-emerald-600 hover:text-emerald-700 transition-colors"
-                >
-                    <RefreshCw size={14} />
-                    Làm mới
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => {
+                            setShowCategoryFilter(!showCategoryFilter)
+                            if (showSettings) setShowSettings(false)
+                        }}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                            showCategoryFilter || selectedCategoryIds.length > 0
+                                ? 'bg-orange-50 border-orange-200 text-orange-600'
+                                : 'bg-white border-stone-200 text-stone-600 hover:border-stone-300'
+                        }`}
+                    >
+                        <Loader2 className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                        Danh mục {selectedCategoryIds.length > 0 && `(${selectedCategoryIds.length})`}
+                    </button>
+                    <button
+                        onClick={() => {
+                            setShowSettings(!showSettings)
+                            if (showCategoryFilter) setShowCategoryFilter(false)
+                        }}
+                        className={`p-1.5 rounded-lg border transition-all ${
+                            showSettings 
+                                ? 'bg-indigo-100 border-indigo-200 text-indigo-600' 
+                                : 'bg-white border-stone-200 text-stone-400 hover:text-stone-600 hover:border-stone-300'
+                        }`}
+                        title="Cài đặt danh mục hiển thị"
+                    >
+                        <Settings2 size={18} />
+                    </button>
+                    <button
+                        onClick={fetchData}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-stone-600 hover:border-stone-300 transition-all"
+                    >
+                        <RefreshCw size={14} />
+                        Làm mới
+                    </button>
+                </div>
             </div>
+
+            {/* Category selection area */}
+            {showCategoryFilter && (
+                <div className="mb-6 p-4 bg-stone-50 rounded-xl border border-stone-200 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">Lọc theo danh mục sản phẩm</span>
+                        <button 
+                            onClick={() => setSelectedCategoryIds([])}
+                            className="text-[10px] text-orange-600 hover:underline font-bold"
+                        >
+                            Xóa tất cả
+                        </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {categories
+                            .filter(cat => allowedCategoryIds === null || allowedCategoryIds.includes(cat.id))
+                            .map(cat => (
+                                <button
+                                    key={cat.id}
+                                    onClick={() => {
+                                        setSelectedCategoryIds(prev => 
+                                            prev.includes(cat.id) 
+                                                ? prev.filter(id => id !== cat.id)
+                                                : [...prev, cat.id]
+                                        )
+                                    }}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                                        selectedCategoryIds.includes(cat.id)
+                                            ? 'bg-orange-500 border-orange-500 text-white shadow-sm'
+                                            : 'bg-white border-stone-200 text-stone-600 hover:border-stone-300'
+                                    }`}
+                                >
+                                    {cat.name}
+                                </button>
+                            ))}
+                        {(allowedCategoryIds === null || allowedCategoryIds.includes('none')) && (
+                            <button
+                                onClick={() => {
+                                    setSelectedCategoryIds(prev => 
+                                        prev.includes('none') 
+                                            ? prev.filter(id => id !== 'none')
+                                            : [...prev, 'none']
+                                    )
+                                }}
+                                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                                    selectedCategoryIds.includes('none')
+                                        ? 'bg-stone-500 border-stone-500 text-white shadow-sm'
+                                        : 'bg-white border-stone-200 text-stone-600 hover:border-stone-300'
+                                }`}
+                            >
+                                Chưa phân loại
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Dashboard Settings area */}
+            {showSettings && (
+                <div className="mb-6 p-5 bg-indigo-50/50 rounded-xl border border-indigo-100 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 className="text-sm font-bold text-indigo-900">Cài đặt danh mục hiển thị</h3>
+                            <p className="text-[10px] text-indigo-600 font-medium">Chọn những danh mục bạn muốn xuất hiện trong bộ lọc Dashboard</p>
+                        </div>
+                        <div className="flex gap-2">
+                            <button 
+                                onClick={() => {
+                                    const all = categories.map(c => c.id).concat(['none'])
+                                    setAllowedCategoryIds(all)
+                                    saveToDatabase(all)
+                                }}
+                                className="text-[10px] text-indigo-600 hover:underline font-bold"
+                            >
+                                Chọn tất cả
+                            </button>
+                            <span className="text-indigo-200 text-[10px]">|</span>
+                            <button 
+                                onClick={() => {
+                                    setAllowedCategoryIds([])
+                                    saveToDatabase([])
+                                }}
+                                className="text-[10px] text-orange-600 hover:underline font-bold"
+                            >
+                                Bỏ hết
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                        {categories.map(cat => (
+                            <label key={cat.id} className="flex items-center gap-2 cursor-pointer group">
+                                <input 
+                                    type="checkbox"
+                                    checked={allowedCategoryIds === null || allowedCategoryIds.includes(cat.id)}
+                                    onChange={(e) => {
+                                        const current = allowedCategoryIds || categories.map(c => c.id).concat(['none'])
+                                        let next: string[]
+                                        if (e.target.checked) {
+                                            next = [...current, cat.id]
+                                        } else {
+                                            next = current.filter(id => id !== cat.id)
+                                        }
+                                        setAllowedCategoryIds(next)
+                                        saveToDatabase(next)
+                                    }}
+                                    className="w-4 h-4 rounded border-stone-300 text-indigo-600 focus:ring-indigo-500"
+                                />
+                                <span className="text-xs text-stone-700 group-hover:text-indigo-600 transition-colors truncate">{cat.name}</span>
+                            </label>
+                        ))}
+                        <label className="flex items-center gap-2 cursor-pointer group">
+                            <input 
+                                type="checkbox"
+                                checked={allowedCategoryIds === null || allowedCategoryIds.includes('none')}
+                                onChange={(e) => {
+                                    const current = allowedCategoryIds || categories.map(c => c.id).concat(['none'])
+                                    let next: string[]
+                                    if (e.target.checked) {
+                                        next = [...current, 'none']
+                                    } else {
+                                        next = current.filter(id => id !== 'none')
+                                    }
+                                    setAllowedCategoryIds(next)
+                                    saveToDatabase(next)
+                                }}
+                                className="w-4 h-4 rounded border-stone-300 text-stone-600 focus:ring-stone-500"
+                            />
+                            <span className="text-xs text-stone-500 group-hover:text-stone-700 transition-colors">Chưa phân loại</span>
+                        </label>
+                    </div>
+
+                    <div className="mt-5 flex justify-end">
+                        <button
+                            onClick={() => setShowSettings(false)}
+                            className="px-4 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-indigo-700 transition-all"
+                        >
+                            Hoàn tất
+                        </button>
+                    </div>
+                </div>
+            )}
 
             <div className="h-[300px] w-full relative">
                 {/* Center Label */}
@@ -202,7 +515,11 @@ export default function InventoryDistributionChart() {
                             ))}
                         </Pie>
                         <Tooltip
-                            formatter={(value: any) => [`${formatQuantityFull(value, 1)} KG`, 'Khối lượng']}
+                            formatter={(value: any, name: any, props: any) => {
+                                const payload = props.payload;
+                                return [`${formatQuantityFull(value, 1)} KG`, payload.name]
+                            }}
+                            labelFormatter={(label) => `Sản phẩm: ${label}`}
                             contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                         />
                     </PieChart>
@@ -217,13 +534,18 @@ export default function InventoryDistributionChart() {
                             className="w-3 h-3 rounded-full shrink-0"
                             style={{ backgroundColor: COLORS[index % COLORS.length] }}
                         />
-                        <div className="flex items-baseline gap-1 text-sm overflow-hidden">
-                            <span className="font-medium text-stone-700 truncate max-w-[100px]" title={entry.name}>
+                        <div className="flex flex-col text-sm overflow-hidden">
+                            <span className="font-bold text-stone-800 truncate" title={entry.name}>
                                 {entry.name}
                             </span>
-                            <span className="text-stone-500 text-xs whitespace-nowrap">
-                                ({formatQuantityFull(entry.percentage, 0)}%)
-                            </span>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-100 font-mono font-black uppercase">
+                                    {entry.code}
+                                </span>
+                                <span className="text-stone-500 text-xs whitespace-nowrap font-medium">
+                                    ({formatQuantityFull(entry.percentage, 0)}%)
+                                </span>
+                            </div>
                         </div>
                     </div>
                 ))}

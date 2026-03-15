@@ -1,0 +1,7 @@
+--- CHECKING PRODUCT UNITS for b406fdcc-da1e-407f-8209-1153ea73d798 ---
+
+--- FETCHING ALL UNITS ---
+- Unit: Thùng | Rate: 20
+
+--- CHECKING KG UNIT DEFINITION ---
+- MATCH FOUND: Kg (ID: 15625101-980c-4654-b6db-71edff3eab8c)
