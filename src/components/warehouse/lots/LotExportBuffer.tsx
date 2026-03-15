@@ -102,6 +102,8 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                 .from('lots')
                 .select('id, code, metadata, positions!positions_lot_id_fkey(code)')
                 .eq('system_code', systemType)
+                .order('created_at', { ascending: false })
+                .limit(2000)
             // Note: Filtering JSON arrays in JS for precision, but selecting all relevant lots
 
             if (error) throw error
@@ -111,7 +113,12 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
 
             data?.forEach(lot => {
                 const metadata = lot.metadata as any
-                const exports = metadata?.system_history?.exports || []
+                const history = metadata?.system_history || {}
+                const exports = [
+                    ...(history.exports || []),
+                    ...(history.accounting_sync?.exports || [])
+                ]
+                
                 exports.forEach((exp: any) => {
                     if (exp.draft === true) {
                         // Filter by activation date if available
@@ -164,7 +171,15 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             if (!lot) return
 
             const metadata = { ...lot.metadata as any }
-            metadata.system_history.exports = metadata.system_history.exports.filter((exp: any) => exp.id !== exportId)
+            if (!metadata.system_history) metadata.system_history = {}
+
+            // Clean up both possible locations
+            if (metadata.system_history.exports) {
+                metadata.system_history.exports = metadata.system_history.exports.filter((exp: any) => exp.id !== exportId)
+            }
+            if (metadata.system_history.accounting_sync?.exports) {
+                metadata.system_history.accounting_sync.exports = metadata.system_history.accounting_sync.exports.filter((exp: any) => exp.id !== exportId)
+            }
 
             await supabase.from('lots').update({ metadata }).eq('id', lotId)
             setPendingExports(prev => prev.filter(p => p.export_id !== exportId))
@@ -177,6 +192,51 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             if (onUpdate) onUpdate()
         } catch (e: any) {
             showToast('Lỗi khi xóa: ' + e.message, 'error')
+        }
+    }
+
+    const handleRemoveAll = async () => {
+        if (pendingExports.length === 0) return
+        if (!await showConfirm(`Bạn có chắc chắn muốn xóa TẤT CẢ ${pendingExports.length} dòng khỏi hàng chờ? (Lưu ý: Thao tác này KHÔNG hoàn lại số lượng sản phẩm vào LOT)`)) return
+
+        setLoading(true)
+        try {
+            const lotsMap = new Map<string, string[]>()
+            pendingExports.forEach(p => {
+                if (!lotsMap.has(p.lot_id)) lotsMap.set(p.lot_id, [])
+                lotsMap.get(p.lot_id)!.push(p.export_id)
+            })
+
+            for (const [lotId, exportIds] of lotsMap.entries()) {
+                const { data: lot } = await supabase.from('lots').select('metadata').eq('id', lotId).single()
+                if (lot) {
+                    const metadata = { ...lot.metadata as any }
+                    if (!metadata.system_history) metadata.system_history = {}
+
+                    // Filter in both potential locations
+                    if (metadata.system_history.exports) {
+                        metadata.system_history.exports = metadata.system_history.exports.filter(
+                            (exp: any) => !exportIds.includes(exp.id)
+                        )
+                    }
+                    if (metadata.system_history.accounting_sync?.exports) {
+                        metadata.system_history.accounting_sync.exports = metadata.system_history.accounting_sync.exports.filter(
+                            (exp: any) => !exportIds.includes(exp.id)
+                        )
+                    }
+
+                    await supabase.from('lots').update({ metadata }).eq('id', lotId)
+                }
+            }
+
+            setPendingExports([])
+            setSelectedIds(new Set())
+            showToast('Đã xóa tất cả hàng chờ', 'success')
+            if (onUpdate) onUpdate()
+        } catch (e: any) {
+            showToast('Lỗi khi xóa tất cả: ' + e.message, 'error')
+        } finally {
+            setLoading(false)
         }
     }
 
@@ -496,19 +556,28 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            <div
-                                onClick={toggleSelectAll}
-                                className="flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                            >
-                                <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${selectedIds.size === pendingExports.length
-                                    ? "bg-orange-600 border-orange-600 text-white"
-                                    : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
-                                    }`}>
-                                    {selectedIds.size === pendingExports.length && <Check size={16} strokeWidth={3} />}
+                            <div className="flex items-center gap-3">
+                                <div
+                                    onClick={toggleSelectAll}
+                                    className="flex-1 flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                >
+                                    <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${selectedIds.size === pendingExports.length && pendingExports.length > 0
+                                        ? "bg-orange-600 border-orange-600 text-white"
+                                        : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
+                                        }`}>
+                                        {selectedIds.size === pendingExports.length && pendingExports.length > 0 && <Check size={16} strokeWidth={3} />}
+                                    </div>
+                                    <span className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                                        Chọn tất cả ({pendingExports.length})
+                                    </span>
                                 </div>
-                                <span className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                                    Chọn tất cả ({pendingExports.length})
-                                </span>
+                                <button
+                                    onClick={handleRemoveAll}
+                                    className="px-4 py-3 text-red-500 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl text-sm font-bold hover:bg-red-100 dark:hover:bg-red-800/40 transition-all flex items-center gap-2"
+                                >
+                                    <Trash2 size={16} />
+                                    Xóa tất cả
+                                </button>
                             </div>
 
                             {pendingExports.map((exp) => (

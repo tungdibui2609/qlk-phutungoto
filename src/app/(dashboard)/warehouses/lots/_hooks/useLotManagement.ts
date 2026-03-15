@@ -231,7 +231,7 @@ export function useLotManagement() {
                 if (currentSystem?.code) {
                     query = query.eq('system_code', currentSystem.code)
                 }
-                query = query.neq('status', 'hidden')
+                query = query.neq('status', 'hidden').neq('status', 'exported')
             }
 
             // Implementation Strategy for filters:
@@ -554,7 +554,8 @@ export function useLotManagement() {
                         .select('id, positions!positions_lot_id_fkey(id)', { count: 'exact', head: true })
                         .eq('system_code', currentSystem.code)
                         .is('positions', null)
-                        .neq('status', 'hidden');
+                        .neq('status', 'hidden')
+                        .neq('status', 'exported');
                     setUnassignedTotal(unassignedCount || 0)
                 }
             }

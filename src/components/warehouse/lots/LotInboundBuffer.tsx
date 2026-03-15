@@ -99,6 +99,8 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
                 .from('lots')
                 .select('id, code, metadata, positions!positions_lot_id_fkey(code)')
                 .eq('system_code', systemType)
+                .order('created_at', { ascending: false })
+                .limit(2000)
 
             if (error) throw error
 
@@ -107,7 +109,12 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
 
             data?.forEach(lot => {
                 const metadata = lot.metadata as any
-                const inbounds = metadata?.system_history?.inbound || []
+                const history = metadata?.system_history || {}
+                const inbounds = [
+                    ...(history.inbound || []),
+                    ...(history.accounting_sync?.inbound || [])
+                ]
+                
                 inbounds.forEach((inc: any) => {
                     if (inc.draft === true) {
                         // Filter by activation date if available
@@ -159,7 +166,15 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
             if (!lot) return
 
             const metadata = { ...lot.metadata as any }
-            metadata.system_history.inbound = metadata.system_history.inbound.filter((inc: any) => inc.id !== inboundId)
+            if (!metadata.system_history) metadata.system_history = {}
+            
+            // Clean up both possible locations
+            if (metadata.system_history.inbound) {
+                metadata.system_history.inbound = metadata.system_history.inbound.filter((inc: any) => inc.id !== inboundId)
+            }
+            if (metadata.system_history.accounting_sync?.inbound) {
+                metadata.system_history.accounting_sync.inbound = metadata.system_history.accounting_sync.inbound.filter((inc: any) => inc.id !== inboundId)
+            }
 
             await supabase.from('lots').update({ metadata }).eq('id', lotId)
             setPendingInbounds(prev => prev.filter(p => p.inbound_id !== inboundId))
@@ -172,6 +187,52 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
             if (onUpdate) onUpdate()
         } catch (e: any) {
             showToast('Lỗi khi xóa: ' + e.message, 'error')
+        }
+    }
+
+    const handleRemoveAll = async () => {
+        if (pendingInbounds.length === 0) return
+        if (!await showConfirm(`Bạn có chắc chắn muốn xóa TẤT CẢ ${pendingInbounds.length} dòng khỏi hàng chờ?`)) return
+
+        setLoading(true)
+        try {
+            // Group by lot_id to minimize database updates
+            const lotsMap = new Map<string, string[]>()
+            pendingInbounds.forEach(p => {
+                if (!lotsMap.has(p.lot_id)) lotsMap.set(p.lot_id, [])
+                lotsMap.get(p.lot_id)!.push(p.inbound_id)
+            })
+
+            for (const [lotId, inboundIds] of lotsMap.entries()) {
+                const { data: lot } = await supabase.from('lots').select('metadata').eq('id', lotId).single()
+                if (lot) {
+                    const metadata = { ...lot.metadata as any }
+                    if (!metadata.system_history) metadata.system_history = {}
+
+                    // Filter in both potential locations
+                    if (metadata.system_history.inbound) {
+                        metadata.system_history.inbound = metadata.system_history.inbound.filter(
+                            (inc: any) => !inboundIds.includes(inc.id)
+                        )
+                    }
+                    if (metadata.system_history.accounting_sync?.inbound) {
+                        metadata.system_history.accounting_sync.inbound = metadata.system_history.accounting_sync.inbound.filter(
+                            (inc: any) => !inboundIds.includes(inc.id)
+                        )
+                    }
+                    
+                    await supabase.from('lots').update({ metadata }).eq('id', lotId)
+                }
+            }
+
+            setPendingInbounds([])
+            setSelectedIds(new Set())
+            showToast('Đã xóa tất cả hàng chờ', 'success')
+            if (onUpdate) onUpdate()
+        } catch (e: any) {
+            showToast('Lỗi khi xóa tất cả: ' + e.message, 'error')
+        } finally {
+            setLoading(false)
         }
     }
 
@@ -338,19 +399,28 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            <div
-                                onClick={toggleSelectAll}
-                                className="flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                            >
-                                <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${selectedIds.size === pendingInbounds.length
-                                    ? "bg-blue-600 border-blue-600 text-white"
-                                    : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
-                                    }`}>
-                                    {selectedIds.size === pendingInbounds.length && <Check size={16} strokeWidth={3} />}
+                            <div className="flex items-center gap-3">
+                                <div
+                                    onClick={toggleSelectAll}
+                                    className="flex-1 flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                >
+                                    <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${selectedIds.size === pendingInbounds.length && pendingInbounds.length > 0
+                                        ? "bg-blue-600 border-blue-600 text-white"
+                                        : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
+                                        }`}>
+                                        {selectedIds.size === pendingInbounds.length && pendingInbounds.length > 0 && <Check size={16} strokeWidth={3} />}
+                                    </div>
+                                    <span className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                                        Chọn tất cả ({pendingInbounds.length})
+                                    </span>
                                 </div>
-                                <span className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                                    Chọn tất cả ({pendingInbounds.length})
-                                </span>
+                                <button
+                                    onClick={handleRemoveAll}
+                                    className="px-4 py-3 text-red-500 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl text-sm font-bold hover:bg-red-100 dark:hover:bg-red-800/40 transition-all flex items-center gap-2"
+                                >
+                                    <Trash2 size={16} />
+                                    Xóa tất cả
+                                </button>
                             </div>
 
                             {pendingInbounds.map((inc) => (

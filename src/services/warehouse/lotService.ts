@@ -120,7 +120,7 @@ export const lotService = {
 
         // Safety: If consumed more than exists, something is wrong
         if (remainingQty < -0.000001) {
-            console.error('[LotService] Over-consumption detected', { lotId: item.lot_id, consumed: consumedOriginalQty, available: item.quantity })
+            console.warn('[LotService] Over-consumption prevented by UI, but detected in service logic', { lotId: item.lot_id, consumed: consumedOriginalQty, available: item.quantity })
             return null
         }
 

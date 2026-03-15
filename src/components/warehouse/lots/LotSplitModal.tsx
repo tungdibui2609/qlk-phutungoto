@@ -504,32 +504,43 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                 </div>
 
                 {/* Footer */}
-                <div className="p-6 flex items-center justify-end gap-3 mt-auto">
-                    <button
-                        onClick={onClose}
-                        className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                        disabled={loading}
-                    >
-                        Hủy
-                    </button>
-                    <button
-                        onClick={handleSplit}
-                        disabled={loading || Object.values(splitQuantities).every(v => v === 0)}
-                        className="px-8 py-2.5 bg-[#C084FC] hover:bg-[#A855F7] text-white rounded-xl text-sm font-bold shadow-lg shadow-purple-500/20 disabled:opacity-50 disabled:shadow-none transition-all active:scale-95 flex items-center gap-2"
-                    >
-                        {loading ? (
-                            <>
-                                <Loader2 size={18} className="animate-spin" />
-                                Đang tách...
-                            </>
-                        ) : (
-                            <>
-                                <Check size={18} />
-                                Tách LOT
-                            </>
-                        )}
-                    </button>
-                </div>
+                {(() => {
+                    const isAnyOverLimit = (lot.lot_items || []).some(item => {
+                        const selectedQty = splitQuantities[item.id] || 0
+                        if (selectedQty <= 0) return false
+                        const consumed = getConsumedOriginalQty(item.id, selectedQty, splitUnits[item.id] || '')
+                        return consumed > (item.quantity || 0) + 0.000001
+                    })
+
+                    return (
+                        <div className="p-6 flex items-center justify-end gap-3 mt-auto">
+                            <button
+                                onClick={onClose}
+                                className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                disabled={loading}
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                onClick={handleSplit}
+                                disabled={loading || Object.values(splitQuantities).every(v => v === 0) || isAnyOverLimit}
+                                className="px-8 py-2.5 bg-[#C084FC] hover:bg-[#A855F7] text-white rounded-xl text-sm font-bold shadow-lg shadow-purple-500/20 disabled:opacity-50 disabled:shadow-none transition-all active:scale-95 flex items-center gap-2"
+                            >
+                                {loading ? (
+                                    <>
+                                        <Loader2 size={18} className="animate-spin" />
+                                        Đang tách...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Check size={18} />
+                                        Tách LOT
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    )
+                })()}
             </div>
 
             {error && (

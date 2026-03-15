@@ -56,17 +56,35 @@ export default function InboundPage() {
     useEffect(() => {
         fetchOrders()
         updateBufferCount()
-    }, [systemType])
+    }, [systemType, currentSystem])
 
     const updateBufferCount = async () => {
         if (!systemType) return
-        const { data } = await supabase.from('lots').select('metadata').eq('system_code', systemType)
+        // Fetch with limit 2000 and order newest first to match the buffer display
+        const { data } = await supabase
+            .from('lots')
+            .select('metadata')
+            .eq('system_code', systemType)
+            .order('created_at', { ascending: false })
+            .limit(2000)
+            
+        const activationDate = (currentSystem?.modules as any)?.activation_dates?.lot_accounting_sync
         let count = 0
         data?.forEach(lot => {
             const metadata = lot.metadata as any
-            const inbounds = metadata?.system_history?.inbound || []
+            const history = metadata?.system_history || {}
+            
+            // Combine both standard inbound and accounting sync inbound adjustments
+            const inbounds = [
+                ...(history.inbound || []),
+                ...(history.accounting_sync?.inbound || [])
+            ]
+            
             inbounds.forEach((inb: any) => {
-                if (inb.draft) count++
+                if (inb.draft === true) {
+                    if (activationDate && inb.date < activationDate) return
+                    count++
+                }
             })
         })
         setBufferCount(count)
