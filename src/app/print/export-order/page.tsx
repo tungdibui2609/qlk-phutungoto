@@ -14,6 +14,7 @@ import { PrintHeader } from '@/components/print/PrintHeader'
 import { EditableText } from '@/components/print/PrintHelpers'
 import { format } from 'date-fns'
 import { TagDisplay } from '@/components/lots/TagDisplay'
+import { exportToExcelWithTemplate } from '@/lib/excelExport'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -128,6 +129,15 @@ function ExportOrderPrintContent() {
     const [signPerson2, setSignPerson2] = useState('')
     const [signPerson3, setSignPerson3] = useState('')
     const [signPerson4, setSignPerson4] = useState('')
+
+    // Logistics fields for Excel template
+    const [customerName, setCustomerName] = useState('')
+    const [customerAddress, setCustomerAddress] = useState('')
+    const [reason, setReason] = useState('')
+    const [branch, setBranch] = useState('')
+    const [vehicleNumber, setVehicleNumber] = useState('')
+    const [containerNumber, setContainerNumber] = useState('')
+    const [sealNumber, setSealNumber] = useState('')
 
     useEffect(() => {
         async function fetchData() {
@@ -448,6 +458,10 @@ function ExportOrderPrintContent() {
                             setSignPerson1(taskData.created_by_profile.full_name as string)
                         }
                     }
+
+                    // Initialize logistics fields
+                    setBranch('Kho mặc định')
+                    setReason(taskData.notes || '')
                 }
 
             } catch (error) {
@@ -465,6 +479,90 @@ function ExportOrderPrintContent() {
     }
 
     const handleDownload = () => handleCapture(false)
+
+    const handleExcelExport = async () => {
+        if (!task) return
+
+        const exportItems = items.map(item => {
+            // Calculate quyCach and convertedQty for export task items
+            let quyCach = '';
+            let convertedQty: any = '-';
+            
+            const product = item.products as any;
+            if (product) {
+                // If it's a cold storage product, typically we use Kg conversion
+                if (product.unit === 'Kg') {
+                    convertedQty = item.quantity;
+                } else if (product.product_units && product.product_units.length > 0) {
+                    const baseUnit = product.product_units.find((u: any) => u.conversion_rate === 1 || !u.conversion_rate);
+                    const targetUnit = 'Kg'; // Assumption for this specific system
+                    const kgUnit = product.product_units.find((u: any) => u.unit_id === 'kg' || u.unit_id === 'Kg');
+                    
+                    if (kgUnit) {
+                        convertedQty = item.quantity * kgUnit.conversion_rate;
+                    }
+                    
+                    const firstPu = product.product_units[0];
+                    quyCach = `${item.unit || 'Cái'}/${firstPu.conversion_rate || 1}${product.unit || ''}`;
+                }
+            }
+
+            return {
+                ...item,
+                product_name: item.products?.name || '',
+                quyCach: quyCach,
+                quantity: item.quantity,
+                document_quantity: item.quantity, // Export tasks often don't have distinct doc qty
+                unit: item.unit || 'Cái',
+                price: 0,
+                convertedQty: convertedQty
+            }
+        })
+
+        const signatures = [
+            { title: 'Người nhận', name: customerName },
+            { title: 'Tài xế', name: '' }, // Can be added if field exists
+            { title: 'Thủ kho', name: signPerson2 },
+            { title: 'Kế toán trưởng', name: signPerson3 },
+            { title: 'TP.QLCL', name: signPerson4 },
+            { title: 'Người lập phiếu', name: signPerson1 }
+        ]
+
+        await exportToExcelWithTemplate({
+            type: 'outbound',
+            printType: 'official',
+            order: {
+                ...task,
+                code: task.code || '',
+            },
+            items: exportItems,
+            companyInfo,
+            editableFields: {
+                customerSupplierName: customerName,
+                customerSupplierAddress: customerAddress,
+                reasonDescription: reason,
+                warehouse: branch,
+                location: companyInfo?.address || '',
+                note: notes,
+                day: editDay,
+                month: editMonth,
+                year: editYear,
+                vehicleNumber: vehicleNumber,
+                containerNumber: containerNumber,
+                sealNumber: sealNumber,
+                signatures,
+                signDate: {
+                    day: editDay,
+                    month: editMonth,
+                    year: editYear
+                }
+            },
+            modules: {
+                hasFinancials: false,
+                hasConversion: true
+            }
+        }, '/mauxuat.xlsx')
+    }
 
 
     if (loading) {
@@ -524,6 +622,13 @@ function ExportOrderPrintContent() {
                     Tải ảnh
                 </button>
                 <button
+                    onClick={handleExcelExport}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg shadow-sm transition-colors font-sans text-sm"
+                >
+                    <Download size={16} />
+                    Xuất Excel
+                </button>
+                <button
                     onClick={handlePrint}
                     className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm transition-colors font-sans text-sm"
                 >
@@ -581,11 +686,78 @@ function ExportOrderPrintContent() {
                 </div>
 
                 {/* Info Fields */}
-                <div className="mb-4 text-sm space-y-2">
-                    <div>- Kho: Tất cả</div>
-                    <div>- Trạng thái: {task.status === 'Pending' ? 'Mới' : task.status}</div>
-                    <div>- Người tạo: {task.created_by_profile?.full_name || '...'}</div>
-                    <div>- Ngày tạo: {new Date(task.created_at).toLocaleString('vi-VN')}</div>
+                <div className="mb-4 text-sm space-y-2 border border-dashed border-stone-200 p-4 rounded-lg bg-stone-50/50 print:border-none print:p-0 print:bg-transparent">
+                    <div className="flex gap-4 items-center">
+                        <div className="flex-1 flex gap-1 items-center">
+                            <span className="shrink-0">- Người nhận:</span>
+                            <input
+                                type="text"
+                                value={customerName}
+                                onChange={e => setCustomerName(e.target.value)}
+                                className="flex-1 border-b border-dashed border-stone-300 bg-transparent focus:outline-none focus:border-blue-500 font-bold"
+                                placeholder="Nhập tên khách hàng..."
+                            />
+                        </div>
+                    </div>
+                    <div className="flex gap-1 items-center">
+                        <span className="shrink-0">- Địa chỉ (bộ phận):</span>
+                        <input
+                            type="text"
+                            value={customerAddress}
+                            onChange={e => setCustomerAddress(e.target.value)}
+                            className="flex-1 border-b border-dashed border-stone-300 bg-transparent focus:outline-none focus:border-blue-500 font-bold"
+                            placeholder="Nhập địa chỉ..."
+                        />
+                    </div>
+                    <div className="flex gap-1 items-center">
+                        <span className="shrink-0">- Lý do xuất:</span>
+                        <input
+                            type="text"
+                            value={reason}
+                            onChange={e => setReason(e.target.value)}
+                            className="flex-1 border-b border-dashed border-stone-300 bg-transparent focus:outline-none focus:border-blue-500 font-bold"
+                        />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="flex gap-1 items-center">
+                            <span className="shrink-0">- Xuất tại kho:</span>
+                            <input
+                                type="text"
+                                value={branch}
+                                onChange={e => setBranch(e.target.value)}
+                                className="flex-1 border-b border-dashed border-stone-300 bg-transparent focus:outline-none focus:border-blue-500 font-bold"
+                            />
+                        </div>
+                        <div className="flex gap-1 items-center">
+                            <span className="shrink-0">- Biển số xe:</span>
+                            <input
+                                type="text"
+                                value={vehicleNumber}
+                                onChange={e => setVehicleNumber(e.target.value)}
+                                className="flex-1 border-b border-dashed border-stone-300 bg-transparent focus:outline-none focus:border-blue-500 font-bold"
+                            />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="flex gap-1 items-center">
+                            <span className="shrink-0">- Số Cont:</span>
+                            <input
+                                type="text"
+                                value={containerNumber}
+                                onChange={e => setContainerNumber(e.target.value)}
+                                className="flex-1 border-b border-dashed border-stone-300 bg-transparent focus:outline-none focus:border-blue-500 font-bold"
+                            />
+                        </div>
+                        <div className="flex gap-1 items-center">
+                            <span className="shrink-0">- Số Seal:</span>
+                            <input
+                                type="text"
+                                value={sealNumber}
+                                onChange={e => setSealNumber(e.target.value)}
+                                className="flex-1 border-b border-dashed border-stone-300 bg-transparent focus:outline-none focus:border-blue-500 font-bold"
+                            />
+                        </div>
+                    </div>
                     <div className="flex gap-1 items-start">
                         <span className="shrink-0">- Ghi chú:</span>
                         <div className="flex-1">

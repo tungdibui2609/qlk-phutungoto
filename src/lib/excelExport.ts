@@ -326,3 +326,144 @@ export async function exportToExcel(data: ExportData) {
     const buffer = await workbook.xlsx.writeBuffer();
     saveAs(new Blob([buffer]), `${data.type === 'inbound' ? 'Phieu_Nhap' : 'Phieu_Xuat'}_${data.order.code}.xlsx`);
 }
+
+export async function exportToExcelWithTemplate(data: ExportData, templateUrl: string) {
+    const response = await fetch(templateUrl);
+    const arrayBuffer = await response.arrayBuffer();
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(arrayBuffer);
+    const worksheet = workbook.getWorksheet(1);
+    if (!worksheet) return;
+
+    // Replace placeholders in all cells
+    worksheet.eachRow((row) => {
+        row.eachCell((cell) => {
+            if (cell.value) {
+                const replaceText = (text: string) => {
+                    let val = text;
+                    val = val.replace(/{{\s*DOC_DATE_VN\s*}}/gi, `Ngày ${data.editableFields.day} tháng ${data.editableFields.month} năm ${data.editableFields.year}`);
+                    val = val.replace(/{{\s*DOC_CODE\s*}}/gi, data.order.code || '');
+                    val = val.replace(/{{\s*KHACHHANG\s*}}/gi, data.editableFields.customerSupplierName || '');
+                    val = val.replace(/{{\s*diachikhachhang\s*}}/gi, data.editableFields.customerSupplierAddress || '');
+                    val = val.replace(/{{\s*DESCRIPTION\s*}}/gi, data.editableFields.reasonDescription || '');
+                    val = val.replace(/{{\s*chinhanh\s*}}/gi, data.editableFields.warehouse || '');
+                    val = val.replace(/{{\s*BSXE\s*}}/gi, data.editableFields.vehicleNumber || '');
+                    val = val.replace(/{{\s*socont\s*}}/gi, data.editableFields.containerNumber || '');
+                    val = val.replace(/{{\s*soseal\s*}}/gi, data.editableFields.sealNumber || '');
+                    return val;
+                };
+
+                if (typeof cell.value === 'string') {
+                    cell.value = replaceText(cell.value);
+                } else if (cell.value && typeof cell.value === 'object' && 'richText' in (cell.value as any)) {
+                    const rtValue = cell.value as any;
+                    rtValue.richText = rtValue.richText.map((rt: any) => ({
+                        ...rt,
+                        text: replaceText(rt.text || '')
+                    }));
+                    cell.value = rtValue;
+                }
+            }
+        });
+    });
+
+    // Find the starting row for items - usually marked by STT or a specific row
+    let itemStartRow = -1;
+    worksheet.eachRow((row, rowNumber) => {
+        row.eachCell((cell) => {
+            if (cell.value && typeof cell.value === 'string') {
+                const text = cell.value.toString().trim().toUpperCase();
+                if (text === 'STT') {
+                    itemStartRow = rowNumber + 1;
+                }
+            }
+        });
+    });
+
+    // Fallback if STT not found
+    if (itemStartRow === -1) itemStartRow = 15;
+
+    // Insert items
+    let totalQty = 0;
+    let totalDocQty = 0;
+    let totalConvertedQty = 0;
+
+    data.items.forEach((item, index) => {
+        const row = worksheet.getRow(itemStartRow + index);
+        row.getCell(1).value = index + 1; // STT
+        
+        // Col 2: Tên, nhãn hiệu... (Note: Col 3 might be merged)
+        const name = item.product_name || item.products?.internal_name || item.products?.name || item.products?.sku || '';
+        row.getCell(2).value = name;
+        
+        // Col 4: Quy Cách
+        row.getCell(4).value = item.quyCach || '';
+        
+        // Col 5: Đơn Vị Tính
+        row.getCell(5).value = item.unit || '';
+        
+        // Col 6: Thực xuất (hoặc Thực nhập tùy mẫu)
+        row.getCell(6).value = item.quantity;
+        
+        // Col 7: Quy đổi (Kg) - Nếu có
+        if (item.convertedQty !== undefined && item.convertedQty !== '-') {
+            const cQty = typeof item.convertedQty === 'string' ? parseFloat(item.convertedQty.replace(/,/g, '')) : item.convertedQty;
+            row.getCell(7).value = cQty;
+            totalConvertedQty += (cQty || 0);
+        }
+
+        totalDocQty += (item.document_quantity || item.quantity || 0);
+        totalQty += (item.quantity || 0);
+        
+        if (data.modules.hasFinancials) {
+            row.getCell(8).value = item.price || 0;
+            row.getCell(9).value = (item.price || 0) * item.quantity;
+        }
+
+        // Apply borders
+        row.eachCell((cell) => {
+            cell.border = {
+                top: { style: 'thin' },
+                left: { style: 'thin' },
+                bottom: { style: 'thin' },
+                right: { style: 'thin' }
+            };
+        });
+    });
+
+    // Find "Cộng" row and fill totals
+    worksheet.eachRow((row, rowNumber) => {
+        row.eachCell((cell) => {
+            const val = cell.value ? cell.value.toString().trim().toUpperCase() : '';
+            if (val === 'CỘNG' || val.includes('TỔNG CỘNG')) {
+                // Total quantity goes to Col 6
+                row.getCell(6).value = totalQty;
+                // Total converted goes to Col 7
+                if (totalConvertedQty > 0) row.getCell(7).value = totalConvertedQty;
+            }
+        });
+    });
+
+    // Handle signatures - Place names below titles
+    // We'll search for signature titles and place names a few rows below
+    if (data.editableFields.signatures) {
+        data.editableFields.signatures.forEach(sig => {
+            if (!sig.name) return;
+            worksheet.eachRow((row, rowNumber) => {
+                row.eachCell((cell, colNumber) => {
+                    if (cell.value && typeof cell.value === 'string' && cell.value.trim().toLowerCase() === sig.title.trim().toLowerCase()) {
+                        // Place name 5 rows below title (common spacing for signatures)
+                        const nameRow = worksheet.getRow(rowNumber + 5);
+                        nameRow.getCell(colNumber).value = sig.name;
+                        nameRow.getCell(colNumber).font = { bold: true };
+                        nameRow.getCell(colNumber).alignment = { horizontal: 'center' };
+                    }
+                });
+            });
+        });
+    }
+
+    // Write and save
+    const buffer = await workbook.xlsx.writeBuffer();
+    saveAs(new Blob([buffer]), `${data.type === 'inbound' ? 'Phieu_Nhap' : 'Phieu_Xuat'}_${data.order.code}.xlsx`);
+}

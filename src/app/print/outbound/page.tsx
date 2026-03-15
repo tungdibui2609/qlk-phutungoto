@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Printer, Loader2, Download, Hash, FileSpreadsheet } from 'lucide-react'
-import { exportToExcel } from '@/lib/excelExport'
+import { exportToExcel, exportToExcelWithTemplate } from '@/lib/excelExport'
 import { toJpeg } from 'html-to-image'
 import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { formatQuantityFull } from '@/lib/numberUtils'
@@ -376,7 +376,7 @@ function OutboundPrintContent() {
                 quyCachStr = `${item.unit}/1${productSource.unit}`
             }
 
-            // Converted Qty calculation (redundant but necessary for export)
+            // Converted Qty calculation
             let convertedQtyValue: any = '-'
             if (hasModule('outbound_conversion') && targetUnit && item.products) {
                 const product = item.products as any
@@ -418,22 +418,23 @@ function OutboundPrintContent() {
 
             return {
                 ...item,
-                product_name: displayInternalCode && productSource.internal_name ? productSource.internal_name : item.product_name || 'N/A',
+                product_name: productSource.internal_name || productSource.name || item.product_name || 'N/A',
                 quyCach: editQuyCach[item.id] !== undefined ? editQuyCach[item.id] : quyCachStr,
+                unit: item.unit || productSource.unit || '',
                 convertedQty: convertedQtyValue,
                 document_quantity: docQuantities[item.id] !== undefined ? parseFloat(docQuantities[item.id]) : (item.document_quantity || item.quantity)
             }
         })
 
         const signatures = [
-            { title: signTitle1, name: signPerson1 },
-            { title: signTitle5, name: signPerson5 },
-            { title: signTitle4, name: signPerson4 },
-            { title: signTitle2, name: signPerson2 },
-            { title: signTitle3, name: signPerson3 }
+            { title: 'Người nhận', name: editCustomerName || signPerson1 },
+            { title: 'Tài xế', name: signPerson5 || editVehicleNumber },
+            { title: 'TP.QLCL', name: signPerson4 },
+            { title: 'Thủ kho', name: signPerson2 },
+            { title: 'GĐ Nhà Máy', name: signPerson3 }
         ]
 
-        await exportToExcel({
+        await exportToExcelWithTemplate({
             type: 'outbound',
             printType: isInternal ? 'internal' : 'official',
             order,
@@ -468,7 +469,7 @@ function OutboundPrintContent() {
                 hasConversion: hasModule('outbound_conversion'),
                 targetUnit
             }
-        })
+        }, '/mauxuat.xlsx')
     }
 
     if (loading) {
