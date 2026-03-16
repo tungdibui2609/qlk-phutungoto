@@ -463,6 +463,18 @@ export default function UserPermissionsPage() {
 
                                                         const filtered = permissions.filter(p => {
                                                             if (!p.module || !p.code) return false
+                                                            
+                                                            // Always allow these important features
+                                                            const isCriticalFeature = 
+                                                                p.code.startsWith('lot.') || 
+                                                                p.code.startsWith('utility') || 
+                                                                p.code.startsWith('inbound.') || 
+                                                                p.code.startsWith('outbound.') ||
+                                                                p.code.startsWith('warehouse.') ||
+                                                                p.code.startsWith('site_inventory.')
+
+                                                            if (isCriticalFeature) return true
+
                                                             const isSystemModule = p.module.toUpperCase() === 'HỆ THỐNG' || p.module.toUpperCase() === 'SYSTEM' || p.module.toUpperCase() === 'CORE'
                                                             const isSystemPrefix = p.code.startsWith('system.') || p.code.startsWith('user.') || p.code.startsWith('settings.')
                                                             return !isSystemModule && !isSystemPrefix
@@ -521,11 +533,14 @@ export default function UserPermissionsPage() {
                                                             site_inventory: 'Kho công trình',
                                                             order: 'Phiếu nhập/xuất',
                                                             lotcode: 'Mã lô',
-                                                            lot: 'Quản lý LOT',
+                                                            lot: 'LOT Sản Xuất',
                                                             report: 'Báo cáo',
                                                             customer: 'Khách hàng',
                                                             supplier: 'Nhà cung cấp',
-                                                            audit: 'Kiểm kê'
+                                                            audit: 'Kiểm kê',
+                                                            utility: 'Tiện ích (Quét QR)',
+                                                            inbound: 'Nhập kho (Kế toán)',
+                                                            outbound: 'Xuất kho (Kế toán)',
                                                         }
 
                                                         return Object.entries(featureMap).map(([feature, { view, manage, approve, other }]) => {

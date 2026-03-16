@@ -11,8 +11,8 @@ import { RotateCcw, Plus, Package, Calendar, MapPin, Edit, Trash2, Eye, QrCode a
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { MobileProductionCodePicker } from '@/components/mobile/MobileProductionCodePicker'
+import Protected from '@/components/auth/Protected'
 import { LayoutGrid } from 'lucide-react'
-
 // Helper for formatting dates cleanly
 const formatDate = (dateString?: string | null) => {
     if (!dateString) return '---'
@@ -223,18 +223,22 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
                                             >
                                                 <Eye size={14} />
                                             </button>
-                                            <button
-                                                onClick={() => handleEditLot(lot)}
-                                                className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-orange-600 bg-zinc-50 hover:bg-orange-50 dark:bg-zinc-800/50 dark:hover:bg-orange-500/20 rounded-lg transition-colors"
-                                            >
-                                                <Edit size={14} />
-                                            </button>
-                                            <button
-                                                onClick={() => onDeleteWrapper(lot.id)}
-                                                className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-red-600 bg-zinc-50 hover:bg-red-50 dark:bg-zinc-800/50 dark:hover:bg-red-500/20 rounded-lg transition-colors"
-                                            >
-                                                <Trash2 size={14} />
-                                            </button>
+                                            <Protected permission="lot.manage">
+                                                <button
+                                                    onClick={() => handleEditLot(lot)}
+                                                    className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-orange-600 bg-zinc-50 hover:bg-orange-50 dark:bg-zinc-800/50 dark:hover:bg-orange-500/20 rounded-lg transition-colors"
+                                                >
+                                                    <Edit size={14} />
+                                                </button>
+                                            </Protected>
+                                            <Protected permission="lot.manage">
+                                                <button
+                                                    onClick={() => onDeleteWrapper(lot.id)}
+                                                    className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-red-600 bg-zinc-50 hover:bg-red-50 dark:bg-zinc-800/50 dark:hover:bg-red-500/20 rounded-lg transition-colors"
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </Protected>
                                         </div>
                                     </div>
 
