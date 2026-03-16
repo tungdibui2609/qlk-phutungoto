@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Boxes, X, Calendar, Package, Factory, MapPin, Truck, ShieldCheck, Layers, Info, Maximize2, QrCode as QrIcon, History, Trash2, Edit } from 'lucide-react'
+import { Boxes, X, Calendar, Package, Factory, MapPin, Truck, ShieldCheck, Layers, Info, Maximize2, QrCode as QrIcon, History, Trash2, Edit, Hash } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
 import { LotMergeHistoryModal } from './LotMergeHistoryModal'
 import { TagDisplay } from '@/components/lots/TagDisplay'
@@ -164,6 +164,30 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                     <div className="min-w-0">
                                         <p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Nhân viên QC</p>
                                         <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">{lot.qc_info?.name || '---'}</p>
+                                    </div>
+                                </div>
+                            )}
+                            {isModuleEnabled('raw_material_date') && (
+                                <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
+                                    <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0">
+                                        <Calendar size={20} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Ngày nhập nguyên liệu</p>
+                                        <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">
+                                            {lot.raw_material_date ? new Date(lot.raw_material_date).toLocaleDateString('vi-VN') : '---'}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+                            {isModuleEnabled('production_code') && (
+                                <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
+                                    <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                                        <Hash size={20} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Mã sản xuất</p>
+                                        <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200 truncate">{lot.production_code || '---'}</p>
                                     </div>
                                 </div>
                             )}

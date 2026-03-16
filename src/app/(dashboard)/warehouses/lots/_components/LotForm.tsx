@@ -35,6 +35,7 @@ interface LotFormProps {
     branches: any[]
     existingTags?: string[]
     isModuleEnabled: (moduleId: string) => boolean
+    initialProductionCode?: string
 }
 
 export function LotForm({
@@ -50,7 +51,8 @@ export function LotForm({
     branches,
     existingTags = [],
     isModuleEnabled,
-    onDelete
+    onDelete,
+    initialProductionCode = ''
 }: LotFormProps) {
     const { currentSystem } = useSystem()
     const { profile } = useUser()
@@ -67,10 +69,12 @@ export function LotForm({
     const [selectedSupplierId, setSelectedSupplierId] = useState('')
     const [selectedQCId, setSelectedQCId] = useState('')
     const [inboundDate, setInboundDate] = useState('')
+    const [rawMaterialDate, setRawMaterialDate] = useState('')
     const [peelingDate, setPeelingDate] = useState('')
     const [packagingDate, setPackagingDate] = useState('')
     const [warehouseName, setWarehouseName] = useState('') // Add warehouseName state
     const [batchCode, setBatchCode] = useState('')
+    const [productionCode, setProductionCode] = useState(initialProductionCode || '')
     const [images, setImages] = useState<string[]>([])
     const [extraInfo, setExtraInfo] = useState('')
     const [lotItems, setLotItems] = useState<LotItemInput[]>([{ productId: '', quantity: 0, unit: '', tag: '' }])
@@ -79,6 +83,13 @@ export function LotForm({
 
     const formRef = useRef<HTMLDivElement>(null)
 
+    // Separate Effect for initialProductionCode to ensure it's always applied in Create Mode
+    useEffect(() => {
+        if (isVisible && !editingLot && initialProductionCode) {
+            setProductionCode(initialProductionCode)
+        }
+    }, [isVisible, editingLot, initialProductionCode])
+
     // Reset or Initialize Form
     useEffect(() => {
         if (isVisible) {
@@ -86,6 +97,7 @@ export function LotForm({
                 // Edit Mode
                 setNewLotCode(editingLot.code)
                 setNewLotNotes(editingLot.notes || '')
+                setProductionCode((editingLot as any).production_code || '')
 
                 // Populate items
                 if (editingLot.lot_items && editingLot.lot_items.length > 0) {
@@ -116,10 +128,12 @@ export function LotForm({
                 setSelectedSupplierId(editingLot.supplier_id || '')
                 setSelectedQCId(editingLot.qc_id || '')
                 setInboundDate(editingLot.inbound_date ? new Date(editingLot.inbound_date).toISOString().split('T')[0] : '')
+                setRawMaterialDate((editingLot as any).raw_material_date ? new Date((editingLot as any).raw_material_date).toISOString().split('T')[0] : '')
                 setPeelingDate(editingLot.peeling_date ? new Date(editingLot.peeling_date).toISOString().split('T')[0] : '')
                 setPackagingDate(editingLot.packaging_date ? new Date(editingLot.packaging_date).toISOString().split('T')[0] : '')
                 setWarehouseName(editingLot.warehouse_name || '')
                 setBatchCode(editingLot.batch_code || '')
+                setProductionCode((editingLot as any).production_code || '')
 
                 // Handle images
                 let imgs: string[] = []
@@ -161,6 +175,7 @@ export function LotForm({
                             }
 
                             if (parsed.peelingDate) setPeelingDate(parsed.peelingDate)
+                            if (parsed.rawMaterialDate) setRawMaterialDate(parsed.rawMaterialDate)
                             if (parsed.packagingDate) setPackagingDate(parsed.packagingDate)
 
                             // Validate and restore Warehouse
@@ -171,6 +186,7 @@ export function LotForm({
                                 setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
                             }
 
+                            if (parsed.productionCode) setProductionCode(parsed.productionCode)
                             if (parsed.batchCode) setBatchCode(parsed.batchCode)
                             if (parsed.extraInfo) setExtraInfo(parsed.extraInfo.toUpperCase())
                             if (parsed.inboundDate) setInboundDate(parsed.inboundDate)
@@ -204,6 +220,7 @@ export function LotForm({
 
                 generateLotCode()
             }
+
             setIsInitialized(true)
 
             // Scroll to form
@@ -214,7 +231,7 @@ export function LotForm({
                 }
             }, 100)
         }
-    }, [isVisible, editingLot, branches])
+    }, [isVisible, editingLot, branches, initialProductionCode, suppliers, qcList])
 
     // Save sticky values to localStorage in Create Mode
     useEffect(() => {
@@ -227,8 +244,10 @@ export function LotForm({
                 packagingDate: isPersistent ? packagingDate : '',
                 warehouseName: isPersistent ? warehouseName : '',
                 batchCode: isPersistent ? batchCode : '',
+                productionCode: isPersistent ? productionCode : '',
                 extraInfo: isPersistent ? extraInfo : '',
                 inboundDate: isPersistent ? inboundDate : '',
+                rawMaterialDate: isPersistent ? rawMaterialDate : '',
                 lotItems: isPersistent ? lotItems : []
             }
             localStorage.setItem('LOT_FORM_STICKY_DATA', JSON.stringify(stickyData))
@@ -244,9 +263,14 @@ export function LotForm({
         packagingDate,
         warehouseName,
         batchCode,
+        productionCode,
         extraInfo,
         inboundDate,
-        lotItems
+        rawMaterialDate,
+        lotItems,
+        suppliers,
+        qcList,
+        branches
     ])
 
     function resetForm() {
@@ -255,10 +279,12 @@ export function LotForm({
         setSelectedSupplierId('')
         setSelectedQCId('')
         setInboundDate('')
+        setRawMaterialDate('')
         setPeelingDate('')
         setPackagingDate('')
         setWarehouseName('')
         setBatchCode('')
+        setProductionCode('')
         setImages([])
         setExtraInfo('')
         setLotItems([{ productId: '', quantity: 0, unit: '' }])
@@ -506,10 +532,12 @@ export function LotForm({
             supplier_id: selectedSupplierId || null,
             qc_id: selectedQCId || null,
             inbound_date: inboundDate || null,
+            raw_material_date: rawMaterialDate || null,
             peeling_date: peelingDate || null,
             packaging_date: packagingDate || null,
             warehouse_name: warehouseName || null,
             batch_code: batchCode || null,
+            production_code: productionCode || null,
             quantity: totalQuantity,
             status: 'active',
             system_code: currentSystem?.code,
@@ -710,8 +738,46 @@ export function LotForm({
                                     type="text"
                                     value={batchCode}
                                     onChange={(e) => setBatchCode(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-slate-900 dark:text-slate-100 transition-all"
                                     placeholder="VD: BATCH-01"
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Mã sản xuất */}
+                    {isModuleEnabled('production_code') && (
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                Mã sản xuất
+                            </label>
+                            <div className="relative">
+                                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input
+                                    type="text"
+                                    value={productionCode}
+                                    onChange={(e) => setProductionCode(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-slate-900 dark:text-slate-100 transition-all"
+                                    placeholder="Nhập mã sản xuất..."
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Ngày nhập nguyên liệu */}
+                    {isModuleEnabled('raw_material_date') && (
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                Ngày nhập nguyên liệu
+                            </label>
+                            <div className="relative">
+                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                <input
+                                    type="date"
+                                    value={rawMaterialDate}
+                                    onChange={(e) => setRawMaterialDate(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all"
+                                    style={{ colorScheme: 'light dark' }}
                                 />
                             </div>
                         </div>

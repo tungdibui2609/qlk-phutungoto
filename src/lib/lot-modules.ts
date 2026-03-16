@@ -47,6 +47,20 @@ export const LOT_MODULES: LotModule[] = [
         icon: ShieldCheck
     },
     {
+        id: 'production_code',
+        name: 'Mã sản xuất',
+        description: 'Ghi lại mã sản xuất đa cấp cho lô hàng',
+        icon: Hash,
+        is_basic: false
+    },
+    {
+        id: 'raw_material_date',
+        name: 'Ngày nhập nguyên liệu',
+        description: 'Ghi lại ngày nhập nguyên liệu thô cho lô hàng',
+        icon: Calendar,
+        is_basic: false
+    },
+    {
         id: 'inbound_date',
         name: 'Ngày nhập kho',
         description: 'Hiển thị trường ngày nhập kho.',

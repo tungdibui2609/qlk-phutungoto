@@ -222,6 +222,7 @@ export type Database = {
           position_id: string | null
           product_id: string | null
           quantity: number
+          raw_material_date: string | null
           status: string | null
           task_id: string
           unit: string | null
@@ -244,6 +245,7 @@ export type Database = {
           position_id?: string | null
           product_id?: string | null
           quantity?: number
+          raw_material_date?: string | null
           status?: string | null
           task_id?: string
           unit?: string | null
@@ -626,8 +628,10 @@ export type Database = {
           packaging_date: string | null
           peeling_date: string | null
           product_id: string | null
+          production_code: string | null
           qc_id: string | null
           quantity: number | null
+          raw_material_date: string | null
           status: string | null
           supplier_id: string | null
           system_code: string | null
@@ -644,8 +648,10 @@ export type Database = {
           packaging_date?: string | null
           peeling_date?: string | null
           product_id?: string | null
+          production_code?: string | null
           qc_id?: string | null
           quantity?: number | null
+          raw_material_date?: string | null
           status?: string | null
           supplier_id?: string | null
           system_code?: string | null
@@ -663,8 +669,10 @@ export type Database = {
           packaging_date?: string | null
           peeling_date?: string | null
           product_id?: string | null
+          production_code?: string | null
           qc_id?: string | null
           quantity?: number | null
+          raw_material_date?: string | null
           status?: string | null
           supplier_id?: string | null
           system_code?: string | null

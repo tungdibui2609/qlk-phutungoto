@@ -10,6 +10,8 @@ import { useState, useEffect } from 'react'
 import { RotateCcw, Plus, Package, Calendar, MapPin, Edit, Trash2, Eye, QrCode as QrIcon, MapPinned } from 'lucide-react'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { TagDisplay } from '@/components/lots/TagDisplay'
+import { MobileProductionCodePicker } from '@/components/mobile/MobileProductionCodePicker'
+import { LayoutGrid } from 'lucide-react'
 
 // Helper for formatting dates cleanly
 const formatDate = (dateString?: string | null) => {
@@ -21,32 +23,6 @@ const formatDate = (dateString?: string | null) => {
 export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => void }) {
     const { currentSystem } = useSystem()
     const { showToast, showConfirm } = useToast()
-
-    const [view, setView] = useState<'list' | 'form'>('list')
-    const [editingLot, setEditingLot] = useState<Lot | null>(null)
-    const [viewingLot, setViewingLot] = useState<Lot | null>(null)
-    const [qrLot, setQrLot] = useState<Lot | null>(null)
-    const [selectedWorkArea, setSelectedWorkArea] = useState<{ id: string, name: string } | null>(null)
-    const [showAreaPicker, setShowAreaPicker] = useState(false)
-
-    // Load work area from localStorage on mount
-    useEffect(() => {
-        const saved = localStorage.getItem('MOBILE_SELECTED_WORK_AREA')
-        if (saved) {
-            try {
-                setSelectedWorkArea(JSON.parse(saved))
-            } catch (e) {
-                console.error('Failed to parse saved work area', e)
-            }
-        }
-    }, [])
-
-    const handleSelectArea = (area: { id: string, name: string }) => {
-        setSelectedWorkArea(area)
-        localStorage.setItem('MOBILE_SELECTED_WORK_AREA', JSON.stringify(area))
-        setShowAreaPicker(false)
-        showToast(`Đã chọn khu vực: ${area.name}`, 'success')
-    }
 
     // Pull all needed data and actions from the hook
     const {
@@ -64,6 +40,46 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
         fetchLots,
         handleDeleteLot
     } = useLotManagement()
+
+    const [view, setView] = useState<'list' | 'form'>('list')
+    const [editingLot, setEditingLot] = useState<Lot | null>(null)
+    const [viewingLot, setViewingLot] = useState<Lot | null>(null)
+    const [qrLot, setQrLot] = useState<Lot | null>(null)
+    const [selectedWorkArea, setSelectedWorkArea] = useState<{ id: string, name: string } | null>(null)
+    const [showAreaPicker, setShowAreaPicker] = useState(false)
+    const [tempProductionCode, setTempProductionCode] = useState('')
+    const [showProductionCodePicker, setShowProductionCodePicker] = useState(false)
+
+    // Load work area and production code from localStorage on mount
+    useEffect(() => {
+        const savedArea = localStorage.getItem('MOBILE_SELECTED_WORK_AREA')
+        if (savedArea) {
+            try {
+                setSelectedWorkArea(JSON.parse(savedArea))
+            } catch (e) {
+                console.error('Failed to parse saved work area', e)
+            }
+        }
+
+        const savedCode = localStorage.getItem('MOBILE_SELECTED_PRODUCTION_CODE')
+        if (savedCode) {
+            setTempProductionCode(savedCode)
+        }
+    }, [])
+
+    useEffect(() => {
+        // Automatically show production code picker if area is selected but code isn't
+        if (selectedWorkArea && !tempProductionCode && isModuleEnabled('production_code') && !showProductionCodePicker && !editingLot) {
+            setShowProductionCodePicker(true)
+        }
+    }, [selectedWorkArea, tempProductionCode, isModuleEnabled, editingLot, showProductionCodePicker])
+
+    const handleSelectArea = (area: { id: string, name: string }) => {
+        setSelectedWorkArea(area)
+        localStorage.setItem('MOBILE_SELECTED_WORK_AREA', JSON.stringify(area))
+        setShowAreaPicker(false)
+        showToast(`Đã chọn khu vực: ${area.name}`, 'success')
+    }
 
     const [formKey, setFormKey] = useState(0)
 
@@ -97,6 +113,15 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
         setView('form')
     }
 
+    const handleSelectProductionCode = (code: string) => {
+        setTempProductionCode(code)
+        localStorage.setItem('MOBILE_SELECTED_PRODUCTION_CODE', code)
+        setShowProductionCodePicker(false)
+        if (!editingLot && view === 'list') {
+            setView('form')
+        }
+    }
+
     const handleEditLot = (lot: Lot) => {
         setEditingLot(lot)
         setView('form')
@@ -115,6 +140,13 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
                 />
             )}
 
+            {showProductionCodePicker && (
+                <MobileProductionCodePicker
+                    onSelect={handleSelectProductionCode}
+                    onClose={() => setShowProductionCodePicker(false)}
+                />
+            )}
+
             <div className="mobile-header">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
@@ -128,6 +160,15 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
                             >
                                 <MapPinned size={12} />
                                 {selectedWorkArea.name}
+                            </button>
+                        )}
+                        {isModuleEnabled('production_code') && tempProductionCode && (
+                            <button
+                                onClick={() => setShowProductionCodePicker(true)}
+                                className="mt-2 flex items-center gap-1.5 px-2.5 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400"
+                            >
+                                <LayoutGrid size={12} />
+                                Mã SX: {tempProductionCode}
                             </button>
                         )}
                     </div>
@@ -272,6 +313,7 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
                         branches={branches}
                         existingTags={existingTags}
                         isModuleEnabled={isModuleEnabled}
+                        initialProductionCode={tempProductionCode}
                     />
                 )}
             </div>

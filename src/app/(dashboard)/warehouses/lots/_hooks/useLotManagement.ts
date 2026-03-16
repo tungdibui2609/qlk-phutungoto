@@ -157,7 +157,7 @@ export function useLotManagement() {
             fetchAllPaginated('branches', q => q.order('is_default', { ascending: false }).order('name')),
             fetchAllPaginated('units'),
             fetchAllPaginated('product_units'),
-            fetchAllPaginated('lot_tags', q => q.order('tag'), 'tag')
+            fetchAllPaginated('lot_tags', q => q.eq('lots.system_code', currentSystem!.code).order('tag'), 'tag, lots!inner(system_code)')
         ])
 
         setProducts(prodData)
@@ -179,6 +179,8 @@ export function useLotManagement() {
             // 1. Dynamic Select Query Builder
             let selectQuery = `
     *,
+    raw_material_date,
+    production_code,
     packaging_date,
     warehouse_name,
     images,
