@@ -5,6 +5,7 @@ import { Hash, Search, Check, Loader2, X, ChevronRight, LayoutGrid } from 'lucid
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
+import { getNextProductionSTT, getProductionCodeSTT, generateFullProductionCode } from '@/lib/productionCodeUtils'
 
 interface ProductionCodeLevel {
     id: string
@@ -14,7 +15,7 @@ interface ProductionCodeLevel {
 }
 
 interface MobileProductionCodePickerProps {
-    onSelect: (productionCode: string) => void
+    onSelect: (data: { code: string; names: string[] }) => void
     onClose?: () => void
 }
 
@@ -54,40 +55,6 @@ export function MobileProductionCodePicker({ onSelect, onClose }: MobileProducti
     const maxLevel = levels.length > 0 ? Math.max(...levels.map(l => l.level)) : 0
     const currentStepLevels = levels.filter(l => l.level === currentStep)
 
-    const getNextSTT = async () => {
-        if (!profile?.company_id || !currentSystem?.code) return '001'
-
-        const now = new Date()
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString()
-
-        try {
-            const { count, error } = await supabase
-                .from('lots')
-                .select('*', { count: 'exact', head: true })
-                .eq('company_id', profile.company_id)
-                .eq('system_code', currentSystem.code)
-                .gte('created_at', startOfMonth)
-                .lte('created_at', endOfMonth)
-
-            if (error) throw error
-            const nextSTT = (count || 0) + 1
-            // padStart(3, '0') sẽ tạo ra ít nhất 3 chữ số (001, 010, 100)
-            // Nếu con số lớn hơn (1000, 10000), nó sẽ tự động dài ra (4, 5, 6 chữ số) đúng như ý bạn.
-            return String(nextSTT).padStart(3, '0')
-        } catch (err) {
-            console.error('Error fetching STT:', err)
-            return '001' // Fallback
-        }
-    }
-
-    const encodeMonth = (month: number) => {
-        const map: Record<number, string> = {
-            1: 'AA', 2: 'BB', 3: 'CC', 4: 'DD', 5: 'EE', 6: 'FF',
-            7: 'GG', 8: 'HH', 9: 'KK', 10: 'LL', 11: 'MM', 12: 'NN'
-        }
-        return map[month] || 'XX'
-    }
 
     const handleSelectLevel = async (level: ProductionCodeLevel) => {
         const newSelections = { ...selections, [currentStep]: level }
@@ -97,22 +64,20 @@ export function MobileProductionCodePicker({ onSelect, onClose }: MobileProducti
             setCurrentStep(currentStep + 1)
         } else {
             setLoading(true)
-            const stt = await getNextSTT()
-            const now = new Date()
-            const monthCode = encodeMonth(now.getMonth() + 1)
-            const yearCode = String(now.getFullYear()).slice(-2)
-
-            // Quy tắc: L + STT + Tháng (mã hóa) + Năm + lv1 + lv2 + lv3 (nếu có)
-            // Ví dụ minh họa mới: L001CC260LKAB (không dùng dấu gạch ngang)
-            
-            const allLevels = Object.keys(newSelections)
+            const allLevelsPrefix = Object.keys(newSelections)
                 .sort((a, b) => Number(a) - Number(b))
                 .map(k => (newSelections[Number(k)] as ProductionCodeLevel).prefix)
-                .join('') // Nối liền tất cả các cấp độ
+                .join('')
+
+            const allLevelsNames = Object.keys(newSelections)
+                .sort((a, b) => Number(a) - Number(b))
+                .map(k => (newSelections[Number(k)] as ProductionCodeLevel).description)
+
+            const stt = await getProductionCodeSTT(profile!.company_id!, currentSystem!.code!, allLevelsPrefix)
             
-            const finalCode = `L${stt}${monthCode}${yearCode}${allLevels}`
+            const finalCode = generateFullProductionCode(stt, allLevelsPrefix)
             
-            onSelect(finalCode)
+            onSelect({ code: finalCode, names: allLevelsNames })
             setLoading(false)
         }
     }

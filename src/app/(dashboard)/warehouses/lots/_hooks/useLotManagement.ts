@@ -357,7 +357,7 @@ export function useLotManagement() {
                             const posIds = (posLots?.map(p => p.lot_id).filter(Boolean) || []) as string[];
 
                             const { data: lotsDirect } = await supabase.from('lots').select('id')
-                                .or(`code.ilike.${partTerm},notes.ilike.${partTerm}`)
+                                .or(`code.ilike.${partTerm},notes.ilike.${partTerm},production_code.ilike.${partTerm}`)
                                 .eq('system_code', currentSystem.code);
                             const directIds = lotsDirect?.map(l => l.id) || [];
 

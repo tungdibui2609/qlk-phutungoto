@@ -181,6 +181,7 @@ export function LotBulkPrintModal({ lotIds, onClose }: LotBulkPrintModalProps) {
                                 <LotLabel
                                     data={{
                                         lot_code: lot.code,
+                                        production_code: lot.fullData.production_code,
                                         scan_url: `${window.location.origin}/public/trace/${lot.code}${lot.fullData.company_id ? `?c=${lot.fullData.company_id}` : ''}`,
                                         company_prefix: 'TOAN THANG',
                                         product_name: lot.productName,

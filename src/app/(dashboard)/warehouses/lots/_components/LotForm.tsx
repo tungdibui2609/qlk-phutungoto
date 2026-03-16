@@ -78,6 +78,7 @@ export function LotForm({
     const [lotItems, setLotItems] = useState<LotItemInput[]>([{ productId: '', quantity: 0, unit: '', tag: '' }])
     const [isInitialized, setIsInitialized] = useState(false)
     const [isPersistent, setIsPersistent] = useState(false)
+    const [isInfoExpanded, setIsInfoExpanded] = useState(true)
 
     const formRef = useRef<HTMLDivElement>(null)
 
@@ -156,6 +157,7 @@ export function LotForm({
                     try {
                         const parsed = JSON.parse(stickyData)
                         setIsPersistent(!!parsed.isPersistent)
+                        if (parsed.isInfoExpanded !== undefined) setIsInfoExpanded(parsed.isInfoExpanded)
 
                         if (parsed.isPersistent) {
                             // Reset non-persistent fields first to ensure no leaks
@@ -184,7 +186,11 @@ export function LotForm({
                                 setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
                             }
 
-                            if (parsed.productionCode) setProductionCode(parsed.productionCode)
+                            if (parsed.productionCode && currentSystem?.code === 'SANXUAT') {
+                                setProductionCode(parsed.productionCode)
+                            } else {
+                                setProductionCode('') // Ensure it's empty in Warehouse systems
+                            }
                             if (parsed.batchCode) setBatchCode(parsed.batchCode)
                             if (parsed.extraInfo) setExtraInfo(parsed.extraInfo.toUpperCase())
                             if (parsed.inboundDate) setInboundDate(parsed.inboundDate)
@@ -213,6 +219,9 @@ export function LotForm({
                     if (branches && branches.length > 0) {
                         const defaultBranch = branches.find(b => b.is_default)
                         setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
+                        if (currentSystem?.code !== 'SANXUAT') {
+                            setProductionCode('')
+                        }
                     }
                 }
 
@@ -220,6 +229,8 @@ export function LotForm({
                 // This ensures it overrides both resetForm() and sticky data restoration
                 if (initialProductionCode) {
                     setProductionCode(initialProductionCode)
+                    // Auto-collapse if we have an initial code (often auto-generated flow)
+                    setIsInfoExpanded(false)
                 }
 
                 generateLotCode()
@@ -235,7 +246,7 @@ export function LotForm({
                 }
             }, 100)
         }
-    }, [isVisible, editingLot, branches, initialProductionCode, suppliers, qcList])
+    }, [isVisible, editingLot, branches, initialProductionCode, suppliers, qcList, currentSystem])
 
     // Save sticky values to localStorage in Create Mode
     useEffect(() => {
@@ -252,7 +263,8 @@ export function LotForm({
                 extraInfo: isPersistent ? extraInfo : '',
                 inboundDate: isPersistent ? inboundDate : '',
                 rawMaterialDate: isPersistent ? rawMaterialDate : '',
-                lotItems: isPersistent ? lotItems : []
+                lotItems: isPersistent ? lotItems : [],
+                isInfoExpanded: isInfoExpanded
             }
             localStorage.setItem('LOT_FORM_STICKY_DATA', JSON.stringify(stickyData))
         }
@@ -272,9 +284,9 @@ export function LotForm({
         inboundDate,
         rawMaterialDate,
         lotItems,
-        suppliers,
         qcList,
-        branches
+        branches,
+        currentSystem
     ])
 
     function resetForm() {
@@ -708,12 +720,23 @@ export function LotForm({
     return (
         <div ref={formRef} className={`transition-all duration-500 ease-in-out overflow-hidden ${isVisible ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl p-6 md:p-8">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-                    <Boxes className="text-orange-600" size={24} />
-                    {editingLot ? 'Cập nhật thông tin LOT' : 'Thông tin LOT mới'}
-                </h3>
+                <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <Boxes className="text-orange-600" size={24} />
+                        {editingLot ? 'Cập nhật thông tin LOT' : 'Thông tin LOT mới'}
+                    </h3>
+                    <button
+                        onClick={() => setIsInfoExpanded(!isInfoExpanded)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 transition-all border border-slate-200 dark:border-slate-700"
+                    >
+                        {isInfoExpanded ? 'Thu gọn' : 'Hiện thông tin'}
+                        <ChevronDown className={`transition-transform duration-300 ${isInfoExpanded ? 'rotate-180' : ''}`} size={16} />
+                    </button>
+                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isInfoExpanded ? 'max-h-[1500px] opacity-100 mb-8' : 'max-h-0 opacity-0 mb-0 pointer-events-none'}`}>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {/* Hàng 1: Định danh & Phân loại chính */}
                     {/* Mã LOT */}
                     <div className="space-y-2">
                         <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -729,25 +752,6 @@ export function LotForm({
                             />
                         </div>
                     </div>
-
-                    {/* Batch NCC */}
-                    {hasModule('batch_code') && (
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Số Batch/Lô (NCC)
-                            </label>
-                            <div className="relative">
-                                <Layers className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                                <input
-                                    type="text"
-                                    value={batchCode}
-                                    onChange={(e) => setBatchCode(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-slate-900 dark:text-slate-100 transition-all"
-                                    placeholder="VD: BATCH-01"
-                                />
-                            </div>
-                        </div>
-                    )}
 
                     {/* Mã sản xuất */}
                     {hasModule('production_code') && (
@@ -768,6 +772,53 @@ export function LotForm({
                         </div>
                     )}
 
+                    {/* Kho nhập hàng */}
+                    {hasModule('warehouse_name') && (
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                Kho nhập hàng
+                            </label>
+                            <div className="relative">
+                                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                <select
+                                    value={warehouseName}
+                                    onChange={(e) => setWarehouseName(e.target.value)}
+                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all"
+                                >
+                                    <option value="">-- Chọn kho hàng --</option>
+                                    {branches.map(b => (
+                                        <option key={b.id} value={b.name}>{b.name}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* QC Selection */}
+                    {hasModule('qc_info') && (
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                Nhân viên QC
+                            </label>
+                            <div className="relative">
+                                <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                <select
+                                    value={selectedQCId}
+                                    onChange={(e) => setSelectedQCId(e.target.value)}
+                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all"
+                                >
+                                    <option value="">-- Chọn QC --</option>
+                                    {qcList.map(qc => (
+                                        <option key={qc.id} value={qc.id}>{qc.name}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Hàng 2: Các mốc thời gian */}
                     {/* Ngày nhập nguyên liệu */}
                     {hasModule('raw_material_date') && (
                         <div className="space-y-2">
@@ -787,7 +838,7 @@ export function LotForm({
                         </div>
                     )}
 
-                    {/* Ngày nhập */}
+                    {/* Ngày nhập kho */}
                     {hasModule('inbound_date') && (
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -844,25 +895,22 @@ export function LotForm({
                         </div>
                     )}
 
-                    {/* Kho nhập hàng */}
-                    {hasModule('warehouse_name') && (
+                    {/* Hàng 3: Các thông tin bổ trợ */}
+                    {/* Batch NCC */}
+                    {hasModule('batch_code') && (
                         <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Kho nhập hàng
+                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                Số Batch/Lô (NCC)
                             </label>
                             <div className="relative">
-                                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                <select
-                                    value={warehouseName}
-                                    onChange={(e) => setWarehouseName(e.target.value)}
-                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all"
-                                >
-                                    <option value="">-- Chọn kho hàng --</option>
-                                    {branches.map(b => (
-                                        <option key={b.id} value={b.name}>{b.name}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                                <Layers className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input
+                                    type="text"
+                                    value={batchCode}
+                                    onChange={(e) => setBatchCode(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-slate-900 dark:text-slate-100 transition-all"
+                                    placeholder="VD: BATCH-01"
+                                />
                             </div>
                         </div>
                     )}
@@ -883,29 +931,6 @@ export function LotForm({
                                     <option value="">-- Chọn nhà cung cấp --</option>
                                     {suppliers.map(s => (
                                         <option key={s.id} value={s.id}>{s.name}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* QC Selection */}
-                    {hasModule('qc_info') && (
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Nhân viên QC
-                            </label>
-                            <div className="relative">
-                                <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                <select
-                                    value={selectedQCId}
-                                    onChange={(e) => setSelectedQCId(e.target.value)}
-                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all"
-                                >
-                                    <option value="">-- Chọn QC --</option>
-                                    {qcList.map(qc => (
-                                        <option key={qc.id} value={qc.id}>{qc.name}</option>
                                     ))}
                                 </select>
                                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
@@ -967,9 +992,11 @@ export function LotForm({
                             placeholder="Ghi chú thêm..."
                         />
                     </div>
+                </div>
+            </div>
 
-                    {/* Danh sách sản phẩm */}
-                    <div className="col-span-1 md:col-span-2 lg:col-span-4 space-y-3">
+            {/* Danh sách sản phẩm */}
+            <div className="col-span-1 md:col-span-2 lg:col-span-4 space-y-3">
                         <label className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
                             <span>Danh sách sản phẩm ({lotItems.length})</span>
                             <button
@@ -1014,8 +1041,18 @@ export function LotForm({
                                                 className="w-full"
                                                 renderValue={(option) => (
                                                     <div className="flex flex-col text-left w-full">
-                                                        <div className="text-[10px] text-stone-500 font-mono mb-0.5">{option.sku}</div>
-                                                        <div className="font-medium text-xs text-stone-900 dark:text-gray-100 line-clamp-2 leading-tight">
+                                                        <div className="text-[10px] text-zinc-500 font-mono mb-0.5 leading-none">{option.sku}</div>
+                                                        <div className="font-bold text-xs text-zinc-900 dark:text-zinc-100 line-clamp-1 leading-tight">
+                                                            {option.name}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                renderOption={(option) => (
+                                                    <div className="flex flex-col text-left w-full py-0.5">
+                                                        <div className="text-xs font-black text-zinc-900 dark:text-zinc-100 font-mono mb-0.5 leading-none uppercase">
+                                                            {option.sku}
+                                                        </div>
+                                                        <div className="text-[10px] text-zinc-500 dark:text-zinc-400 line-clamp-1 leading-tight font-medium">
                                                             {option.name}
                                                         </div>
                                                     </div>
@@ -1141,7 +1178,6 @@ export function LotForm({
                             ))}
                         </div>
                     </div>
-                </div>
 
                 <div className="flex items-center justify-between gap-3 mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800">
                     <div className="flex items-center gap-4">

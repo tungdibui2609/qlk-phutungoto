@@ -83,7 +83,7 @@ export function LotLabel({ data, scale = 1, showBorder = true, qrOnly = false }:
                         <p className="text-[8px] font-bold lowercase tracking-wider text-black leading-none">website: chanhthu.com</p>
                     </div>
                     <div className="text-right flex-shrink-0 ml-2 max-w-[55%]">
-                        <p className="text-[7px] font-bold uppercase text-black leading-none">Lot Number</p>
+                        <p className="text-[7px] font-bold uppercase text-black leading-none">{data.production_code ? 'Production Code' : 'Lot Number'}</p>
                         <p className="text-[10px] font-black tracking-tight leading-tight break-all">{displayLotCode}</p>
                     </div>
                 </div>

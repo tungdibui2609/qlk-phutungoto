@@ -125,6 +125,11 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                         <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap shadow-sm border border-black/5 dark:border-white/5">
                             LOT: {lot.code}
                         </span>
+                        {lot.production_code && (
+                            <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap shadow-sm border border-emerald-200 dark:border-emerald-800 animate-pulse">
+                                MSX: {lot.production_code}
+                            </span>
+                        )}
                     </div>
                     {lot.positions && lot.positions.length > 0 ? (
                         <button
@@ -159,37 +164,48 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
             <div className="p-3 flex-1 flex flex-col">
                 {/* Dates Grid */}
                 <div className="grid grid-cols-2 gap-2 mb-2">
-                    {isModuleEnabled('inbound_date') && (
+                    {/* Hàng 1: Nguyên liệu & Bóc múi */}
+                    {isModuleEnabled('raw_material_date') && (
                         <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-2 border border-slate-100 dark:border-slate-800">
-                            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Ngày nhập kho</div>
-                            <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                            <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">Ngày nhập nguyên liệu</div>
+                            <div className="text-sm font-semibold text-slate-700 dark:text-zinc-300">
+                                {(lot as any).raw_material_date ? new Date((lot as any).raw_material_date).toLocaleDateString('vi-VN') : '--/--/----'}
                             </div>
                         </div>
                     )}
 
                     {isModuleEnabled('peeling_date') && (
                         <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-2 border border-slate-100 dark:border-slate-800">
-                            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Ngày bóc múi</div>
-                            <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">Ngày bóc múi</div>
+                            <div className="text-sm font-semibold text-slate-700 dark:text-zinc-300">
                                 {lot.peeling_date ? new Date(lot.peeling_date).toLocaleDateString('vi-VN') : '--/--/----'}
                             </div>
                         </div>
                     )}
 
+                    {/* Hàng 2: Đóng bao bì & Nhập kho */}
                     {isModuleEnabled('packaging_date') && (
                         <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-2 border border-slate-100 dark:border-slate-800">
-                            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Ngày đóng bao bì</div>
-                            <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">Ngày đóng bao bì</div>
+                            <div className="text-sm font-semibold text-slate-700 dark:text-zinc-300">
                                 {lot.packaging_date ? new Date(lot.packaging_date).toLocaleDateString('vi-VN') : '--/--/----'}
                             </div>
                         </div>
                     )}
 
-                    {!isModuleEnabled('packaging_date') && !isModuleEnabled('peeling_date') && !isModuleEnabled('inbound_date') && (
+                    {isModuleEnabled('inbound_date') && (
                         <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-2 border border-slate-100 dark:border-slate-800">
-                            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Ngày tạo</div>
-                            <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">Ngày nhập kho</div>
+                            <div className="text-sm font-semibold text-slate-700 dark:text-zinc-300">
+                                {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                            </div>
+                        </div>
+                    )}
+
+                    {!isModuleEnabled('packaging_date') && !isModuleEnabled('peeling_date') && !isModuleEnabled('inbound_date') && !isModuleEnabled('raw_material_date') && (
+                        <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-2 border border-slate-100 dark:border-slate-800">
+                            <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">Ngày tạo</div>
+                            <div className="text-sm font-semibold text-slate-700 dark:text-zinc-300">
                                 {new Date(lot.created_at).toLocaleDateString('vi-VN')}
                             </div>
                         </div>

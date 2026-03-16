@@ -28,6 +28,7 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
     // Generate structured content for QR
     const qrLines = [
         `Mã LOT: ${lot.code}`,
+        ...(lot.production_code ? [`Mã SX: ${lot.production_code}`] : []),
         `NCC: ${lot.suppliers?.name || 'N/A'}`
     ]
 
@@ -246,6 +247,7 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
                         </h3>
                         <p className="text-sm text-zinc-500 font-mono">
                             {lot.code}
+                            {lot.production_code && <span className="ml-2 text-emerald-600 dark:text-emerald-400 font-bold">({lot.production_code})</span>}
                         </p>
                     </div>
 

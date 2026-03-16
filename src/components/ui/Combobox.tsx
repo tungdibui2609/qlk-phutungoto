@@ -22,6 +22,7 @@ interface ComboboxProps {
     emptyText?: string
     allowCustom?: boolean
     renderValue?: (option: ComboboxOption) => React.ReactNode
+    renderOption?: (option: ComboboxOption) => React.ReactNode
     hideSearchIcon?: boolean
 }
 
@@ -37,6 +38,7 @@ export function Combobox({
     emptyText = 'No results found.',
     allowCustom = false,
     renderValue,
+    renderOption,
     hideSearchIcon = false
 }: ComboboxProps) {
     const [isOpen, setIsOpen] = useState(false)
@@ -179,7 +181,11 @@ export function Combobox({
                                     `}
                                     onClick={() => handleSelect(option)}
                                 >
-                                    <span className="truncate">{option.label}</span>
+                                    {renderOption ? (
+                                        renderOption(option)
+                                    ) : (
+                                        <span className="truncate">{option.label}</span>
+                                    )}
                                     {option.value === value && <Check size={16} />}
                                 </button>
                             ))}

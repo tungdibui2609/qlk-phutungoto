@@ -13,6 +13,9 @@ import { TagDisplay } from '@/components/lots/TagDisplay'
 import { MobileProductionCodePicker } from '@/components/mobile/MobileProductionCodePicker'
 import Protected from '@/components/auth/Protected'
 import { LayoutGrid } from 'lucide-react'
+import { getProductionCodeSTT, generateFullProductionCode, extractLevelsFromCode } from '@/lib/productionCodeUtils'
+import { supabase } from '@/lib/supabaseClient'
+import { useUser } from '@/contexts/UserContext'
 // Helper for formatting dates cleanly
 const formatDate = (dateString?: string | null) => {
     if (!dateString) return '---'
@@ -22,6 +25,7 @@ const formatDate = (dateString?: string | null) => {
 
 export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => void }) {
     const { currentSystem } = useSystem()
+    const { profile } = useUser()
     const { showToast, showConfirm } = useToast()
 
     // Pull all needed data and actions from the hook
@@ -48,6 +52,7 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
     const [selectedWorkArea, setSelectedWorkArea] = useState<{ id: string, name: string } | null>(null)
     const [showAreaPicker, setShowAreaPicker] = useState(false)
     const [tempProductionCode, setTempProductionCode] = useState('')
+    const [tempProductionCodeNames, setTempProductionCodeNames] = useState<string[]>([])
     const [showProductionCodePicker, setShowProductionCodePicker] = useState(false)
 
     // Load work area and production code from localStorage on mount
@@ -62,10 +67,79 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
         }
 
         const savedCode = localStorage.getItem('MOBILE_SELECTED_PRODUCTION_CODE')
+        const savedNames = localStorage.getItem('MOBILE_SELECTED_PRODUCTION_CODE_NAMES')
+        
         if (savedCode) {
             setTempProductionCode(savedCode)
+            if (savedNames) {
+                try {
+                    setTempProductionCodeNames(JSON.parse(savedNames))
+                } catch (e) {
+                    console.error('Failed to parse saved code names', e)
+                }
+            }
+            
+            // Proactively refresh STT on mount to ensure it's up to date
+            const refreshOnMount = async () => {
+                // Wait a bit for profile and currentSystem to be available
+                let retry = 0
+                while (retry < 5 && (!profile?.company_id || !currentSystem?.code)) {
+                    await new Promise(r => setTimeout(r, 500))
+                    retry++
+                }
+                
+                if (profile?.company_id && currentSystem?.code) {
+                    const levelsPrefix = extractLevelsFromCode(savedCode)
+                    const nextSTT = await getProductionCodeSTT(profile.company_id!, currentSystem.code!, levelsPrefix)
+                    const nextFullCode = generateFullProductionCode(nextSTT, levelsPrefix)
+                    setTempProductionCode(nextFullCode)
+                    localStorage.setItem('MOBILE_SELECTED_PRODUCTION_CODE', nextFullCode)
+
+                    // Always fetch/refresh names to ensure they follow the latest matching logic
+                    try {
+                        const currentLevelsPrefix = extractLevelsFromCode(nextFullCode)
+                        // Fetch all definitions to match correctly
+                        const { data: allLevels } = await supabase
+                            .from('production_code_levels')
+                            .select('prefix, description')
+                            .eq('company_id', profile.company_id)
+                            .order('level', { ascending: true })
+
+                        if (allLevels) {
+                            // Greedily match prefixes from the suffix string
+                            let remaining = currentLevelsPrefix
+                            const names: string[] = []
+                            
+                            while (remaining.length > 0) {
+                                let matched = false
+                                // Sort by prefix length descending to match longest first (e.g. 'LK' before 'L')
+                                const sortedLevels = [...allLevels].sort((a, b) => b.prefix.length - a.prefix.length)
+                                
+                                for (const lv of sortedLevels) {
+                                    if (remaining.startsWith(lv.prefix)) {
+                                        names.push(lv.description)
+                                        remaining = remaining.substring(lv.prefix.length)
+                                        matched = true
+                                        break
+                                    }
+                                }
+                                if (!matched) {
+                                    names.push(remaining[0])
+                                    remaining = remaining.substring(1)
+                                }
+                            }
+                            
+                            setTempProductionCodeNames(names)
+                            localStorage.setItem('MOBILE_SELECTED_PRODUCTION_CODE_NAMES', JSON.stringify(names))
+                        }
+                    } catch (e) {
+                        console.error('Error auto-fetching levels', e)
+                    }
+                }
+            }
+            refreshOnMount()
         }
-    }, [])
+    }, [profile, currentSystem, supabase])
 
     useEffect(() => {
         // Automatically show production code picker if area is selected but code isn't
@@ -90,6 +164,18 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
         setView('list')
         setEditingLot(null)
         fetchLots(false)
+
+        // Refresh production code STT for the next lot
+        if (!editingLot && tempProductionCode && profile?.company_id && currentSystem?.code) {
+            const refreshSTT = async () => {
+                const levelsPrefix = extractLevelsFromCode(tempProductionCode)
+                const nextSTT = await getProductionCodeSTT(profile.company_id!, currentSystem.code!, levelsPrefix)
+                const nextFullCode = generateFullProductionCode(nextSTT, levelsPrefix)
+                setTempProductionCode(nextFullCode)
+                localStorage.setItem('MOBILE_SELECTED_PRODUCTION_CODE', nextFullCode)
+            }
+            refreshSTT()
+        }
     }
 
     const handleCloseForm = () => {
@@ -113,9 +199,11 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
         setView('form')
     }
 
-    const handleSelectProductionCode = (code: string) => {
-        setTempProductionCode(code)
-        localStorage.setItem('MOBILE_SELECTED_PRODUCTION_CODE', code)
+    const handleSelectProductionCode = (data: { code: string, names: string[] }) => {
+        setTempProductionCode(data.code)
+        setTempProductionCodeNames(data.names)
+        localStorage.setItem('MOBILE_SELECTED_PRODUCTION_CODE', data.code)
+        localStorage.setItem('MOBILE_SELECTED_PRODUCTION_CODE_NAMES', JSON.stringify(data.names))
         setShowProductionCodePicker(false)
         if (!editingLot && view === 'list') {
             setView('form')
@@ -163,13 +251,21 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
                             </button>
                         )}
                         {isModuleEnabled('production_code') && tempProductionCode && (
-                            <button
-                                onClick={() => setShowProductionCodePicker(true)}
-                                className="mt-2 flex items-center gap-1.5 px-2.5 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400"
-                            >
-                                <LayoutGrid size={12} />
-                                Mã SX: {tempProductionCode}
-                            </button>
+                            <div className="mt-3 flex flex-wrap items-center gap-1.5 min-h-[32px]">
+                                <button
+                                    onClick={() => setShowProductionCodePicker(true)}
+                                    className="flex items-center gap-1 px-2 py-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 active:scale-95 transition-all shadow-sm shrink-0"
+                                >
+                                    <LayoutGrid size={11} />
+                                    Mã SX: {tempProductionCode}
+                                </button>
+                                
+                                {tempProductionCodeNames.map((name, idx) => (
+                                    <div key={idx} className="px-2 py-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-full text-[8.5px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-tight shadow-sm whitespace-nowrap">
+                                        {name}
+                                    </div>
+                                ))}
+                            </div>
                         )}
                     </div>
                     <div className="flex gap-2">
@@ -210,7 +306,14 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
 
                                     <div className="flex justify-between items-start mb-3">
                                         <div>
-                                            <h3 className="font-bold text-zinc-900 dark:text-white text-base leading-none mb-1.5">{lot.code}</h3>
+                                            <h3 className="font-bold text-zinc-900 dark:text-white text-base leading-none mb-1.5 flex items-center gap-2">
+                                                {lot.code}
+                                                {lot.production_code && (
+                                                    <span className="px-1.5 py-0.5 bg-orange-500/10 border border-orange-500/20 rounded text-[10px] font-black uppercase tracking-wider text-orange-600 dark:text-orange-400">
+                                                        {lot.production_code}
+                                                    </span>
+                                                )}
+                                            </h3>
                                             <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 font-medium">
                                                 <Calendar size={12} />
                                                 {formatDate(lot.created_at)}
