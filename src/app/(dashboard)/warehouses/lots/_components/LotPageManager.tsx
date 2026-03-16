@@ -210,7 +210,6 @@ export function LotPageManager() {
                 productUnits={productUnits}
                 branches={branches}
                 existingTags={existingTags}
-                isModuleEnabled={isModuleEnabled}
             />
 
             {/* Filter Bar */}

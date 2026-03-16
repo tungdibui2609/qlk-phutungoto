@@ -312,7 +312,6 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
                         productUnits={productUnits}
                         branches={branches}
                         existingTags={existingTags}
-                        isModuleEnabled={isModuleEnabled}
                         initialProductionCode={tempProductionCode}
                     />
                 )}

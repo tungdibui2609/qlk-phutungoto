@@ -34,7 +34,6 @@ interface LotFormProps {
     productUnits: ProductUnit[]
     branches: any[]
     existingTags?: string[]
-    isModuleEnabled: (moduleId: string) => boolean
     initialProductionCode?: string
 }
 
@@ -50,11 +49,10 @@ export function LotForm({
     productUnits,
     branches,
     existingTags = [],
-    isModuleEnabled,
     onDelete,
     initialProductionCode = ''
 }: LotFormProps) {
-    const { currentSystem } = useSystem()
+    const { currentSystem, hasModule } = useSystem()
     const { profile } = useUser()
 
     const isUtilityEnabled = (utilityId: string) => {
@@ -727,7 +725,7 @@ export function LotForm({
                     </div>
 
                     {/* Batch NCC */}
-                    {isModuleEnabled('batch_code') && (
+                    {hasModule('batch_code') && (
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
                                 Số Batch/Lô (NCC)
@@ -746,7 +744,7 @@ export function LotForm({
                     )}
 
                     {/* Mã sản xuất */}
-                    {isModuleEnabled('production_code') && (
+                    {hasModule('production_code') && (
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
                                 Mã sản xuất
@@ -765,7 +763,7 @@ export function LotForm({
                     )}
 
                     {/* Ngày nhập nguyên liệu */}
-                    {isModuleEnabled('raw_material_date') && (
+                    {hasModule('raw_material_date') && (
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                 Ngày nhập nguyên liệu
@@ -784,7 +782,7 @@ export function LotForm({
                     )}
 
                     {/* Ngày nhập */}
-                    {isModuleEnabled('inbound_date') && (
+                    {hasModule('inbound_date') && (
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                 Ngày nhập kho
@@ -803,7 +801,7 @@ export function LotForm({
                     )}
 
                     {/* Ngày bóc múi */}
-                    {isModuleEnabled('peeling_date') && (
+                    {hasModule('peeling_date') && (
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                 Ngày bóc múi
@@ -822,7 +820,7 @@ export function LotForm({
                     )}
 
                     {/* Ngày đóng bao bì */}
-                    {isModuleEnabled('packaging_date') && (
+                    {hasModule('packaging_date') && (
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                 Ngày đóng bao bì
@@ -841,7 +839,7 @@ export function LotForm({
                     )}
 
                     {/* Kho nhập hàng */}
-                    {isModuleEnabled('warehouse_name') && (
+                    {hasModule('warehouse_name') && (
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                 Kho nhập hàng
@@ -864,7 +862,7 @@ export function LotForm({
                     )}
 
                     {/* Nhà cung cấp */}
-                    {isModuleEnabled('supplier_info') && (
+                    {hasModule('supplier_info') && (
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                 Nhà cung cấp
@@ -887,7 +885,7 @@ export function LotForm({
                     )}
 
                     {/* QC Selection */}
-                    {isModuleEnabled('qc_info') && (
+                    {hasModule('qc_info') && (
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                 Nhân viên QC
@@ -910,7 +908,7 @@ export function LotForm({
                     )}
 
                     {/* Media & Extra Info */}
-                    {(isModuleEnabled('lot_images') || isModuleEnabled('extra_info')) && (
+                    {(hasModule('lot_images') || hasModule('extra_info')) && (
                         <div className="md:col-span-2 lg:col-span-4 space-y-4 border-b border-zinc-100 dark:border-zinc-800 pb-4 mb-4">
                             <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                                 <Package size={16} className="text-orange-600" />
@@ -918,7 +916,7 @@ export function LotForm({
                             </h4>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {isModuleEnabled('lot_images') && (
+                                {hasModule('lot_images') && (
                                     <div className="space-y-2">
                                         <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                             Hình ảnh chứng từ / lot
@@ -932,7 +930,7 @@ export function LotForm({
                                     </div>
                                 )}
 
-                                {isModuleEnabled('extra_info') && (
+                                {hasModule('extra_info') && (
                                     <div className="space-y-2">
                                         <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                             Thông tin bổ sung
@@ -985,11 +983,11 @@ export function LotForm({
                                             <Combobox
                                                 options={products.map(p => ({
                                                     value: p.id,
-                                                    label: isModuleEnabled('internal_products') && (p as any).internal_code
+                                                    label: hasModule('internal_products') && (p as any).internal_code
                                                         ? `${(p as any).internal_code} - ${(p as any).internal_name || p.name}`
                                                         : `${p.sku} - ${p.name}`,
-                                                    sku: isModuleEnabled('internal_products') && (p as any).internal_code ? (p as any).internal_code : p.sku,
-                                                    name: isModuleEnabled('internal_products') && (p as any).internal_name ? (p as any).internal_name : p.name,
+                                                    sku: hasModule('internal_products') && (p as any).internal_code ? (p as any).internal_code : p.sku,
+                                                    name: hasModule('internal_products') && (p as any).internal_name ? (p as any).internal_name : p.name,
                                                     originalSku: p.sku,
                                                     originalName: p.name
                                                 }))}
