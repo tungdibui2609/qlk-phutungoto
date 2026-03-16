@@ -38,6 +38,7 @@ const menuItems: MenuItem[] = [
         children: [
             { id: 'boms', name: 'Định mức (BOM)', href: '/sanxuat/boms', icon: FileText },
             { id: 'manufacturing_orders', name: 'Lệnh sản xuất (MO)', href: '/sanxuat/mo', icon: Settings },
+            { id: 'production_codes', name: 'Quản lý mã sản xuất', href: '/sanxuat/production-codes', icon: Tag },
         ]
     },
     {

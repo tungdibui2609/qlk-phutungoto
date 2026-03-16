@@ -668,6 +668,51 @@ type InternalProductCodeRulesTable = {
     Relationships: []
 }
 
+type ProductionCodeLevelsTable = {
+    Row: {
+        id: string
+        level: number
+        prefix: string
+        description: string
+        system_code: string
+        sort_order: number | null
+        created_at: string
+        updated_at: string
+        company_id: string | null
+    }
+    Insert: {
+        id?: string
+        level: number
+        prefix: string
+        description: string
+        system_code?: string
+        sort_order?: number | null
+        created_at?: string
+        updated_at?: string
+        company_id?: string | null
+    }
+    Update: {
+        id?: string
+        level?: number
+        prefix?: string
+        description?: string
+        system_code?: string
+        sort_order?: number | null
+        created_at?: string
+        updated_at?: string
+        company_id?: string | null
+    }
+    Relationships: [
+        {
+            foreignKeyName: "production_code_levels_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+        }
+    ]
+}
+
 type ProductCategoryRelTable = {
     Row: {
         id: string
@@ -730,6 +775,7 @@ type TypedTables = Database['public']['Tables'] & {
     internal_inventory_items: InternalInventoryItemsTable
     product_category_rel: ProductCategoryRelTable
     internal_product_code_rules: InternalProductCodeRulesTable
+    production_code_levels: ProductionCodeLevelsTable
 }
 
 // Manually extend the Database type
