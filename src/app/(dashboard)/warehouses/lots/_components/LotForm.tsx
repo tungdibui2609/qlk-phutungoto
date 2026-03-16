@@ -216,6 +216,12 @@ export function LotForm({
                     }
                 }
 
+                // CRITICAL: Always apply initialProductionCode LAST in Create Mode
+                // This ensures it overrides both resetForm() and sticky data restoration
+                if (initialProductionCode) {
+                    setProductionCode(initialProductionCode)
+                }
+
                 generateLotCode()
             }
 
