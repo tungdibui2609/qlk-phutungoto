@@ -258,7 +258,6 @@ function WarehouseMapContent() {
 
     const { handlePositionMenu, PositionActionUI } = usePositionActionManager({
         currentSystemCode: currentSystem?.code,
-        isModuleEnabled,
         onRefreshMap: fetchData,
         onRefreshLot: refreshLotInfo
     })

@@ -13,12 +13,11 @@ type Position = Database['public']['Tables']['positions']['Row']
 
 interface UsePositionActionManagerProps {
     currentSystemCode?: string
-    isModuleEnabled: (moduleId: string) => boolean
     onRefreshMap: () => void
     onRefreshLot: (lotId: string) => void
 }
 
-export function usePositionActionManager({ currentSystemCode, isModuleEnabled, onRefreshMap, onRefreshLot }: UsePositionActionManagerProps) {
+export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRefreshLot }: UsePositionActionManagerProps) {
     // Context Menu State
     const [contextMenu, setContextMenu] = useState<{
         x: number
@@ -275,7 +274,6 @@ export function usePositionActionManager({ currentSystemCode, isModuleEnabled, o
                 onClose={() => setShowLotForm(false)}
                 onSuccess={handleLotFormSuccess}
                 {...commonData}
-                isModuleEnabled={isModuleEnabled}
             />
         </>
     )
