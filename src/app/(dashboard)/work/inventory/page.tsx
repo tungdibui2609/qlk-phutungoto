@@ -1761,7 +1761,6 @@ export default function InternalInventoryPage() {
                             productUnits={commonData.productUnits}
                             branches={commonData.branches}
                             existingTags={commonData.existingTags}
-                            isModuleEnabled={hasModule}
                         />
                     </div>
                 </div>
