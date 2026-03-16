@@ -73,6 +73,7 @@ const menuItems: MenuItem[] = [
             { id: 'qr_export_order', name: 'Lệnh xuất', href: '/warehouses/scan/export-order', icon: FileText, requiredPermission: 'utility.view' },
             { id: 'print_station', name: 'Máy in trạm', href: '/print/station', icon: Printer, requiredPermission: 'utility.view' },
             { id: 'mobile_access', name: 'Mobile', href: '/mobile', icon: Smartphone, requiredPermission: 'utility.view' },
+            { id: 'production_lot', name: 'LOT Sản Xuất', href: '/production-lot', icon: Boxes, requiredPermission: 'utility.view' },
         ]
     },
     {
