@@ -23,6 +23,7 @@ interface PrintJob {
     created_at: string
     print_data: {
         scan_url: string
+        production_code?: string
         product_name: string
         quantity: number
         label_quantity?: number
@@ -63,8 +64,10 @@ function LabelCard({ job, scale = 1, showBorder = true }: { job: PrintJob, scale
         <LotLabel
             data={{
                 lot_code: job.lot_code,
+                production_code: data.production_code,
                 scan_url: data.scan_url,
                 company_prefix: data.company_prefix,
+                company_full_name: 'CHANH THU GROUP',
                 product_name: data.product_name,
                 products: data.products,
                 quantity: data.quantity,

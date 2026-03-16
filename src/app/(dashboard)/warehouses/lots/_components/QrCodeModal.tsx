@@ -99,15 +99,16 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
 
             const printData = {
                 lot_code: lot.code,
+                production_code: (lot as any).production_code || '',
                 scan_url: scanUrl,
                 company_prefix: companyPrefix,
                 supplier: lot.suppliers?.name || 'N/A',
                 work_area_name: workArea?.name || '',
                 label_quantity: printQuantity,
                 products: lot.lot_items?.map(item => ({
-                    name: item.products?.name || 'SP',
+                    name: (showInternal && item.products?.internal_name) || item.products?.name || 'SP',
                     internal_name: item.products?.internal_name || '',
-                    sku: item.products?.sku || '',
+                    sku: (showInternal && item.products?.internal_code) || item.products?.sku || '',
                     internal_code: item.products?.internal_code || '',
                     quantity: item.quantity,
                     unit: item.unit || item.products?.unit || '',
@@ -205,15 +206,17 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
                             <LotLabel
                                 data={{
                                     lot_code: lot.code,
+                                    production_code: (lot as any).production_code || '',
                                     scan_url: scanUrl,
                                     company_prefix: 'TOAN THANG',
-                                    product_name: lot.lot_items?.[0]?.products?.name || 'SP',
+                                    company_full_name: 'CHANH THU GROUP',
+                                    product_name: (showInternal && lot.lot_items?.[0]?.products?.internal_name) || lot.lot_items?.[0]?.products?.name || 'SP',
                                     quantity: lot.lot_items?.[0]?.quantity,
                                     unit: lot.lot_items?.[0]?.unit || lot.lot_items?.[0]?.products?.unit || '',
                                     positions: lot.positions?.map(p => p.code) || [],
                                     products: lot.lot_items?.map(item => ({
-                                        name: item.products?.name || 'SP',
-                                        sku: item.products?.sku || '',
+                                        name: (showInternal && item.products?.internal_name) || item.products?.name || 'SP',
+                                        sku: (showInternal && item.products?.internal_code) || item.products?.sku || '',
                                         quantity: item.quantity,
                                         unit: item.unit || item.products?.unit || '',
                                         tags: lot.lot_tags?.filter(t => t.lot_item_id === item.id).map(t => t.tag) || []

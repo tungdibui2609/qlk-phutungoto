@@ -3,8 +3,10 @@ import QRCode from 'react-qr-code'
 interface LotLabelProps {
     data: {
         lot_code: string
+        production_code?: string
         scan_url: string
         company_prefix?: string
+        company_full_name?: string
         products?: {
             name: string
             sku?: string
@@ -24,6 +26,8 @@ interface LotLabelProps {
 
 export function LotLabel({ data, scale = 1, showBorder = true, qrOnly = false }: LotLabelProps) {
     const companyName = (data.company_prefix || 'TOAN THANG').toUpperCase()
+    const fullCompanyName = data.company_full_name || companyName
+    const displayLotCode = data.production_code || data.lot_code
 
     if (qrOnly) {
         return (
@@ -41,7 +45,7 @@ export function LotLabel({ data, scale = 1, showBorder = true, qrOnly = false }:
                     <QRCode value={data.scan_url} size={120} />
                 </div>
                 <div className="mt-2 text-center w-full">
-                    <p className="text-[10px] font-black uppercase truncate leading-tight">
+                    <p className="text-[10px] font-black uppercase leading-tight text-balance">
                         {data.products?.[0]?.name || data.product_name}
                     </p>
                     <p className="text-[9px] font-bold text-black uppercase">
@@ -78,9 +82,9 @@ export function LotLabel({ data, scale = 1, showBorder = true, qrOnly = false }:
                         </h2>
                         <p className="text-[8px] font-bold lowercase tracking-wider text-black/60 leading-none">website: chanhthu.com</p>
                     </div>
-                    <div className="text-right flex-shrink-0 ml-2">
+                    <div className="text-right flex-shrink-0 ml-2 max-w-[55%]">
                         <p className="text-[7px] font-bold uppercase opacity-50 leading-none">Lot Number</p>
-                        <p className="text-[11px] font-black tracking-tight leading-none">{data.lot_code}</p>
+                        <p className="text-[10px] font-black tracking-tight leading-tight break-all">{displayLotCode}</p>
                     </div>
                 </div>
 
@@ -103,7 +107,7 @@ export function LotLabel({ data, scale = 1, showBorder = true, qrOnly = false }:
                                     <p className="text-[7px] font-black text-black/40 leading-none">CODE: {data.products?.[0]?.sku}</p>
                                 )}
                             </div>
-                            <h3 className="text-[11px] font-black leading-[1.2] uppercase break-words line-clamp-2">
+                            <h3 className="text-[11px] font-black leading-[1.2] uppercase break-words text-balance min-h-[1.2rem]">
                                 {data.products?.[0]?.name || data.product_name}
                             </h3>
 
@@ -119,9 +123,9 @@ export function LotLabel({ data, scale = 1, showBorder = true, qrOnly = false }:
                             )}
                         </div>
 
-                        <div className="border-t border-black/20 pt-1.5">
+                        <div className="border-t border-black/20 pt-1.5 flex flex-col items-center">
                             <p className="text-[7px] font-bold uppercase opacity-50 mb-1 leading-none">Qty / Số lượng</p>
-                            <div className="flex items-end justify-between leading-none">
+                            <div className="flex items-center justify-center leading-none">
                                 <div className="flex items-baseline gap-1">
                                     <span className="text-2xl font-black tabular-nums tracking-tighter">
                                         {data.products?.[0]?.quantity || data.quantity}
@@ -130,7 +134,6 @@ export function LotLabel({ data, scale = 1, showBorder = true, qrOnly = false }:
                                         {data.products?.[0]?.unit || data.unit}
                                     </span>
                                 </div>
-                                <span className="text-[8px] font-black px-1.5 py-0.5 border-2 border-black rounded-md uppercase mb-0.5">Inventory</span>
                             </div>
                         </div>
                     </div>
@@ -138,7 +141,7 @@ export function LotLabel({ data, scale = 1, showBorder = true, qrOnly = false }:
 
                 {/* Footer: System Tag */}
                 <div className="border-t-2 border-black mt-2 pt-1.5 flex justify-center items-center shrink-0">
-                    <span className="text-[8px] font-black tracking-[0.2em] uppercase leading-none">{companyName} SYSTEM CONTROL</span>
+                    <span className="text-[7px] font-black tracking-[0.15em] uppercase leading-tight text-center">{fullCompanyName} SYSTEM CONTROL</span>
                 </div>
             </div>
         </div>
