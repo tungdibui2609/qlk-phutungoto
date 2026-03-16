@@ -8,11 +8,11 @@
     - [x] Create `SystemContext`
     - [x] Create `SelectSystemPage`
     - [x] Fix Build Error: Remove dependency on missing `@/components/ui/card`
-    - [x] Update `Sidebar` to show current system
-    - [x] Redirect to `/select-system` (or `/`) on login
-- [x] Frontend: Data Isolation
-    - [x] Update `products/page.tsx` default filter
-    - [x] Update `api/inventory/route.ts` filter
+    - [x] Refactor `LotForm.tsx` sử dụng context `useSystem` thay cho prop.
+- [x] Sửa lỗi build `TypeError` tại `inventory/page.tsx`, `PositionActionManager.tsx`, `LotPageManager.tsx` và `MobileCreateLotTab.tsx`.
+- [x] Bổ sung module `production_code` vào danh sách `unlockedModules` của SuperUser trong `UserContext.tsx`.
+- [x] Kiểm tra hiển thị Mã sản xuất trên Mobile.
+- [x] Tối ưu hóa logic `hasModule` trong `SystemContext.tsx`.
     - [x] Update `ProductForm` to include `system_type`
     - [ ] Debug: Google Drive Upload Error (invalid_grant)
     - [x] Analyze error and identify cause

@@ -74,7 +74,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
                                 const allModules = [
                                     'inbound_basic', 'inbound_supplier', 'inbound_type', 'inbound_financials', 'inbound_documents', 'inbound_logistics', 'inbound_images', 'inbound_accounting', 'inbound_ui_compact', 'inbound_conversion',
                                     'outbound_basic', 'outbound_customer', 'outbound_type', 'outbound_financials', 'outbound_images', 'outbound_logistics', 'outbound_documents', 'outbound_accounting', 'outbound_ui_compact', 'outbound_conversion',
-                                    'pricing', 'qc_basic', 'qc_advanced', 'variants', 'units', 'stock_v2', 'lots'
+                                    'pricing', 'qc_basic', 'qc_advanced', 'variants', 'units', 'stock_v2', 'lots',
+                                    'production_code', 'raw_material_date', 'batch_code', 'qc_info', 'supplier_info',
+                                    'extra_info', 'peeling_date', 'packaging_date', 'internal_products', 'images', 'warehouse_name'
                                 ]
                                 setActiveModules(Array.from(new Set([...(companyData.unlocked_modules || []), ...allModules])))
                             } else {
@@ -86,7 +88,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
                                 const allModules = [
                                     'inbound_basic', 'inbound_supplier', 'inbound_type', 'inbound_financials', 'inbound_documents', 'inbound_logistics', 'inbound_images', 'inbound_accounting', 'inbound_ui_compact', 'inbound_conversion',
                                     'outbound_basic', 'outbound_customer', 'outbound_type', 'outbound_financials', 'outbound_images', 'outbound_logistics', 'outbound_documents', 'outbound_accounting', 'outbound_ui_compact', 'outbound_conversion',
-                                    'pricing', 'qc_basic', 'qc_advanced', 'variants', 'units', 'stock_v2', 'lots'
+                                    'pricing', 'qc_basic', 'qc_advanced', 'variants', 'units', 'stock_v2', 'lots',
+                                    'production_code', 'raw_material_date', 'batch_code', 'qc_info', 'supplier_info',
+                                    'extra_info', 'peeling_date', 'packaging_date', 'internal_products', 'images', 'warehouse_name'
                                 ]
                                 setActiveModules(allModules)
                             } else {
