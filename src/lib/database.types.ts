@@ -1141,6 +1141,7 @@ export type Database = {
           warranty_months: number | null
           weight_kg: number | null
           wholesale_price: number | null
+          sort_order: number | null
           internal_lvl1_id: string | null
           internal_lvl2_id: string | null
           internal_lvl3_id: string | null

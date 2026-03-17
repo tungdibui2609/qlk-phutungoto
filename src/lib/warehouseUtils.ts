@@ -79,7 +79,7 @@ export function groupWarehouseData(zones: Zone[] = [], positions: PositionWithZo
                             id: vBinId,
                             parent_id: zone.id,
                             name: members.length > 1 || !firstMemberName.startsWith('Ô ') ? `Ô ${suffix}` : firstMemberName,
-                            code: `G${suffix}`
+                            code: `Ô ${suffix}`
                         })
 
                         // Now group the "Levels" (Tầng) inside these merged bins
@@ -157,4 +157,33 @@ export function groupWarehouseData(zones: Zone[] = [], positions: PositionWithZo
         // If it fails, at least return original data so it doesn't break the whole app
         return { zones, positions }
     }
+}
+/**
+ * Utility to generate CSS styles for product colors (supports multiple colors with gradients)
+ */
+export function getProductColorStyle(pColor: string | null | undefined, opacity: string = '') {
+    if (!pColor) return { backgroundColor: '#5c4033', backgroundImage: 'none' }; // Default brown
+
+    const colors = pColor.split(',').map((c: string) => c.trim()).filter(Boolean);
+    
+    if (colors.length > 1) {
+        // Generate automatic stops based on number of colors
+        const stops = colors.map((c, i) => {
+            const start = (i / colors.length) * 100;
+            const end = ((i + 1) / colors.length) * 100;
+            const finalC = opacity && c.startsWith('#') && c.length === 7 ? `${c}${opacity}` : c;
+            return `${finalC} ${start}%, ${finalC} ${end}%`;
+        }).join(', ');
+        
+        return {
+            backgroundImage: `linear-gradient(135deg, ${stops})`,
+            backgroundColor: colors[0] // Fallback
+        };
+    }
+    
+    const finalColor = opacity && pColor.startsWith('#') && pColor.length === 7 ? `${pColor}${opacity}` : pColor;
+    return {
+        backgroundColor: finalColor,
+        backgroundImage: 'none'
+    };
 }

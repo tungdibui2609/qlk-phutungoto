@@ -3,6 +3,7 @@ import { Package, ChevronRight, ChevronDown, Check, Columns, MousePointer2, Copy
 import { Database } from '@/lib/database.types'
 import { InView } from 'react-intersection-observer'
 import { GroupedZoneDetailModal } from './GroupedZoneDetailModal'
+import { getProductColorStyle } from '@/lib/warehouseUtils'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -31,7 +32,7 @@ interface WarehouseStatusMapProps {
         created_at?: string,
         tags?: string[]
     }>
-    displayInternalCode?: boolean
+    displayInternalInfo?: boolean
 }
 
 interface StatusCellProps {
@@ -60,16 +61,21 @@ const MemoizedStatusCell = React.memo(function StatusCell({
     let dotStyle = {}
 
     if (isOccupied) {
-        // Find if there's any valid configured product color
         const pColor = lotDetail?.items?.find((item: any) => item.product_color)?.product_color;
-
+        
         if (pColor) {
-            // Apply dynamic color with some transparency for background and full color for dot/border
-            customBgStyle = {
-                backgroundColor: `${pColor}20`, // 20 hex = 12% opacity approx
-                borderColor: `${pColor}80`
+            const styleObj = getProductColorStyle(pColor, '20');
+            customBgStyle = styleObj;
+            dotStyle = getProductColorStyle(pColor);
+            
+            // Safely calculate border color from background color if possible
+            const bgColor = (styleObj as any).backgroundColor || '';
+            if (bgColor.startsWith('#') && bgColor.length >= 7) {
+                (customBgStyle as any).borderColor = `${bgColor.substring(0, 7)}80`;
+            } else {
+                (customBgStyle as any).borderColor = 'rgba(0,0,0,0.1)';
             }
-            dotStyle = { backgroundColor: pColor }
+            
             bgClass = ''
             borderClass = ''
             iconColor = ''
@@ -145,7 +151,7 @@ export default function WarehouseStatusMap({
     onConfigureZone,
     onViewDetails,
     lotInfo = {},
-    displayInternalCode = false
+    displayInternalInfo = false
 }: WarehouseStatusMapProps) {
     const [viewingZone, setViewingZone] = React.useState<{ zone: Zone, allPositions: PositionWithZone[] } | null>(null)
     const [collapsedWarehouses, setCollapsedWarehouses] = useState<Set<string>>(() => {
@@ -182,9 +188,6 @@ export default function WarehouseStatusMap({
                 return (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
             })
             node.positions.sort((a, b) => {
-                const oa = a.display_order ?? 0
-                const ob = b.display_order ?? 0
-                if (oa !== ob) return oa - ob
                 return (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
             })
         })
@@ -524,7 +527,7 @@ export default function WarehouseStatusMap({
                                 const pColor = lotDetail?.items?.find((item: any) => item.product_color)?.product_color;
                                 if (pColor) {
                                     segmentColor = '';
-                                    customDynamicColor = { backgroundColor: pColor };
+                                    customDynamicColor = getProductColorStyle(pColor);
                                 } else {
                                     segmentColor = '';
                                     customDynamicColor = { backgroundColor: '#5c4033' }; // Dark brown
@@ -749,14 +752,16 @@ export default function WarehouseStatusMap({
                                                                 {/* Column Header - zone name */}
                                                                 <div className="text-center px-0.5 py-1 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40">
                                                                     <span className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase leading-none block truncate" title={childZone.name}>
-                                                                        {(childZone.code || childZone.name).replace(/^Ô\s*/i, '')}
+                                                                        {childZone.id.startsWith('v-bin-') 
+                                                                            ? (childZone.code || childZone.name) 
+                                                                            : (childZone.code || childZone.name).replace(/^Ô\s+/i, '')}
                                                                     </span>
                                                                 </div>
 
-                                                                {/* Positions: vertical grid for Dãy, horizontal bar for Sảnh */}
+                                                                {/* Positions: levels as rows, units as dots */}
                                                                 {isHall ? (
                                                                     /* Sảnh: horizontal bar filling full width */
-                                                                    <div className="flex h-[8px] gap-[1px] mx-1 my-1.5">
+                                                                    <div className="flex h-[12px] gap-[2px] mx-1 my-1.5 justify-center">
                                                                         {childPositions.map(pos => {
                                                                             const isOccupied = occupiedIds.has(pos.id)
                                                                             const lotDetail = pos.lot_id ? lotInfo[pos.lot_id] : null
@@ -764,13 +769,13 @@ export default function WarehouseStatusMap({
 
                                                                             if (isOccupied) {
                                                                                 const pColor = lotDetail?.items?.find((item: any) => item.product_color)?.product_color
-                                                                                dotColor = { backgroundColor: pColor || '#5c4033' }
+                                                                                dotColor = getProductColorStyle(pColor)
                                                                             }
 
                                                                             return (
                                                                                 <div
                                                                                     key={pos.id}
-                                                                                    className={`flex-1 h-full rounded-[1px] ${isOccupied ? '' : 'bg-slate-200 dark:bg-slate-700'}`}
+                                                                                    className={`flex-1 max-w-[12px] h-full rounded-[1px] ${isOccupied ? '' : 'bg-slate-200 dark:bg-slate-700'}`}
                                                                                     style={dotColor}
                                                                                     title={`${pos.code}${isOccupied && lotDetail ? ` • ${lotDetail.code}` : ''}`}
                                                                                 />
@@ -778,27 +783,49 @@ export default function WarehouseStatusMap({
                                                                         })}
                                                                     </div>
                                                                 ) : (
-                                                                    /* Dãy: columns of positions using grid (2 per row for visual equivalence to tiers) */
-                                                                    <div className="grid grid-cols-2 gap-[1px] py-1 px-[2px] justify-items-center">
-                                                                        {childPositions.map(pos => {
-                                                                            const isOccupied = occupiedIds.has(pos.id)
-                                                                            const lotDetail = pos.lot_id ? lotInfo[pos.lot_id] : null
-                                                                            let dotColor = {}
+                                                                    /* Dãy (Reality mode): Each level is a row */
+                                                                    <div className="flex flex-col-reverse gap-[2px] py-1 px-[2px]">
+                                                                        {(() => {
+                                                                            // Group positions by their zone_id (level)
+                                                                            const posByLevel = new Map<string, typeof childPositions>()
+                                                                            childPositions.forEach(p => {
+                                                                                const zid = p.zone_id || 'unknown'
+                                                                                if (!posByLevel.has(zid)) posByLevel.set(zid, [])
+                                                                                posByLevel.get(zid)!.push(p)
+                                                                            })
 
-                                                                            if (isOccupied) {
-                                                                                const pColor = lotDetail?.items?.find((item: any) => item.product_color)?.product_color
-                                                                                dotColor = { backgroundColor: pColor || '#5c4033' }
-                                                                            }
+                                                                            // Sort levels based on the order in zones array or code
+                                                                            const levelIds = Array.from(posByLevel.keys()).sort((a, b) => {
+                                                                                const za = zones.find(z => z.id === a)
+                                                                                const zb = zones.find(z => z.id === b)
+                                                                                if (!za || !zb) return 0
+                                                                                return (za.display_order ?? 0) - (zb.display_order ?? 0)
+                                                                            })
 
-                                                                            return (
-                                                                                <div
-                                                                                    key={pos.id}
-                                                                                    className={`w-[6px] h-[6px] rounded-[1px] ${isOccupied ? '' : 'bg-slate-200 dark:bg-slate-700'}`}
-                                                                                    style={dotColor}
-                                                                                    title={`${pos.code}${isOccupied && lotDetail ? ` • ${lotDetail.code}` : ''}`}
-                                                                                />
-                                                                            )
-                                                                        })}
+                                                                            return levelIds.map(lvlId => (
+                                                                                <div key={lvlId} className="flex gap-[2px] w-full px-[1px]">
+                                                                                    {posByLevel.get(lvlId)!.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })).map(pos => {
+                                                                                     const isOccupied = occupiedIds.has(pos.id)
+                                                                                        const lotDetail = pos.lot_id ? lotInfo[pos.lot_id] : null
+                                                                                        let dotColor = {}
+
+                                                                                        if (isOccupied) {
+                                                                                            const pColor = lotDetail?.items?.find((item: any) => item.product_color)?.product_color
+                                                                                            dotColor = getProductColorStyle(pColor)
+                                                                                        }
+
+                                                                                        return (
+                                                                                            <div
+                                                                                                key={pos.id}
+                                                                                                className={`flex-1 min-w-[6px] max-w-[12px] h-[12px] rounded-[1px] ${isOccupied ? '' : 'bg-slate-200 dark:bg-slate-700'}`}
+                                                                                                style={dotColor}
+                                                                                                title={`${pos.code}${isOccupied && lotDetail ? ` • ${lotDetail.code}` : ''}`}
+                                                                                            />
+                                                                                        )
+                                                                                    })}
+                                                                                </div>
+                                                                            ))
+                                                                        })()}
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -818,9 +845,10 @@ export default function WarehouseStatusMap({
                     <GroupedZoneDetailModal
                         zone={viewingZone.zone}
                         allPositions={viewingZone.allPositions}
+                        zones={zones}
                         occupiedIds={occupiedIds}
                         lotInfo={lotInfo}
-                        displayInternalCode={displayInternalCode}
+                        displayInternalInfo={displayInternalInfo}
                         onClose={() => setViewingZone(null)}
                     />
                 )}
@@ -836,9 +864,10 @@ export default function WarehouseStatusMap({
                 <GroupedZoneDetailModal
                     zone={viewingZone.zone}
                     allPositions={viewingZone.allPositions}
+                    zones={zones}
                     occupiedIds={occupiedIds}
                     lotInfo={lotInfo}
-                    displayInternalCode={displayInternalCode}
+                    displayInternalInfo={displayInternalInfo}
                     onClose={() => setViewingZone(null)}
                 />
             )}

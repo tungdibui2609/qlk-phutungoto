@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, Suspense, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { BarChart3, Settings, Package, Map as MapIcon, Info, Layout, Palette, Eye } from 'lucide-react'
+import { BarChart3, Settings, Package, Map as MapIcon, Info, Layout, Palette, Eye, PackageSearch, ChevronDown, Layers } from 'lucide-react'
 import WarehouseStatusMap from '@/components/warehouse/status/WarehouseStatusMap'
 import StatusLayoutConfigPanel from '@/components/warehouse/status/StatusLayoutConfigPanel'
 import { ProductColorConfigModal } from '@/components/warehouse/status/ProductColorConfigModal'
@@ -12,6 +12,7 @@ import { useSystem } from '@/contexts/SystemContext'
 import Protected from '@/components/auth/Protected'
 import { useToast } from '@/components/ui/ToastProvider'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
+import { groupWarehouseData, getProductColorStyle } from '@/lib/warehouseUtils'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -37,10 +38,14 @@ function WarehouseStatusContent() {
     // Design mode state
     const [isDesignMode, setIsDesignMode] = useState(false)
     const [isCompactMode, setIsCompactMode] = useState(true)
+    const [isLegendExpanded, setIsLegendExpanded] = useState(false)
     const [configuringZone, setConfiguringZone] = useState<Zone | null>(null)
 
     // Collapsed zones
     const [collapsedZones, setCollapsedZones] = useState<Set<string>>(new Set())
+
+    const [displayInternalInfo, setDisplayInternalInfo] = useState(true)
+    const [isGroupMergingEnabled, setIsGroupMergingEnabled] = useState(true)
 
     const [lotInfo, setLotInfo] = useState<Record<string, any>>({})
 
@@ -134,10 +139,22 @@ function WarehouseStatusContent() {
                 const chunkSize = 150
                 for (let i = 0; i < lotIdsArray.length; i += chunkSize) {
                     const chunk = lotIdsArray.slice(i, i + chunkSize)
-                    const { data, error } = await supabase
+                    // Attempt fetch with sort_order
+                    let { data, error } = await supabase
                         .from('lots')
-                        .select('id, code, quantity, lot_items(id, product_id, quantity, unit, products(name, sku, unit, color, internal_code, internal_name)), lot_tags(tag, lot_item_id)')
+                        .select('id, code, quantity, lot_items(id, product_id, quantity, unit, products(name, sku, unit, color, internal_code, internal_name, sort_order)), lot_tags(tag, lot_item_id)')
                         .in('id', chunk)
+
+                    if (error && error.code === '42703') {
+                        // Fallback if sort_order column doesn't exist yet
+                        console.warn("[FetchLots] sort_order column missing, falling back...");
+                        const fallback = await supabase
+                            .from('lots')
+                            .select('id, code, quantity, lot_items(id, product_id, quantity, unit, products(name, sku, unit, color, internal_code, internal_name)), lot_tags(tag, lot_item_id)')
+                            .in('id', chunk)
+                        data = fallback.data
+                        error = fallback.error
+                    }
 
                     if (error) {
                         console.error(`[FetchLots] Error fetching chunk:`, error)
@@ -310,27 +327,55 @@ function WarehouseStatusContent() {
         }
     }
 
+    // 4. Data Processing (Grouping)
+    const { displayZones, displayPositions } = useMemo(() => {
+        if (isGroupMergingEnabled) {
+            const { zones: gZones, positions: gPos } = groupWarehouseData(filteredZones, filteredPositions)
+            return { displayZones: gZones, displayPositions: gPos }
+        }
+        return { displayZones: filteredZones, displayPositions: filteredPositions }
+    }, [isGroupMergingEnabled, filteredZones, filteredPositions])
+
     // Generate Legend Data
     const legendItems = useMemo(() => {
-        const colorMap = new Map<string, string>() // color -> name
+        const colorMap = new Map<string, { code: string, name: string, sort_order: number | null }>()
 
         Object.values(lotInfo).forEach(lot => {
             lot.items?.forEach((item: any) => {
                 const pColor = item.product_color?.toLowerCase();
-                if (pColor && item.product_name) {
+                if (pColor) {
                     if (!colorMap.has(pColor)) {
-                        const displayName = item.sku || item.product_name || 'Không rõ';
-                        colorMap.set(pColor, displayName)
+                        let code = 'N/A';
+                        let name = 'Không rõ';
+                        if (displayInternalInfo) {
+                            code = item.internal_code || item.sku || 'N/A';
+                            name = item.internal_name || item.product_name || 'N/A';
+                        } else {
+                            code = item.sku || 'N/A';
+                            name = item.product_name || 'Không rõ';
+                        }
+                        colorMap.set(pColor, { 
+                            code, 
+                            name, 
+                            sort_order: item.sort_order ?? null 
+                        })
                     }
                 }
             })
         })
 
         // Add defaults
-        colorMap.set('#5c4033', 'Chưa cài đặt màu')
+        colorMap.set('#5c4033', { code: 'CHƯA CÀI ĐẶT MÀU', name: 'Nhấp để cấu hình', sort_order: 999999 })
 
-        return Array.from(colorMap.entries()).map(([color, name]) => ({ color, name }))
-    }, [lotInfo])
+        return Array.from(colorMap.entries())
+            .map(([color, info]) => ({ color, ...info }))
+            .sort((a, b) => {
+                const s1 = a.sort_order ?? 999998;
+                const s2 = b.sort_order ?? 999998;
+                if (s1 !== s2) return s1 - s2;
+                return a.code.localeCompare(b.code);
+            })
+    }, [lotInfo, displayInternalInfo])
 
     return (
         <div className="space-y-6 pb-20">
@@ -351,31 +396,57 @@ function WarehouseStatusContent() {
                 <div className="flex items-center gap-2">
                     <button
                         onClick={() => setIsCompactMode(!isCompactMode)}
-                        className={`flex items-center gap-2 px-6 py-2.5 font-bold transition-all shadow-sm ${isCompactMode
-                            ? 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                            }`}
+                        className={`flex items-center gap-1.5 px-3.5 h-8 rounded-xl font-bold text-[10px] transition-all shadow-sm active:scale-95 ${
+                            isCompactMode
+                                ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                        }`}
                     >
-                        <Eye size={18} />
-                        {isCompactMode ? 'TỔNG QUAN' : 'TỔNG QUAN'}
+                        <Eye size={16} />
+                        TỔNG QUAN
                     </button>
                     <Protected permission="warehousemap.manage">
                         <button
                             onClick={() => setIsColorModalOpen(true)}
-                            className="flex items-center gap-2 px-6 py-2.5 font-bold transition-all shadow-sm bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
+                            className="flex items-center gap-1.5 px-3.5 h-8 rounded-xl font-bold text-[10px] transition-all shadow-sm bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 active:scale-95 border border-indigo-100 dark:border-indigo-800/50"
                         >
-                            <Palette size={18} />
+                            <Palette size={16} />
                             MÀU SẮC
                         </button>
                         <button
                             onClick={() => setIsDesignMode(!isDesignMode)}
-                            className={`flex items-center gap-2 px-6 py-2.5 font-bold transition-all shadow-sm ${isDesignMode
-                                ? 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                                }`}
+                            className={`flex items-center gap-1.5 px-3.5 h-8 rounded-xl font-bold text-[10px] transition-all shadow-sm active:scale-95 ${
+                                isDesignMode
+                                    ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                            }`}
                         >
-                            {isDesignMode ? <Layout size={18} /> : <Settings size={18} />}
+                            {isDesignMode ? <Layout size={16} /> : <Settings size={16} />}
                             {isDesignMode ? 'ĐANG THIẾT KẾ' : 'THIẾT KẾ LAYOUT'}
+                        </button>
+                        <button
+                            onClick={() => setDisplayInternalInfo(!displayInternalInfo)}
+                            className={`flex items-center gap-1.5 px-3.5 h-8 rounded-xl font-bold text-[10px] transition-all shadow-sm active:scale-95 ${
+                                displayInternalInfo
+                                    ? 'bg-violet-600 text-white hover:bg-violet-700'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                            }`}
+                            title="Chuyển đổi hiển thị Mã/Tên sản phẩm Nội bộ"
+                        >
+                            <PackageSearch size={16} />
+                            {displayInternalInfo ? 'MÃ NỘI BỘ: BẬT' : 'MÃ NỘI BỘ: TẮT'}
+                        </button>
+
+                        <button
+                            onClick={() => setIsGroupMergingEnabled(!isGroupMergingEnabled)}
+                            className={`flex items-center gap-1.5 px-3.5 h-8 rounded-xl font-bold text-[10px] transition-all shadow-sm active:scale-95 border ${
+                                isGroupMergingEnabled
+                                    ? 'bg-blue-600 text-white border-blue-500 shadow-blue-200'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
+                            }`}
+                        >
+                            <Layers size={16} className={isGroupMergingEnabled ? 'text-blue-100' : 'text-blue-500'} />
+                            {isGroupMergingEnabled ? 'GOM Ô: BẬT' : 'GOM Ô: TẮT'}
                         </button>
                     </Protected>
                 </div>
@@ -422,21 +493,46 @@ function WarehouseStatusContent() {
                 ))}
             </div>
 
-            {/* Main Status Diagram */}
+            {/* Main Status Diagram - Legend */}
             {legendItems.length > 0 && !loading && !errorMsg && (
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-3 px-1 py-2">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap">
-                        <Palette size={14} /> Chú thích màu:
-                    </span>
-                    {legendItems.map((item, idx) => (
-                        <div key={idx} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-                            <div
-                                className="w-3.5 h-3.5 rounded-full shadow-sm border border-black/10 dark:border-white/10 flex-shrink-0"
-                                style={{ backgroundColor: item.color }}
-                            />
-                            <span className="truncate max-w-[150px]" title={item.name}>{item.name}</span>
+                <div className="bg-slate-50/50 dark:bg-slate-900/30 p-4 border border-slate-100 dark:border-slate-800/50 rounded-2xl relative">
+                    <div className="flex items-center justify-between mb-4 px-1">
+                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                            <Palette size={14} className="text-indigo-500" /> 
+                            CHÚ THÍCH MÀU SẮC ({legendItems.length})
+                        </span>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                        {(isLegendExpanded ? legendItems : legendItems.slice(0, 10)).map((item, idx) => (
+                            <div key={idx} className="flex items-center gap-3 bg-white dark:bg-slate-900 pl-2 pr-4 py-2 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm transition-all hover:border-indigo-200 dark:hover:border-indigo-900 group">
+                                <div
+                                    className="w-8 h-8 rounded-lg shadow-sm border border-black/5 dark:border-white/10 flex-shrink-0 transition-transform group-hover:scale-110"
+                                    style={getProductColorStyle(item.color)}
+                                />
+                                <div className="flex flex-col min-w-0 gap-0.5">
+                                    <span className="text-[11px] font-black text-slate-800 dark:text-slate-100 truncate leading-tight font-mono tracking-tighter" title={item.code}>
+                                        {item.code}
+                                    </span>
+                                    <span className="text-[9px] font-bold text-slate-400 truncate leading-none uppercase tracking-wide" title={item.name}>
+                                        {item.name}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {legendItems.length > 10 && (
+                        <div className="mt-4 pt-2 border-t border-slate-100 dark:border-slate-800/50 flex justify-center">
+                            <button 
+                                onClick={() => setIsLegendExpanded(!isLegendExpanded)}
+                                className="px-6 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-black text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 uppercase tracking-widest flex items-center gap-1.5 transition-all shadow-sm active:scale-95 group"
+                            >
+                                {isLegendExpanded ? 'THU GỌN CHÚ THÍCH' : `XEM THÊM (${legendItems.length - 10}+ MÀU SẮC)`}
+                                <ChevronDown size={14} className={`transition-transform duration-300 ${isLegendExpanded ? 'rotate-180' : ''}`} />
+                            </button>
                         </div>
-                    ))}
+                    )}
                 </div>
             )}
 
@@ -453,14 +549,15 @@ function WarehouseStatusContent() {
                 </div>
             ) : (
                 <WarehouseStatusMap
-                    zones={filteredZones}
-                    positions={filteredPositions}
+                    zones={displayZones}
+                    positions={displayPositions}
                     layouts={layouts}
                     occupiedIds={occupiedIds}
                     lotInfo={lotInfo}
                     collapsedZones={collapsedZones}
                     isDesignMode={isDesignMode}
                     isCompactMode={isCompactMode}
+                    displayInternalInfo={displayInternalInfo}
                     onToggleCollapse={toggleZoneCollapse}
                     onUpdateCollapsedWarehouses={setCollapsedZones}
                     onConfigureZone={setConfiguringZone}
@@ -503,6 +600,7 @@ function WarehouseStatusContent() {
                 <ProductColorConfigModal
                     onClose={() => setIsColorModalOpen(false)}
                     onSaved={fetchData}
+                    displayInternalInfo={displayInternalInfo}
                 />
             )}
         </div>
