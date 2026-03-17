@@ -427,11 +427,11 @@ function OutboundPrintContent() {
         })
 
         const signatures = [
-            { title: 'Người nhận', name: editCustomerName || signPerson1 },
-            { title: 'Tài xế', name: signPerson5 || editVehicleNumber },
-            { title: 'TP.QLCL', name: signPerson4 },
-            { title: 'Thủ kho', name: signPerson2 },
-            { title: 'GĐ Nhà Máy', name: signPerson3 }
+            { title: signTitle1, name: editCustomerName || signPerson1 },
+            { title: signTitle5, name: signPerson5 || editVehicleNumber },
+            { title: signTitle4, name: signPerson4 },
+            { title: signTitle2, name: signPerson2 },
+            { title: signTitle3, name: signPerson3 }
         ]
 
         await exportToExcelWithTemplate({

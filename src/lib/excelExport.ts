@@ -34,6 +34,11 @@ interface ExportData {
             month: string;
             year: string;
         };
+        // Inbound template specific fields
+        theoDoc?: string;
+        theoSo?: string;
+        theoDate?: string;
+        theoCua?: string;
     };
     modules: {
         hasFinancials: boolean;
@@ -335,10 +340,11 @@ export async function exportToExcelWithTemplate(data: ExportData, templateUrl: s
     const worksheet = workbook.getWorksheet(1);
     if (!worksheet) return;
 
-    // Replace placeholders in all cells
+    // Replace placeholders in all cells - Merge-aware
     worksheet.eachRow((row) => {
-        row.eachCell((cell) => {
-            if (cell.value) {
+        row.eachCell({ includeEmpty: false }, (cell) => {
+            // Only process the master cell of a merged range to avoid duplication
+            if (cell.value && cell === cell.master) {
                 const replaceText = (text: string) => {
                     let val = text;
                     val = val.replace(/{{\s*DOC_DATE_VN\s*}}/gi, `Ngày ${data.editableFields.day} tháng ${data.editableFields.month} năm ${data.editableFields.year}`);
@@ -347,9 +353,17 @@ export async function exportToExcelWithTemplate(data: ExportData, templateUrl: s
                     val = val.replace(/{{\s*diachikhachhang\s*}}/gi, data.editableFields.customerSupplierAddress || '');
                     val = val.replace(/{{\s*DESCRIPTION\s*}}/gi, data.editableFields.reasonDescription || '');
                     val = val.replace(/{{\s*chinhanh\s*}}/gi, data.editableFields.warehouse || '');
+                    val = val.replace(/{{\s*LOCATION\s*}}/gi, data.editableFields.location || '');
                     val = val.replace(/{{\s*BSXE\s*}}/gi, data.editableFields.vehicleNumber || '');
                     val = val.replace(/{{\s*socont\s*}}/gi, data.editableFields.containerNumber || '');
                     val = val.replace(/{{\s*soseal\s*}}/gi, data.editableFields.sealNumber || '');
+                    
+                    // New placeholders for Inbound (Theo chứng từ)
+                    val = val.replace(/{{\s*THEO_DOC\s*}}/gi, (data.editableFields as any).theoDoc || '');
+                    val = val.replace(/{{\s*THEO_SO\s*}}/gi, (data.editableFields as any).theoSo || '');
+                    val = val.replace(/{{\s*THEO_DATE\s*}}/gi, (data.editableFields as any).theoDate || '');
+                    val = val.replace(/{{\s*THEO_CUA\s*}}/gi, (data.editableFields as any).theoCua || '');
+                    
                     return val;
                 };
 
@@ -367,48 +381,57 @@ export async function exportToExcelWithTemplate(data: ExportData, templateUrl: s
         });
     });
 
-    // Find the starting row for items - usually marked by STT or a specific row
+    // Find the starting row for items ('1') and the 'Cộng' row to define the data area
     let itemStartRow = -1;
-    worksheet.eachRow((row, rowNumber) => {
-        row.eachCell((cell) => {
-            if (cell.value && typeof cell.value === 'string') {
-                const text = cell.value.toString().trim().toUpperCase();
-                if (text === 'STT') {
-                    itemStartRow = rowNumber + 1;
-                }
-            }
-        });
-    });
+    let congRow = -1;
 
-    // Fallback if STT not found
+    for (let r = 1; r <= worksheet.rowCount; r++) {
+        const firstCellVal = worksheet.getRow(r).getCell(1).value?.toString().trim();
+        if (itemStartRow === -1 && firstCellVal === '1') {
+            itemStartRow = r;
+        }
+        
+        const rowValB = worksheet.getRow(r).getCell(2).value?.toString().trim().toLowerCase() || '';
+        const rowValC = worksheet.getRow(r).getCell(3).value?.toString().trim().toLowerCase() || '';
+        if (rowValB === 'cộng' || rowValB.includes('tổng cộng') || rowValC === 'cộng' || rowValC.includes('tổng cộng')) {
+            congRow = r;
+            break;
+        }
+    }
+
+    // Fallback if not found
     if (itemStartRow === -1) itemStartRow = 15;
+    if (congRow === -1) congRow = itemStartRow + 1;
 
-    // Insert items
+    // CLEAN PHASE: Remove all rows in the data area (from itemStartRow up to but NOT including congRow)
+    const rowsToDelete = congRow - itemStartRow;
+    if (rowsToDelete > 0) {
+        worksheet.spliceRows(itemStartRow, rowsToDelete);
+    }
+
+    // INSERT PHASE
     let totalQty = 0;
     let totalDocQty = 0;
     let totalConvertedQty = 0;
 
     data.items.forEach((item, index) => {
-        const row = worksheet.getRow(itemStartRow + index);
-        row.getCell(1).value = index + 1; // STT
+        const itemRowIndex = itemStartRow + index;
+        worksheet.spliceRows(itemRowIndex, 0, []);
+        const row = worksheet.getRow(itemRowIndex);
+        row.getCell(1).value = index + 1; 
+        row.getCell(2).value = item.product_name || item.products?.internal_name || item.products?.name || item.products?.sku || '';
+        row.getCell(3).value = item.quyCach || '';
+        row.getCell(4).value = item.unit || '';
         
-        // Col 2: Tên, nhãn hiệu... (Note: Col 3 might be merged)
-        const name = item.product_name || item.products?.internal_name || item.products?.name || item.products?.sku || '';
-        row.getCell(2).value = name;
+        const qtyCell = row.getCell(5);
+        qtyCell.value = item.quantity;
+        qtyCell.numFmt = '#,##0';
         
-        // Col 4: Quy Cách
-        row.getCell(4).value = item.quyCach || '';
-        
-        // Col 5: Đơn Vị Tính
-        row.getCell(5).value = item.unit || '';
-        
-        // Col 6: Thực xuất (hoặc Thực nhập tùy mẫu)
-        row.getCell(6).value = item.quantity;
-        
-        // Col 7: Quy đổi (Kg) - Nếu có
         if (item.convertedQty !== undefined && item.convertedQty !== '-') {
             const cQty = typeof item.convertedQty === 'string' ? parseFloat(item.convertedQty.replace(/,/g, '')) : item.convertedQty;
-            row.getCell(7).value = cQty;
+            const convCell = row.getCell(6);
+            convCell.value = cQty;
+            convCell.numFmt = '#,##0';
             totalConvertedQty += (cQty || 0);
         }
 
@@ -416,50 +439,77 @@ export async function exportToExcelWithTemplate(data: ExportData, templateUrl: s
         totalQty += (item.quantity || 0);
         
         if (data.modules.hasFinancials) {
-            row.getCell(8).value = item.price || 0;
-            row.getCell(9).value = (item.price || 0) * item.quantity;
+            row.getCell(7).value = item.price || 0;
+            row.getCell(7).numFmt = '#,##0';
+            row.getCell(8).value = (item.price || 0) * item.quantity;
+            row.getCell(8).numFmt = '#,##0';
         }
 
-        // Apply borders
         row.eachCell((cell) => {
-            cell.border = {
-                top: { style: 'thin' },
-                left: { style: 'thin' },
-                bottom: { style: 'thin' },
-                right: { style: 'thin' }
-            };
+            cell.font = { bold: true, size: 11, name: 'Times New Roman' };
+            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
         });
     });
 
-    // Find "Cộng" row and fill totals
-    worksheet.eachRow((row, rowNumber) => {
-        row.eachCell((cell) => {
-            const val = cell.value ? cell.value.toString().trim().toUpperCase() : '';
-            if (val === 'CỘNG' || val.includes('TỔNG CỘNG')) {
-                // Total quantity goes to Col 6
-                row.getCell(6).value = totalQty;
-                // Total converted goes to Col 7
-                if (totalConvertedQty > 0) row.getCell(7).value = totalConvertedQty;
-            }
-        });
-    });
+    // UPDATE TOTALS - Found row shifted by (data.items.length - rowsToDelete)
+    const newCongRowIndex = congRow + (data.items.length - rowsToDelete);
+    const newCongRow = worksheet.getRow(newCongRowIndex);
+    const qCell = newCongRow.getCell(5);
+    if (qCell) {
+        qCell.value = totalQty;
+        qCell.numFmt = '#,##0';
+    }
+    if (totalConvertedQty > 0) {
+        const cCell = newCongRow.getCell(6);
+        if (cCell) {
+            cCell.value = totalConvertedQty;
+            cCell.numFmt = '#,##0';
+        }
+    }
 
-    // Handle signatures - Place names below titles
-    // We'll search for signature titles and place names a few rows below
+    // 6. SIGNATURE PHASE - Search only after "Cộng" row to avoid header titles
     if (data.editableFields.signatures) {
-        data.editableFields.signatures.forEach(sig => {
-            if (!sig.name) return;
-            worksheet.eachRow((row, rowNumber) => {
+        const lastRow = worksheet.rowCount;
+        const searchStartRowForSignos = newCongRowIndex + 1;
+        
+        // Track used cells to avoid duplication if multiple signatures match same cell
+        const usedCells = new Set<string>();
+
+        data.editableFields.signatures.forEach((sig, sigIndex) => {
+            if (!sig.title || !sig.name) return;
+            const targetTitle = sig.title.trim().toLowerCase();
+            const placeholderTitle = `{{sign_title_${sigIndex + 1}}}`.toLowerCase();
+            let found = false;
+
+            for (let r = searchStartRowForSignos; r <= lastRow; r++) {
+                if (found) break;
+                const row = worksheet.getRow(r);
                 row.eachCell((cell, colNumber) => {
-                    if (cell.value && typeof cell.value === 'string' && cell.value.trim().toLowerCase() === sig.title.trim().toLowerCase()) {
-                        // Place name 5 rows below title (common spacing for signatures)
-                        const nameRow = worksheet.getRow(rowNumber + 5);
-                        nameRow.getCell(colNumber).value = sig.name;
-                        nameRow.getCell(colNumber).font = { bold: true };
-                        nameRow.getCell(colNumber).alignment = { horizontal: 'center' };
+                    if (found) return;
+                    if (!cell.value || cell !== cell.master) return;
+                    
+                    const cellVal = cell.value.toString().trim().toLowerCase();
+                    const cellIdx = `${r}-${colNumber}`;
+
+                    // Match exact title OR its placeholder
+                    if ((cellVal === targetTitle || cellVal === placeholderTitle) && !usedCells.has(cellIdx)) {
+                        // Found title, write name 4 rows below
+                        const nameRow = worksheet.getRow(r + 4); 
+                        const nameCell = nameRow.getCell(colNumber);
+                        nameCell.value = sig.name;
+                        nameCell.font = { bold: true, name: 'Times New Roman', size: 12 };
+                        nameCell.alignment = { horizontal: 'center' };
+                        
+                        // Also update the title cell if it was a placeholder
+                        if (cellVal === placeholderTitle) {
+                            cell.value = sig.title;
+                        }
+
+                        usedCells.add(cellIdx);
+                        found = true;
                     }
                 });
-            });
+            }
         });
     }
 

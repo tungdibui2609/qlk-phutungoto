@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Printer, Loader2, Download, Hash, FileSpreadsheet } from 'lucide-react'
-import { exportToExcel } from '@/lib/excelExport'
+import { exportToExcel, exportToExcelWithTemplate } from '@/lib/excelExport'
 import { toJpeg } from 'html-to-image'
 import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { formatQuantityFull } from '@/lib/numberUtils'
@@ -133,9 +133,13 @@ function InboundPrintContent() {
     const [signTitle1, setSignTitle1] = useState('Người lập phiếu')
     const [signTitle2, setSignTitle2] = useState('Thủ kho')
     const [signTitle3, setSignTitle3] = useState('Kế toán trưởng')
+    const [signTitle4, setSignTitle4] = useState('TP.QLCL')
+    const [signTitle5, setSignTitle5] = useState('GĐ Nhà Máy')
     const [signPerson1, setSignPerson1] = useState('')
     const [signPerson2, setSignPerson2] = useState('')
     const [signPerson3, setSignPerson3] = useState('')
+    const [signPerson4, setSignPerson4] = useState('')
+    const [signPerson5, setSignPerson5] = useState('')
     const [signDay, setSignDay] = useState('')
     const [signMonth, setSignMonth] = useState('')
     const [signYear, setSignYear] = useState('')
@@ -259,10 +263,14 @@ function InboundPrintContent() {
                     setSignTitle1(searchParams.get('signTitle1') || 'Người lập phiếu')
                     setSignTitle2(searchParams.get('signTitle2') || 'Thủ kho')
                     setSignTitle3(searchParams.get('signTitle3') || 'Kế toán trưởng')
+                    setSignTitle4(searchParams.get('signTitle4') || 'TP.QLCL')
+                    setSignTitle5(searchParams.get('signTitle5') || 'GĐ Nhà Máy')
 
                     setSignPerson1(searchParams.get('signPerson1') || '')
                     setSignPerson2(searchParams.get('signPerson2') || '')
                     setSignPerson3(searchParams.get('signPerson3') || '')
+                    setSignPerson4(searchParams.get('signPerson4') || '')
+                    setSignPerson5(searchParams.get('signPerson5') || '')
 
                     setSignDay(searchParams.get('signDay') || '')
                     setSignMonth(searchParams.get('signMonth') || '')
@@ -427,10 +435,16 @@ function InboundPrintContent() {
         const signatures = [
             { title: signTitle1, name: signPerson1 },
             { title: signTitle2, name: signPerson2 },
-            { title: signTitle3, name: signPerson3 }
+            { title: signTitle3, name: signPerson3 },
+            { title: signTitle4, name: signPerson4 },
+            { title: signTitle5, name: signPerson5 }
         ]
 
-        await exportToExcel({
+        const theoDateStr = (editTheoDay && editTheoMonth && editTheoYear) 
+            ? `Ngày ${editTheoDay} tháng ${editTheoMonth} năm ${editTheoYear}`
+            : "";
+
+        await exportToExcelWithTemplate({
             type: 'inbound',
             printType: isInternal ? 'internal' : 'official',
             order,
@@ -455,14 +469,18 @@ function InboundPrintContent() {
                     day: signDay,
                     month: signMonth,
                     year: signYear
-                }
+                },
+                theoDoc: editTheoDoc,
+                theoSo: editTheoSo,
+                theoDate: theoDateStr,
+                theoCua: editTheoCua
             },
             modules: {
                 hasFinancials: hasModule('inbound_financials'),
                 hasConversion: hasModule('inbound_conversion'),
                 targetUnit
             }
-        })
+        }, '/maunhap.xlsx')
     }
 
     if (loading) {
@@ -979,11 +997,8 @@ function InboundPrintContent() {
                 )}
             </div>
 
-            <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-2 print:pb-0' : 'print:mt-10 mb-8'} signature-grid grid grid-cols-3 gap-6 text-center text-sm items-end ${printSize === 'A5' ? 'print:break-inside-avoid' : ''}`}>
+            <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-2 print:pb-0' : 'print:mt-10 mb-8'} signature-grid grid grid-cols-5 gap-2 text-center text-sm items-end ${printSize === 'A5' ? 'print:break-inside-avoid' : ''}`}>
                 <div>
-                    <div className="text-sm italic text-center mb-1 invisible">
-                        Ngày ... tháng ... năm ...
-                    </div>
                     <div className="font-semibold">
                         <input
                             type="text"
@@ -993,24 +1008,20 @@ function InboundPrintContent() {
                         />
                         <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle1}</span>
                     </div>
-                    <div className={`text-xs text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
-                    <div className={`text-xs text-gray-500 italic invisible ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Hoặc bộ phận có nhu cầu nhập)</div>
-                    <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-8'}`}></div>
+                    <div className={`text-[10px] text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
+                    <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-12'}`}></div>
                     <div className="mt-1">
                         <input
                             type="text"
                             value={signPerson1}
                             onChange={(e) => setSignPerson1(e.target.value)}
-                            placeholder="Nhập tên..."
+                            placeholder="Tên..."
                             className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                         />
                         <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson1}</span>
                     </div>
                 </div>
                 <div>
-                    <div className="text-sm italic text-center mb-1 invisible">
-                        Ngày ... tháng ... năm ...
-                    </div>
                     <div className="font-semibold">
                         <input
                             type="text"
@@ -1020,24 +1031,20 @@ function InboundPrintContent() {
                         />
                         <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle2}</span>
                     </div>
-                    <div className={`text-xs text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
-                    <div className={`text-xs text-gray-500 italic invisible ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Hoặc bộ phận có nhu cầu nhập)</div>
-                    <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-8'}`}></div>
+                    <div className={`text-[10px] text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
+                    <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-12'}`}></div>
                     <div className="mt-1">
                         <input
                             type="text"
                             value={signPerson2}
                             onChange={(e) => setSignPerson2(e.target.value)}
-                            placeholder="Nhập tên..."
+                            placeholder="Tên..."
                             className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                         />
                         <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson2}</span>
                     </div>
                 </div>
                 <div>
-                    <div className="text-sm italic text-center mb-1 invisible">
-                        Ngày ... tháng ... năm ...
-                    </div>
                     <div className="font-semibold">
                         <input
                             type="text"
@@ -1047,18 +1054,91 @@ function InboundPrintContent() {
                         />
                         <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle3}</span>
                     </div>
-                    <div className={`text-xs text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Hoặc bộ phận có nhu cầu nhập)</div>
-                    <div className={`text-xs text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
-                    <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-8'}`}></div>
+                    <div className={`text-[10px] text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
+                    <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-12'}`}></div>
                     <div className="mt-1">
                         <input
                             type="text"
                             value={signPerson3}
                             onChange={(e) => setSignPerson3(e.target.value)}
-                            placeholder="Nhập tên..."
+                            placeholder="Tên..."
                             className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
                         />
                         <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson3}</span>
+                    </div>
+                </div>
+                <div>
+                    <div className="font-semibold">
+                        <input
+                            type="text"
+                            value={signTitle4}
+                            onChange={(e) => setSignTitle4(e.target.value)}
+                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
+                        />
+                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle4}</span>
+                    </div>
+                    <div className={`text-[10px] text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
+                    <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-12'}`}></div>
+                    <div className="mt-1">
+                        <input
+                            type="text"
+                            value={signPerson4}
+                            onChange={(e) => setSignPerson4(e.target.value)}
+                            placeholder="Tên..."
+                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                        />
+                        <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson4}</span>
+                    </div>
+                </div>
+                <div>
+                    <div className="text-sm italic text-center mb-1">
+                        <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
+                            Ngày{' '}
+                            <input
+                                type="text"
+                                value={signDay}
+                                onChange={(e) => setSignDay(e.target.value)}
+                                className="w-5 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 italic"
+                            />
+                            {' '}tháng{' '}
+                            <input
+                                type="text"
+                                value={signMonth}
+                                onChange={(e) => setSignMonth(e.target.value)}
+                                className="w-5 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 italic"
+                            />
+                            {' '}năm{' '}
+                            <input
+                                type="text"
+                                value={signYear}
+                                onChange={(e) => setSignYear(e.target.value)}
+                                className="w-8 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 italic"
+                            />
+                        </span>
+                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>
+                            Ngày {signDay || '...'} tháng {signMonth || '...'} năm {signYear || '...'}
+                        </span>
+                    </div>
+                    <div className="font-semibold">
+                        <input
+                            type="text"
+                            value={signTitle5}
+                            onChange={(e) => setSignTitle5(e.target.value)}
+                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
+                        />
+                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle5}</span>
+                    </div>
+                    <div className={`text-[10px] text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
+                    <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-8'}`}></div>
+                    <div className="mt-1">
+                        <input
+                            type="text"
+                            value={signPerson5}
+                            onChange={(e) => setSignPerson5(e.target.value)}
+                            placeholder="Tên..."
+                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                        />
+                        <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson5}</span>
                     </div>
                 </div>
             </div>
