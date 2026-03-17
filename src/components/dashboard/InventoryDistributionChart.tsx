@@ -56,6 +56,7 @@ export default function InventoryDistributionChart() {
     const [allowedCategoryIds, setAllowedCategoryIds] = useState<string[] | null>(null) // null means all
     const [showCategoryFilter, setShowCategoryFilter] = useState(false)
     const [showSettings, setShowSettings] = useState(false)
+    const [isLegendExpanded, setIsLegendExpanded] = useState(false)
     const { toBaseAmount, getBaseToKgRate, unitNameMap, conversionMap, loading: conversionLoading } = useUnitConversion()
 
     // Fetch Data
@@ -528,7 +529,7 @@ export default function InventoryDistributionChart() {
 
             {/* Custom Legend */}
             <div className="mt-8 grid grid-cols-2 md:grid-cols-3 gap-y-3 gap-x-6">
-                {processedData.map((entry, index) => (
+                {(isLegendExpanded ? processedData : processedData.slice(0, 6)).map((entry, index) => (
                     <div key={entry.name} className="flex items-center gap-2">
                         <div
                             className="w-3 h-3 rounded-full shrink-0"
@@ -550,6 +551,25 @@ export default function InventoryDistributionChart() {
                     </div>
                 ))}
             </div>
+
+            {processedData.length > 6 && (
+                <div className="mt-4 flex justify-center">
+                    <button
+                        onClick={() => setIsLegendExpanded(!isLegendExpanded)}
+                        className="px-6 py-1.5 rounded-full bg-stone-50 border border-stone-200 text-[10px] font-black text-orange-600 hover:bg-orange-50 transition-all uppercase tracking-widest flex items-center gap-1.5"
+                    >
+                        {isLegendExpanded ? 'THU GỌN CHÚ THÍCH' : `XEM THÊM (${processedData.length - 6}+ MÀU SẮC)`}
+                        <svg 
+                            className={`w-3 h-3 transition-transform duration-300 ${isLegendExpanded ? 'rotate-180' : ''}`} 
+                            fill="none" 
+                            stroke="currentColor" 
+                            viewBox="0 0 24 24"
+                        >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </button>
+                </div>
+            )}
 
             <div className="mt-6 space-y-1 text-xs text-stone-500 border-t border-stone-100 pt-4">
                 <p className="font-semibold text-stone-700 mb-2">Chú thích:</p>
