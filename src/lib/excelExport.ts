@@ -358,7 +358,15 @@ export async function exportToExcelWithTemplate(data: ExportData, templateUrl: s
                     val = val.replace(/{{\s*socont\s*}}/gi, data.editableFields.containerNumber || '');
                     val = val.replace(/{{\s*soseal\s*}}/gi, data.editableFields.sealNumber || '');
                     
-                    // New placeholders for Inbound (Theo chứng từ)
+                    // Inbound-specific placeholders (nhà cung cấp, diễn giải, nhập tại kho)
+                    val = val.replace(/{{\s*nhacungcap\s*}}/gi, data.editableFields.customerSupplierName || '');
+                    val = val.replace(/{{\s*diachinacungcap\s*}}/gi, data.editableFields.customerSupplierAddress || '');
+                    val = val.replace(/{{\s*diachinhacungcap\s*}}/gi, data.editableFields.customerSupplierAddress || '');
+                    val = val.replace(/{{\s*nhaptaikho\s*}}/gi, data.editableFields.warehouse || '');
+                    val = val.replace(/{{\s*diengiai\s*}}/gi, data.editableFields.reasonDescription || '');
+                    val = val.replace(/{{\s*note\s*}}/gi, data.editableFields.note || '');
+
+                    // Inbound: Theo chứng từ
                     val = val.replace(/{{\s*THEO_DOC\s*}}/gi, (data.editableFields as any).theoDoc || '');
                     val = val.replace(/{{\s*THEO_SO\s*}}/gi, (data.editableFields as any).theoSo || '');
                     val = val.replace(/{{\s*THEO_DATE\s*}}/gi, (data.editableFields as any).theoDate || '');
@@ -484,7 +492,7 @@ export async function exportToExcelWithTemplate(data: ExportData, templateUrl: s
         }
 
         row.eachCell((cell) => {
-            cell.font = { bold: true, size: 11, name: 'Times New Roman' };
+            cell.font = { bold: true, size: 14, name: 'Times New Roman' };
             cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
         });
         // Center align: Quy cách (C), ĐVT (D), Số lượng (E), Quy đổi (F)

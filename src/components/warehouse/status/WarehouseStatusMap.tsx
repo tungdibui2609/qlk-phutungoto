@@ -27,7 +27,16 @@ interface WarehouseStatusMapProps {
     onViewDetails?: (lotId: string) => void
     lotInfo?: Record<string, {
         code: string,
-        items: Array<{ product_name: string, sku: string, unit: string, quantity: number, product_color?: string | null, tags?: string[] }>,
+        items: Array<{ 
+            product_name: string, 
+            sku: string, 
+            unit: string, 
+            quantity: number, 
+            product_color?: string | null, 
+            tags?: string[],
+            internal_code?: string,
+            internal_name?: string
+        }>,
         inbound_date?: string,
         created_at?: string,
         tags?: string[]
@@ -109,6 +118,7 @@ const MemoizedStatusCell = React.memo(function StatusCell({
                             onViewDetails(pos.lot_id!)
                         }
                     }}
+                    title={`${pos.code}${isOccupied && lotDetail ? ` • ${lotDetail.items?.[0]?.internal_code || lotDetail.items?.[0]?.sku || lotDetail.code}${lotDetail.items?.[0]?.internal_name ? `\n${lotDetail.items?.[0]?.internal_name}` : ''}` : ''}`}
                 >
                     {inView && (
                         <>
@@ -777,7 +787,7 @@ export default function WarehouseStatusMap({
                                                                                     key={pos.id}
                                                                                     className={`flex-1 max-w-[12px] h-full rounded-[1px] ${isOccupied ? '' : 'bg-slate-200 dark:bg-slate-700'}`}
                                                                                     style={dotColor}
-                                                                                    title={`${pos.code}${isOccupied && lotDetail ? ` • ${lotDetail.code}` : ''}`}
+                                                                                    title={`${pos.code}${isOccupied && lotDetail ? ` • ${lotDetail.items?.[0]?.internal_code || lotDetail.items?.[0]?.sku || lotDetail.code}${lotDetail.items?.[0]?.internal_name ? `\n${lotDetail.items?.[0]?.internal_name}` : ''}` : ''}`}
                                                                                 />
                                                                             )
                                                                         })}
@@ -819,7 +829,7 @@ export default function WarehouseStatusMap({
                                                                                                 key={pos.id}
                                                                                                 className={`flex-1 min-w-[6px] max-w-[12px] h-[12px] rounded-[1px] ${isOccupied ? '' : 'bg-slate-200 dark:bg-slate-700'}`}
                                                                                                 style={dotColor}
-                                                                                                title={`${pos.code}${isOccupied && lotDetail ? ` • ${lotDetail.code}` : ''}`}
+                                                                                                title={`${pos.code}${isOccupied && lotDetail ? ` • ${lotDetail.items?.[0]?.internal_code || lotDetail.items?.[0]?.sku || lotDetail.code}${lotDetail.items?.[0]?.internal_name ? `\n${lotDetail.items?.[0]?.internal_name}` : ''}` : ''}`}
                                                                                             />
                                                                                         )
                                                                                     })}

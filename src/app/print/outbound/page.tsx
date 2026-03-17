@@ -611,23 +611,25 @@ function OutboundPrintContent() {
             </div>
 
             <div className={`mt-0 ${printSize === 'A5' ? 'print:mt-0 pb-0.5' : 'mt-4 print:mt-4'} space-y-2 text-sm ${printSize === 'A5' ? 'print:text-[10px]' : ''}`}>
-                <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
-                    <span className="text-gray-600 shrink-0 mt-0.5">- Họ tên người nhận hàng:</span>
-                    <EditableText
-                        value={editCustomerName}
-                        onChange={setEditCustomerName}
-                        className="ml-2 flex-1 font-bold"
-                        isSnapshot={isSnapshot}
-                    />
-                </div>
-                <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
-                    <span className="text-gray-600 shrink-0 mt-0.5">- Địa chỉ ( bộ phận ):</span>
-                    <EditableText
-                        value={editCustomerAddress}
-                        onChange={setEditCustomerAddress}
-                        className="ml-2 flex-1 font-bold"
-                        isSnapshot={isSnapshot}
-                    />
+                <div className={`flex items-start flex-wrap ${printSize === 'A5' ? 'leading-tight' : ''} gap-x-6 gap-y-1`}>
+                    <div className="flex items-center">
+                        <span className="text-gray-600 shrink-0">- Họ tên người nhận hàng:</span>
+                        <EditableText
+                            value={editCustomerName}
+                            onChange={setEditCustomerName}
+                            className="ml-2 font-bold"
+                            isSnapshot={isSnapshot}
+                        />
+                    </div>
+                    <div className="flex items-center flex-1">
+                        <span className="text-gray-600 shrink-0">Địa chỉ ( bộ phận ):</span>
+                        <EditableText
+                            value={editCustomerAddress}
+                            onChange={setEditCustomerAddress}
+                            className="ml-2 flex-1 font-bold"
+                            isSnapshot={isSnapshot}
+                        />
+                    </div>
                 </div>
                 <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
                     <span className="text-gray-600 shrink-0 mt-0.5">- Lý do xuất kho:</span>
@@ -638,26 +640,24 @@ function OutboundPrintContent() {
                         isSnapshot={isSnapshot}
                     />
                 </div>
-                <div className={`flex items-start flex-wrap ${printSize === 'A5' ? 'leading-tight' : ''} gap-x-8 gap-y-1 print:gap-x-2`}>
-                    <div className="flex items-start">
-                        <span className="text-gray-600 shrink-0 mt-0.5">- Xuất tại kho:</span>
-                        <EditableText
-                            value={editWarehouse}
-                            onChange={setEditWarehouse}
-                            className="ml-2 font-bold"
-                            isSnapshot={isSnapshotMode}
-                        />
-                    </div>
-                    <div className="flex items-start flex-1 min-w-[200px]">
-                        <span className="text-gray-600 shrink-0 mt-0.5">Địa điểm:</span>
-                        <input
-                            type="text"
-                            value={editLocation}
-                            onChange={(e) => setEditLocation(e.target.value)}
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
-                        />
-                        <span className={`hidden print:inline ml-2 flex-1 font-bold break-words whitespace-normal ${isSnapshotMode ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
-                    </div>
+                <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
+                    <span className="text-gray-600 shrink-0 mt-0.5">- Xuất tại kho:</span>
+                    <EditableText
+                        value={editWarehouse}
+                        onChange={setEditWarehouse}
+                        className="ml-1 font-bold"
+                        isSnapshot={isSnapshotMode}
+                    />
+                </div>
+                <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
+                    <span className="text-gray-600 shrink-0 mt-0.5">- Địa điểm:</span>
+                    <input
+                        type="text"
+                        value={editLocation}
+                        onChange={(e) => setEditLocation(e.target.value)}
+                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} flex-1 ml-1 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                    />
+                    <span className={`hidden print:inline ml-1 flex-1 font-bold break-words whitespace-normal ${isSnapshotMode ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
                 </div>
                 <div className={`flex items-center gap-6 ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
                     <div className="flex items-center">
@@ -968,7 +968,40 @@ function OutboundPrintContent() {
                 )}
             </div>
 
-            <div className={`mt-0 ${printSize === 'A5' ? 'print:mt-1 print:pb-0' : 'print:-mt-1'} signature-grid grid ${printSize === 'A5' ? 'grid-cols-5' : 'grid-cols-[1fr_1fr_1fr_1fr_1.4fr]'} ${printSize === 'A5' ? 'gap-0.5' : 'gap-3'} text-center text-sm items-end ${printSize === 'A5' ? 'print:break-inside-avoid' : ''}`}>
+            <div className={`mt-0 ${printSize === 'A5' ? 'print:mt-1 print:pb-0' : 'print:-mt-1'} signature-grid grid ${printSize === 'A5' ? 'grid-cols-5' : 'grid-cols-[1fr_1fr_1fr_1fr_1.4fr]'} ${printSize === 'A5' ? 'gap-0.5' : 'gap-3'} text-center text-sm items-start ${printSize === 'A5' ? 'print:break-inside-avoid' : ''}`}>
+                {/* 1. Ngày tháng row */}
+                <div className="text-[13px] italic mb-1">&nbsp;</div>
+                <div className="text-[13px] italic mb-1">&nbsp;</div>
+                <div className="text-[13px] italic mb-1">&nbsp;</div>
+                <div className="text-[13px] italic mb-1">&nbsp;</div>
+                <div className="text-[13px] italic mb-1 min-h-[1.5em] flex items-center justify-center">
+                    <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
+                        Ngày{' '}
+                        <input
+                            type="text"
+                            value={signDay}
+                            onChange={(e) => setSignDay(e.target.value)}
+                            className="w-5 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 italic"
+                        />
+                        {' '}tháng{' '}
+                        <input
+                            type="text"
+                            value={signMonth}
+                            onChange={(e) => setSignMonth(e.target.value)}
+                            className="w-5 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 italic"
+                        />
+                        {' '}năm{' '}
+                        <input
+                            type="text"
+                            value={signYear}
+                            onChange={(e) => setSignYear(e.target.value)}
+                            className="w-8 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 italic"
+                        />
+                    </span>
+                    <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>
+                        Ngày {signDay || '...'} tháng {signMonth || '...'} năm {signYear || '...'}
+                    </span>
+                </div>
 
                 {/* 2. Chức danh row */}
                 <div className="font-semibold print:pt-3">

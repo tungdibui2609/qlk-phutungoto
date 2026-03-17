@@ -621,24 +621,26 @@ function InboundPrintContent() {
                 </div>
             </div>
 
-            <div className={`mt-1 ${printSize === 'A5' ? 'print:mt-0 pb-0.5' : 'print:mt-8 pb-16'} space-y-2 text-sm`}>
-                <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
-                    <span className="text-gray-600 shrink-0">- Họ tên người giao:</span>
-                    <EditableText
-                        value={editSupplierName}
-                        onChange={setEditSupplierName}
-                        className="ml-2 flex-1 font-bold"
-                        isSnapshot={isSnapshotMode}
-                    />
-                </div>
-                <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
-                    <span className="text-gray-600 shrink-0">- Địa chỉ ( bộ phận ):</span>
-                    <EditableText
-                        value={editSupplierAddress}
-                        onChange={setEditSupplierAddress}
-                        className="ml-2 flex-1 font-bold"
-                        isSnapshot={isSnapshotMode}
-                    />
+            <div className={`mt-1 ${printSize === 'A5' ? 'print:mt-0 pb-0.5' : 'print:mt-1 pb-1'} space-y-2 text-sm`}>
+                <div className={`flex items-start flex-wrap ${printSize === 'A5' ? 'leading-tight' : ''} gap-x-6 gap-y-1`}>
+                    <div className="flex items-center">
+                        <span className="text-gray-600 shrink-0">- Họ tên người giao:</span>
+                        <EditableText
+                            value={editSupplierName}
+                            onChange={setEditSupplierName}
+                            className="ml-2 font-bold"
+                            isSnapshot={isSnapshotMode}
+                        />
+                    </div>
+                    <div className="flex items-center flex-1">
+                        <span className="text-gray-600 shrink-0">Địa chỉ ( bộ phận ):</span>
+                        <EditableText
+                            value={editSupplierAddress}
+                            onChange={setEditSupplierAddress}
+                            className="ml-2 flex-1 font-bold"
+                            isSnapshot={isSnapshotMode}
+                        />
+                    </div>
                 </div>
                 {!isInternal && (
                     <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
@@ -703,26 +705,24 @@ function InboundPrintContent() {
                         />
                     </div>
                 )}
-                <div className={`flex items-start flex-wrap ${printSize === 'A5' ? 'leading-tight' : ''} gap-x-8 gap-y-1 print:gap-x-2`}>
-                    <div className="flex items-start">
-                        <span className="text-gray-600 shrink-0 mt-0.5">- Nhập tại kho:</span>
-                        <EditableText
-                            value={editWarehouse}
-                            onChange={setEditWarehouse}
-                            className="ml-2 font-bold"
-                            isSnapshot={isSnapshotMode}
-                        />
-                    </div>
-                    <div className="flex items-start flex-1 min-w-[200px]">
-                        <span className="text-gray-600 shrink-0 mt-0.5">Địa điểm:</span>
-                        <input
-                            type="text"
-                            value={editLocation}
-                            onChange={(e) => setEditLocation(e.target.value)}
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
-                        />
-                        <span className={`hidden print:inline ml-2 flex-1 font-bold break-words whitespace-normal ${isSnapshotMode ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
-                    </div>
+                <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
+                    <span className="text-gray-600 shrink-0 mt-0.5">- Nhập tại kho:</span>
+                    <EditableText
+                        value={editWarehouse}
+                        onChange={setEditWarehouse}
+                        className="ml-1 font-bold"
+                        isSnapshot={isSnapshotMode}
+                    />
+                </div>
+                <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
+                    <span className="text-gray-600 shrink-0 mt-0.5">- Địa điểm:</span>
+                    <input
+                        type="text"
+                        value={editLocation}
+                        onChange={(e) => setEditLocation(e.target.value)}
+                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} flex-1 ml-1 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                    />
+                    <span className={`hidden print:inline ml-1 flex-1 font-bold break-words whitespace-normal ${isSnapshotMode ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
                 </div>
                 {editDescription && (
                     <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
@@ -997,8 +997,10 @@ function InboundPrintContent() {
                 )}
             </div>
 
-            <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-2 print:pb-0' : 'print:mt-10 mb-8'} signature-grid grid grid-cols-5 gap-2 text-center text-sm items-end ${printSize === 'A5' ? 'print:break-inside-avoid' : ''}`}>
+            <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-2 print:pb-0' : 'print:mt-6 mb-4'} signature-grid grid grid-cols-3 gap-2 text-center text-[13px] items-start ${printSize === 'A5' ? 'print:break-inside-avoid' : ''}`}>
+                {/* Column 1: Người lập phiếu */}
                 <div>
+                    <div className="text-[13px] italic mb-1">&nbsp;</div>
                     <div className="font-semibold">
                         <input
                             type="text"
@@ -1008,9 +1010,9 @@ function InboundPrintContent() {
                         />
                         <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle1}</span>
                     </div>
-                    <div className={`text-[10px] text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
-                    <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-12'}`}></div>
-                    <div className="mt-1">
+                    <div className="text-[11px] text-gray-500 italic">(Ký, họ tên)</div>
+                    <div className="h-16 flex items-center justify-center print:h-12"></div>
+                    <div>
                         <input
                             type="text"
                             value={signPerson1}
@@ -1021,7 +1023,10 @@ function InboundPrintContent() {
                         <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson1}</span>
                     </div>
                 </div>
+
+                {/* Column 2: Thủ kho */}
                 <div>
+                    <div className="text-[13px] italic mb-1">&nbsp;</div>
                     <div className="font-semibold">
                         <input
                             type="text"
@@ -1031,9 +1036,9 @@ function InboundPrintContent() {
                         />
                         <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle2}</span>
                     </div>
-                    <div className={`text-[10px] text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
-                    <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-12'}`}></div>
-                    <div className="mt-1">
+                    <div className="text-[11px] text-gray-500 italic">(Ký, họ tên)</div>
+                    <div className="h-16 flex items-center justify-center print:h-12"></div>
+                    <div>
                         <input
                             type="text"
                             value={signPerson2}
@@ -1044,54 +1049,10 @@ function InboundPrintContent() {
                         <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson2}</span>
                     </div>
                 </div>
+
+                {/* Column 3: Ngày/Tháng/Năm + GĐ Nhà Máy */}
                 <div>
-                    <div className="font-semibold">
-                        <input
-                            type="text"
-                            value={signTitle3}
-                            onChange={(e) => setSignTitle3(e.target.value)}
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
-                        />
-                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle3}</span>
-                    </div>
-                    <div className={`text-[10px] text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
-                    <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-12'}`}></div>
-                    <div className="mt-1">
-                        <input
-                            type="text"
-                            value={signPerson3}
-                            onChange={(e) => setSignPerson3(e.target.value)}
-                            placeholder="Tên..."
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
-                        />
-                        <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson3}</span>
-                    </div>
-                </div>
-                <div>
-                    <div className="font-semibold">
-                        <input
-                            type="text"
-                            value={signTitle4}
-                            onChange={(e) => setSignTitle4(e.target.value)}
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
-                        />
-                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle4}</span>
-                    </div>
-                    <div className={`text-[10px] text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
-                    <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-12'}`}></div>
-                    <div className="mt-1">
-                        <input
-                            type="text"
-                            value={signPerson4}
-                            onChange={(e) => setSignPerson4(e.target.value)}
-                            placeholder="Tên..."
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
-                        />
-                        <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson4}</span>
-                    </div>
-                </div>
-                <div>
-                    <div className="text-sm italic text-center mb-1">
+                    <div className="text-[13px] italic mb-1">
                         <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
                             Ngày{' '}
                             <input
@@ -1128,9 +1089,9 @@ function InboundPrintContent() {
                         />
                         <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle5}</span>
                     </div>
-                    <div className={`text-[10px] text-gray-500 italic ${printSize === 'A5' ? 'print:hidden' : ''}`}>(Ký, họ tên)</div>
-                    <div className={`${printSize === 'A5' ? 'print:h-4' : 'print:h-8'}`}></div>
-                    <div className="mt-1">
+                    <div className="text-[11px] text-gray-500 italic">(Ký, họ tên)</div>
+                    <div className="h-16 flex items-center justify-center print:h-12"></div>
+                    <div>
                         <input
                             type="text"
                             value={signPerson5}
