@@ -348,10 +348,8 @@ function PrintStationContent() {
                     if (jobs.length > 1) {
                         setLastPrinted(jobs[1])
                     } else {
-                        // Tăng lên 5 giây theo yêu cầu của bạn để kịp đối soát
-                        setTimeout(() => {
-                            setLastPrinted(prev => (prev?.id === job.id ? null : prev))
-                        }, 5000)
+                        // Xóa ngay lập tức để quay về màn hình chờ theo yêu cầu mới nhất
+                        setLastPrinted(null)
                     }
                 }
             }
