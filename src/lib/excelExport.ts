@@ -381,67 +381,74 @@ export async function exportToExcelWithTemplate(data: ExportData, templateUrl: s
         });
     });
 
-    // Find the starting row for items ('1') and the 'Cộng' row to define the data area
+    // 4. FIND DATA AREA (STT '1' to 'Cộng' row)
     let itemStartRow = -1;
     let congRow = -1;
 
-    for (let r = 1; r <= worksheet.rowCount; r++) {
-        const firstCellVal = worksheet.getRow(r).getCell(1).value?.toString().trim();
+    for (let r = 1; r <= Math.min(worksheet.rowCount, 100); r++) {
+        const row = worksheet.getRow(r);
+        
+        // Find STT 1
+        const firstCellVal = row.getCell(1).value?.toString().trim();
         if (itemStartRow === -1 && firstCellVal === '1') {
             itemStartRow = r;
         }
         
-        const rowValB = worksheet.getRow(r).getCell(2).value?.toString().trim().toLowerCase() || '';
-        const rowValC = worksheet.getRow(r).getCell(3).value?.toString().trim().toLowerCase() || '';
-        if (rowValB === 'cộng' || rowValB.includes('tổng cộng') || rowValC === 'cộng' || rowValC.includes('tổng cộng')) {
-            congRow = r;
-            break;
+        // Find "Cộng" row by checking ALL cells in row
+        if (congRow === -1) {
+            row.eachCell((cell) => {
+                if (congRow !== -1) return;
+                const val = cell.value?.toString().trim().toLowerCase() || '';
+                if (val === 'cộng' || val.includes('tổng cộng')) {
+                    congRow = r;
+                }
+            });
         }
+        if (itemStartRow !== -1 && congRow !== -1) break;
     }
 
-    // Fallback if not found
+    // Fallbacks
     if (itemStartRow === -1) itemStartRow = 15;
     if (congRow === -1) congRow = itemStartRow + 1;
 
-    // CLEAN PHASE: Remove all rows in the data area (from itemStartRow up to but NOT including congRow)
+    // CLEAN PHASE: Delete everything between itemStartRow and congRow to avoid pushing old data down
     const rowsToDelete = congRow - itemStartRow;
     if (rowsToDelete > 0) {
         worksheet.spliceRows(itemStartRow, rowsToDelete);
     }
 
-    // INSERT PHASE
+    // 5. INSERT DATA PHASE
     let totalQty = 0;
-    let totalDocQty = 0;
     let totalConvertedQty = 0;
 
     data.items.forEach((item, index) => {
         const itemRowIndex = itemStartRow + index;
         worksheet.spliceRows(itemRowIndex, 0, []);
         const row = worksheet.getRow(itemRowIndex);
+        
         row.getCell(1).value = index + 1; 
         row.getCell(2).value = item.product_name || item.products?.internal_name || item.products?.name || item.products?.sku || '';
         row.getCell(3).value = item.quyCach || '';
         row.getCell(4).value = item.unit || '';
         
+        const qtyValue = Number(item.quantity) || 0;
         const qtyCell = row.getCell(5);
-        qtyCell.value = item.quantity;
+        qtyCell.value = qtyValue;
         qtyCell.numFmt = '#,##0';
+        totalQty += qtyValue;
         
         if (item.convertedQty !== undefined && item.convertedQty !== '-') {
-            const cQty = typeof item.convertedQty === 'string' ? parseFloat(item.convertedQty.replace(/,/g, '')) : item.convertedQty;
+            const cQty = typeof item.convertedQty === 'string' ? parseFloat(item.convertedQty.replace(/,/g, '')) : Number(item.convertedQty);
             const convCell = row.getCell(6);
-            convCell.value = cQty;
+            convCell.value = cQty || 0;
             convCell.numFmt = '#,##0';
             totalConvertedQty += (cQty || 0);
         }
 
-        totalDocQty += (item.document_quantity || item.quantity || 0);
-        totalQty += (item.quantity || 0);
-        
         if (data.modules.hasFinancials) {
-            row.getCell(7).value = item.price || 0;
+            row.getCell(7).value = Number(item.price) || 0;
             row.getCell(7).numFmt = '#,##0';
-            row.getCell(8).value = (item.price || 0) * item.quantity;
+            row.getCell(8).value = (Number(item.price) || 0) * qtyValue;
             row.getCell(8).numFmt = '#,##0';
         }
 
@@ -451,66 +458,63 @@ export async function exportToExcelWithTemplate(data: ExportData, templateUrl: s
         });
     });
 
-    // UPDATE TOTALS - Found row shifted by (data.items.length - rowsToDelete)
+    // UPDATE TOTALS
     const newCongRowIndex = congRow + (data.items.length - rowsToDelete);
     const newCongRow = worksheet.getRow(newCongRowIndex);
-    const qCell = newCongRow.getCell(5);
-    if (qCell) {
-        qCell.value = totalQty;
-        qCell.numFmt = '#,##0';
+    const qCellTotal = newCongRow.getCell(5);
+    if (qCellTotal) {
+        qCellTotal.value = totalQty;
+        qCellTotal.numFmt = '#,##0';
     }
     if (totalConvertedQty > 0) {
-        const cCell = newCongRow.getCell(6);
-        if (cCell) {
-            cCell.value = totalConvertedQty;
-            cCell.numFmt = '#,##0';
+        const cCellTotal = newCongRow.getCell(6);
+        if (cCellTotal) {
+            cCellTotal.value = totalConvertedQty;
+            cCellTotal.numFmt = '#,##0';
         }
     }
 
-    // 6. SIGNATURE PHASE - Search only after "Cộng" row to avoid header titles
+    // 6. SIGNATURE PHASE - Precise column mapping
     if (data.editableFields.signatures) {
-        const lastRow = worksheet.rowCount;
-        const searchStartRowForSignos = newCongRowIndex + 1;
-        
-        // Track used cells to avoid duplication if multiple signatures match same cell
-        const usedCells = new Set<string>();
+        // Step A: Find the signature row index after insertion (starting from new total row)
+        let sigRowIdx = -1;
+        const titlesToMatch = data.editableFields.signatures.map(s => s.title?.trim().toLowerCase()).filter(Boolean);
 
-        data.editableFields.signatures.forEach((sig, sigIndex) => {
-            if (!sig.title || !sig.name) return;
-            const targetTitle = sig.title.trim().toLowerCase();
-            const placeholderTitle = `{{sign_title_${sigIndex + 1}}}`.toLowerCase();
-            let found = false;
+        for (let r = newCongRowIndex + 1; r <= Math.min(worksheet.rowCount, newCongRowIndex + 10); r++) {
+            const row = worksheet.getRow(r);
+            let matchCount = 0;
+            row.eachCell((cell) => {
+                if (cell.value && titlesToMatch.includes(cell.value.toString().trim().toLowerCase())) {
+                    matchCount++;
+                }
+            });
+            if (matchCount >= 2) {
+                sigRowIdx = r;
+                break;
+            }
+        }
 
-            for (let r = searchStartRowForSignos; r <= lastRow; r++) {
-                if (found) break;
-                const row = worksheet.getRow(r);
-                row.eachCell((cell, colNumber) => {
-                    if (found) return;
-                    if (!cell.value || cell !== cell.master) return;
+        if (sigRowIdx !== -1) {
+            const sigRow = worksheet.getRow(sigRowIdx);
+            data.editableFields.signatures.forEach(sig => {
+                if (!sig.title || !sig.name) return;
+                const targetTitle = sig.title.trim().toLowerCase();
+                
+                // Scan row columns and fill first match
+                for (let c = 1; c <= 26; c++) { 
+                    const cell = sigRow.getCell(c);
+                    if (!cell.value || cell !== cell.master) continue;
                     
-                    const cellVal = cell.value.toString().trim().toLowerCase();
-                    const cellIdx = `${r}-${colNumber}`;
-
-                    // Match exact title OR its placeholder
-                    if ((cellVal === targetTitle || cellVal === placeholderTitle) && !usedCells.has(cellIdx)) {
-                        // Found title, write name 4 rows below
-                        const nameRow = worksheet.getRow(r + 4); 
-                        const nameCell = nameRow.getCell(colNumber);
+                    if (cell.value.toString().trim().toLowerCase() === targetTitle) {
+                        const nameCell = worksheet.getRow(sigRowIdx + 4).getCell(c);
                         nameCell.value = sig.name;
                         nameCell.font = { bold: true, name: 'Times New Roman', size: 12 };
                         nameCell.alignment = { horizontal: 'center' };
-                        
-                        // Also update the title cell if it was a placeholder
-                        if (cellVal === placeholderTitle) {
-                            cell.value = sig.title;
-                        }
-
-                        usedCells.add(cellIdx);
-                        found = true;
+                        break; // Stop for this signature object
                     }
-                });
-            }
-        });
+                }
+            });
+        }
     }
 
     // Write and save
