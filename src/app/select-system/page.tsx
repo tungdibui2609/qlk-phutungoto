@@ -49,7 +49,7 @@ export default function SelectSystemPage() {
         }
 
         // Fallback to a broader set of defaults if empty to avoid accidental lockout
-        setAllowedSystems(systems.length > 0 ? systems : ['DEFAULT', 'FROZEN', 'OFFICE', 'DRY'])
+        setAllowedSystems(systems.length > 0 ? systems : ['DEFAULT', 'KHO_DONG_LANH', 'OFFICE', 'DRY'])
         setLoading(false)
     }
 
@@ -72,6 +72,7 @@ export default function SelectSystemPage() {
     // Helper for icons
     const ICON_MAP: any = {
         'FROZEN': Truck,
+        'KHO_DONG_LANH': Truck,
         'PACKAGING': Package,
         'MATERIAL': Factory,
         'GENERAL': BarChart3

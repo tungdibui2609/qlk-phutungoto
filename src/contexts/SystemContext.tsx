@@ -50,7 +50,7 @@ export const SYSTEM_CONFIG: Record<string, { name: string; color: string }> = {
 }
 
 export function SystemProvider({ children }: { children: React.ReactNode }) {
-  const [systemType, setSystemTypeState] = useState<SystemType>('FROZEN')
+  const [systemType, setSystemTypeState] = useState<SystemType>('KHO_DONG_LANH')
   const [systems, setSystems] = useState<System[]>([])
   const [unlockedModules, setUnlockedModules] = useState<string[]>([])
   const [session, setSession] = useState<any>(null)
@@ -139,7 +139,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       if (mergedSystems.length === 0) {
         mergedSystems = [
           {
-            code: 'FROZEN',
+            code: 'KHO_DONG_LANH',
             name: 'Kho Lạnh',
             description: 'Quản lý kho lạnh, theo dõi nhiệt độ',
             bg_color_class: 'bg-blue-600',

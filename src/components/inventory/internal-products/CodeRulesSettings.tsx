@@ -36,10 +36,10 @@ export default function CodeRulesSettings() {
                 .order('sort_order', { ascending: true })
 
             if (error) throw error
-            console.log('Fetched rules for system:', systemType, data)
+            console.log(`[CodeRulesSettings] Fetched ${data?.length || 0} rules for system: ${systemType}`)
             setRules(data || [])
         } catch (error: any) {
-            console.error('Fetch error for system:', systemType, error)
+            console.error(`[CodeRulesSettings] Fetch error for system: ${systemType}`, error)
             showToast('Lỗi khi tải quy tắc: ' + error.message, 'error')
         } finally {
             setLoading(false)

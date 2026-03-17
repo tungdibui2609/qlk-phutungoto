@@ -70,9 +70,10 @@ export default function InternalProductModal({ open, onOpenChange, product, onSu
                 .order('sort_order', { ascending: true })
 
             if (error) throw error
+            console.log(`[InternalProductModal] Fetched ${data?.length || 0} rules for system: ${systemType}`)
             setRules(data || [])
         } catch (error: any) {
-            console.error('Fetch rules error:', error)
+            console.error(`[InternalProductModal] Fetch rules error for system: ${systemType}`, error)
             showToast('Lỗi khi tải quy tắc mã: ' + error.message, 'error')
         } finally {
             setFetchingRules(false)

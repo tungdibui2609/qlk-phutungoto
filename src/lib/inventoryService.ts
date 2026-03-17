@@ -55,7 +55,7 @@ export async function getLotInventoryForReconciliation(
     warehouseName?: string
 ) {
     let normalizedSystemType = systemType;
-    if (systemType === 'FROZEN') normalizedSystemType = 'KHO_DONG_LANH';
+    if (systemType === 'FROZEN' || !systemType) normalizedSystemType = 'KHO_DONG_LANH';
     else if (systemType === 'DRY') normalizedSystemType = 'KHO_VAT_TU_BAO_BI';
 
     let allData: any[] = []

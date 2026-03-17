@@ -59,7 +59,7 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
         role_id: initialData?.role_id || '',
         department: initialData?.department || '',
         is_active: initialData?.is_active ?? true,
-        allowed_systems: initialData?.allowed_systems || ['FROZEN'],
+        allowed_systems: initialData?.allowed_systems || ['KHO_DONG_LANH'],
         // For new user
         password: '',
     })
