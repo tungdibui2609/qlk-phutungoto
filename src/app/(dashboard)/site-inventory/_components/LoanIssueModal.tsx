@@ -43,20 +43,16 @@ export const LoanIssueModal: React.FC<LoanIssueModalProps> = ({ isOpen, onClose,
     async function fetchInventory() {
         setLoading(true)
         // Fetch lot_items directly to issue specific items
-        // In a real app we might group by product, but for loans tracking specific lot items (assets) is good.
-        // Or we show products and then auto-pick items. 
-        // Let's list Product Stocks aggregated for simpler UI, or list Items. 
-        // For Tools, usually we want to see "Drill A - Serial 123", so lot items.
+        // Filter by products and lots system_code to ensure isolation
 
-        // This query fetches available items.
         const { data, error } = await supabase
             .from('lot_items')
             .select(`
                 id, quantity, unit,
                 products!inner (id, name, sku, system_type),
-                lots!positions_lot_id_fkey!inner (code, warehouse_name)
+                lots!inner (code, warehouse_name, system_code)
             `)
-            .eq('products.system_type', systemType)
+            .eq('lots.system_code', systemType)
             .gt('quantity', 0)
             .limit(50)
 

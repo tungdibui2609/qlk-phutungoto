@@ -904,9 +904,6 @@ export function useLotManagement() {
             showToast('Lỗi xóa LOT: ' + error.message, 'error')
             return false
         } else {
-            // Clear position references immediately
-            await supabase.from('positions').update({ lot_id: null }).eq('lot_id', id)
-
             showToast('Đã xóa LOT thành công', 'success')
             // refetch for correct pagination
             fetchLots(false)

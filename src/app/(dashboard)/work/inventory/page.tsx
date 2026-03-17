@@ -378,7 +378,11 @@ export default function InternalInventoryPage() {
                 // Ensure stable sorting
                 query = query.order('id', { ascending: true })
                     const { data, error } = await query
-                    if (error) { console.error(`Error fetching ${table}:`, error); break }
+                    if (error) { 
+                        console.error(`[fetchAllPaginated] Error fetching ${table}:`, error); 
+                        if (error.message) console.error(`[fetchAllPaginated] Error message: ${error.message}`);
+                        break 
+                    }
                     if (!data || data.length === 0) break
                     allData = [...allData, ...data]
                     if (data.length < pageSize) break
@@ -389,7 +393,7 @@ export default function InternalInventoryPage() {
 
             try {
                 const [prodData, suppData, qcData, branchData, unitData, pUnitData, tagData] = await Promise.all([
-                    fetchAllPaginated('products', q => q.eq('system_type', systemType).order('name')),
+                    fetchAllPaginated('products', q => q.eq('system_code', systemType).order('name')),
                     fetchAllPaginated('suppliers', q => q.eq('system_code', systemType).order('name')),
                     fetchAllPaginated('qc_info', q => q.eq('system_code', systemType).order('name')),
                     fetchAllPaginated('branches', q => q.order('is_default', { ascending: false }).order('name')),
