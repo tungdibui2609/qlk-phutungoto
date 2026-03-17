@@ -408,10 +408,41 @@ export async function exportToExcelWithTemplate(data: ExportData, templateUrl: s
     }
 
     // Fallbacks
-    if (itemStartRow === -1) itemStartRow = 15;
+    if (itemStartRow === -1) itemStartRow = congRow - 1; // Include the empty placeholder row above Cộng
     if (congRow === -1) congRow = itemStartRow + 1;
 
-    // CLEAN PHASE: Delete everything between itemStartRow and congRow to avoid pushing old data down
+    // ===== SAVE MERGED RANGES BELOW DATA AREA BEFORE SPLICING =====
+    // spliceRows in ExcelJS corrupts merged cells. We must save them and restore after.
+    const mergesBelow: { top: number; left: number; bottom: number; right: number; masterValue: any; masterFont: any; masterAlignment: any }[] = [];
+    const allMerges = (worksheet.model as any).merges || [];
+    
+    for (const mergeRef of allMerges) {
+        // Parse merge like "A18:F18" or "B16:C16"
+        const match = mergeRef.match(/([A-Z]+)(\d+):([A-Z]+)(\d+)/);
+        if (!match) continue;
+        const topRow = parseInt(match[2]);
+        const bottomRow = parseInt(match[4]);
+        
+        // Only save merges AT or BELOW the data insertion point (congRow and below)
+        if (topRow >= congRow) {
+            const leftCol = colLetterToNumber(match[1]);
+            const rightCol = colLetterToNumber(match[3]);
+            
+            // Save the master cell value
+            const masterCell = worksheet.getRow(topRow).getCell(leftCol);
+            mergesBelow.push({
+                top: topRow,
+                left: leftCol,
+                bottom: bottomRow,
+                right: rightCol,
+                masterValue: masterCell.value,
+                masterFont: masterCell.font ? { ...masterCell.font } : undefined,
+                masterAlignment: masterCell.alignment ? { ...masterCell.alignment } : undefined,
+            });
+        }
+    }
+
+    // CLEAN PHASE: Delete rows in data area
     const rowsToDelete = congRow - itemStartRow;
     if (rowsToDelete > 0) {
         worksheet.spliceRows(itemStartRow, rowsToDelete);
@@ -456,10 +487,15 @@ export async function exportToExcelWithTemplate(data: ExportData, templateUrl: s
             cell.font = { bold: true, size: 11, name: 'Times New Roman' };
             cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
         });
+        // Center align: Quy cách (C), ĐVT (D), Số lượng (E), Quy đổi (F)
+        for (let c = 3; c <= 6; c++) {
+            row.getCell(c).alignment = { horizontal: 'center', vertical: 'middle' };
+        }
     });
 
     // UPDATE TOTALS
-    const newCongRowIndex = congRow + (data.items.length - rowsToDelete);
+    const rowShift = data.items.length - rowsToDelete;
+    const newCongRowIndex = congRow + rowShift;
     const newCongRow = worksheet.getRow(newCongRowIndex);
     const qCellTotal = newCongRow.getCell(5);
     if (qCellTotal) {
@@ -474,50 +510,48 @@ export async function exportToExcelWithTemplate(data: ExportData, templateUrl: s
         }
     }
 
-    // 6. SIGNATURE PHASE - Precise column mapping
-    if (data.editableFields.signatures) {
-        // Step A: Find the signature row index after insertion (starting from new total row)
-        let sigRowIdx = -1;
-        const titlesToMatch = data.editableFields.signatures.map(s => s.title?.trim().toLowerCase()).filter(Boolean);
+    // ===== RESTORE MERGED RANGES AFTER ALL SPLICING =====
+    // spliceRows corrupts merged cells. We now re-apply them at shifted positions.
+    for (const savedMerge of mergesBelow) {
+        const newTop = savedMerge.top + rowShift;
+        const newBottom = savedMerge.bottom + rowShift;
 
-        for (let r = newCongRowIndex + 1; r <= Math.min(worksheet.rowCount, newCongRowIndex + 10); r++) {
-            const row = worksheet.getRow(r);
-            let matchCount = 0;
-            row.eachCell((cell) => {
-                if (cell.value && titlesToMatch.includes(cell.value.toString().trim().toLowerCase())) {
-                    matchCount++;
-                }
-            });
-            if (matchCount >= 2) {
-                sigRowIdx = r;
-                break;
+        // Try to unmerge the corrupted range first (ignore errors)
+        try {
+            worksheet.unMergeCells(newTop, savedMerge.left, newBottom, savedMerge.right);
+        } catch (e) { /* ignore */ }
+
+        // Clear all slave cells (they have duplicated values from the corruption)
+        for (let r = newTop; r <= newBottom; r++) {
+            for (let c = savedMerge.left; c <= savedMerge.right; c++) {
+                if (r === newTop && c === savedMerge.left) continue; // Skip master cell
+                const slaveCell = worksheet.getRow(r).getCell(c);
+                slaveCell.value = null;
             }
         }
 
-        if (sigRowIdx !== -1) {
-            const sigRow = worksheet.getRow(sigRowIdx);
-            data.editableFields.signatures.forEach(sig => {
-                if (!sig.title || !sig.name) return;
-                const targetTitle = sig.title.trim().toLowerCase();
-                
-                // Scan row columns and fill first match
-                for (let c = 1; c <= 26; c++) { 
-                    const cell = sigRow.getCell(c);
-                    if (!cell.value || cell !== cell.master) continue;
-                    
-                    if (cell.value.toString().trim().toLowerCase() === targetTitle) {
-                        const nameCell = worksheet.getRow(sigRowIdx + 4).getCell(c);
-                        nameCell.value = sig.name;
-                        nameCell.font = { bold: true, name: 'Times New Roman', size: 12 };
-                        nameCell.alignment = { horizontal: 'center' };
-                        break; // Stop for this signature object
-                    }
-                }
-            });
-        }
+        // Restore master cell value
+        const masterCell = worksheet.getRow(newTop).getCell(savedMerge.left);
+        masterCell.value = savedMerge.masterValue;
+        if (savedMerge.masterFont) masterCell.font = savedMerge.masterFont;
+        if (savedMerge.masterAlignment) masterCell.alignment = savedMerge.masterAlignment;
+
+        // Re-apply merge
+        try {
+            worksheet.mergeCells(newTop, savedMerge.left, newBottom, savedMerge.right);
+        } catch (e) { /* ignore if already merged */ }
     }
 
     // Write and save
     const buffer = await workbook.xlsx.writeBuffer();
     saveAs(new Blob([buffer]), `${data.type === 'inbound' ? 'Phieu_Nhap' : 'Phieu_Xuat'}_${data.order.code}.xlsx`);
+}
+
+// Helper: Convert column letter to number (A=1, B=2, ..., Z=26, AA=27, etc.)
+function colLetterToNumber(col: string): number {
+    let num = 0;
+    for (let i = 0; i < col.length; i++) {
+        num = num * 26 + (col.charCodeAt(i) - 64);
+    }
+    return num;
 }
