@@ -274,8 +274,8 @@ export default function FastScanPage() {
             const { data: lot, error } = await supabase
                 .from('lots')
                 .select('id, code, products(name)')
-                .eq('code', lotCode)
-                .single()
+                .or(`code.eq.${lotCode},production_code.eq.${lotCode}`)
+                .maybeSingle()
 
             if (error || !lot) {
                 showToast(`Không tìm thấy LOT "${lotCode}"`, 'error')
@@ -402,10 +402,8 @@ export default function FastScanPage() {
                     lot_items (quantity, unit),
                     positions (code)
                 `)
-                .eq('code', code)
-                // .eq('system_code', currentSystem.code) // Always allow finding LOT from other systems
-                // [SECURITY] We fetch by Code first to allow handling legacy LOTs (NULL company_id)
-                .single()
+                .or(`code.eq.${code},production_code.eq.${code}`)
+                .maybeSingle()
 
             if (error || !data) {
                 showToast(`Không tìm thấy LOT "${code}"`, 'error')

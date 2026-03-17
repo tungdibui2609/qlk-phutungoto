@@ -108,8 +108,8 @@ export default function ExportScanPage() {
                     positions (id, code),
                     lot_tags (tag, lot_item_id)
                 `)
-                .eq('code', code)
-                .single()
+                .or(`code.eq.${code},production_code.eq.${code}`)
+                .maybeSingle()
 
             if (error || !data) {
                 showToast(`Không tìm thấy LOT "${code}"`, 'error')

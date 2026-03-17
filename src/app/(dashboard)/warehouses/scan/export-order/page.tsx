@@ -26,6 +26,7 @@ interface TaskItem {
     id: string
     lot_id: string | null
     lot_code: string
+    production_code?: string | null
     position_id: string | null
     position_name: string
     current_position_name: string
@@ -131,7 +132,7 @@ export default function ExportOrderScanPage() {
                 .from('export_task_items')
                 .select(`
                     id, quantity, unit, status, lot_id, position_id,
-                    lots (id, code, positions!positions_lot_id_fkey (code, is_hall:zone_positions(zone_id))),
+                    lots (id, code, production_code, positions!positions_lot_id_fkey (code, is_hall:zone_positions(zone_id))),
                     positions!export_task_items_position_id_fkey (code),
                     products (name, sku)
                 `)
@@ -180,11 +181,11 @@ export default function ExportOrderScanPage() {
                 if (displayStatus === 'Pending' && originalPosCode !== currentPosCode) {
                     displayStatus = isHall ? 'Moved to Hall' : 'Changed Position'
                 }
-
                 return {
                     id: item.id,
                     lot_id: item.lots?.id || item.lot_id,
                     lot_code: item.lots?.code || 'N/A',
+                    production_code: item.lots?.production_code,
                     position_id: item.position_id,
                     position_name: originalPosCode,
                     current_position_name: currentPosCode,
@@ -250,8 +251,10 @@ export default function ExportOrderScanPage() {
 
         setLoading(true)
         try {
-            // Find the LOT in the task items
-            const matchingItem = taskItems.find(item => item.lot_code === code)
+            // Find the LOT in the task items (match by code or production_code)
+            const matchingItem = taskItems.find(item => 
+                item.lot_code === code || item.production_code === code
+            )
 
             if (!matchingItem) {
                 showToast(`LOT "${code}" không thuộc lệnh xuất "${selectedTask?.code}"`, 'error')

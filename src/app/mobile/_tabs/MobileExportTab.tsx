@@ -63,7 +63,8 @@ export default function MobileExportTab() {
         try {
             const { data, error } = await supabase.from('lots')
                 .select(`*, suppliers (name), qc_info (name), lot_items (id, quantity, unit, product_id, products (name, sku, unit, cost_price)), positions (id, code), lot_tags (tag, lot_item_id)`)
-                .eq('code', code).single()
+                .or(`code.eq.${code},production_code.eq.${code}`)
+                .maybeSingle()
 
             if (error || !data) { showToast(`Không tìm thấy LOT "${code}"`, 'error'); setPaused(false); return }
             if (data.company_id && data.company_id !== profile.company_id) { showToast(`LOT thuộc công ty khác!`, 'error'); setPaused(false); return }
