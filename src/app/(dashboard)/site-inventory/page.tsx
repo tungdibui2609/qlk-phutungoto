@@ -8,10 +8,12 @@ import { LoanDashboard } from './_components/LoanDashboard'
 import { LoanHistory } from './_components/LoanHistory'
 import { SiteDirectInboundModal } from './_components/SiteDirectInboundModal'
 import { SiteStockReport } from './_components/SiteStockReport'
+import { SiteInboundHistory } from './_components/SiteInboundHistory'
+import { Truck } from 'lucide-react'
 
 export default function SiteInventoryPage() {
     const { currentSystem } = useSystem()
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'summary'>('dashboard')
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'inbound' | 'summary'>('dashboard')
     const [isInboundOpen, setIsInboundOpen] = useState(false)
 
     // Check if module is enabled
@@ -89,6 +91,16 @@ export default function SiteInventoryPage() {
                     Lịch sử Trả / Mất
                 </button>
                 <button
+                    onClick={() => setActiveTab('inbound')}
+                    className={`flex items-center gap-2 px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'inbound'
+                        ? 'border-emerald-500 text-emerald-600 dark:text-emerald-500'
+                        : 'border-transparent text-stone-500 hover:text-stone-800 dark:hover:text-stone-300'
+                        }`}
+                >
+                    <Truck size={18} />
+                    Lịch sử Nhập hàng
+                </button>
+                <button
                     onClick={() => setActiveTab('summary')}
                     className={`flex items-center gap-2 px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'summary'
                         ? 'border-orange-500 text-orange-600 dark:text-orange-500'
@@ -109,6 +121,7 @@ export default function SiteInventoryPage() {
                     />
                 )}
                 {activeTab === 'history' && <LoanHistory />}
+                {activeTab === 'inbound' && <SiteInboundHistory />}
                 {activeTab === 'summary' && <SiteStockReport />}
             </div>
 

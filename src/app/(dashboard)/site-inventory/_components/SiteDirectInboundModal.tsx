@@ -8,6 +8,7 @@ import { QuantityInput } from '@/components/ui/QuantityInput'
 import { useSystem } from '@/contexts/SystemContext'
 import { generateOrderCode } from '@/lib/orderCodeUtils'
 import { lotService } from '@/services/warehouse/lotService'
+import { FileUp, Link as LinkIcon, Building } from 'lucide-react'
 
 interface SiteDirectInboundModalProps {
     isOpen: boolean
@@ -29,6 +30,9 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
     const [quantity, setQuantity] = useState(1)
     const [unit, setUnit] = useState('')
     const [warehouseName, setWarehouseName] = useState('')
+    const [supplierId, setSupplierId] = useState('')
+    const [suppliers, setSuppliers] = useState<any[]>([])
+    const [invoiceFile, setInvoiceFile] = useState<File | null>(null)
     const [notes, setNotes] = useState('')
     const [submitting, setSubmitting] = useState(false)
 
@@ -40,15 +44,18 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
             setQuantity(1)
             setUnit('')
             setNotes('')
+            setSupplierId('')
+            setInvoiceFile(null)
         }
     }, [isOpen, systemType])
 
     async function fetchData() {
         setLoading(true)
         try {
-            const [prodRes, branchRes] = await Promise.all([
+            const [prodRes, branchRes, suppRes] = await Promise.all([
                 supabase.from('products').select('*').eq('system_type', systemType).eq('is_active', true).order('name'),
-                supabase.from('branches').select('*').order('name')
+                supabase.from('branches').select('*').order('name'),
+                supabase.from('suppliers').select('*').eq('is_active', true).order('name')
             ])
 
             if (prodRes.data) setProducts(prodRes.data)
@@ -59,6 +66,7 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
                     setWarehouseName(defaultBranch)
                 }
             }
+            if (suppRes.data) setSuppliers(suppRes.data)
         } catch (err) {
             console.error('Error fetching data:', err)
         } finally {
@@ -84,6 +92,32 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
 
         setSubmitting(true)
         try {
+            let invoiceUrl = ''
+            let invoiceViewLink = ''
+
+            // 0. Upload Invoice to Google Drive if selected
+            if (invoiceFile) {
+                const formData = new FormData()
+                formData.append('file', invoiceFile)
+                formData.append('warehouseName', warehouseName)
+                formData.append('category', 'Hóa đơn Cấp phát')
+
+                const uploadRes = await fetch('/api/google-drive-upload', {
+                    method: 'POST',
+                    body: formData
+                })
+
+                if (uploadRes.ok) {
+                    const uploadData = await uploadRes.json()
+                    invoiceUrl = uploadData.link // Thumbnail/Direct link
+                    invoiceViewLink = uploadData.viewLink // Google Drive web viewer link
+                } else {
+                    const errData = await uploadRes.json()
+                    console.error('Upload failed:', errData)
+                    showToast('Tải lên hóa đơn thất bại, vẫn tiếp tục nhập hàng...', 'warning')
+                }
+            }
+
             // 1. Generate LOT Code
             const lotCode = await generateOrderCode('SITE', systemType || 'KHO')
 
@@ -94,16 +128,21 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
                     code: lotCode,
                     warehouse_name: warehouseName,
                     system_code: systemType,
+                    supplier_id: supplierId || null,
                     status: 'active',
                     metadata: {
                         source: 'Direct Site Inbound',
                         notes: notes,
+                        invoice_url: invoiceUrl,
+                        invoice_view_link: invoiceViewLink,
                         created_at: new Date().toISOString(),
                         system_history: {
                             inbound: {
                                 date: new Date().toISOString(),
                                 type: 'SITE_DIRECT',
-                                description: notes || 'Nhập kho trực tiếp tại công trình'
+                                description: notes || 'Nhập kho trực tiếp tại công trình',
+                                supplier_id: supplierId || null,
+                                invoice_link: invoiceViewLink || null
                             },
                             exports: []
                         }
@@ -257,9 +296,63 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
                                     <textarea
                                         value={notes}
                                         onChange={e => setNotes(e.target.value)}
-                                        className="w-full p-4 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 h-28 resize-none transition-all"
+                                        className="w-full p-4 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 h-24 resize-none transition-all"
                                         placeholder="Nhập ghi chú ví dụ: Nhập từ nhà cung cấp A, Hàng lẻ công trình..."
                                     />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-stone-500 flex items-center gap-2">
+                                            <Building size={16} /> Nhà cung cấp
+                                        </label>
+                                        <select
+                                            value={supplierId}
+                                            onChange={e => setSupplierId(e.target.value)}
+                                            className="w-full p-3 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all appearance-none"
+                                        >
+                                            <option value="">-- Chọn nhà cung cấp (nếu có) --</option>
+                                            {suppliers.map(s => (
+                                                <option key={s.id} value={s.id}>{s.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-stone-500 flex items-center gap-2">
+                                            <FileUp size={16} /> Hóa đơn / Chứng từ
+                                        </label>
+                                        <div className="relative group">
+                                            <input
+                                                type="file"
+                                                id="invoice-upload"
+                                                className="hidden"
+                                                onChange={e => setInvoiceFile(e.target.files?.[0] || null)}
+                                                accept="image/*,application/pdf"
+                                            />
+                                            <label
+                                                htmlFor="invoice-upload"
+                                                className={`flex items-center gap-2 w-full p-3 rounded-xl border border-dashed transition-all cursor-pointer font-bold text-sm ${
+                                                    invoiceFile 
+                                                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' 
+                                                    : 'border-stone-300 dark:border-zinc-700 hover:border-emerald-400'
+                                                }`}
+                                            >
+                                                {invoiceFile ? <Check size={16} /> : <FileUp size={16} />}
+                                                <span className="truncate">
+                                                    {invoiceFile ? invoiceFile.name : 'Chọn file ảnh/PDF...'}
+                                                </span>
+                                            </label>
+                                            {invoiceFile && (
+                                                <button 
+                                                    onClick={(e) => { e.preventDefault(); setInvoiceFile(null); }}
+                                                    className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full shadow-lg"
+                                                >
+                                                    <X size={12} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

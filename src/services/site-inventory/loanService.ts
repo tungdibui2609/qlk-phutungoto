@@ -189,5 +189,29 @@ export const loanService = {
         })
 
         return Object.values(summaryMap).sort((a: any, b: any) => a.name.localeCompare(b.name))
+    },
+
+    /**
+     * Fetches recent direct inbound LOTs for the site
+     */
+    async getInboundHistory(supabase: SupabaseClient, systemCode: string) {
+        const { data, error } = await supabase
+            .from('lots')
+            .select(`
+                *,
+                suppliers(name),
+                lot_items(
+                    quantity,
+                    unit,
+                    products(name, sku)
+                )
+            `)
+            .eq('system_code', systemCode)
+            .ilike('code', 'SITE-%')
+            .order('created_at', { ascending: false })
+            .limit(50)
+
+        if (error) throw error
+        return data
     }
 }
