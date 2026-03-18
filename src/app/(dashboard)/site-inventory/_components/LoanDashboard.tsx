@@ -9,7 +9,12 @@ import { LoanIssueModal } from './LoanIssueModal'
 import { LoanReturnModal } from './LoanReturnModal'
 import { format } from 'date-fns'
 
-export const LoanDashboard = () => {
+interface LoanDashboardProps {
+    isInboundOpen: boolean
+    setIsInboundOpen: (open: boolean) => void
+}
+
+export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, setIsInboundOpen }) => {
     const { systemType } = useSystem()
     const [loans, setLoans] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
@@ -76,13 +81,22 @@ export const LoanDashboard = () => {
                         onChange={e => setSearchTerm(e.target.value)}
                     />
                 </div>
-                <button
-                    onClick={() => setIsIssueModalOpen(true)}
-                    className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-orange-500/20 transition-all active:scale-95"
-                >
-                    <Plus size={20} />
-                    Cho Mượn Đồ
-                </button>
+                <div className="flex gap-2 w-full md:w-auto">
+                    <button
+                        onClick={() => setIsInboundOpen(true)}
+                        className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                    >
+                        <Plus size={20} />
+                        Nhập hàng
+                    </button>
+                    <button
+                        onClick={() => setIsIssueModalOpen(true)}
+                        className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-orange-500/20 transition-all active:scale-95"
+                    >
+                        <Plus size={20} />
+                        Cho Mượn
+                    </button>
+                </div>
             </div>
 
             {loading ? (

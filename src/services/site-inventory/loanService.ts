@@ -140,5 +140,54 @@ export const loanService = {
 
         if (error) throw error
         return data || []
+    },
+
+    async getSiteInventorySummary(supabase: SupabaseClient, systemCode: string) {
+        // 1. Lấy tồn kho "Sẵn sàng" từ lot_items
+        const { data: stockData, error: stockError } = await supabase
+            .from('lot_items')
+            .select(`
+                quantity,
+                unit,
+                products!inner (id, name, sku, system_type)
+            `)
+            .eq('products.system_type', systemCode)
+            .gt('quantity', 0)
+
+        if (stockError) throw stockError
+
+        // 2. Lấy hàng "Đang cấp phát" từ site_loans
+        const { data: loanData, error: loanError } = await supabase
+            .from('site_loans')
+            .select(`
+                quantity,
+                unit,
+                products!inner (id, name, sku, system_type)
+            `)
+            .eq('system_code', systemCode)
+            .eq('status', 'active')
+
+        if (loanError) throw loanError
+
+        // 3. Hợp nhất dữ liệu
+        const summaryMap: Record<string, any> = {}
+
+        stockData?.forEach(item => {
+            const p = item.products as any
+            if (!summaryMap[p.id]) {
+                summaryMap[p.id] = { productId: p.id, name: p.name, sku: p.sku, unit: item.unit, inStock: 0, inUse: 0 }
+            }
+            summaryMap[p.id].inStock += Number(item.quantity)
+        })
+
+        loanData?.forEach(item => {
+            const p = item.products as any
+            if (!summaryMap[p.id]) {
+                summaryMap[p.id] = { productId: p.id, name: p.name, sku: p.sku, unit: item.unit, inStock: 0, inUse: 0 }
+            }
+            summaryMap[p.id].inUse += Number(item.quantity)
+        })
+
+        return Object.values(summaryMap).sort((a: any, b: any) => a.name.localeCompare(b.name))
     }
 }

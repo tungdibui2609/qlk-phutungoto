@@ -21,8 +21,6 @@ export default function ConstructionLayout({
 
     const tabs = [
         { name: 'Tổng quan', href: '/construction', icon: LayoutDashboard, exact: true },
-        { name: 'Kho Công Trình', href: '/construction/inventory', icon: Package },
-        { name: 'Báo cáo', href: '/construction/reports', icon: BarChart3 },
     ]
 
     return (
@@ -44,31 +42,6 @@ export default function ConstructionLayout({
                         </div>
                     </div>
 
-                    {/* Sub Navigation */}
-                    <nav className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-                        {tabs.map((tab) => {
-                            const Icon = tab.icon
-                            const isActive = tab.exact
-                                ? pathname === tab.href
-                                : pathname?.startsWith(tab.href)
-
-                            return (
-                                <Link
-                                    key={tab.href}
-                                    href={tab.href}
-                                    className={cn(
-                                        "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors",
-                                        isActive
-                                            ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
-                                            : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900"
-                                    )}
-                                >
-                                    <Icon size={16} />
-                                    {tab.name}
-                                </Link>
-                            )
-                        })}
-                    </nav>
                 </div>
             </div>
 

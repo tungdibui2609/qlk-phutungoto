@@ -1,16 +1,17 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { HardHat, History, Hammer, Plus } from 'lucide-react'
+import { HardHat, History, Hammer, Plus, BarChart3 } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
 import { LoanDashboard } from './_components/LoanDashboard'
 import { LoanHistory } from './_components/LoanHistory'
 import { SiteDirectInboundModal } from './_components/SiteDirectInboundModal'
+import { SiteStockReport } from './_components/SiteStockReport'
 
 export default function SiteInventoryPage() {
     const { currentSystem } = useSystem()
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'history'>('dashboard')
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'summary'>('dashboard')
     const [isInboundOpen, setIsInboundOpen] = useState(false)
 
     // Check if module is enabled
@@ -87,12 +88,28 @@ export default function SiteInventoryPage() {
                     <History size={18} />
                     Lịch sử Trả / Mất
                 </button>
+                <button
+                    onClick={() => setActiveTab('summary')}
+                    className={`flex items-center gap-2 px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'summary'
+                        ? 'border-orange-500 text-orange-600 dark:text-orange-500'
+                        : 'border-transparent text-stone-500 hover:text-stone-800 dark:hover:text-stone-300'
+                        }`}
+                >
+                    <BarChart3 size={18} />
+                    Tồn kho Tổng hợp
+                </button>
             </div>
 
             {/* Content */}
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-                {activeTab === 'dashboard' && <LoanDashboard />}
+                {activeTab === 'dashboard' && (
+                    <LoanDashboard 
+                        isInboundOpen={isInboundOpen} 
+                        setIsInboundOpen={setIsInboundOpen} 
+                    />
+                )}
                 {activeTab === 'history' && <LoanHistory />}
+                {activeTab === 'summary' && <SiteStockReport />}
             </div>
 
             <SiteDirectInboundModal 
