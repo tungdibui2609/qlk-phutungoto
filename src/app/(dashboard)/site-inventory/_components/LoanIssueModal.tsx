@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { loanService } from '@/services/site-inventory/loanService'
 import { QuantityInput } from '@/components/ui/QuantityInput'
 import { useSystem } from '@/contexts/SystemContext'
+import { Combobox, ComboboxOption } from '@/components/ui/Combobox'
 
 interface LoanIssueModalProps {
     isOpen: boolean
@@ -25,6 +26,8 @@ export const LoanIssueModal: React.FC<LoanIssueModalProps> = ({ isOpen, onClose,
 
     // Form Data
     const [workerName, setWorkerName] = useState('')
+    const [borrowerOptions, setBorrowerOptions] = useState<ComboboxOption[]>([])
+    const [fetchingBorrowers, setFetchingBorrowers] = useState(false)
     const [quantity, setQuantity] = useState(0)
     const [notes, setNotes] = useState('')
     const [submitting, setSubmitting] = useState(false)
@@ -32,13 +35,61 @@ export const LoanIssueModal: React.FC<LoanIssueModalProps> = ({ isOpen, onClose,
     useEffect(() => {
         if (isOpen) {
             fetchInventory()
+            fetchBorrowers()
             setStep(1)
             setSelectedItem(null)
             setWorkerName('')
             setQuantity(0)
             setNotes('')
         }
-    }, [isOpen])
+    }, [isOpen, systemType])
+
+    async function fetchBorrowers() {
+        if (!systemType) return
+        setFetchingBorrowers(true)
+        try {
+            // Fetch members
+            const { data: members, error: mError } = await (supabase.from('construction_members') as any)
+                .select('id, full_name')
+                .eq('system_code', systemType)
+                .eq('is_active', true)
+
+            // Fetch teams
+            const { data: teams, error: tError } = await (supabase.from('construction_teams') as any)
+                .select('id, name')
+                .eq('system_code', systemType)
+
+            const options: ComboboxOption[] = []
+
+            if (members) {
+                members.forEach((m: any) => {
+                    options.push({
+                        value: m.full_name, // Store name directly as it was previously a text field
+                        label: `[Thành viên] ${m.full_name}`,
+                        type: 'member',
+                        id: m.id
+                    })
+                })
+            }
+
+            if (teams) {
+                teams.forEach((t: any) => {
+                    options.push({
+                        value: t.name,
+                        label: `[Đội] ${t.name}`,
+                        type: 'team',
+                        id: t.id
+                    })
+                })
+            }
+
+            setBorrowerOptions(options)
+        } catch (err) {
+            console.error('Error fetching borrowers:', err)
+        } finally {
+            setFetchingBorrowers(false)
+        }
+    }
 
     async function fetchInventory() {
         setLoading(true)
@@ -185,12 +236,14 @@ export const LoanIssueModal: React.FC<LoanIssueModalProps> = ({ isOpen, onClose,
 
                             <div className="space-y-2">
                                 <label className="text-sm font-bold text-stone-500">Người mượn / Tổ đội <span className="text-red-500">*</span></label>
-                                <input
+                                <Combobox
+                                    options={borrowerOptions}
                                     value={workerName}
-                                    onChange={e => setWorkerName(e.target.value)}
-                                    className="w-full p-3 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-bold outline-none focus:border-orange-500"
-                                    placeholder="Nhập tên người mượn..."
-                                    autoFocus
+                                    onChange={(val) => setWorkerName(val || '')}
+                                    placeholder="Chọn hoặc nhập tên người mượn..."
+                                    isLoading={fetchingBorrowers}
+                                    allowCustom={true}
+                                    className="w-full"
                                 />
                             </div>
 
