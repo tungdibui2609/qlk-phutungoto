@@ -583,6 +583,7 @@ export type Database = {
           lot_id: string
           product_id: string
           quantity: number
+          unit: string | null
         }
         Insert: {
           created_at?: string
@@ -590,6 +591,7 @@ export type Database = {
           lot_id: string
           product_id: string
           quantity?: number
+          unit?: string | null
         }
         Update: {
           created_at?: string
@@ -597,6 +599,7 @@ export type Database = {
           lot_id?: string
           product_id?: string
           quantity?: number
+          unit?: string | null
         }
         Relationships: [
           {
@@ -824,6 +827,75 @@ export type Database = {
           },
           {
             foreignKeyName: "outbound_order_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      site_loans: {
+        Row: {
+          created_at: string
+          id: string
+          loan_date: string
+          lot_item_id: string
+          metadata: Json | null
+          notes: string | null
+          order_id: string | null
+          product_id: string | null
+          quantity: number
+          return_date: string | null
+          expected_return_date: string | null
+          status: string | null
+          system_code: string | null
+          unit: string
+          worker_name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          loan_date?: string
+          lot_item_id: string
+          metadata?: Json | null
+          notes?: string | null | undefined
+          order_id?: string | null | undefined
+          product_id?: string | null | undefined
+          quantity: number
+          return_date?: string | null | undefined
+          expected_return_date?: string | null | undefined
+          status?: string | null | undefined
+          system_code?: string | null | undefined
+          unit?: string | null | undefined
+          worker_name?: string | null | undefined
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          loan_date?: string
+          lot_item_id?: string
+          metadata?: Json | null
+          notes?: string | null | undefined
+          order_id?: string | null | undefined
+          product_id?: string | null | undefined
+          quantity?: number
+          return_date?: string | null | undefined
+          expected_return_date?: string | null | undefined
+          status?: string | null | undefined
+          system_code?: string | null | undefined
+          unit?: string | null | undefined
+          worker_name?: string | null | undefined
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_loans_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "outbound_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_loans_product_id_fkey"
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"

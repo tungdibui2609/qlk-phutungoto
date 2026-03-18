@@ -5,6 +5,7 @@ import { X, Check } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { loanService } from '@/services/site-inventory/loanService'
+import { lotService } from '@/services/warehouse/lotService'
 
 interface LoanReturnModalProps {
     loan: any // Loan object
@@ -44,6 +45,18 @@ export const LoanReturnModal: React.FC<LoanReturnModalProps> = ({ loan, onClose,
                 if (item) {
                     const newQty = (item.quantity || 0) + loan.quantity
                     await supabase.from('lot_items').update({ quantity: newQty }).eq('id', loan.lot_item_id)
+
+                    // 3. Sync LOT Status and Quantity
+                    // Find lot_id from lot_item_id or use loan metadata if available
+                    // The loan object doesn't have lot_id directly, but we can fetch it or it might be in loan.lot_item_id -> lots.id
+                    const { data: lotItem } = await supabase.from('lot_items').select('lot_id').eq('id', loan.lot_item_id).single()
+                    if (lotItem) {
+                        await lotService.syncLotStatus({
+                            supabase,
+                            lotId: lotItem.lot_id,
+                            isSiteIssuance: true
+                        })
+                    }
                 }
             }
 

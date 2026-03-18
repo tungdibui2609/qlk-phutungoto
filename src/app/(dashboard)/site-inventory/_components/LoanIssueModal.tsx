@@ -8,6 +8,7 @@ import { loanService } from '@/services/site-inventory/loanService'
 import { QuantityInput } from '@/components/ui/QuantityInput'
 import { useSystem } from '@/contexts/SystemContext'
 import { Combobox, ComboboxOption } from '@/components/ui/Combobox'
+import { lotService } from '@/services/warehouse/lotService'
 
 interface LoanIssueModalProps {
     isOpen: boolean
@@ -156,7 +157,15 @@ export const LoanIssueModal: React.FC<LoanIssueModalProps> = ({ isOpen, onClose,
                 workerName,
                 quantity,
                 unit: selectedItem.unit,
+                systemCode: systemType as string,
                 notes
+            })
+
+            // C. Sync LOT Status and Quantity
+            await lotService.syncLotStatus({
+                supabase,
+                lotId: selectedItem.lots.id,
+                isSiteIssuance: true
             })
 
             showToast('Đã ghi nhận mượn công cụ', 'success')

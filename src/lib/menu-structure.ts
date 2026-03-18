@@ -2,7 +2,8 @@ import {
     LayoutDashboard, Package, Settings, Warehouse, BookUser, BarChart3, Shield,
     List, FolderTree, Boxes, Globe, Tag, Building2, Car, Users, FileText,
     ShieldCheck, Map, ClipboardCheck, StickyNote, HardHat, ArrowDownToLine,
-    ArrowUpFromLine, Activity, DollarSign, History, ArrowRightLeft, Key, PackageSearch
+    ArrowUpFromLine, Activity, DollarSign, History, ArrowRightLeft, Key, PackageSearch,
+    MapPin, QrCode, Printer, Smartphone
 } from 'lucide-react'
 
 export interface MenuItemConfig {
@@ -45,6 +46,7 @@ export const MENU_STRUCTURE: MenuItemConfig[] = [
             { id: 'customers', name: 'Khách hàng', icon: Users },
             { id: 'order_types', name: 'Loại phiếu', icon: FileText },
             { id: 'qc', name: 'QC', icon: ShieldCheck },
+            { id: 'work_areas', name: 'Khu vực', icon: MapPin },
             { id: 'members_teams', name: 'Thành viên & Đội', icon: Users },
         ]
     },
@@ -58,7 +60,22 @@ export const MENU_STRUCTURE: MenuItemConfig[] = [
             { id: 'warehouse_map', name: 'Sơ đồ kho', icon: Map },
             { id: 'warehouse_status', name: 'Trạng thái kho', icon: BarChart3 },
             { id: 'lots', name: 'Quản lý LOT', icon: Boxes },
+            { id: 'requisitions', name: 'Phiếu xuất SX', icon: ArrowUpFromLine },
             { id: 'notes', name: 'Ghi chú vận hành', icon: StickyNote },
+        ]
+    },
+    {
+        id: 'qr_scan_parent',
+        name: 'Quét mã QR',
+        description: 'Các công cụ quét mã QR gán vị trí và điều phối nhanh.',
+        icon: QrCode,
+        children: [
+            { id: 'qr_assign', name: 'Gán vị trí', icon: MapPin },
+            { id: 'qr_export', name: 'Xuất kho', icon: ArrowUpFromLine },
+            { id: 'qr_export_order', name: 'Lệnh xuất', icon: FileText },
+            { id: 'print_station', name: 'Máy in trạm', icon: Printer },
+            { id: 'mobile_access', name: 'Mobile', icon: Smartphone },
+            { id: 'production_lot', name: 'LOT Sản Xuất', icon: Boxes },
         ]
     },
     {

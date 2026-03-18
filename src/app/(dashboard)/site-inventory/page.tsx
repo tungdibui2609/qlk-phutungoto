@@ -1,15 +1,17 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { HardHat, History, Hammer } from 'lucide-react'
+import { HardHat, History, Hammer, Plus } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
 import { LoanDashboard } from './_components/LoanDashboard'
 import { LoanHistory } from './_components/LoanHistory'
+import { SiteDirectInboundModal } from './_components/SiteDirectInboundModal'
 
 export default function SiteInventoryPage() {
     const { currentSystem } = useSystem()
     const [activeTab, setActiveTab] = useState<'dashboard' | 'history'>('dashboard')
+    const [isInboundOpen, setIsInboundOpen] = useState(false)
 
     // Check if module is enabled
     const isModuleEnabled = () => {
@@ -51,6 +53,16 @@ export default function SiteInventoryPage() {
                         Theo dõi mượn trả công cụ dụng cụ và cấp phát vật tư công trình.
                     </p>
                 </div>
+
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => setIsInboundOpen(true)}
+                        className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                    >
+                        <Plus size={20} />
+                        Nhập hàng trực tiếp
+                    </button>
+                </div>
             </div>
 
             {/* Tabs */}
@@ -82,6 +94,15 @@ export default function SiteInventoryPage() {
                 {activeTab === 'dashboard' && <LoanDashboard />}
                 {activeTab === 'history' && <LoanHistory />}
             </div>
+
+            <SiteDirectInboundModal 
+                isOpen={isInboundOpen} 
+                onClose={() => setIsInboundOpen(false)} 
+                onSuccess={() => {
+                    // Refresh dashboard if needed
+                    window.location.reload()
+                }}
+            />
         </div>
     )
 }

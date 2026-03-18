@@ -16,12 +16,12 @@ export const loanService = {
                    id, name, sku, system_type
                 )
             `)
+            .eq('system_code', systemCode)
             .eq('status', 'active')
             .order('created_at', { ascending: false })
 
         if (error) throw error
-        // Client-side filter for system_code if needed
-        return data?.filter((loan: any) => loan.products?.system_type === systemCode)
+        return data || []
     },
 
     async getHistory(supabase: SupabaseClient, systemCode: string) {
@@ -33,21 +33,23 @@ export const loanService = {
                    id, name, sku, system_type
                 )
             `)
+            .eq('system_code', systemCode)
             .neq('status', 'active')
             .order('created_at', { ascending: false })
             .limit(100)
 
         if (error) throw error
-        return data?.filter((loan: any) => loan.products?.system_type === systemCode)
+        return data || []
     },
 
-    async issueLoan({ supabase, lotItemId, productId, workerName, quantity, unit, notes }: {
+    async issueLoan({ supabase, lotItemId, productId, workerName, quantity, unit, systemCode, notes }: {
         supabase: SupabaseClient,
         lotItemId: string,
         productId: string,
         workerName: string,
         quantity: number,
         unit: string,
+        systemCode: string,
         notes?: string
     }) {
         // 1. Check stock (optional but recommended)
@@ -66,7 +68,8 @@ export const loanService = {
                 quantity,
                 unit,
                 notes,
-                status: 'active'
+                status: 'active',
+                system_code: systemCode
             })
             .select()
             .single()
@@ -93,5 +96,49 @@ export const loanService = {
 
         if (error) throw error
         return true
+    },
+
+    async getLoanStats(supabase: SupabaseClient, systemCode: string) {
+        // 1. Lượt mượn đang hoạt động
+        const { count: activeLoans, error: loanError } = await supabase
+            .from('site_loans')
+            .select('*', { count: 'exact', head: true })
+            .eq('system_code', systemCode)
+            .eq('status', 'active')
+
+        if (loanError) throw loanError
+
+        // 2. Tổng số vật tư đang cấp phát (sum quantity of active loans)
+        const { data: activeLoanData, error: sumError } = await supabase
+            .from('site_loans')
+            .select('quantity')
+            .eq('system_code', systemCode)
+            .eq('status', 'active')
+
+        if (sumError) throw sumError
+
+        const totalIssuedItems = activeLoanData?.reduce((acc, curr) => acc + Number(curr.quantity), 0) || 0
+
+        return {
+            activeLoans: activeLoans || 0,
+            totalIssuedItems
+        }
+    },
+
+    async getRecentActivities(supabase: SupabaseClient, systemCode: string, limit = 10) {
+        const { data, error } = await supabase
+            .from('site_loans')
+            .select(`
+                *,
+                products (
+                   id, name, sku, system_type
+                )
+            `)
+            .eq('system_code', systemCode)
+            .order('created_at', { ascending: false })
+            .limit(limit)
+
+        if (error) throw error
+        return data || []
     }
 }

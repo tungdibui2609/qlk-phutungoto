@@ -8,6 +8,7 @@ import { unbundleService } from '@/services/inventory/unbundleService'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { Product, Customer, Unit, OrderItem } from '../types'
 import { generateOrderCode } from '@/lib/orderCodeUtils'
+import { lotService } from '@/services/warehouse/lotService'
 
 export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, onClose, editOrderId }: any) {
     const { showToast } = useToast()
@@ -29,9 +30,6 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
     const [containerNumber, setContainerNumber] = useState('')
     const [sealNumber, setSealNumber] = useState('')
     const [orderTypeId, setOrderTypeId] = useState('')
-    // Site Inventory State
-    const [workerName, setWorkerName] = useState('')
-    const [teamName, setTeamName] = useState('')
     // Images State
     const [images, setImages] = useState<string[]>([])
     // Conversion State
@@ -98,13 +96,8 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
 
             if (order.metadata) {
                 const meta = order.metadata as any
-                setVehicleNumber(meta.vehicleNumber || '')
-                setDriverName(meta.driverName || '')
-                setContainerNumber(meta.containerNumber || '')
                 setSealNumber(meta.sealNumber || '')
                 setTargetUnit(meta.targetUnit || '')
-                setWorkerName(meta.workerName || '')
-                setTeamName(meta.teamName || '')
             }
 
             if (order.items) {
@@ -152,8 +145,6 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         setOrderTypeId('')
         setImages([])
         setTargetUnit('')
-        setWorkerName('')
-        setTeamName('')
     }
 
     async function fetchData() {
@@ -441,6 +432,13 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                             return exp
                         })
                         await supabase.from('lots').update({ metadata }).eq('id', p.lot_id)
+
+                        // [NEW] Sync LOT Status and Quantity
+                        await lotService.syncLotStatus({
+                            supabase,
+                            lotId: p.lot_id,
+                            isSiteIssuance: false
+                        })
                     }
                 }
             }
@@ -468,8 +466,6 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         orderTypeId, setOrderTypeId,
         images, setImages,
         targetUnit, setTargetUnit,
-        workerName, setWorkerName,
-        teamName, setTeamName,
         products, customers, branches, units, orderTypes,
         loadingData, submitting, handleSubmit,
         hasModule, isUtilityEnabled, confirmDialog, setConfirmDialog, handleCustomerSelect

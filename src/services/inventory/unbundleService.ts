@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js'
+import { lotService } from '@/services/warehouse/lotService'
 
 export interface UnbundleParams {
     supabase: SupabaseClient
@@ -328,10 +329,12 @@ export const unbundleService = {
                 } as any)
             }
 
-            // Update LOT total quantity (for consistency in summary list)
-            const { data: allItems } = await supabase.from('lot_items').select('quantity').eq('lot_id', item.lot_id)
-            const total = allItems?.reduce((sum, i) => sum + (i.quantity || 0), 0) || 0
-            await supabase.from('lots').update({ quantity: total } as any).eq('id', item.lot_id)
+            // Update LOT total quantity and status
+            await lotService.syncLotStatus({
+                supabase,
+                lotId: item.lot_id,
+                isSiteIssuance: false // Unbundle is internal
+            })
 
             remainingToBreak -= canTake
         }

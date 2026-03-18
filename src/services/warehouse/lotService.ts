@@ -282,5 +282,51 @@ export const lotService = {
         })
 
         return metadata
+    },
+
+    /**
+     * Synchronizes LOT status based on current quantity.
+     * If total quantity is 0, sets status to 'Đã xuất hết cho công trình'
+     * if it was a site issuance, otherwise 'inactive'.
+     */
+    async syncLotStatus(params: {
+        supabase: SupabaseClient
+        lotId: string
+        isSiteIssuance?: boolean
+    }) {
+        const { supabase, lotId, isSiteIssuance } = params
+
+        // 1. Calculate total quantity from lot_items
+        const { data: items, error: itemsErr } = await supabase
+            .from('lot_items')
+            .select('quantity')
+            .eq('lot_id', lotId)
+
+        if (itemsErr) throw itemsErr
+
+        const totalQty = items?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0
+
+        // 2. Fetch current status to decide if we should reset it
+        const { data: lot } = await supabase.from('lots').select('status').eq('id', lotId).single()
+
+        if (totalQty <= 0.000001) {
+            const status = isSiteIssuance ? 'Đã xuất hết cho công trình' : 'inactive'
+            const { error: updErr } = await supabase.from('lots').update({
+                status,
+                quantity: 0
+            }).eq('id', lotId)
+            if (updErr) throw updErr
+        } else {
+            // If quantity > 0, reset status to 'active' ONLY if it was one of the "empty" statuses
+            const currentStatus = lot?.status
+            const statusUpdate: any = { quantity: Number(totalQty.toFixed(6)) }
+            
+            if (currentStatus === 'Đã xuất hết cho công trình' || currentStatus === 'inactive') {
+                statusUpdate.status = 'active'
+            }
+
+            const { error: updErr } = await supabase.from('lots').update(statusUpdate).eq('id', lotId)
+            if (updErr) throw updErr
+        }
     }
 }
