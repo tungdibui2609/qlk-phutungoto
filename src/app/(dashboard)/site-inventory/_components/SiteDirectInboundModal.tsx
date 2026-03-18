@@ -34,6 +34,7 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
     const [suppliers, setSuppliers] = useState<any[]>([])
     const [invoiceFile, setInvoiceFile] = useState<File | null>(null)
     const [notes, setNotes] = useState('')
+    const [inboundDate, setInboundDate] = useState(new Date().toISOString().split('T')[0])
     const [submitting, setSubmitting] = useState(false)
 
     useEffect(() => {
@@ -46,6 +47,7 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
             setNotes('')
             setSupplierId('')
             setInvoiceFile(null)
+            setInboundDate(new Date().toISOString().split('T')[0])
         }
     }, [isOpen, systemType])
 
@@ -129,6 +131,7 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
                     warehouse_name: warehouseName,
                     system_code: systemType,
                     supplier_id: supplierId || null,
+                    inbound_date: inboundDate,
                     status: 'active',
                     metadata: {
                         source: 'Direct Site Inbound',
@@ -137,13 +140,13 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
                         invoice_view_link: invoiceViewLink,
                         created_at: new Date().toISOString(),
                         system_history: {
-                            inbound: {
-                                date: new Date().toISOString(),
+                            inbound: [{
+                                date: inboundDate || new Date().toISOString(),
                                 type: 'SITE_DIRECT',
                                 description: notes || 'Nhập kho trực tiếp tại công trình',
                                 supplier_id: supplierId || null,
                                 invoice_link: invoiceViewLink || null
-                            },
+                            }],
                             exports: []
                         }
                     }
@@ -353,6 +356,16 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
                                             )}
                                         </div>
                                     </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold text-stone-500">Ngày nhập hàng (Có thể truy hồi)</label>
+                                    <input
+                                        type="date"
+                                        value={inboundDate}
+                                        onChange={e => setInboundDate(e.target.value)}
+                                        className="w-full p-3 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                                    />
                                 </div>
                             </div>
                         </div>

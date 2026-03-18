@@ -1,17 +1,22 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { History, RefreshCw, Search, ExternalLink, Building, Package, FileText } from 'lucide-react'
+import { History, RefreshCw, Search, ExternalLink, Building, Package, FileText, Trash2, Edit } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import { useToast } from '@/components/ui/ToastProvider'
 import { loanService } from '@/services/site-inventory/loanService'
 import { useSystem } from '@/contexts/SystemContext'
 import { format } from 'date-fns'
+import { EditSiteInboundModal } from './EditSiteInboundModal'
 
 export const SiteInboundHistory = () => {
     const { systemType } = useSystem()
+    const { showToast, showConfirm } = useToast()
     const [history, setHistory] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
+    const [isDeleting, setIsDeleting] = useState<string | null>(null)
+    const [editingLot, setEditingLot] = useState<any>(null)
 
     useEffect(() => {
         if (systemType) fetchHistory()
@@ -26,6 +31,35 @@ export const SiteInboundHistory = () => {
             console.error(error)
         } finally {
             setLoading(false)
+        }
+    }
+
+    const handleDelete = async (lot: any) => {
+        if (!await showConfirm(`Bạn có chắc muốn xóa phiếu nhập ${lot.code}? Thao tác này sẽ xóa vĩnh viễn dữ liệu tồn kho liên quan.`)) return
+
+        setIsDeleting(lot.id)
+        try {
+            // Check if LOT has any issuance history (simple check via status or quantity)
+            // If it's still 'active' and quantity matches initial? Hard to check exactly without logs.
+            // But we can check if there are any site_loans associated with this LOT?
+            // (Note: Currently site_loans don't link directly to LOT, they just subtract from the overall stock).
+            // Actually, for Direct Site Inbound, the LOT IS the stock.
+            
+            // Delete lot_items first
+            const { error: itemErr } = await supabase.from('lot_items').delete().eq('lot_id', lot.id)
+            if (itemErr) throw itemErr
+
+            // Delete the lot
+            const { error: lotErr } = await supabase.from('lots').delete().eq('id', lot.id)
+            if (lotErr) throw lotErr
+
+            showToast('Đã xóa phiếu nhập và tồn kho liên quan', 'success')
+            fetchHistory()
+        } catch (error: any) {
+            console.error(error)
+            showToast('Lỗi khi xóa: ' + error.message, 'error')
+        } finally {
+            setIsDeleting(null)
         }
     }
 
@@ -80,16 +114,17 @@ export const SiteInboundHistory = () => {
                                     <th className="px-6 py-5">Nhà cung cấp</th>
                                     <th className="px-6 py-5 text-center">Bằng chứng / HĐ</th>
                                     <th className="px-6 py-5">Ghi chú</th>
+                                    <th className="px-6 py-5 text-center">Thao tác</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-stone-50 dark:divide-zinc-800">
                                 {filteredHistory.map(item => (
                                     <tr key={item.id} className="hover:bg-stone-50/50 dark:hover:bg-zinc-900/30 transition-colors group">
                                         <td className="px-6 py-5 text-sm font-medium text-stone-500">
-                                            {format(new Date(item.created_at), 'dd/MM/yyyy HH:mm')}
+                                            {format(new Date(item.inbound_date || item.created_at), 'dd/MM/yyyy')}
                                         </td>
                                         <td className="px-6 py-5">
-                                            <span className="font-mono text-xs font-bold bg-stone-100 dark:bg-zinc-800 text-stone-600 dark:text-emerald-400 px-2.5 py-1 rounded-lg border border-stone-200 dark:border-zinc-700">
+                                            <span className="whitespace-nowrap font-mono text-xs font-bold bg-stone-100 dark:bg-zinc-800 text-stone-600 dark:text-emerald-400 px-2.5 py-1 rounded-lg border border-stone-200 dark:border-zinc-700">
                                                 {item.code}
                                             </span>
                                         </td>
@@ -134,12 +169,40 @@ export const SiteInboundHistory = () => {
                                         <td className="px-6 py-5 text-sm text-stone-500 max-w-xs truncate italic" title={item.notes || item.metadata?.notes}>
                                             {item.notes || item.metadata?.notes || '-'}
                                         </td>
+                                        <td className="px-6 py-5">
+                                            <div className="flex items-center justify-center gap-2">
+                                                <button
+                                                    onClick={() => setEditingLot(item)}
+                                                    className="p-2 text-stone-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all"
+                                                    title="Chỉnh sửa phiếu nhập"
+                                                >
+                                                    <Edit size={18} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(item)}
+                                                    disabled={isDeleting === item.id}
+                                                    className="p-2 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                                                    title="Xóa phiếu nhập"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
                 </div>
+            )}
+
+            {editingLot && (
+                <EditSiteInboundModal
+                    lot={editingLot}
+                    isOpen={!!editingLot}
+                    onClose={() => setEditingLot(null)}
+                    onSuccess={fetchHistory}
+                />
             )}
         </div>
     )

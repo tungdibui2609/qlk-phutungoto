@@ -75,9 +75,12 @@ export default function InboundPage() {
             const history = metadata?.system_history || {}
             
             // Combine both standard inbound and accounting sync inbound adjustments
+            const rawInbound = history.inbound || []
+            const rawSyncInbound = history.accounting_sync?.inbound || []
+            
             const inbounds = [
-                ...(history.inbound || []),
-                ...(history.accounting_sync?.inbound || [])
+                ...(Array.isArray(rawInbound) ? rawInbound : [rawInbound]),
+                ...(Array.isArray(rawSyncInbound) ? rawSyncInbound : [rawSyncInbound])
             ]
             
             inbounds.forEach((inb: any) => {

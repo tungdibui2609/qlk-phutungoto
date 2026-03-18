@@ -110,9 +110,12 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
             data?.forEach(lot => {
                 const metadata = lot.metadata as any
                 const history = metadata?.system_history || {}
+                const rawInbound = history.inbound || []
+                const rawSyncInbound = history.accounting_sync?.inbound || []
+                
                 const inbounds = [
-                    ...(history.inbound || []),
-                    ...(history.accounting_sync?.inbound || [])
+                    ...(Array.isArray(rawInbound) ? rawInbound : [rawInbound]),
+                    ...(Array.isArray(rawSyncInbound) ? rawSyncInbound : [rawSyncInbound])
                 ]
                 
                 inbounds.forEach((inc: any) => {
