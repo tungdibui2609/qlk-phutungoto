@@ -140,10 +140,13 @@ function WarehouseStatusContent() {
                 for (let i = 0; i < lotIdsArray.length; i += chunkSize) {
                     const chunk = lotIdsArray.slice(i, i + chunkSize)
                     // Attempt fetch with sort_order
-                    let { data, error } = await supabase
+                    const mainQuery = await supabase
                         .from('lots')
                         .select('id, code, quantity, lot_items(id, product_id, quantity, unit, products(name, sku, unit, color, internal_code, internal_name, sort_order)), lot_tags(tag, lot_item_id)')
                         .in('id', chunk)
+
+                    let data = mainQuery.data as any[] | null
+                    let error = mainQuery.error
 
                     if (error && error.code === '42703') {
                         // Fallback if sort_order column doesn't exist yet
@@ -152,7 +155,7 @@ function WarehouseStatusContent() {
                             .from('lots')
                             .select('id, code, quantity, lot_items(id, product_id, quantity, unit, products(name, sku, unit, color, internal_code, internal_name)), lot_tags(tag, lot_item_id)')
                             .in('id', chunk)
-                        data = fallback.data
+                        data = fallback.data as any[] | null
                         error = fallback.error
                     }
 
@@ -193,6 +196,7 @@ function WarehouseStatusContent() {
                         internal_name: it.products?.internal_name,
                         unit: it.unit || it.products?.unit,
                         product_color: it.products?.color,
+                        sort_order: it.products?.sort_order ?? null,
                         quantity: it.quantity,
                         tags: l.lot_tags?.filter((t: any) => t.lot_item_id === it.id && !t.tag.startsWith('MERGED_')).map((t: any) => t.tag) || []
                     })) || []
