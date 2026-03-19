@@ -237,7 +237,11 @@ export async function exportToExcel(data: ExportData) {
                 right: { style: 'thin' }
             };
             if (typeof val === 'number') {
-                cell.numFmt = '#,##0.##';
+                if (Math.floor(val) === val) {
+                    cell.numFmt = '#,##0';
+                } else {
+                    cell.numFmt = '#,##0.##';
+                }
             }
         });
         currentRow++;
@@ -251,16 +255,25 @@ export async function exportToExcel(data: ExportData) {
 
     // Sum quantity
     const qtyCol = 6;
-    totalRow.getCell(qtyCol).value = data.items.reduce((sum, item) => sum + item.quantity, 0);
+    const totalQty = data.items.reduce((sum, item) => sum + item.quantity, 0);
+    totalRow.getCell(qtyCol).value = totalQty;
     totalRow.getCell(qtyCol).font = { bold: true };
-    totalRow.getCell(qtyCol).numFmt = '#,##0.##';
+    if (Math.floor(totalQty) === totalQty) {
+        totalRow.getCell(qtyCol).numFmt = '#,##0';
+    } else {
+        totalRow.getCell(qtyCol).numFmt = '#,##0.##';
+    }
 
     if (data.modules.hasFinancials && data.printType === 'official') {
         const totalAmount = data.items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0);
         const amountCol = headers.indexOf('Thành tiền') + 1;
         totalRow.getCell(amountCol).value = totalAmount;
         totalRow.getCell(amountCol).font = { bold: true };
-        totalRow.getCell(amountCol).numFmt = '#,##0.##';
+        if (Math.floor(totalAmount) === totalAmount) {
+            totalRow.getCell(amountCol).numFmt = '#,##0';
+        } else {
+            totalRow.getCell(amountCol).numFmt = '#,##0.##';
+        }
     }
 
     // Border for total row

@@ -11,9 +11,10 @@ import { PrintHeader } from '@/components/print/PrintHeader'
 import { EditableText } from '@/components/print/PrintHelpers'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
 import { Database } from '@/lib/database.types'
-import { groupWarehouseData } from '@/lib/warehouseUtils'
+import { groupWarehouseData, parsePositionCodeFallback } from '@/lib/warehouseUtils'
 import { exportWarehouseToExcel, exportWarehouseGridToExcel } from '@/lib/warehouseExcelExport'
 import { FileSpreadsheet } from 'lucide-react'
+import { useUnitConversion } from '@/hooks/useUnitConversion'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -60,6 +61,8 @@ export default function WarehouseMapPrintPage() {
     const [layouts, setLayouts] = useState<Record<string, ZoneLayout>>({})
     const [lotInfo, setLotInfo] = useState<Record<string, any>>({})
     const [occupiedIds, setOccupiedIds] = useState<Set<string>>(new Set())
+
+    const { toBaseAmount, getBaseToKgRate, unitNameMap, conversionMap } = useUnitConversion()
 
     // Editable Titles
     const [editReportTitle, setEditReportTitle] = useState('SƠ ĐỒ BỐ TRÍ KHO')
@@ -195,7 +198,7 @@ export default function WarehouseMapPrintPage() {
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('display_order').order('code').order('id')),
                 fetchAll('zone_positions', q => q.select('zone_id, position_id, positions!inner(system_type)').eq('positions.system_type', systemType).order('zone_id', { ascending: true }).order('position_id', { ascending: true })),
                 fetchAll('zone_layouts', q => q.order('id')),
-                fetchAll('lots', q => q.order('id'), '*, suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name)), lot_tags(tag, lot_item_id)')
+                fetchAll('lots', q => q.order('id'), '*, suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, weight_kg), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, weight_kg, product_units(unit_id, conversion_rate))), lot_tags(tag, lot_item_id)')
             ])
 
             // Process structure
@@ -228,11 +231,14 @@ export default function WarehouseMapPrintPage() {
                             .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
                         accumulatedTags.push(...itemTags)
                         return {
+                            id: item.id,
+                            product_id: item.product_id,
                             product_name: item.products?.name,
                             sku: item.products?.sku,
                             internal_code: item.products?.internal_code,
                             internal_name: item.products?.internal_name,
                             unit: item.unit || item.products?.unit,
+                            base_unit: item.products?.unit,
                             quantity: item.quantity,
                             tags: itemTags
                         }
@@ -243,11 +249,13 @@ export default function WarehouseMapPrintPage() {
                         .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
                     accumulatedTags.push(...itemTags)
                     items = [{
+                        product_id: l.product_id,
                         product_name: l.products.name,
                         sku: l.products.sku,
                         internal_code: l.products.internal_code,
                         internal_name: l.products.internal_name,
                         unit: l.products.unit,
+                        base_unit: l.products.unit,
                         quantity: l.quantity,
                         tags: itemTags
                     }]
@@ -375,12 +383,13 @@ export default function WarehouseMapPrintPage() {
             if (visited.has(z.id)) return
             visited.add(z.id)
             zoneOrderMap.set(z.id, orderIdx++)
-            const children = parentToChildren.get(z.id) || []
-            // Children already sorted by level/display_order/code from fetchData or groupWarehouseData
+            const children = (parentToChildren.get(z.id) || [])
+                .sort((a, b) => (a.code || a.name || '').localeCompare(b.code || b.name || '', undefined, { numeric: true }))
             children.forEach(walk)
         }
 
         const roots = displayZones.filter(z => !z.parent_id || !displayZones.find(pz => pz.id === z.parent_id))
+            .sort((a, b) => (a.code || a.name || '').localeCompare(b.code || b.name || '', undefined, { numeric: true }))
         roots.forEach(walk)
 
         // 2. Sort positions based on the DFS zone index
@@ -420,11 +429,12 @@ export default function WarehouseMapPrintPage() {
         const excelPositions = filteredPositions.flatMap(p => {
             const lot = p.lot_id ? lotInfo[p.lot_id] : null
             const path = p.zone_id ? getZonePath(p.zone_id, zoneMap) : []
+            const parsed = parsePositionCodeFallback(p.code)
             
-            const warehouse = path[0]?.name || '-'
-            const row = path[1]?.name || '-'
-            const bin = path[2]?.name || '-'
-            const level = path[3]?.name || (path.length > 4 ? path[path.length - 1].name : '-')
+            const warehouse = path[0]?.name || parsed?.warehouse || '-'
+            const row = path[1]?.name || parsed?.row || '-'
+            const bin = path[2]?.name || parsed?.bin || '-'
+            const level = path[3]?.name || (path.length > 4 ? path[path.length - 1].name : (parsed?.level || '-'))
 
             if (!lot) {
                 return [{
@@ -432,24 +442,33 @@ export default function WarehouseMapPrintPage() {
                     warehouse,
                     row,
                     bin,
-                    level
+                    level,
+                    subPosition: parsed?.subPosition
                 }]
             }
-            return lot.items.map((item: any) => ({
-                code: p.code,
-                warehouse,
-                row,
-                bin,
-                level,
-                lotCode: lot.code,
-                productName: displayInternalCode && item.internal_name ? item.internal_name : item.product_name,
-                sku: displayInternalCode && item.internal_code ? item.internal_code : item.sku,
-                unit: item.unit,
-                quantity: item.quantity,
-                tags: [item.tags?.join(', '), lot.batch_code ? `Lô: ${lot.batch_code}` : null]
-                    .filter(Boolean)
-                    .join(' | ') || '-'
-            }))
+            return lot.items.map((item: any) => {
+                const baseQty = toBaseAmount(item.product_id, item.unit, item.quantity, item.base_unit)
+                const kgRate = getBaseToKgRate(item.product_id, item.base_unit)
+                const kgQuantity = kgRate !== null ? baseQty * kgRate : null
+
+                return {
+                    code: p.code,
+                    warehouse,
+                    row,
+                    bin,
+                    level,
+                    subPosition: parsed?.subPosition,
+                    lotCode: lot.code,
+                    productName: displayInternalCode && item.internal_name ? item.internal_name : item.product_name,
+                    sku: displayInternalCode && item.internal_code ? item.internal_code : item.sku,
+                    unit: item.unit,
+                    quantity: item.quantity,
+                    kgQuantity,
+                    tags: [item.tags?.join(', '), lot.batch_code ? `Lô: ${lot.batch_code}` : null]
+                        .filter(Boolean)
+                        .join(' | ') || '-'
+                }
+            })
         })
 
         await exportWarehouseToExcel({
@@ -496,13 +515,22 @@ export default function WarehouseMapPrintPage() {
                         pos.forEach(p => {
                             const lot = p.lot_id ? lotInfo[p.lot_id] : null
                             if (lot?.items) {
-                                lot.items.forEach((it: any) => items.push({
-                                    productName: it.internal_name || it.product_name,
-                                    sku: it.internal_code || it.sku,
-                                    unit: it.unit,
-                                    quantity: it.quantity,
-                                    lotCode: lot.code
-                                }))
+                                lot.items.forEach((it: any) => {
+                                    const baseQty = toBaseAmount(it.product_id, it.unit, it.quantity, it.base_unit)
+                                    const kgRate = getBaseToKgRate(it.product_id, it.base_unit)
+                                    const kgQuantity = kgRate !== null ? baseQty * kgRate : null
+
+                                    items.push({
+                                        productName: it.internal_name || it.product_name,
+                                        sku: it.internal_code || it.sku,
+                                        unit: it.unit,
+                                        quantity: it.quantity,
+                                        kgQuantity,
+                                        lotCode: lot.code,
+                                        batchCode: lot.batch_code,
+                                        lotTags: it.tags
+                                    })
+                                })
                             }
                         })
                         filteredZones.filter(z => z.parent_id === zoneId).forEach(child => collect(child.id))

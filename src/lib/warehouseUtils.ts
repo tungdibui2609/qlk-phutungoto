@@ -187,3 +187,30 @@ export function getProductColorStyle(pColor: string | null | undefined, opacity:
         backgroundImage: 'none'
     };
 }
+
+/**
+ * Parses a position code like "K1D1A10T101" into hierarchical parts.
+ * Structure: K[Kho] D[Dãy] [Ô] T[Tầng][Index]
+ * Example: K1D1A10T101 -> { warehouse: "Kho 1", row: "Dãy 1", bin: "Ô A10", level: "Tầng 1" }
+ */
+export function parsePositionCodeFallback(code: string) {
+    if (!code) return null;
+    
+    // Pattern: K(\d+)D(\d+)([A-Z]\d+)T(\d+)
+    const match = code.match(/^K(\d+)D(\d+)([A-Z]\d+|[\u00C0-\u1EF9A-Z]+\d+)T(\d+)/i);
+    if (!match) return null;
+
+    const [_, k, d, bin, t] = match;
+    
+    // T101 -> Tầng 1 (first digit), 01 (last 1-2 digits)
+    const levelDigit = t.charAt(0);
+    const subPos = t.length >= 2 ? t.slice(-2) : t.padStart(2, '0');
+
+    return {
+        warehouse: `Kho ${k}`,
+        row: `Dãy ${d}`,
+        bin: `Ô ${bin.toUpperCase()}`,
+        level: `Tầng ${levelDigit}`,
+        subPosition: subPos
+    };
+}

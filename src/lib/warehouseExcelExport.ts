@@ -7,11 +7,13 @@ interface ExcelPosition {
     row?: string;
     bin?: string;
     level?: string;
+    subPosition?: string;
     lotCode?: string;
     productName?: string;
     sku?: string;
     unit?: string;
     quantity?: number;
+    kgQuantity?: number | null;
     tags?: string;
 }
 
@@ -33,29 +35,31 @@ export async function exportWarehouseToExcel(data: ExportWarehouseData) {
         { header: 'Dãy', key: 'row', width: 15 },
         { header: 'Ô / Khu vực', key: 'bin', width: 15 },
         { header: 'Tầng', key: 'level', width: 12 },
-        { header: 'Vị trí', key: 'code', width: 15 },
+        { header: 'Vị trí', key: 'subPosition', width: 10 },
+        { header: 'Mã vị trí', key: 'code', width: 20 },
         { header: 'Số lô (Lot)', key: 'lotCode', width: 20 },
         { header: 'Sản phẩm', key: 'productName', width: 40 },
         { header: 'Mã SP (SKU)', key: 'sku', width: 20 },
         { header: 'ĐVT', key: 'unit', width: 10 },
         { header: 'Số lượng', key: 'quantity', width: 12 },
+        { header: 'Quy đổi (Kg)', key: 'kgQuantity', width: 15 },
         { header: 'Mã phụ / Tags', key: 'tags', width: 30 },
     ];
 
     // 2. Header công ty / Tiêu đề báo cáo
-    worksheet.mergeCells('A1:L1');
+    worksheet.mergeCells('A1:N1');
     const titleCell = worksheet.getCell('A1');
     titleCell.value = 'BÁO CÁO CHI TIẾT SƠ ĐỒ KHO';
     titleCell.font = { bold: true, size: 16 };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
-    worksheet.mergeCells('A2:L2');
+    worksheet.mergeCells('A2:N2');
     const infoCell = worksheet.getCell('A2');
     infoCell.value = `Kho: ${data.systemName}${data.zoneName ? ` | Khu vực: ${data.zoneName}` : ''} | Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`;
     infoCell.alignment = { horizontal: 'center' };
 
     if (data.searchTerm) {
-        worksheet.mergeCells('A3:L3');
+        worksheet.mergeCells('A3:N3');
         const filterCell = worksheet.getCell('A3');
         filterCell.value = `Lọc theo: "${data.searchTerm}"`;
         filterCell.alignment = { horizontal: 'center' };
@@ -67,7 +71,7 @@ export async function exportWarehouseToExcel(data: ExportWarehouseData) {
     const headerRow = worksheet.getRow(headerRowIdx);
     
     // Copy headers to the specific row
-    ['STT', 'Kho', 'Dãy', 'Ô / Khu vực', 'Tầng', 'Vị trí', 'Số lô (Lot)', 'Sản phẩm', 'Mã SP (SKU)', 'ĐVT', 'Số lượng', 'Mã phụ / Tags'].forEach((h, i) => {
+    ['STT', 'Kho', 'Dãy', 'Ô / Khu vực', 'Tầng', 'Vị trí', 'Mã vị trí', 'Số lô (Lot)', 'Sản phẩm', 'Mã SP (SKU)', 'ĐVT', 'Số lượng', 'Quy đổi (Kg)', 'Mã phụ / Tags'].forEach((h, i) => {
         const cell = headerRow.getCell(i + 1);
         cell.value = h;
         cell.font = { bold: true, color: { argb: 'FFFFFF' } };
@@ -85,10 +89,10 @@ export async function exportWarehouseToExcel(data: ExportWarehouseData) {
         };
     });
 
-    // Kích hoạt AutoFilter cho các cột từ A đến L tại dòng header
+    // Kích hoạt AutoFilter cho các cột từ A đến N tại dòng header
     worksheet.autoFilter = {
         from: { row: headerRowIdx, column: 1 },
-        to: { row: headerRowIdx, column: 12 }
+        to: { row: headerRowIdx, column: 14 }
     };
 
     // 4. Đổ dữ liệu
@@ -101,16 +105,20 @@ export async function exportWarehouseToExcel(data: ExportWarehouseData) {
         row.getCell(3).value = pos.row || '';
         row.getCell(4).value = pos.bin || '';
         row.getCell(5).value = pos.level || '';
-        row.getCell(6).value = pos.code;
-        row.getCell(7).value = pos.lotCode || '(Trống)';
-        row.getCell(8).value = pos.productName || '';
-        row.getCell(9).value = pos.sku || '';
-        row.getCell(10).value = pos.unit || '';
-        row.getCell(11).value = pos.quantity || 0;
-        row.getCell(12).value = pos.tags || '';
+        row.getCell(6).value = pos.subPosition || '';
+        row.getCell(7).value = pos.code;
+        row.getCell(8).value = pos.lotCode || '(Trống)';
+        row.getCell(9).value = pos.productName || '';
+        row.getCell(10).value = pos.sku || '';
+        row.getCell(11).value = pos.unit || '';
+        const q = Number(pos.quantity) || 0;
+        row.getCell(12).value = Math.round(q * 1000) / 1000;
+        const kgQ = pos.kgQuantity !== null && pos.kgQuantity !== undefined ? Number(pos.kgQuantity) : null;
+        row.getCell(13).value = kgQ !== null ? Math.round(kgQ * 1000) / 1000 : '-';
+        row.getCell(14).value = pos.tags || '';
 
         // Định dạng style cho row dữ liệu
-        for (let i = 1; i <= 12; i++) {
+        for (let i = 1; i <= 14; i++) {
             const cell = row.getCell(i);
             cell.border = {
                 top: { style: 'thin' },
@@ -118,12 +126,20 @@ export async function exportWarehouseToExcel(data: ExportWarehouseData) {
                 bottom: { style: 'thin' },
                 right: { style: 'thin' }
             };
-            if (i === 1 || [2, 3, 4, 5, 6].includes(i) || i === 10) {
+            if (i === 1 || [2, 3, 4, 5, 6, 7].includes(i) || i === 11) {
                 cell.alignment = { horizontal: 'center' };
             }
-            if (i === 11) {
+            if (i === 12 || i === 13) {
                 cell.alignment = { horizontal: 'right' };
-                cell.numFmt = '#,##0.##';
+                // Conditional format: No decimals for integers, up to 2 for others
+                const val = typeof cell.value === 'number' ? cell.value : null;
+                if (val !== null) {
+                    if (Math.floor(val) === val) {
+                        cell.numFmt = '#,##0';
+                    } else {
+                        cell.numFmt = '#,##0.##';
+                    }
+                }
             }
             if (!pos.lotCode) {
                 cell.font = { italic: true, color: { argb: '9CA3AF' } }; // Gray-400
@@ -136,15 +152,35 @@ export async function exportWarehouseToExcel(data: ExportWarehouseData) {
     // 5. Dòng tổng kết
     const totalRow = worksheet.getRow(currentRowIdx);
     totalRow.getCell(1).value = 'TỔNG CỘNG';
-    worksheet.mergeCells(`A${currentRowIdx}:J${currentRowIdx}`);
+    worksheet.mergeCells(`A${currentRowIdx}:K${currentRowIdx}`);
     totalRow.getCell(1).font = { bold: true };
     totalRow.getCell(1).alignment = { horizontal: 'center' };
 
-    const totalQty = data.positions.reduce((sum, p) => sum + (p.quantity || 0), 0);
-    totalRow.getCell(11).value = totalQty;
-    totalRow.getCell(11).font = { bold: true };
-    totalRow.getCell(11).numFmt = '#,##0.##';
-    totalRow.getCell(11).alignment = { horizontal: 'right' };
+    // Total Quantity
+    const totalQty = data.positions.reduce((sum, p) => sum + (Number(p.quantity) || 0), 0);
+    const roundedTotal = Math.round(totalQty * 1000) / 1000;
+    totalRow.getCell(12).value = roundedTotal;
+    totalRow.getCell(12).font = { bold: true };
+    if (Math.floor(roundedTotal) === roundedTotal) {
+        totalRow.getCell(12).numFmt = '#,##0';
+    } else {
+        totalRow.getCell(12).numFmt = '#,##0.##';
+    }
+    totalRow.getCell(12).alignment = { horizontal: 'right' };
+
+    // Total Kg
+    const totalKg = data.positions.reduce((sum, p) => sum + (Number(p.kgQuantity) || 0), 0);
+    const roundedTotalKg = Math.round(totalKg * 1000) / 1000;
+    totalRow.getCell(13).value = totalKg > 0 ? roundedTotalKg : '-';
+    totalRow.getCell(13).font = { bold: true };
+    if (totalKg > 0) {
+        if (Math.floor(roundedTotalKg) === roundedTotalKg) {
+            totalRow.getCell(13).numFmt = '#,##0';
+        } else {
+            totalRow.getCell(13).numFmt = '#,##0.##';
+        }
+    }
+    totalRow.getCell(13).alignment = { horizontal: 'right' };
 
 
 
@@ -161,6 +197,7 @@ interface GridCellData {
         sku: string;
         unit: string;
         quantity: number;
+        kgQuantity?: number | null;
         lotCode?: string;
     }>;
     isMerged?: boolean;
@@ -229,9 +266,13 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
             const cell = worksheet.getCell(excelRowIdx, excelColIdx);
 
             if (cellData.items.length > 0) {
-                const text = cellData.items.map(item => 
-                    `${item.productName} (${item.sku})\nSL: ${item.quantity} ${item.unit}${item.lotCode ? `\nLô: ${item.lotCode}` : ''}`
-                ).join('\n---\n');
+                const text = cellData.items.map(item => {
+                    const roundedQty = Math.round((Number(item.quantity) || 0) * 1000) / 1000;
+                    const kgQ = item.kgQuantity !== null && item.kgQuantity !== undefined ? Number(item.kgQuantity) : null;
+                    const roundedKg = kgQ !== null ? Math.round(kgQ * 1000) / 1000 : null;
+                    
+                    return `${item.productName} (${item.sku})\nSL: ${roundedQty} ${item.unit}${roundedKg !== null ? ` ~ ${roundedKg} Kg` : ''}${item.lotCode ? `\nLô: ${item.lotCode}` : ''}`;
+                }).join('\n---\n');
                 
                 cell.value = text;
                 cell.alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
