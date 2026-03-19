@@ -443,7 +443,8 @@ export default function WarehouseMapPrintPage() {
                     row,
                     bin,
                     level,
-                    subPosition: parsed?.subPosition
+                    subPosition: parsed?.subPosition,
+                    notes: ''
                 }]
             }
             return lot.items.map((item: any) => {
@@ -466,7 +467,8 @@ export default function WarehouseMapPrintPage() {
                     kgQuantity,
                     tags: [item.tags?.join(', '), lot.batch_code ? `Lô: ${lot.batch_code}` : null]
                         .filter(Boolean)
-                        .join(' | ') || '-'
+                        .join(' | ') || '-',
+                    notes: lot.notes || ''
                 }
             })
         })

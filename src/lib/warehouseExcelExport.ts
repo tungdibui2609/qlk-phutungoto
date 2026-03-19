@@ -15,6 +15,7 @@ interface ExcelPosition {
     quantity?: number;
     kgQuantity?: number | null;
     tags?: string;
+    notes?: string;
 }
 
 interface ExportWarehouseData {
@@ -44,22 +45,23 @@ export async function exportWarehouseToExcel(data: ExportWarehouseData) {
         { header: 'Số lượng', key: 'quantity', width: 12 },
         { header: 'Quy đổi (Kg)', key: 'kgQuantity', width: 15 },
         { header: 'Mã phụ / Tags', key: 'tags', width: 30 },
+        { header: 'Ghi chú', key: 'notes', width: 30 },
     ];
 
     // 2. Header công ty / Tiêu đề báo cáo
-    worksheet.mergeCells('A1:N1');
+    worksheet.mergeCells('A1:O1');
     const titleCell = worksheet.getCell('A1');
     titleCell.value = 'BÁO CÁO CHI TIẾT SƠ ĐỒ KHO';
     titleCell.font = { bold: true, size: 16 };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
-    worksheet.mergeCells('A2:N2');
+    worksheet.mergeCells('A2:O2');
     const infoCell = worksheet.getCell('A2');
     infoCell.value = `Kho: ${data.systemName}${data.zoneName ? ` | Khu vực: ${data.zoneName}` : ''} | Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`;
     infoCell.alignment = { horizontal: 'center' };
 
     if (data.searchTerm) {
-        worksheet.mergeCells('A3:N3');
+        worksheet.mergeCells('A3:O3');
         const filterCell = worksheet.getCell('A3');
         filterCell.value = `Lọc theo: "${data.searchTerm}"`;
         filterCell.alignment = { horizontal: 'center' };
@@ -71,7 +73,7 @@ export async function exportWarehouseToExcel(data: ExportWarehouseData) {
     const headerRow = worksheet.getRow(headerRowIdx);
     
     // Copy headers to the specific row
-    ['STT', 'Kho', 'Dãy', 'Ô / Khu vực', 'Tầng', 'Vị trí', 'Mã vị trí', 'Số lô (Lot)', 'Sản phẩm', 'Mã SP (SKU)', 'ĐVT', 'Số lượng', 'Quy đổi (Kg)', 'Mã phụ / Tags'].forEach((h, i) => {
+    ['STT', 'Kho', 'Dãy', 'Ô / Khu vực', 'Tầng', 'Vị trí', 'Mã vị trí', 'Số lô (Lot)', 'Sản phẩm', 'Mã SP (SKU)', 'ĐVT', 'Số lượng', 'Quy đổi (Kg)', 'Mã phụ / Tags', 'Ghi chú'].forEach((h, i) => {
         const cell = headerRow.getCell(i + 1);
         cell.value = h;
         cell.font = { bold: true, color: { argb: 'FFFFFF' } };
@@ -89,10 +91,10 @@ export async function exportWarehouseToExcel(data: ExportWarehouseData) {
         };
     });
 
-    // Kích hoạt AutoFilter cho các cột từ A đến N tại dòng header
+    // Kích hoạt AutoFilter cho các cột từ A đến O tại dòng header
     worksheet.autoFilter = {
         from: { row: headerRowIdx, column: 1 },
-        to: { row: headerRowIdx, column: 14 }
+        to: { row: headerRowIdx, column: 15 }
     };
 
     // 4. Đổ dữ liệu
@@ -116,9 +118,10 @@ export async function exportWarehouseToExcel(data: ExportWarehouseData) {
         const kgQ = pos.kgQuantity !== null && pos.kgQuantity !== undefined ? Number(pos.kgQuantity) : null;
         row.getCell(13).value = kgQ !== null ? Math.round(kgQ * 1000) / 1000 : '-';
         row.getCell(14).value = pos.tags || '';
+        row.getCell(15).value = pos.notes || '';
 
         // Định dạng style cho row dữ liệu
-        for (let i = 1; i <= 14; i++) {
+        for (let i = 1; i <= 15; i++) {
             const cell = row.getCell(i);
             cell.border = {
                 top: { style: 'thin' },
@@ -182,7 +185,117 @@ export async function exportWarehouseToExcel(data: ExportWarehouseData) {
     }
     totalRow.getCell(13).alignment = { horizontal: 'right' };
 
+    // ==========================================
+    // 6. Sheet 2: Báo cáo tổng hợp số lượng (Aggregation)
+    // ==========================================
+    const summarySheet = workbook.addWorksheet('Báo cáo tổng hợp');
+    
+    summarySheet.columns = [
+        { header: 'STT', key: 'stt', width: 8 },
+        { header: 'Mã sản phẩm', key: 'sku', width: 20 },
+        { header: 'Tên sản phẩm', key: 'productName', width: 50 },
+        { header: 'Đơn vị', key: 'unit', width: 15 },
+        { header: 'Số lượng', key: 'totalQuantity', width: 15 },
+        { header: 'Quy đổi (Kg)', key: 'totalKg', width: 15 },
+    ];
 
+    // Header Title for Summary Sheet
+    summarySheet.mergeCells('A1:F1');
+    const sTitle = summarySheet.getCell('A1');
+    sTitle.value = 'BÁO CÁO TỔNG HỢP SỐ LƯỢNG HÀNG HÓA';
+    sTitle.font = { bold: true, size: 16 };
+    sTitle.alignment = { horizontal: 'center' };
+
+    summarySheet.mergeCells('A2:F2');
+    const sInfo = summarySheet.getCell('A2');
+    sInfo.value = `Kho: ${data.systemName} | Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`;
+    sInfo.alignment = { horizontal: 'center' };
+
+    // Grouping logic
+    const summaryMap = new Map<string, { sku: string, name: string, unit: string, qty: number, kg: number }>();
+    data.positions.forEach(p => {
+        if (!p.sku || !p.productName) return;
+        const key = `${p.sku}_${p.unit}`;
+        const existing = summaryMap.get(key);
+        if (existing) {
+            existing.qty += (Number(p.quantity) || 0);
+            existing.kg += (Number(p.kgQuantity) || 0);
+        } else {
+            summaryMap.set(key, {
+                sku: p.sku,
+                name: p.productName,
+                unit: p.unit || '',
+                qty: (Number(p.quantity) || 0),
+                kg: (Number(p.kgQuantity) || 0)
+            });
+        }
+    });
+
+    // Header Row (Row 4)
+    const sHeaderRow = summarySheet.getRow(4);
+    ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Đơn vị', 'Số lượng', 'Quy đổi (Kg)'].forEach((h, i) => {
+        const cell = sHeaderRow.getCell(i + 1);
+        cell.value = h;
+        cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4F46E5' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+    });
+
+    let sRowIdx = 5;
+    let sStt = 1;
+    summaryMap.forEach((val) => {
+        const row = summarySheet.getRow(sRowIdx);
+        row.getCell(1).value = sStt++;
+        row.getCell(2).value = val.sku;
+        row.getCell(3).value = val.name;
+        row.getCell(4).value = val.unit;
+        
+        const q = Math.round(val.qty * 1000) / 1000;
+        row.getCell(5).value = q;
+        row.getCell(5).numFmt = Math.floor(q) === q ? '#,##0' : '#,##0.##';
+        
+        const k = Math.round(val.kg * 1000) / 1000;
+        row.getCell(6).value = k > 0 ? k : '-';
+        if (k > 0) row.getCell(6).numFmt = Math.floor(k) === k ? '#,##0' : '#,##0.##';
+
+        // Styling
+        for (let i = 1; i <= 6; i++) {
+            const cell = row.getCell(i);
+            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+            if ([1, 2, 4].includes(i)) cell.alignment = { horizontal: 'center' };
+            if ([5, 6].includes(i)) cell.alignment = { horizontal: 'right' };
+        }
+        sRowIdx++;
+    });
+
+    // Total Row for Summary Sheet
+    const sTotalRow = summarySheet.getRow(sRowIdx);
+    sTotalRow.getCell(1).value = 'TỔNG CỘNG';
+    summarySheet.mergeCells(`A${sRowIdx}:D${sRowIdx}`);
+    sTotalRow.getCell(1).font = { bold: true };
+    sTotalRow.getCell(1).alignment = { horizontal: 'center' };
+    
+    const sSumQty = Array.from(summaryMap.values()).reduce((sum, v) => sum + v.qty, 0);
+    const sSumKg = Array.from(summaryMap.values()).reduce((sum, v) => sum + v.kg, 0);
+
+    const rSumQty = Math.round(sSumQty * 1000) / 1000;
+    const rSumKg = Math.round(sSumKg * 1000) / 1000;
+
+    sTotalRow.getCell(5).value = rSumQty;
+    sTotalRow.getCell(5).font = { bold: true };
+    sTotalRow.getCell(5).numFmt = Math.floor(rSumQty) === rSumQty ? '#,##0' : '#,##0.##';
+    sTotalRow.getCell(5).alignment = { horizontal: 'right' };
+
+    sTotalRow.getCell(6).value = rSumKg > 0 ? rSumKg : '-';
+    sTotalRow.getCell(6).font = { bold: true };
+    if (rSumKg > 0) sTotalRow.getCell(6).numFmt = Math.floor(rSumKg) === rSumKg ? '#,##0' : '#,##0.##';
+    sTotalRow.getCell(6).alignment = { horizontal: 'right' };
+
+    for (let i = 1; i <= 6; i++) {
+        const cell = sTotalRow.getCell(i);
+        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+    }
 
     const buffer = await workbook.xlsx.writeBuffer();
     const fileName = `So_do_kho_${data.systemName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
