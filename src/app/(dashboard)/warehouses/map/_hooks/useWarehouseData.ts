@@ -50,7 +50,7 @@ export function useWarehouseData() {
             .single()
 
         if (error || !l) {
-            console.error('Error refreshing lot info:', error)
+            console.error(`Error refreshing lot info for ${lotId}:`, error?.message || 'Lot not found', error)
             return
         }
 

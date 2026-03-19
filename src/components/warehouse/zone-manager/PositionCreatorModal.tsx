@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Package, X, Zap, Copy, Check, Star } from 'lucide-react'
+import { Package, X, Zap, Copy, Check, Star, List } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { LocalZone, LocalPosition } from './types'
 import { useSystem } from '@/contexts/SystemContext'
@@ -24,12 +24,13 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
     const hasChildren = zones.some(z => z.parent_id === zoneId && z._status !== 'deleted')
 
     // Modes: manual, auto, clone
-    const [mode, setMode] = useState<'manual' | 'auto' | 'clone'>('manual')
+    const [mode, setMode] = useState<'manual' | 'auto' | 'clone' | 'bulk'>('manual')
 
     // Local State for Form
     const [posPrefix, setPosPrefix] = useState(buildDefaultPrefix(zoneId))
     const [posStart, setPosStart] = useState(1)
     const [posCount, setPosCount] = useState(10)
+    const [bulkInput, setBulkInput] = useState('')
     const [isCreatingPositions, setIsCreatingPositions] = useState(false)
     const [autoPosSuffix, setAutoPosSuffix] = useState('V')
     const [autoPosPattern, setAutoPosPattern] = useState(`{zone}.${autoPosSuffix}{#}`)
@@ -109,6 +110,45 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
                 }
             })
 
+            onClose()
+        } catch (err: any) {
+            showToast('Lỗi: ' + err.message, 'error')
+        } finally {
+            setIsCreatingPositions(false)
+        }
+    }
+
+    async function handleBulkCreatePositions() {
+        const codes = bulkInput.split(/[\s\n,]+/).map(c => c.trim().toUpperCase()).filter(c => c.length > 0)
+        if (codes.length === 0) return showToast('Vui lòng nhập ít nhất một mã vị trí', 'warning')
+
+        setIsCreatingPositions(true)
+        try {
+            const lastDisplayOrder = (positionsMap[zoneId] || []).length > 0
+                ? Math.max(...(positionsMap[zoneId] || []).map(p => p.display_order || 0))
+                : 0
+
+            const newPositions: LocalPosition[] = codes.map((code, i) => ({
+                id: generateId(),
+                code,
+                display_order: lastDisplayOrder + i + 1,
+                batch_name: `Bulk created ${new Date().toLocaleTimeString()}`,
+                created_at: new Date().toISOString(),
+                status: 'active',
+                lot_id: null,
+                _status: 'new',
+                system_type: systemType
+            } as any))
+
+            setPositionsMap(prev => {
+                const currentList = prev[zoneId] || []
+                return {
+                    ...prev,
+                    [zoneId]: [...currentList, ...newPositions].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+                }
+            })
+
+            showToast(`Đã tạo thành công ${newPositions.length} vị trí!`, 'success')
             onClose()
         } catch (err: any) {
             showToast('Lỗi: ' + err.message, 'error')
@@ -389,6 +429,7 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
                     <div className="flex gap-1 p-1 bg-gray-100 dark:bg-gray-900 rounded-lg">
                         {[
                             { id: 'manual', label: 'Thủ công', icon: Package },
+                            { id: 'bulk', label: 'Dán mã', icon: List },
                             { id: 'auto', label: 'Tự động', icon: Zap },
                             { id: 'clone', label: 'Sao chép', icon: Copy }
                         ].map((t) => (
@@ -445,6 +486,31 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
                                 {isCreatingPositions ? 'Đang tạo...' : 'Tạo & Gán Ngay'}
                             </button>
                         </>
+                    )}
+
+                    {mode === 'bulk' && (
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-2">Danh sách mã vị trí</label>
+                                <textarea
+                                    value={bulkInput}
+                                    onChange={(e) => setBulkInput(e.target.value)}
+                                    placeholder="Dán mã vị trí tại đây, phân tách bằng dấu cách hoặc xuống dòng..."
+                                    className="w-full h-32 px-3 py-2 border rounded-lg text-sm font-mono bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+                                />
+                                <p className="text-[10px] text-gray-400 mt-1 italic">
+                                    Vị trí sẽ được tạo trực tiếp vào zone hiện tại.
+                                </p>
+                            </div>
+
+                            <button
+                                onClick={handleBulkCreatePositions}
+                                disabled={isCreatingPositions || !bulkInput.trim()}
+                                className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                            >
+                                {isCreatingPositions ? 'Đang tạo...' : 'Tạo ngay'}
+                            </button>
+                        </div>
                     )}
 
                     {mode === 'auto' && (

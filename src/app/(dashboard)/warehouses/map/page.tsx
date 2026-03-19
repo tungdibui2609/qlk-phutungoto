@@ -461,47 +461,49 @@ function WarehouseMapContent() {
 
         const lotsArr = Array.from(lotIdsToMove)
         const oldPosIdsToClear = selectedPositions.filter(p => p.lot_id).map(p => p.id)
-        const updates: { id: string, lot_id: string | null }[] = []
-
-        // 1. Clear old positions
-        oldPosIdsToClear.forEach(id => updates.push({ id, lot_id: null }))
-
-        // 2. Assign to new positions
-        for (let i = 0; i < lotsArr.length; i++) {
-            updates.push({ id: availablePositions[i].id, lot_id: lotsArr[i] })
-        }
+        
+        const clearUpdates = oldPosIdsToClear.map(id => ({ id, lot_id: null }))
+        const assignUpdates = lotsArr.map((lotId, i) => ({ id: availablePositions[i].id, lot_id: lotId }))
 
         // Optimistic UI update
         setPositions(prev => prev.map(p => {
-            const upd = updates.find(u => u.id === p.id)
-            return upd ? { ...p, lot_id: upd.lot_id } : p
+            const clearUpd = clearUpdates.find(u => u.id === p.id)
+            if (clearUpd) return { ...p, lot_id: null }
+            const assignUpd = assignUpdates.find(u => u.id === p.id)
+            if (assignUpd) return { ...p, lot_id: assignUpd.lot_id }
+            return p
         }))
 
         // DB Updates
         try {
-            const chunkSize = 500;
-            let hasError = false;
-
-            for (let i = 0; i < updates.length; i += chunkSize) {
-                const chunk = updates.slice(i, i + chunkSize);
-                const updatePromises = chunk.map(u =>
-                    supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id)
+            const chunkSize = 20; // Smaller chunks for individual updates to avoid massive parallel overhead
+            
+            // Phase 1: Clear old positions
+            for (let i = 0; i < clearUpdates.length; i += chunkSize) {
+                const chunk = clearUpdates.slice(i, i + chunkSize);
+                const results = await Promise.all(
+                    chunk.map(u => supabase.from('positions').update({ lot_id: null } as any).eq('id', u.id))
                 )
-                const results = await Promise.all(updatePromises)
-                if (results.some(r => r.error)) {
-                    hasError = true;
-                }
+                const error = results.find(r => r.error)?.error
+                if (error) throw error
             }
 
-            if (hasError) {
-                showToast('Chuyển kho có lỗi xảy ra. Đang làm mới dữ liệu.', 'warning')
-                fetchData()
-            } else {
-                showToast('Đã chuyển hàng xuống Sảnh thành công!', 'success')
-                setSelectedPositionIds(new Set())
+            // Phase 2: Assign to new positions
+            for (let i = 0; i < assignUpdates.length; i += chunkSize) {
+                const chunk = assignUpdates.slice(i, i + chunkSize);
+                const results = await Promise.all(
+                    chunk.map(u => supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id))
+                )
+                const error = results.find(r => r.error)?.error
+                if (error) throw error
             }
+
+            showToast('Đã di chuyển hàng thành công!', 'success')
+            setSelectedPositionIds(new Set())
+            fetchData()
         } catch (error: any) {
-            showToast('Lỗi khi hạ sảnh: ' + error.message, 'error')
+            console.error('Move to Hall error:', error)
+            showToast('Lỗi khi di chuyển: ' + (error.message || 'Không xác định'), 'error')
             fetchData()
         }
     }
@@ -534,6 +536,8 @@ function WarehouseMapContent() {
         // Find available positions in the target Zone's descendant zones
         const availablePositions = positions.filter(p => p.zone_id && targetZoneIds.has(p.zone_id) && !p.lot_id)
 
+        console.log(`Moving items: targetZoneId=${targetZoneId}, descendantZones=${targetZoneIds.size}, available=${availablePositions.length}, toMove=${lotIdsToMove.size}`)
+
         if (availablePositions.length < lotIdsToMove.size) {
             showToast(`Không đủ vị trí trống trong Khu vực này. Cần ${lotIdsToMove.size}, nhưng chỉ còn ${availablePositions.length} vị trí.`, 'error')
             return
@@ -541,47 +545,49 @@ function WarehouseMapContent() {
 
         const lotsArr = Array.from(lotIdsToMove)
         const oldPosIdsToClear = selectedPositions.filter(p => p.lot_id).map(p => p.id)
-        const updates: { id: string, lot_id: string | null }[] = []
 
-        // 1. Clear old positions
-        oldPosIdsToClear.forEach(id => updates.push({ id, lot_id: null }))
-
-        // 2. Assign to new positions
-        for (let i = 0; i < lotsArr.length; i++) {
-            updates.push({ id: availablePositions[i].id, lot_id: lotsArr[i] })
-        }
+        const clearUpdates = oldPosIdsToClear.map(id => ({ id, lot_id: null }))
+        const assignUpdates = lotsArr.map((lotId, i) => ({ id: availablePositions[i].id, lot_id: lotId }))
 
         // Optimistic UI update
         setPositions(prev => prev.map(p => {
-            const upd = updates.find(u => u.id === p.id)
-            return upd ? { ...p, lot_id: upd.lot_id } : p
+            const clearUpd = clearUpdates.find(u => u.id === p.id)
+            if (clearUpd) return { ...p, lot_id: null }
+            const assignUpd = assignUpdates.find(u => u.id === p.id)
+            if (assignUpd) return { ...p, lot_id: assignUpd.lot_id }
+            return p
         }))
 
         // DB Updates
         try {
-            const chunkSize = 500;
-            let hasError = false;
+            const chunkSize = 20;
 
-            for (let i = 0; i < updates.length; i += chunkSize) {
-                const chunk = updates.slice(i, i + chunkSize);
-                const updatePromises = chunk.map(u =>
-                    supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id)
+            // Phase 1: Clear old positions
+            for (let i = 0; i < clearUpdates.length; i += chunkSize) {
+                const chunk = clearUpdates.slice(i, i + chunkSize);
+                const results = await Promise.all(
+                    chunk.map(u => supabase.from('positions').update({ lot_id: null } as any).eq('id', u.id))
                 )
-                const results = await Promise.all(updatePromises)
-                if (results.some(r => r.error)) {
-                    hasError = true;
-                }
+                const error = results.find(r => r.error)?.error
+                if (error) throw error
             }
 
-            if (hasError) {
-                showToast('Di chuyển có lỗi xảy ra. Đang làm mới dữ liệu.', 'warning')
-                fetchData()
-            } else {
-                showToast('Đã di chuyển hàng thành công!', 'success')
-                setSelectedPositionIds(new Set())
+            // Phase 2: Assign to new positions
+            for (let i = 0; i < assignUpdates.length; i += chunkSize) {
+                const chunk = assignUpdates.slice(i, i + chunkSize);
+                const results = await Promise.all(
+                    chunk.map(u => supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id))
+                )
+                const error = results.find(r => r.error)?.error
+                if (error) throw error
             }
+
+            showToast('Đã di chuyển hàng thành công!', 'success')
+            setSelectedPositionIds(new Set())
+            fetchData()
         } catch (error: any) {
-            showToast('Lỗi khi di chuyển: ' + error.message, 'error')
+            console.error('Move Items error:', error)
+            showToast('Lỗi khi di chuyển: ' + (error.message || 'Không xác định'), 'error')
             fetchData()
         }
     }
