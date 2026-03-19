@@ -5,9 +5,18 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PU
 
 const supabase = createClient(supabaseUrl, supabaseKey)
 
-async function recoverData() {
+async function finalize() {
   try {
-    // 1. Get ALL assigned lot IDs from positions (paginate if necessary, but usually positions < 10k)
+    // 1. Find Kho 4 and its Sảnh
+    const { data: zones } = await supabase.from('zones').select('id, name, parent_id, is_hall')
+    const kho4 = zones?.find(z => z.name.includes('4') && z.parent_id === null)
+    const halls4 = zones?.filter(z => z.name.includes('4') && z.is_hall)
+
+    console.log('Kho 4 ID:', kho4?.id, 'Name:', kho4?.name)
+    console.log('Halls in Kho 4:')
+    halls4?.forEach(h => console.log(`- ID: ${h.id}, Name: ${h.name}`))
+
+    // 2. Identify the 10 orphans again (just to be sure)
     let assignedLotIds = new Set()
     let fromPos = 0
     let stepPos = 1000
@@ -18,41 +27,28 @@ async function recoverData() {
         if (posBatch.length < stepPos) break
         fromPos += stepPos
     }
-    console.log('Total Assigned Lot IDs in Positions:', assignedLotIds.size)
 
-    // 2. Get ALL lots that have items (stock) in KHO_DONG_LANH with pagination
     let lotsWithStock = new Set()
     let fromItem = 0
     let stepItem = 1000
     while (true) {
-        const { data: itemBatch, error } = await supabase
+        const { data: itemBatch } = await supabase
             .from('lot_items')
             .select('lot_id, quantity, lots!inner(system_code)')
             .eq('lots.system_code', 'KHO_DONG_LANH')
             .range(fromItem, fromItem + stepItem - 1)
         
-        if (error) throw error
         if (!itemBatch || itemBatch.length === 0) break
-        
-        itemBatch.forEach(i => {
-            if ((i.quantity || 0) > 0) {
-                lotsWithStock.add(i.lot_id)
-            }
-        })
-        
+        itemBatch.forEach(i => { if ((i.quantity || 0) > 0) lotsWithStock.add(i.lot_id) })
         if (itemBatch.length < stepItem) break
         fromItem += stepItem
     }
 
-    console.log('Lots with positive stock in KHO_DONG_LANH (paginated):', lotsWithStock.size)
-
-    // 3. Find lots with stock but NO position
     const orphanedLots = []
     const lotsWithStockArr = Array.from(lotsWithStock)
-    
     for (let i = 0; i < lotsWithStockArr.length; i += 500) {
         const batchIds = lotsWithStockArr.slice(i, i + 500)
-        const { data: lotsBatch } = await supabase.from('lots').select('id, code, created_at').in('id', batchIds)
+        const { data: lotsBatch } = await supabase.from('lots').select('id, code').in('id', batchIds)
         if (lotsBatch) {
             for (const lot of lotsBatch) {
                 if (!assignedLotIds.has(lot.id)) {
@@ -62,19 +58,15 @@ async function recoverData() {
         }
     }
 
-    console.log('Summary of orphaned lots (lots with items but no position):')
-    console.log('Total orphaned:', orphanedLots.length)
-    
-    orphanedLots.sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    
-    console.log('Detailed list of found orphans:')
-    orphanedLots.forEach(l => {
-        console.log(`- CODE: ${l.code}, ID: ${l.id}, Created: ${l.created_at}`)
-    })
+    console.log(`Final Orphan Count: ${orphanedLots.length}`)
+    if (orphanedLots.length > 0) {
+        console.log('Orphaned Lots to Recover:')
+        orphanedLots.forEach(l => console.log(`- ${l.code} (${l.id})`))
+    }
 
   } catch (err) {
     console.error(err)
   }
 }
 
-recoverData()
+finalize()

@@ -1,0 +1,15 @@
+﻿Total Assigned Lot IDs in Positions: 3130
+Lots with positive stock in KHO_DONG_LANH (paginated): 3147
+Summary of orphaned lots (lots with items but no position):
+Total orphaned: 10
+Detailed list of found orphans:
+- CODE: LOT-979285-869-22, ID: 9a794ea2-6773-4075-aa73-f4492f8bf2a6, Created: 2026-03-10T05:53:00.186676+00:00
+- CODE: LOT-979285-955-23, ID: aa9ce17c-cc9f-48bc-bd16-c352ad44fbc0, Created: 2026-03-10T05:53:00.186676+00:00
+- CODE: LOT-979285-732-24, ID: 88ad5dc1-e856-42d5-b157-ddec4a1a74ae, Created: 2026-03-10T05:53:00.186676+00:00
+- CODE: LOT-979285-636-25, ID: ffed4b8b-bfbd-433b-89f9-17d8f4523ff8, Created: 2026-03-10T05:53:00.186676+00:00
+- CODE: LOT-979285-012-26, ID: e1d8f9a7-8ffa-4dd6-8bd7-0e4cfe67fdb8, Created: 2026-03-10T05:53:00.186676+00:00
+- CODE: LOT-979285-184-4, ID: 95e9227c-15d2-4953-bda9-c567cb2d38f0, Created: 2026-03-10T05:53:00.186676+00:00
+- CODE: LOT-979285-179-7, ID: aa5e4375-ec69-4197-8593-193993b5b5b6, Created: 2026-03-10T05:53:00.186676+00:00
+- CODE: LOT-979285-311-13, ID: a9c16ae8-d30e-4c2d-866f-c9794cab3814, Created: 2026-03-10T05:53:00.186676+00:00
+- CODE: LOT-979285-685-17, ID: 74e9ee71-ec03-462b-8eda-dcfbd3ee0eb9, Created: 2026-03-10T05:53:00.186676+00:00
+- CODE: LOT-979285-791-20, ID: 9f070227-60af-4f8a-bc3f-7ad7199932c5, Created: 2026-03-10T05:53:00.186676+00:00
