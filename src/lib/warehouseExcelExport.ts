@@ -177,7 +177,7 @@ export async function exportWarehouseToExcel(data: ExportWarehouseData) {
                     if (Math.floor(val) === val) {
                         cell.numFmt = '#,##0';
                     } else {
-                        cell.numFmt = '#,##0.##';
+                        cell.numFmt = '#,##0.###';
                     }
                 }
             }
@@ -600,15 +600,17 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
             });
 
             Object.values(gridSummary).forEach(v => {
+                const qtyVal = Number(v.qty) || 0;
                 const row = sheet2.addRow({
                     parent: pName,
                     group: grid.name,
                     sku: v.sku,
                     name: v.name,
                     unit: v.unit,
-                    qty: Math.round(v.qty * 1000) / 1000
+                    qty: Math.round(qtyVal * 1000) / 1000
                 });
-                row.getCell(6).numFmt = '#,##0.##';
+                const qtyCell = row.getCell(6);
+                qtyCell.numFmt = (Math.floor(qtyVal) === qtyVal) ? '#,##0' : '#,##0.###';
                 s2RowIdx++;
             });
         });
@@ -642,15 +644,17 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
     Object.values(globalSummary)
         .sort((a, b) => a.name.localeCompare(b.name))
         .forEach((v, idx) => {
+            const qtyVal = Number(v.qty) || 0;
             const row = sheet3.addRow({
                 stt: idx + 1,
                 sku: v.sku,
                 name: v.name,
                 unit: v.unit,
-                qty: Math.round(v.qty * 1000) / 1000
+                qty: Math.round(qtyVal * 1000) / 1000
             });
-            row.getCell(5).numFmt = '#,##0.##';
-            row.getCell(5).font = { bold: true };
+            const qtyCell = row.getCell(5);
+            qtyCell.numFmt = (Math.floor(qtyVal) === qtyVal) ? '#,##0' : '#,##0.###';
+            qtyCell.font = { bold: true };
         });
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -799,7 +803,8 @@ export async function exportExportOrderToExcel(data: ExportOrderExcelData) {
             }
             if (i === 6) {
                 cell.alignment = { horizontal: 'right' };
-                cell.numFmt = '#,##0.##';
+                const val = Number(cell.value) || 0;
+                cell.numFmt = (Math.floor(val) === val) ? '#,##0' : '#,##0.###';
             }
         }
         currRow++;
@@ -814,7 +819,7 @@ export async function exportExportOrderToExcel(data: ExportOrderExcelData) {
     
     totalRow.getCell(6).value = totalQty;
     totalRow.getCell(6).font = { bold: true };
-    totalRow.getCell(6).numFmt = '#,##0.##';
+    totalRow.getCell(6).numFmt = (Math.floor(totalQty) === totalQty) ? '#,##0' : '#,##0.###';
     totalRow.getCell(6).alignment = { horizontal: 'right' };
 
     for (let i = 1; i <= 9; i++) {
