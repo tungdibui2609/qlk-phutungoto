@@ -1,0 +1,14 @@
+                  id                  |    full_name    | role  | avatar_url |          updated_at           
+--------------------------------------+-----------------+-------+------------+-------------------------------
+ 6306ecf2-22ad-4d25-8986-91831c14fe27 | Chanh Thu Group | staff |            | 2026-03-02 11:10:58.085311+07
+ ef5779c2-7124-4539-b623-30cb2dde0f65 |                 | staff |            | 2026-03-04 09:42:33.692293+07
+ 3c15663f-7559-4f29-be06-2654bcffb7fa |                 | staff |            | 2026-03-06 08:54:12.330752+07
+ e7385458-d6b0-40d9-af8d-a5fccfc18930 |                 | staff |            | 2026-03-06 08:56:11.210984+07
+ ed19c6ce-d2ce-417c-b548-7d6dcd2645e4 |                 | staff |            | 2026-03-06 21:47:26.287356+07
+(5 rows)
+
+ table_catalog  | table_schema | table_name | table_type | self_referencing_column_name | reference_generation | user_defined_type_catalog | user_defined_type_schema | user_defined_type_name | is_insertable_into | is_typed | commit_action 
+----------------+--------------+------------+------------+------------------------------+----------------------+---------------------------+--------------------------+------------------------+--------------------+----------+---------------
+ qlk_phutungoto | public       | systems    | BASE TABLE |                              |                      |                           |                          |                        | YES                | NO       | 
+(1 row)
+

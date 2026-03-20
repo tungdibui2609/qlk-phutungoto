@@ -14,7 +14,7 @@ import { PrintHeader } from '@/components/print/PrintHeader'
 import { EditableText } from '@/components/print/PrintHelpers'
 import { format } from 'date-fns'
 import { TagDisplay } from '@/components/lots/TagDisplay'
-import { exportToExcelWithTemplate } from '@/lib/excelExport'
+import { exportExportOrderToExcel } from '@/lib/warehouseExcelExport'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -508,32 +508,33 @@ function ExportOrderPrintContent() {
             }
 
             return {
-                ...item,
-                product_name: item.products?.name || '',
-                quyCach: quyCach,
+                id: item.id,
                 quantity: item.quantity,
-                document_quantity: item.quantity, // Export tasks often don't have distinct doc qty
                 unit: item.unit || 'Cái',
-                price: 0,
+                product_name: item.products?.name || '',
+                sku: item.products?.sku || '',
+                lot_code: item.lots?.code || '',
+                position_code: item.positions?.code || '',
+                notes: item.lots?.notes || '',
+                quyCach: quyCach,
                 convertedQty: convertedQty
             }
         })
 
         const signatures = [
             { title: 'Người nhận', name: customerName },
-            { title: 'Tài xế', name: '' }, // Can be added if field exists
+            { title: 'Tài xế', name: '' },
             { title: 'Thủ kho', name: signPerson2 },
             { title: 'Kế toán trưởng', name: signPerson3 },
             { title: 'TP.QLCL', name: signPerson4 },
             { title: 'Người lập phiếu', name: signPerson1 }
         ]
 
-        await exportToExcelWithTemplate({
-            type: 'outbound',
-            printType: 'official',
+        await exportExportOrderToExcel({
             order: {
-                ...task,
                 code: task.code || '',
+                created_at: task.created_at,
+                notes: task.notes
             },
             items: exportItems,
             companyInfo,
@@ -550,18 +551,9 @@ function ExportOrderPrintContent() {
                 vehicleNumber: vehicleNumber,
                 containerNumber: containerNumber,
                 sealNumber: sealNumber,
-                signatures,
-                signDate: {
-                    day: editDay,
-                    month: editMonth,
-                    year: editYear
-                }
-            },
-            modules: {
-                hasFinancials: false,
-                hasConversion: true
+                signatures
             }
-        }, '/mauxuat.xlsx')
+        })
     }
 
 
