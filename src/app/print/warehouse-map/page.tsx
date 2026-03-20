@@ -508,53 +508,115 @@ export default function WarehouseMapPrintPage() {
         const grids: any[] = []
 
         // Find root containers in the current filtered view (e.g., Row/Dãy)
-        const roots = filteredZones.filter(z => !z.parent_id || !filteredZones.find(pz => pz.id === z.parent_id))
+        // Improved: Identify specific containers like Dãy/Sảnh as roots to avoid top-level "KHO" zones
+        const containerRegex = /D[ÃãYy]|S[ẢảÀà]nh|K[Ệệ]|KHU|S[Àà]NH|CH[Ũũ]|PH[Òò]NG/i;
+        const potentialRoots = filteredZones.filter(z => containerRegex.test(z.name) || z.name.toUpperCase().includes('DÃY'));
+        
+        const roots = potentialRoots.length > 0
+            ? potentialRoots.filter(z => !potentialRoots.find(pz => pz.id === z.parent_id))
+            : filteredZones.filter(z => !z.parent_id || !filteredZones.find(pz => pz.id === z.parent_id));
+
+        const getTopParentName = (zone: any): string => {
+            let current = zone;
+            let depth = 0;
+            while (current.parent_id && depth < 10) {
+                const parent = filteredZones.find(pz => pz.id === current.parent_id);
+                if (!parent) break;
+                current = parent;
+                depth++;
+            }
+            return current.name;
+        }
 
         roots.forEach(root => {
+            const parentName = getTopParentName(root);
             // Find all bins under this root
             const bins = filteredZones.filter(z => z.parent_id === root.id)
-            if (bins.length === 0) return
+            
+            if (bins.length === 0) {
+                // Case: Zone without Bins (e.g. Sảnh, Khu vực đệm...)
+                const items: any[] = []
+                const collect = (zoneId: string) => {
+                    const pos = filteredPositions.filter(p => p.zone_id === zoneId)
+                    pos.forEach(p => {
+                        const lot = p.lot_id ? lotInfo[p.lot_id] : null
+                        if (lot?.items) {
+                            lot.items.forEach((it: any) => {
+                                items.push({
+                                    productName: displayInternalCode && it.internal_name ? it.internal_name : it.product_name,
+                                    sku: displayInternalCode && it.internal_code ? it.internal_code : it.sku,
+                                    unit: it.unit,
+                                    quantity: it.quantity,
+                                    lotCode: lot.code,
+                                    batchCode: lot.batch_code,
+                                    lotTags: it.tags
+                                })
+                            })
+                        }
+                    })
+                    filteredZones.filter(z => z.parent_id === zoneId).forEach(child => collect(child.id))
+                }
+                collect(root.id)
+
+                if (items.length > 0 || /S[ẢảÀà]nh/i.test(root.name)) {
+                    grids.push({
+                        name: root.name,
+                        parentName,
+                        bins: [],
+                        levels: [],
+                        cells: [{ binIndex: 0, levelIndex: 0, items }]
+                    })
+                }
+                return
+            }
 
             // Sort Bins numerically/alphabetically
             bins.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+            const binNames = bins.map(b => b.name)
 
             // Identify all unique Level names in these bins
             const levelNamesSet = new Set<string>()
             bins.forEach(bin => {
-                const levels = filteredZones.filter(z => z.parent_id === bin.id)
-                levels.forEach(lvl => levelNamesSet.add(lvl.name))
+                const subZones = filteredZones.filter(z => z.parent_id === bin.id)
+                if (subZones.length > 0) {
+                    subZones.forEach(lvl => levelNamesSet.add(lvl.name))
+                } else {
+                    // Fallback: If no child zones, check for direct positions in this bin
+                    if (filteredPositions.some(p => p.zone_id === bin.id)) {
+                        levelNamesSet.add('DỮ LIỆU')
+                    }
+                }
             })
             
-            // Sort Levels descending (Top level first)
-            const sortedLevels = Array.from(levelNamesSet).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+            // Sort Levels ascending (Tầng 1 first)
+            const sortedLevels = Array.from(levelNamesSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
 
             const cells: any[] = []
             bins.forEach((bin, binIdx) => {
                 const isBinMerged = mergedZones.has(bin.id)
                 
-                if (isBinMerged) {
-                    // One big cell for all levels in this bin
-                    const items: any[] = []
+                if (isBinMerged && sortedLevels.length > 0) {
+                    // Optimized: One big cell for all levels in this bin
+                    const aggregated = new Map<string, { productName: string, sku: string, unit: string, quantity: number }>()
+                    
                     const collect = (zoneId: string) => {
                         const pos = filteredPositions.filter(p => p.zone_id === zoneId)
                         pos.forEach(p => {
                             const lot = p.lot_id ? lotInfo[p.lot_id] : null
                             if (lot?.items) {
                                 lot.items.forEach((it: any) => {
-                                    const baseQty = toBaseAmount(it.product_id, it.unit, it.quantity, it.base_unit)
-                                    const kgRate = getBaseToKgRate(it.product_id, it.base_unit)
-                                    const kgQuantity = kgRate !== null ? baseQty * kgRate : null
-
-                                    items.push({
-                                        productName: it.internal_name || it.product_name,
-                                        sku: it.internal_code || it.sku,
-                                        unit: it.unit,
-                                        quantity: it.quantity,
-                                        kgQuantity,
-                                        lotCode: lot.code,
-                                        batchCode: lot.batch_code,
-                                        lotTags: it.tags
-                                    })
+                                    const key = `${it.sku || it.product_id}_${it.unit}`
+                                    const existing = aggregated.get(key)
+                                    if (existing) {
+                                        existing.quantity += (Number(it.quantity) || 0)
+                                    } else {
+                                        aggregated.set(key, {
+                                            productName: displayInternalCode && it.internal_name ? it.internal_name : it.product_name,
+                                            sku: displayInternalCode && it.internal_code ? it.internal_code : it.sku,
+                                            unit: it.unit,
+                                            quantity: Number(it.quantity) || 0
+                                        })
+                                    }
                                 })
                             }
                         })
@@ -565,36 +627,35 @@ export default function WarehouseMapPrintPage() {
                     cells.push({
                         binIndex: binIdx,
                         levelIndex: 0,
-                        items,
+                        items: Array.from(aggregated.values()),
                         isMerged: true,
-                        rowSpan: sortedLevels.length || 1
+                        rowSpan: sortedLevels.length
                     })
                 } else {
                     // Individual cells for each level
                     sortedLevels.forEach((lvlName, lvlIdx) => {
                         const levelZone = filteredZones.find(z => z.parent_id === bin.id && z.name === lvlName)
-                        const items: any[] = []
+                        const aggregated = new Map<string, { productName: string, sku: string, unit: string, quantity: number }>()
                         
-                        if (levelZone) {
-                            const pos = filteredPositions.filter(p => p.zone_id === levelZone.id)
+                        const targetZoneId = levelZone ? levelZone.id : (lvlName === 'DỮ LIỆU' ? bin.id : null)
+                        if (targetZoneId) {
+                            const pos = filteredPositions.filter(p => p.zone_id === targetZoneId)
                             pos.forEach(p => {
                                 const lot = p.lot_id ? lotInfo[p.lot_id] : null
                                 if (lot?.items) {
                                     lot.items.forEach((it: any) => {
-                                        const baseQty = toBaseAmount(it.product_id, it.unit, it.quantity, it.base_unit)
-                                        const kgRate = getBaseToKgRate(it.product_id, it.base_unit)
-                                        const kgQuantity = kgRate !== null ? baseQty * kgRate : null
-
-                                        items.push({
-                                            productName: displayInternalCode && it.internal_name ? it.internal_name : it.product_name,
-                                            sku: displayInternalCode && it.internal_code ? it.internal_code : it.sku,
-                                            unit: it.unit,
-                                            quantity: it.quantity,
-                                            kgQuantity,
-                                            lotCode: lot.code,
-                                            batchCode: lot.batch_code,
-                                            lotTags: it.tags
-                                        })
+                                        const key = `${it.sku || it.product_id}_${it.unit}`
+                                        const existing = aggregated.get(key)
+                                        if (existing) {
+                                            existing.quantity += (Number(it.quantity) || 0)
+                                        } else {
+                                            aggregated.set(key, {
+                                                productName: displayInternalCode && it.internal_name ? it.internal_name : it.product_name,
+                                                sku: displayInternalCode && it.internal_code ? it.internal_code : it.sku,
+                                                unit: it.unit,
+                                                quantity: Number(it.quantity) || 0
+                                            })
+                                        }
                                     })
                                 }
                             })
@@ -603,7 +664,7 @@ export default function WarehouseMapPrintPage() {
                         cells.push({
                             binIndex: binIdx,
                             levelIndex: lvlIdx,
-                            items
+                            items: Array.from(aggregated.values())
                         })
                     })
                 }
@@ -611,7 +672,8 @@ export default function WarehouseMapPrintPage() {
 
             grids.push({
                 name: root.name,
-                bins: bins.map(b => b.name),
+                parentName,
+                bins: binNames,
                 levels: sortedLevels,
                 cells
             })

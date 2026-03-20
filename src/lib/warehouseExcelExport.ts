@@ -367,139 +367,297 @@ interface ExportWarehouseGridData {
 
 export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) {
     const workbook = new ExcelJS.Workbook();
-    
-    data.grids.forEach((grid, gridIdx) => {
-        const sheetName = grid.name.replace(/[:\\/?*[\]]/g, '_').slice(0, 31) || `Sheet ${gridIdx + 1}`;
-        const worksheet = workbook.addWorksheet(sheetName);
+    const worksheet = workbook.addWorksheet('Sơ đồ mặt bằng');
 
-        // Header Title
-        worksheet.mergeCells(1, 1, 1, grid.bins.length + 1);
-        const titleCell = worksheet.getCell(1, 1);
-        titleCell.value = 'SƠ ĐỒ BỐ TRÍ MẶT BẰNG KHO';
-        titleCell.font = { bold: true, size: 20, color: { argb: '1E293B' } };
-        titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-        worksheet.getRow(1).height = 40;
+    // 1. Header Tiêu đề chung
+    worksheet.mergeCells('A1:Z1');
+    const titleCell = worksheet.getCell('A1');
+    titleCell.value = 'MẪU XUẤT FILE EXCEL SƠ ĐỒ';
+    titleCell.font = { bold: true, size: 16 };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    worksheet.getRow(1).height = 30;
 
-        // Sub-title Info
-        worksheet.mergeCells(2, 1, 2, grid.bins.length + 1);
-        const subTitleCell = worksheet.getCell(2, 1);
-        subTitleCell.value = `Hệ thống: ${data.systemName} | Dãy: ${grid.name} | Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`;
-        subTitleCell.font = { size: 12, color: { argb: '475569' } };
-        subTitleCell.alignment = { horizontal: 'center' };
-        worksheet.getRow(2).height = 20;
+    worksheet.mergeCells('A2:Z2');
+    const subTitle1 = worksheet.getCell('A2');
+    subTitle1.value = 'DÃY : XẾP DỌC';
+    subTitle1.alignment = { horizontal: 'center' };
 
-        // Column headers (Bins)
-        const headerRowIdx = 4;
-        grid.bins.forEach((binName, colIdx) => {
-            const cell = worksheet.getCell(headerRowIdx, colIdx + 2);
-            cell.value = binName;
-            cell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 11 };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0F172A' } }; // Slate-900
-            cell.alignment = { horizontal: 'center', vertical: 'middle' };
-            cell.border = {
-                top: { style: 'medium' },
-                left: { style: 'thin' },
-                bottom: { style: 'medium' },
-                right: { style: 'thin' }
-            };
-            worksheet.getColumn(colIdx + 2).width = 30;
-        });
+    worksheet.mergeCells('A3:Z3');
+    const subTitle2 = worksheet.getCell('A3');
+    subTitle2.value = 'Ô : XẾP NGANG';
+    subTitle2.alignment = { horizontal: 'center' };
 
-        // Row headers (Levels)
-        grid.levels.forEach((levelName, rowIdx) => {
-            const cell = worksheet.getCell(headerRowIdx + rowIdx + 1, 1);
-            cell.value = levelName;
-            cell.font = { bold: true, size: 10 };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F1F5F9' } }; // Slate-100
-            cell.alignment = { horizontal: 'center', vertical: 'middle' };
-            cell.border = {
-                top: { style: 'thin' },
-                left: { style: 'medium' },
-                bottom: { style: 'thin' },
-                right: { style: 'medium' }
-            };
-            worksheet.getRow(headerRowIdx + rowIdx + 1).height = 60;
-        });
-        worksheet.getColumn(1).width = 15;
+    worksheet.mergeCells('A4:Z4');
+    const subTitle3 = worksheet.getCell('A4');
+    subTitle3.value = `Hệ thống: ${data.systemName} | Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`;
+    subTitle3.alignment = { horizontal: 'center' };
+    subTitle3.font = { italic: true };
 
-        // Fill cells
-        grid.cells.forEach(cellData => {
-            const excelRowIdx = headerRowIdx + cellData.levelIndex + 1;
-            const excelColIdx = cellData.binIndex + 2;
-            const cell = worksheet.getCell(excelRowIdx, excelColIdx);
+    let currentRowIdx = 6;
 
-            if (cellData.items.length > 0) {
-                const richText: any[] = [];
-                cellData.items.forEach((item: any, idx: number) => {
-                    const roundedQty = Math.round((Number(item.quantity) || 0) * 1000) / 1000;
-                    const kgQ = item.kgQuantity !== null && item.kgQuantity !== undefined ? Number(item.kgQuantity) : null;
-                    const roundedKg = kgQ !== null ? Math.round(kgQ * 1000) / 1000 : null;
-                    
-                    richText.push({ text: `● ${item.productName}`, font: { bold: true, size: 9, color: { argb: '1E293B' } } });
-                    richText.push({ text: ` (${item.sku})\n`, font: { size: 8, color: { argb: '64748B' } } }); 
-                    richText.push({ text: `   SL: ${roundedQty} ${item.unit}`, font: { size: 9, color: { argb: '334155' } } });
-                    
-                    if (roundedKg !== null) {
-                        richText.push({ text: ` ~ ${roundedKg} Kg`, font: { size: 9, italic: true, color: { argb: '2563EB' } } }); // Blue-600
-                    }
-                    
-                    if (item.lotCode) {
-                        richText.push({ text: `\n   Lô: ${item.lotCode}`, font: { size: 8, color: { argb: '94A3B8' } } });
-                    }
+    // 2. Phân loại và sắp xếp Grids theo Parent (KHO 1, KHO 2...)
+    const extractNumber = (name: string) => {
+        const match = name.match(/\d+/);
+        return match ? parseInt(match[0], 10) : 999;
+    };
 
-                    if (idx < cellData.items.length - 1) {
-                        richText.push({ text: '\n────────────────\n', font: { size: 6, color: { argb: 'E2E8F0' } } });
-                    }
-                });
+    const dayRegex = /Dãy|D\d|D\s\d|Kệ|Khu|Rack|Row/i;
+    const sanhRegex = /Sảnh|S\d|S\s\d|Lobby|Aisle/i;
 
-                cell.value = { richText };
-                cell.alignment = { wrapText: true, vertical: 'top', horizontal: 'left', indent: 1 };
-            } else {
-                cell.value = 'Trống';
-                cell.font = { italic: true, color: { argb: 'CBD5E1' }, size: 9 };
-                cell.alignment = { horizontal: 'center', vertical: 'middle' };
-            }
-
-            cell.border = {
-                top: { style: 'thin' },
-                left: { style: 'thin' },
-                bottom: { style: 'thin' },
-                right: { style: 'thin' }
-            };
-
-            // Handle Vertical Merging (Gộp tầng)
-            if (cellData.isMerged && cellData.rowSpan && cellData.rowSpan > 1) {
-                try {
-                    worksheet.mergeCells(excelRowIdx, excelColIdx, excelRowIdx + cellData.rowSpan - 1, excelColIdx);
-                } catch (e) {
-                    // Ignore overlapping merge errors
-                }
-            }
-        });
-
-        // Dynamic row height adjustment
-        grid.levels.forEach((_, rowIdx) => {
-            const row = worksheet.getRow(headerRowIdx + rowIdx + 1);
-            let maxItemsInRow = 1;
-            grid.cells.filter(c => c.levelIndex === rowIdx).forEach(c => {
-                if (c.items.length > maxItemsInRow) maxItemsInRow = c.items.length;
-            });
-            // Estimate height: base 40 + ~35 per item block
-            row.height = Math.max(45, maxItemsInRow * 38);
-        });
-
-        // Add Legend or Footer info if needed
-        const footerRowIdx = headerRowIdx + grid.levels.length + 2;
-        const footerCell = worksheet.getCell(footerRowIdx, 1);
-        footerCell.value = '* Chú thích: ● Tên hàng (SKU) | SL: Số lượng | ~ Kg: Quy đổi khối lượng | Lô: Mã lô hàng';
-        footerCell.font = { italic: true, size: 9, color: { argb: '64748B' } };
-        worksheet.mergeCells(footerRowIdx, 1, footerRowIdx, 5);
+    const gridsByParent: Record<string, any[]> = {};
+    data.grids.forEach((g: any) => {
+        const pName = g.parentName || 'KHU VỰC CHUNG';
+        if (!gridsByParent[pName]) gridsByParent[pName] = [];
+        gridsByParent[pName].push(g);
     });
 
+    const parents = Object.keys(gridsByParent).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+    parents.forEach(pName => {
+        // Render Group Header (KHO 1, KHO 2...)
+        worksheet.mergeCells(`A${currentRowIdx}:Z${currentRowIdx}`);
+        const groupCell = worksheet.getCell(`A${currentRowIdx}`);
+        groupCell.value = `KHU VỰC: ${pName.toUpperCase()}`;
+        groupCell.font = { bold: true, size: 12 };
+        groupCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD700' } }; // Gold/Darker Yellow
+        groupCell.alignment = { horizontal: 'left' };
+        groupCell.border = { bottom: { style: 'medium' } };
+        currentRowIdx += 2; // Spacer
+
+        const groupGrids = gridsByParent[pName];
+        let dayGrids = groupGrids.filter(g => dayRegex.test(g.name))
+            .sort((a, b) => extractNumber(a.name) - extractNumber(b.name));
+        
+        let sanhGrids = groupGrids.filter(g => sanhRegex.test(g.name))
+            .sort((a, b) => extractNumber(a.name) - extractNumber(b.name));
+
+        if (dayGrids.length === 0 && groupGrids.length > 0) {
+            dayGrids = [...groupGrids].sort((a, b) => extractNumber(a.name) - extractNumber(b.name));
+            sanhGrids = [];
+        }
+
+        const orderedGrids: Array<{ type: 'day' | 'sanh', grid: any }> = [];
+        if (dayGrids.length > 0) {
+            for (let i = 0; i < dayGrids.length; i += 2) {
+                orderedGrids.push({ type: 'day', grid: dayGrids[i] });
+                const sanhIdx = Math.floor(i / 2);
+                if (sanhGrids[sanhIdx]) orderedGrids.push({ type: 'sanh', grid: sanhGrids[sanhIdx] });
+                if (dayGrids[i + 1]) orderedGrids.push({ type: 'day', grid: dayGrids[i + 1] });
+            }
+        } else {
+            groupGrids.forEach(g => {
+                orderedGrids.push({ type: sanhRegex.test(g.name) ? 'sanh' : 'day', grid: g });
+            });
+        }
+
+        // Render Grids for this group
+        orderedGrids.forEach((item) => {
+            const { type, grid } = item;
+            
+            if (type === 'day') {
+                // --- RENDER DÃY ---
+                const headerRow = worksheet.getRow(currentRowIdx);
+                headerRow.getCell(1).value = grid.name.toUpperCase();
+                headerRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF00' } }; // Yellow
+                headerRow.getCell(1).font = { bold: true };
+                headerRow.getCell(1).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+
+                grid.bins.forEach((binName: string, bIdx: number) => {
+                    const cell = headerRow.getCell(bIdx + 2);
+                    cell.value = binName;
+                    cell.font = { bold: true };
+                    cell.alignment = { horizontal: 'center' };
+                    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                    worksheet.getColumn(bIdx + 2).width = 25;
+                });
+                const dãyStartRowIdx = currentRowIdx;
+                currentRowIdx++;
+
+                // Levels: [TẦNG X] [Chi tiết] [Chi tiết] ...
+                const sortedLevels = [...grid.levels].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+                sortedLevels.forEach((lvlName, lIdx) => {
+                    const row = worksheet.getRow(currentRowIdx);
+                    row.getCell(1).value = lvlName === 'DỮ LIỆU' ? '' : lvlName.toUpperCase();
+                    row.getCell(1).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                    
+                    grid.bins.forEach((binName: string, bIdx: number) => {
+                        const excelColIdx = bIdx + 2;
+                        const cell = row.getCell(excelColIdx);
+                        
+                        const levelIdxInOriginal = grid.levels.indexOf(lvlName);
+                        const cellData = grid.cells.find((c: any) => c.binIndex === bIdx && c.levelIndex === levelIdxInOriginal);
+                        
+                        if (cellData && cellData.items.length > 0) {
+                            const richText: any[] = [];
+                            cellData.items.forEach((it: any, itIdx: number) => {
+                                const roundedQty = Math.round((Number(it.quantity) || 0) * 1000) / 1000;
+                                richText.push({ text: `• ${it.productName}`, font: { bold: true, size: 9 } });
+                                richText.push({ text: ` : ${roundedQty} ${it.unit}`, font: { size: 9, bold: true, color: { argb: '0000FF' } } }); // Blue for qty
+                                
+                                if (itIdx < cellData.items.length - 1) {
+                                    richText.push({ text: '\n', font: { size: 6 } });
+                                }
+                            });
+                            cell.value = { richText };
+                            cell.alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
+
+                            // Handle Vertical Merging for "Gộp ô"
+                            if (cellData.isMerged && cellData.rowSpan && cellData.rowSpan > 1) {
+                                try {
+                                    worksheet.mergeCells(dãyStartRowIdx + 1, excelColIdx, dãyStartRowIdx + cellData.rowSpan, excelColIdx);
+                                } catch (e) {
+                                    // Overlap catch
+                                }
+                            }
+                        }
+                        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                    });
+                    
+                    // Tự động chỉnh độ cao cho dòng Tầng
+                    let maxItems = 1;
+                    grid.bins.forEach((_: string, bIdx: number) => {
+                        const levelIdxInOriginal = grid.levels.indexOf(lvlName);
+                        const cellData = grid.cells.find((c: any) => c.binIndex === bIdx && c.levelIndex === levelIdxInOriginal);
+                        if (cellData && cellData.items.length > maxItems) maxItems = cellData.items.length;
+                    });
+                    row.height = Math.max(30, maxItems * 25);
+                    
+                    currentRowIdx++;
+                });
+
+            } else if (type === 'sanh') {
+                // --- RENDER SẢNH ---
+                const row = worksheet.getRow(currentRowIdx);
+                row.getCell(1).value = grid.name.toUpperCase();
+                row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF00' } }; // Yellow
+                row.getCell(1).font = { bold: true };
+                row.getCell(1).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+
+                const allSanhItems: any[] = [];
+                grid.cells.forEach((c: any) => allSanhItems.push(...c.items));
+
+                if (allSanhItems.length > 0) {
+                    const richText: any[] = [];
+                    const summary: Record<string, { name: string, qty: number, unit: string }> = {};
+                    allSanhItems.forEach(it => {
+                        const key = `${it.sku || it.productName}_${it.unit}`;
+                        if (!summary[key]) summary[key] = { name: it.productName, qty: 0, unit: it.unit };
+                        summary[key].qty += (Number(it.quantity) || 0);
+                    });
+
+                    Object.values(summary).forEach((v: any, idx) => {
+                        const roundedQty = Math.round(v.qty * 1000) / 1000;
+                        richText.push({ text: `• ${v.name} : `, font: { size: 10, bold: true } });
+                        richText.push({ text: `${roundedQty} ${v.unit}`, font: { size: 10, bold: true, color: { argb: '0000FF' } } });
+                        if (idx < Object.values(summary).length - 1) richText.push({ text: '\n' });
+                    });
+
+                    row.getCell(2).value = { richText };
+                    row.getCell(2).alignment = { wrapText: true, vertical: 'middle' };
+                } else {
+                    row.getCell(2).value = 'TRỐNG';
+                    row.getCell(2).alignment = { horizontal: 'left' };
+                }
+                row.height = Math.max(30, (Object.keys(allSanhItems).length || 1) * 20);
+                currentRowIdx++;
+            }
+            currentRowIdx++; // Spacer between blocks
+        });
+        
+        currentRowIdx += 2; // Extra spacer between groups (KHOs)
+    });
+
+    worksheet.getColumn(1).width = 15;
+
+    // --- SHEET 2: THỐNG KÊ KHU VỰC ---
+    const sheet2 = workbook.addWorksheet('Thống kê Khu vực');
+    sheet2.columns = [
+        { header: 'Khu vực (KHO)', key: 'parent', width: 20 },
+        { header: 'Dãy / Sảnh', key: 'group', width: 15 },
+        { header: 'Mã SP', key: 'sku', width: 15 },
+        { header: 'Tên sản phẩm', key: 'name', width: 35 },
+        { header: 'ĐVT', key: 'unit', width: 10 },
+        { header: 'Số lượng', key: 'qty', width: 12 },
+    ];
+    sheet2.getRow(1).font = { bold: true };
+    sheet2.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EEEEEE' } };
+
+    let s2RowIdx = 2;
+    parents.forEach(pName => {
+        const groupGrids = gridsByParent[pName];
+        groupGrids.forEach(grid => {
+            // Aggregate items in this Dãy/Sảnh
+            const gridSummary: Record<string, { sku: string, name: string, unit: string, qty: number }> = {};
+            grid.cells.forEach((c: any) => {
+                c.items.forEach((it: any) => {
+                    const key = `${it.sku || it.productName}_${it.unit}`;
+                    if (!gridSummary[key]) {
+                        gridSummary[key] = { sku: it.sku, name: it.productName, unit: it.unit, qty: 0 };
+                    }
+                    gridSummary[key].qty += (Number(it.quantity) || 0);
+                });
+            });
+
+            Object.values(gridSummary).forEach(v => {
+                const row = sheet2.addRow({
+                    parent: pName,
+                    group: grid.name,
+                    sku: v.sku,
+                    name: v.name,
+                    unit: v.unit,
+                    qty: Math.round(v.qty * 1000) / 1000
+                });
+                row.getCell(6).numFmt = '#,##0.##';
+                s2RowIdx++;
+            });
+        });
+    });
+
+    // --- SHEET 3: THỐNG KÊ TỔNG HỢP ---
+    const sheet3 = workbook.addWorksheet('Thống kê Tổng hợp');
+    sheet3.columns = [
+        { header: 'STT', key: 'stt', width: 6 },
+        { header: 'Mã sản phẩm', key: 'sku', width: 15 },
+        { header: 'Tên sản phẩm', key: 'name', width: 40 },
+        { header: 'Đơn vị tính', key: 'unit', width: 12 },
+        { header: 'Tổng số lượng', key: 'qty', width: 15 },
+    ];
+    sheet3.getRow(1).font = { bold: true };
+    sheet3.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EEEEEE' } };
+
+    const globalSummary: Record<string, { sku: string, name: string, unit: string, qty: number }> = {};
+    data.grids.forEach((grid: any) => {
+        grid.cells.forEach((c: any) => {
+            c.items.forEach((it: any) => {
+                const key = `${it.sku || it.productName}_${it.unit}`;
+                if (!globalSummary[key]) {
+                    globalSummary[key] = { sku: it.sku, name: it.productName, unit: it.unit, qty: 0 };
+                }
+                globalSummary[key].qty += (Number(it.quantity) || 0);
+            });
+        });
+    });
+
+    Object.values(globalSummary)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .forEach((v, idx) => {
+            const row = sheet3.addRow({
+                stt: idx + 1,
+                sku: v.sku,
+                name: v.name,
+                unit: v.unit,
+                qty: Math.round(v.qty * 1000) / 1000
+            });
+            row.getCell(5).numFmt = '#,##0.##';
+            row.getCell(5).font = { bold: true };
+        });
+
     const buffer = await workbook.xlsx.writeBuffer();
-    const fileName = `So_do_kho_Grid_${data.systemName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const fileName = `So_do_kho_Custom_${data.systemName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
     saveAs(new Blob([buffer]), fileName);
 }
+
 
 export async function exportExportOrderToExcel(data: ExportOrderExcelData) {
     const workbook = new ExcelJS.Workbook();
