@@ -375,39 +375,52 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
         // Header Title
         worksheet.mergeCells(1, 1, 1, grid.bins.length + 1);
         const titleCell = worksheet.getCell(1, 1);
-        titleCell.value = `SƠ ĐỒ KHO: ${data.systemName} - ${grid.name}`;
-        titleCell.font = { bold: true, size: 14 };
-        titleCell.alignment = { horizontal: 'center' };
+        titleCell.value = 'SƠ ĐỒ BỐ TRÍ MẶT BẰNG KHO';
+        titleCell.font = { bold: true, size: 20, color: { argb: '1E293B' } };
+        titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        worksheet.getRow(1).height = 40;
 
-        // Date Info
+        // Sub-title Info
         worksheet.mergeCells(2, 1, 2, grid.bins.length + 1);
-        const dateCell = worksheet.getCell(2, 1);
-        dateCell.value = `Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`;
-        dateCell.alignment = { horizontal: 'center' };
+        const subTitleCell = worksheet.getCell(2, 1);
+        subTitleCell.value = `Hệ thống: ${data.systemName} | Dãy: ${grid.name} | Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`;
+        subTitleCell.font = { size: 12, color: { argb: '475569' } };
+        subTitleCell.alignment = { horizontal: 'center' };
+        worksheet.getRow(2).height = 20;
 
         // Column headers (Bins)
-        // Start from row 4
         const headerRowIdx = 4;
         grid.bins.forEach((binName, colIdx) => {
             const cell = worksheet.getCell(headerRowIdx, colIdx + 2);
             cell.value = binName;
-            cell.font = { bold: true, color: { argb: 'FFFFFF' } };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4F46E5' } };
+            cell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 11 };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0F172A' } }; // Slate-900
             cell.alignment = { horizontal: 'center', vertical: 'middle' };
-            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-            worksheet.getColumn(colIdx + 2).width = 25;
+            cell.border = {
+                top: { style: 'medium' },
+                left: { style: 'thin' },
+                bottom: { style: 'medium' },
+                right: { style: 'thin' }
+            };
+            worksheet.getColumn(colIdx + 2).width = 30;
         });
 
         // Row headers (Levels)
         grid.levels.forEach((levelName, rowIdx) => {
             const cell = worksheet.getCell(headerRowIdx + rowIdx + 1, 1);
             cell.value = levelName;
-            cell.font = { bold: true };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F3F4F6' } };
+            cell.font = { bold: true, size: 10 };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F1F5F9' } }; // Slate-100
             cell.alignment = { horizontal: 'center', vertical: 'middle' };
-            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-            worksheet.getRow(headerRowIdx + rowIdx + 1).height = 60; // Default height to show initial content
+            cell.border = {
+                top: { style: 'thin' },
+                left: { style: 'medium' },
+                bottom: { style: 'thin' },
+                right: { style: 'medium' }
+            };
+            worksheet.getRow(headerRowIdx + rowIdx + 1).height = 60;
         });
+        worksheet.getColumn(1).width = 15;
 
         // Fill cells
         grid.cells.forEach(cellData => {
@@ -416,24 +429,43 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
             const cell = worksheet.getCell(excelRowIdx, excelColIdx);
 
             if (cellData.items.length > 0) {
-                const text = cellData.items.map(item => {
+                const richText: any[] = [];
+                cellData.items.forEach((item: any, idx: number) => {
                     const roundedQty = Math.round((Number(item.quantity) || 0) * 1000) / 1000;
                     const kgQ = item.kgQuantity !== null && item.kgQuantity !== undefined ? Number(item.kgQuantity) : null;
                     const roundedKg = kgQ !== null ? Math.round(kgQ * 1000) / 1000 : null;
                     
-                    return `${item.productName} (${item.sku})\nSL: ${roundedQty} ${item.unit}${roundedKg !== null ? ` ~ ${roundedKg} Kg` : ''}${item.lotCode ? `\nLô: ${item.lotCode}` : ''}`;
-                }).join('\n---\n');
-                
-                cell.value = text;
-                cell.alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
-                cell.font = { size: 9 };
+                    richText.push({ text: `● ${item.productName}`, font: { bold: true, size: 9, color: { argb: '1E293B' } } });
+                    richText.push({ text: ` (${item.sku})\n`, font: { size: 8, color: { argb: '64748B' } } }); 
+                    richText.push({ text: `   SL: ${roundedQty} ${item.unit}`, font: { size: 9, color: { argb: '334155' } } });
+                    
+                    if (roundedKg !== null) {
+                        richText.push({ text: ` ~ ${roundedKg} Kg`, font: { size: 9, italic: true, color: { argb: '2563EB' } } }); // Blue-600
+                    }
+                    
+                    if (item.lotCode) {
+                        richText.push({ text: `\n   Lô: ${item.lotCode}`, font: { size: 8, color: { argb: '94A3B8' } } });
+                    }
+
+                    if (idx < cellData.items.length - 1) {
+                        richText.push({ text: '\n────────────────\n', font: { size: 6, color: { argb: 'E2E8F0' } } });
+                    }
+                });
+
+                cell.value = { richText };
+                cell.alignment = { wrapText: true, vertical: 'top', horizontal: 'left', indent: 1 };
             } else {
                 cell.value = 'Trống';
-                cell.font = { italic: true, color: { argb: '9CA3AF' }, size: 9 };
+                cell.font = { italic: true, color: { argb: 'CBD5E1' }, size: 9 };
                 cell.alignment = { horizontal: 'center', vertical: 'middle' };
             }
 
-            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+            cell.border = {
+                top: { style: 'thin' },
+                left: { style: 'thin' },
+                bottom: { style: 'thin' },
+                right: { style: 'thin' }
+            };
 
             // Handle Vertical Merging (Gộp tầng)
             if (cellData.isMerged && cellData.rowSpan && cellData.rowSpan > 1) {
@@ -445,15 +477,23 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
             }
         });
 
-        // Auto height adjustment might not be perfect in ExcelJS, but we can try to estimate
+        // Dynamic row height adjustment
         grid.levels.forEach((_, rowIdx) => {
             const row = worksheet.getRow(headerRowIdx + rowIdx + 1);
-            let maxItems = 1;
+            let maxItemsInRow = 1;
             grid.cells.filter(c => c.levelIndex === rowIdx).forEach(c => {
-                if (c.items.length > maxItems) maxItems = c.items.length;
+                if (c.items.length > maxItemsInRow) maxItemsInRow = c.items.length;
             });
-            row.height = Math.max(40, maxItems * 35);
+            // Estimate height: base 40 + ~35 per item block
+            row.height = Math.max(45, maxItemsInRow * 38);
         });
+
+        // Add Legend or Footer info if needed
+        const footerRowIdx = headerRowIdx + grid.levels.length + 2;
+        const footerCell = worksheet.getCell(footerRowIdx, 1);
+        footerCell.value = '* Chú thích: ● Tên hàng (SKU) | SL: Số lượng | ~ Kg: Quy đổi khối lượng | Lô: Mã lô hàng';
+        footerCell.font = { italic: true, size: 9, color: { argb: '64748B' } };
+        worksheet.mergeCells(footerRowIdx, 1, footerRowIdx, 5);
     });
 
     const buffer = await workbook.xlsx.writeBuffer();

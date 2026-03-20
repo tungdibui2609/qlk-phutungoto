@@ -117,19 +117,39 @@ export default function FlexibleZoneGrid({
                 const codeA = a.code || ''
                 const codeB = b.code || ''
 
-                // Extract numeric suffix (e.g., "01" from "A01")
-                const matchA = codeA.match(/\d+$/)
-                const matchB = codeB.match(/\d+$/)
+                // High-quality sorting for warehouse position codes like K1S1A01T101
+                // Priority: 
+                // 1. Numeric suffix (Tier/Level, e.g. T101) - ASCENDING
+                // 2. Middle numeric sequence (Bin, e.g. 01) - ASCENDING
+                // 3. Middle row letters (Row, e.g. A) - ASCENDING
 
-                const numA = matchA ? parseInt(matchA[0], 10) : -1
-                const numB = matchB ? parseInt(matchB[0], 10) : -1
+                const matchA = codeA.match(/^(.+?)([A-Z]+)(\d+)T(\d+)$/i)
+                const matchB = codeB.match(/^(.+?)([A-Z]+)(\d+)T(\d+)$/i)
 
-                // 1. Sort by numeric suffix DESCENDING (02 above 01)
-                if (numA !== numB) {
-                    return numB - numA
+                if (matchA && matchB) {
+                    const [_a, prefA, rowA, binA, tierA] = matchA
+                    const [_b, prefB, rowB, binB, tierB] = matchB
+
+                    const tA = parseInt(tierA, 10), tB = parseInt(tierB, 10)
+                    if (tA !== tB) return tA - tB
+
+                    const bA = parseInt(binA, 10), bB = parseInt(binB, 10)
+                    if (bA !== bB) return bA - bB
+
+                    if (rowA !== rowB) return rowA.localeCompare(rowB)
+                    if (prefA !== prefB) return prefA.localeCompare(prefB)
                 }
 
-                // 2. Sort by prefix ABC ASCENDING
+                // Fallback for non-standard patterns
+                const matchSuffixA = codeA.match(/\d+$/)
+                const matchSuffixB = codeB.match(/\d+$/)
+                const numA = matchSuffixA ? parseInt(matchSuffixA[0], 10) : -1
+                const numB = matchSuffixB ? parseInt(matchSuffixB[0], 10) : -1
+
+                if (numA !== numB) {
+                    return numA - numB
+                }
+
                 return codeA.localeCompare(codeB, undefined, { numeric: true })
             })
 

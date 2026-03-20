@@ -384,12 +384,32 @@ export default function WarehouseMapPrintPage() {
             visited.add(z.id)
             zoneOrderMap.set(z.id, orderIdx++)
             const children = (parentToChildren.get(z.id) || [])
-                .sort((a, b) => (a.code || a.name || '').localeCompare(b.code || b.name || '', undefined, { numeric: true }))
+                .sort((a, b) => {
+                    const nameA = (a.code || a.name || '').toUpperCase()
+                    const nameB = (b.code || b.name || '').toUpperCase()
+                    const numA = parseInt(nameA.match(/\d+/)?.[0] || '0', 10)
+                    const numB = parseInt(nameB.match(/\d+/)?.[0] || '0', 10)
+                    if (numA !== numB) return numA - numB
+                    const isSanhA = nameA.includes('SẢNH') || nameA.includes('SÀNH')
+                    const isSanhB = nameB.includes('SẢNH') || nameB.includes('SÀNH')
+                    if (isSanhA !== isSanhB) return isSanhA ? 1 : -1
+                    return nameA.localeCompare(nameB, undefined, { numeric: true })
+                })
             children.forEach(walk)
         }
 
         const roots = displayZones.filter(z => !z.parent_id || !displayZones.find(pz => pz.id === z.parent_id))
-            .sort((a, b) => (a.code || a.name || '').localeCompare(b.code || b.name || '', undefined, { numeric: true }))
+            .sort((a, b) => {
+                const nameA = (a.code || a.name || '').toUpperCase()
+                const nameB = (b.code || b.name || '').toUpperCase()
+                const numA = parseInt(nameA.match(/\d+/)?.[0] || '0', 10)
+                const numB = parseInt(nameB.match(/\d+/)?.[0] || '0', 10)
+                if (numA !== numB) return numA - numB
+                const isSanhA = nameA.includes('SẢNH') || nameA.includes('SÀNH')
+                const isSanhB = nameB.includes('SẢNH') || nameB.includes('SÀNH')
+                if (isSanhA !== isSanhB) return isSanhA ? 1 : -1
+                return nameA.localeCompare(nameB, undefined, { numeric: true })
+            })
         roots.forEach(walk)
 
         // 2. Sort positions based on the DFS zone index
@@ -398,6 +418,27 @@ export default function WarehouseMapPrintPage() {
             const zoneIdxB = b.zone_id ? (zoneOrderMap.get(b.zone_id) ?? 99999) : 99999
 
             if (zoneIdxA !== zoneIdxB) return zoneIdxA - zoneIdxB
+            
+            const codeA = a.code || ''
+            const codeB = b.code || ''
+
+            const matchA = codeA.match(/^(.+?)([A-Z]+)(\d+)T(\d+)$/i)
+            const matchB = codeB.match(/^(.+?)([A-Z]+)(\d+)T(\d+)$/i)
+
+            if (matchA && matchB) {
+                const [_a, prefA, rowA, binA, tierA] = matchA
+                const [_b, prefB, rowB, binB, tierB] = matchB
+
+                const tA = parseInt(tierA, 10), tB = parseInt(tierB, 10)
+                if (tA !== tB) return tA - tB
+
+                const bA = parseInt(binA, 10), bB = parseInt(binB, 10)
+                if (bA !== bB) return bA - bB
+
+                if (rowA !== rowB) return rowA.localeCompare(rowB)
+                if (prefA !== prefB) return prefA.localeCompare(prefB)
+            }
+
             return (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
         })
     }, [displayPositions, descendantIdSet, occupancyFilter, searchTerm, occupiedIds, lotInfo, displayZones])
@@ -557,13 +598,22 @@ export default function WarehouseMapPrintPage() {
                             pos.forEach(p => {
                                 const lot = p.lot_id ? lotInfo[p.lot_id] : null
                                 if (lot?.items) {
-                                    lot.items.forEach((it: any) => items.push({
-                                        productName: it.internal_name || it.product_name,
-                                        sku: it.internal_code || it.sku,
-                                        unit: it.unit,
-                                        quantity: it.quantity,
-                                        lotCode: lot.code
-                                    }))
+                                    lot.items.forEach((it: any) => {
+                                        const baseQty = toBaseAmount(it.product_id, it.unit, it.quantity, it.base_unit)
+                                        const kgRate = getBaseToKgRate(it.product_id, it.base_unit)
+                                        const kgQuantity = kgRate !== null ? baseQty * kgRate : null
+
+                                        items.push({
+                                            productName: displayInternalCode && it.internal_name ? it.internal_name : it.product_name,
+                                            sku: displayInternalCode && it.internal_code ? it.internal_code : it.sku,
+                                            unit: it.unit,
+                                            quantity: it.quantity,
+                                            kgQuantity,
+                                            lotCode: lot.code,
+                                            batchCode: lot.batch_code,
+                                            lotTags: it.tags
+                                        })
+                                    })
                                 }
                             })
                         }
