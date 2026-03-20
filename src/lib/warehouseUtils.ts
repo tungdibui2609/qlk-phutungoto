@@ -214,3 +214,40 @@ export function parsePositionCodeFallback(code: string) {
         subPosition: subPos
     };
 }
+/**
+ * Sorts positions by Bin-priority (Tier -> Bin -> Row).
+ * Pattern: K1S1A01T101
+ * Priority: 1. Tier (T101), 2. Bin (01), 3. Row (A)
+ */
+export function sortPositionsByBinPriority<T extends { code?: string | null }>(positions: T[]): T[] {
+    return [...positions].sort((a, b) => {
+        const codeA = a.code || ''
+        const codeB = b.code || ''
+
+        const matchA = codeA.match(/^(.+?)([A-Z]+)(\d+)T(\d+)$/i)
+        const matchB = codeB.match(/^(.+?)([A-Z]+)(\d+)T(\d+)$/i)
+
+        if (matchA && matchB) {
+            const [_a, prefA, rowA, binA, tierA] = matchA
+            const [_b, prefB, rowB, binB, tierB] = matchB
+
+            const tA = parseInt(tierA, 10), tB = parseInt(tierB, 10)
+            if (tA !== tB) {
+                // Split into Level and Sub-position (Assuming T[Level][SubPos] where SubPos is 2 digits)
+                const lvlA = Math.floor(tA / 100), lvlB = Math.floor(tB / 100)
+                if (lvlA !== lvlB) return lvlA - lvlB // Keep original level order (ascending)
+                
+                const subA = tA % 100, subB = tB % 100
+                return subB - subA // Reverse sub-position (e.g., 02 on top, 01 on bottom)
+            }
+
+            const bA = parseInt(binA, 10), bB = parseInt(binB, 10)
+            if (bA !== bB) return bA - bB
+
+            if (rowA !== rowB) return rowA.localeCompare(rowB)
+            return prefA.localeCompare(prefB)
+        }
+
+        return codeA.localeCompare(codeB, undefined, { numeric: true })
+    })
+}

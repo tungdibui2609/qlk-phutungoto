@@ -4,6 +4,7 @@ import { Loader2, Printer, Download, Search, Check, ChevronDown, ChevronRight, M
 import { Database } from '@/lib/database.types'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { InView } from 'react-intersection-observer'
+import { sortPositionsByBinPriority } from '@/lib/warehouseUtils'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -111,47 +112,13 @@ export default function FlexibleZoneGrid({
                 const oa = (a as any).display_order ?? 0
                 const ob = (b as any).display_order ?? 0
                 if (oa !== ob) return oa - ob
-                return (a.code || '').localeCompare(b.code || '')
+                
+                const nameA = (a.name || a.code || '').toUpperCase()
+                const nameB = (b.name || b.code || '').toUpperCase()
+                
+                return nameA.localeCompare(nameB, undefined, { numeric: true })
             })
-            node.positions.sort((a, b) => {
-                const codeA = a.code || ''
-                const codeB = b.code || ''
-
-                // High-quality sorting for warehouse position codes like K1S1A01T101
-                // Priority: 
-                // 1. Numeric suffix (Tier/Level, e.g. T101) - ASCENDING
-                // 2. Middle numeric sequence (Bin, e.g. 01) - ASCENDING
-                // 3. Middle row letters (Row, e.g. A) - ASCENDING
-
-                const matchA = codeA.match(/^(.+?)([A-Z]+)(\d+)T(\d+)$/i)
-                const matchB = codeB.match(/^(.+?)([A-Z]+)(\d+)T(\d+)$/i)
-
-                if (matchA && matchB) {
-                    const [_a, prefA, rowA, binA, tierA] = matchA
-                    const [_b, prefB, rowB, binB, tierB] = matchB
-
-                    const tA = parseInt(tierA, 10), tB = parseInt(tierB, 10)
-                    if (tA !== tB) return tA - tB
-
-                    const bA = parseInt(binA, 10), bB = parseInt(binB, 10)
-                    if (bA !== bB) return bA - bB
-
-                    if (rowA !== rowB) return rowA.localeCompare(rowB)
-                    if (prefA !== prefB) return prefA.localeCompare(prefB)
-                }
-
-                // Fallback for non-standard patterns
-                const matchSuffixA = codeA.match(/\d+$/)
-                const matchSuffixB = codeB.match(/\d+$/)
-                const numA = matchSuffixA ? parseInt(matchSuffixA[0], 10) : -1
-                const numB = matchSuffixB ? parseInt(matchSuffixB[0], 10) : -1
-
-                if (numA !== numB) {
-                    return numA - numB
-                }
-
-                return codeA.localeCompare(codeB, undefined, { numeric: true })
-            })
+            node.positions = sortPositionsByBinPriority(node.positions)
 
             let totalPos = node.positions.length
             let descIds: string[] = []

@@ -26,7 +26,7 @@ import { MapSearchStats } from './_components/MapSearchStats'
 import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
 import { SelectMoveDestinationModal } from '@/components/warehouse/map/SelectMoveDestinationModal'
 import { LotBulkPrintModal } from '@/components/warehouse/map/LotBulkPrintModal'
-import { groupWarehouseData } from '@/lib/warehouseUtils'
+import { groupWarehouseData, sortPositionsByBinPriority } from '@/lib/warehouseUtils'
 
 type Zone = Database['public']['Tables']['zones']['Row']
 type ZoneLayout = Database['public']['Tables']['zone_layouts']['Row']
@@ -452,7 +452,9 @@ function WarehouseMapContent() {
         }
 
         // Find available positions in the Hall's zones
-        const availablePositions = positions.filter(p => p.zone_id && hallZoneIds.has(p.zone_id) && !p.lot_id)
+        // Find available positions in the Hall's zones and sort by Bin-priority
+        const rawAvailable = positions.filter(p => p.zone_id && hallZoneIds.has(p.zone_id) && !p.lot_id)
+        const availablePositions = sortPositionsByBinPriority(rawAvailable)
 
         if (availablePositions.length < lotIdsToMove.size) {
             showToast(`Không đủ vị trí trống trong Sảnh này. Cần ${lotIdsToMove.size}, nhưng chỉ còn ${availablePositions.length} vị trí.`, 'error')
@@ -534,7 +536,9 @@ function WarehouseMapContent() {
         }
 
         // Find available positions in the target Zone's descendant zones
-        const availablePositions = positions.filter(p => p.zone_id && targetZoneIds.has(p.zone_id) && !p.lot_id)
+        // Find available positions in the target Zone's descendant zones and sort by Bin-priority
+        const rawAvailable = positions.filter(p => p.zone_id && targetZoneIds.has(p.zone_id) && !p.lot_id)
+        const availablePositions = sortPositionsByBinPriority(rawAvailable)
 
         console.log(`Moving items: targetZoneId=${targetZoneId}, descendantZones=${targetZoneIds.size}, available=${availablePositions.length}, toMove=${lotIdsToMove.size}`)
 

@@ -11,7 +11,7 @@ import { PrintHeader } from '@/components/print/PrintHeader'
 import { EditableText } from '@/components/print/PrintHelpers'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
 import { Database } from '@/lib/database.types'
-import { groupWarehouseData, parsePositionCodeFallback } from '@/lib/warehouseUtils'
+import { groupWarehouseData, parsePositionCodeFallback, sortPositionsByBinPriority } from '@/lib/warehouseUtils'
 import { exportWarehouseToExcel, exportWarehouseGridToExcel } from '@/lib/warehouseExcelExport'
 import { FileSpreadsheet } from 'lucide-react'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
@@ -419,27 +419,9 @@ export default function WarehouseMapPrintPage() {
 
             if (zoneIdxA !== zoneIdxB) return zoneIdxA - zoneIdxB
             
-            const codeA = a.code || ''
-            const codeB = b.code || ''
-
-            const matchA = codeA.match(/^(.+?)([A-Z]+)(\d+)T(\d+)$/i)
-            const matchB = codeB.match(/^(.+?)([A-Z]+)(\d+)T(\d+)$/i)
-
-            if (matchA && matchB) {
-                const [_a, prefA, rowA, binA, tierA] = matchA
-                const [_b, prefB, rowB, binB, tierB] = matchB
-
-                const tA = parseInt(tierA, 10), tB = parseInt(tierB, 10)
-                if (tA !== tB) return tA - tB
-
-                const bA = parseInt(binA, 10), bB = parseInt(binB, 10)
-                if (bA !== bB) return bA - bB
-
-                if (rowA !== rowB) return rowA.localeCompare(rowB)
-                if (prefA !== prefB) return prefA.localeCompare(prefB)
-            }
-
-            return (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
+            // Use centralized Bin-priority sorting
+            const sorted = sortPositionsByBinPriority([a, b])
+            return sorted[0] === a ? -1 : 1
         })
     }, [displayPositions, descendantIdSet, occupancyFilter, searchTerm, occupiedIds, lotInfo, displayZones])
 
