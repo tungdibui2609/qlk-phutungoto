@@ -12,7 +12,7 @@ import { EditableText } from '@/components/print/PrintHelpers'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
 import { Database } from '@/lib/database.types'
 import { groupWarehouseData, parsePositionCodeFallback, sortPositionsByBinPriority } from '@/lib/warehouseUtils'
-import { exportWarehouseToExcel, exportWarehouseGridToExcel } from '@/lib/warehouseExcelExport'
+import { exportWarehouseToExcel, exportWarehouseGridToExcel, exportWarehouseLobbyDetailToExcel, ExportWarehouseLobbyData } from '@/lib/warehouseExcelExport'
 import { FileSpreadsheet } from 'lucide-react'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 
@@ -687,6 +687,62 @@ export default function WarehouseMapPrintPage() {
         }
     }
 
+    const handleExportExcelLobbyDetail = async () => {
+        const sanhRegex = /S[ẢảÀà]nh|S[Àà]NH|Lobby/i;
+        const lobbies = filteredZones.filter(z => sanhRegex.test(z.name));
+        
+        if (lobbies.length === 0) {
+            alert("Không tìm thấy sảnh nào trong khu vực hiện tại.");
+            return;
+        }
+
+        const lobbyData: ExportWarehouseLobbyData['lobbies'] = lobbies.map(lobby => {
+            const layout = layouts[lobby.id];
+            const columns = layout?.position_columns || 8;
+            
+            // Tìm tên khu vực (zone cha)
+            const parentZone = filteredZones.find(z => z.id === lobby.parent_id);
+            const parentName = parentZone ? parentZone.name : undefined;
+
+            // Get all positions in this lobby
+            const lobbyPositions = filteredPositions.filter(p => p.zone_id === lobby.id);
+            // Sort them if needed, here we use sortPositionsByBinPriority for consistency
+            const sortedPos = sortPositionsByBinPriority(lobbyPositions);
+            
+            const excelPositions = sortedPos.map((p, idx) => {
+                const lot = p.lot_id ? lotInfo[p.lot_id] : null;
+                const items = lot?.items?.map((it: any) => ({
+                    productName: displayInternalCode && it.internal_name ? it.internal_name : it.product_name,
+                    sku: displayInternalCode && it.internal_code ? it.internal_code : it.sku,
+                    unit: it.unit,
+                    quantity: it.quantity,
+                    lotCode: lot.code,
+                    batchCode: lot.batch_code,
+                    lotTags: it.tags
+                })) || [];
+
+                return {
+                    x: idx % columns,
+                    y: Math.floor(idx / columns),
+                    code: p.code,
+                    items
+                };
+            });
+
+            return {
+                name: lobby.name,
+                parentName,
+                columns,
+                positions: excelPositions
+            };
+        });
+
+        await exportWarehouseLobbyDetailToExcel({
+            systemName: systemType || 'KHO',
+            lobbies: lobbyData
+        });
+    }
+
     if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin mr-2" /> Đang tải dữ liệu...</div>
     if (error) return <div className="flex h-screen items-center justify-center text-red-600 font-bold">Lỗi: {error}</div>
 
@@ -939,7 +995,7 @@ export default function WarehouseMapPrintPage() {
                     )}
                 </div>
 
-                <div className="flex bg-white rounded-lg shadow-xl border border-gray-200 p-1 gap-1">
+                <div className="flex bg-white rounded-lg shadow-xl border border-gray-200 p-1 gap-1 flex-wrap">
                     <button
                         onClick={handleDownload}
                         className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition-colors cursor-pointer shadow-sm"
@@ -948,23 +1004,38 @@ export default function WarehouseMapPrintPage() {
                         {isCapturing ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
                         Tải ảnh phiếu
                     </button>
+                    
                     <button
                         onClick={handleExportExcelTable}
                         className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-colors cursor-pointer shadow-sm"
+                        disabled={isCapturing}
                     >
                         <FileSpreadsheet size={16} />
                         Excel (Bảng)
                     </button>
+
                     <button
                         onClick={handleExportExcelGrid}
-                        className="px-4 py-2 bg-purple-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-purple-700 transition-colors cursor-pointer shadow-sm"
+                        className="px-4 py-2 bg-emerald-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-emerald-700 transition-colors cursor-pointer shadow-sm"
+                        disabled={isCapturing}
                     >
-                        <Layers size={16} />
-                        Excel (Sơ đồ)
+                        <Layout size={16} />
+                        Excel (Lưới)
                     </button>
+
+                    <button
+                        onClick={handleExportExcelLobbyDetail}
+                        className="px-4 py-2 bg-amber-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-amber-700 transition-colors cursor-pointer shadow-sm"
+                        disabled={isCapturing}
+                    >
+                        <Monitor size={16} />
+                        Excel (Chi Tiết Sảnh)
+                    </button>
+
                     <button
                         onClick={handlePrint}
                         className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors cursor-pointer shadow-sm"
+                        disabled={isCapturing}
                     >
                         <Printer size={16} />
                         In sơ đồ

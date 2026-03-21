@@ -365,6 +365,29 @@ interface ExportWarehouseGridData {
     }>;
 }
 
+export interface ExportWarehouseLobbyData {
+    systemName: string;
+    lobbies: Array<{
+        name: string;
+        parentName?: string;
+        columns: number;
+        positions: Array<{
+            x: number;
+            y: number;
+            code: string;
+            items: Array<{
+                productName: string;
+                sku: string;
+                unit: string;
+                quantity: number;
+                lotCode?: string;
+                batchCode?: string;
+                lotTags?: string[];
+            }>;
+        }>;
+    }>;
+}
+
 export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Sơ đồ mặt bằng');
@@ -659,6 +682,121 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
 
     const buffer = await workbook.xlsx.writeBuffer();
     const fileName = `So_do_kho_Custom_${data.systemName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    saveAs(new Blob([buffer]), fileName);
+}
+
+export async function exportWarehouseLobbyDetailToExcel(data: ExportWarehouseLobbyData) {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Sơ đồ chi tiết sảnh');
+
+    // 1. Header Tiêu đề
+    worksheet.mergeCells('A1:Z1');
+    const titleCell = worksheet.getCell('A1');
+    titleCell.value = 'SƠ ĐỒ CHI TIẾT SẢNH / KHU VỰC';
+    titleCell.font = { bold: true, size: 16 };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    worksheet.getRow(1).height = 30;
+
+    worksheet.mergeCells('A2:Z2');
+    const infoCell = worksheet.getCell('A2');
+    infoCell.value = `Hệ thống: ${data.systemName} | Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`;
+    infoCell.alignment = { horizontal: 'center' };
+    infoCell.font = { italic: true };
+
+    let currentRowIdx = 4;
+
+    data.lobbies.forEach((lobby) => {
+        // Render Lobby Name & Parent Name
+        worksheet.mergeCells(`A${currentRowIdx}:Z${currentRowIdx}`);
+        const lobbyCell = worksheet.getCell(`A${currentRowIdx}`);
+        const lobbyTitle = lobby.parentName ? `${lobby.parentName.toUpperCase()} - ${lobby.name.toUpperCase()}` : lobby.name.toUpperCase();
+        lobbyCell.value = lobbyTitle;
+        lobbyCell.font = { bold: true, size: 14, color: { argb: 'FFFFFF' } };
+        lobbyCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '10B981' } }; // Emerald-500
+        lobbyCell.alignment = { horizontal: 'left' };
+        currentRowIdx += 2;
+
+        const lobbyStartRowIdx = currentRowIdx;
+        const columns = lobby.columns || 8;
+        
+        // Sắp xếp các vị trí theo tọa độ Y (hàng) và X (cột)
+        const posMap = new Map<string, any>();
+        let maxY = 0;
+        lobby.positions.forEach(p => {
+            const y = Number(p.y) || 0;
+            const x = Number(p.x) || 0;
+            posMap.set(`${y}-${x}`, p);
+            if (y > maxY) maxY = y;
+        });
+
+        // Loop qua từng HÀNG dữ liệu (Y)
+        for (let y = 0; y <= maxY; y++) {
+            // TẠO 2 HÀNG EXCEL CHO MỖI HÀNG DỮ LIỆU
+            const codeRow = worksheet.getRow(currentRowIdx);
+            const contentRow = worksheet.getRow(currentRowIdx + 1);
+            
+            codeRow.height = 20;    // Hàng chứa mã vị trí cao vừa đủ
+            contentRow.height = 90; // Hàng chứa sản phẩm cao hơn
+
+            // Loop qua từng CỘT (dựa trên cấu hình columns)
+            for (let x = 0; x < columns; x++) {
+                const excelColIdx = x + 1;
+                const pos = posMap.get(`${y}-${x}`);
+
+                const codeCell = codeRow.getCell(excelColIdx);
+                const contentCell = contentRow.getCell(excelColIdx);
+
+                if (pos) {
+                    // 1. Ghi mã vị trí vào hàng trên
+                    codeCell.value = pos.code;
+                    codeCell.font = { bold: true, size: 10, color: { argb: '374151' } };
+                    codeCell.alignment = { horizontal: 'center', vertical: 'middle' };
+                    codeCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F9FAFB' } }; // Light gray for header
+                    codeCell.border = {
+                        top: { style: 'thin' },
+                        left: { style: 'thin' },
+                        right: { style: 'thin' }
+                    };
+
+                    // 2. Ghi nội dung sản phẩm vào hàng dưới
+                    if (pos.items && pos.items.length > 0) {
+                        const richText: any[] = [];
+                        pos.items.forEach((it: any, idx: number) => {
+                            const roundedQty = Math.round((Number(it.quantity) || 0) * 1000) / 1000;
+                            richText.push({ text: `• ${it.productName}`, font: { size: 9, bold: true } });
+                            richText.push({ text: ` : ${roundedQty} ${it.unit}`, font: { size: 9, bold: true, color: { argb: '0000FF' } } });
+                            
+                            if (idx < pos.items.length - 1) {
+                                richText.push({ text: '\n', font: { size: 4 } });
+                            }
+                        });
+                        contentCell.value = { richText };
+                        contentCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0FDF4' } }; // Light green
+                    } else {
+                        contentCell.value = { richText: [{ text: '(Trống)', font: { italic: true, size: 8, color: { argb: '9CA3AF' } } }] };
+                    }
+
+                    contentCell.alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
+                    contentCell.border = {
+                        left: { style: 'thin' },
+                        bottom: { style: 'thin' },
+                        right: { style: 'thin' }
+                    };
+                } else {
+                    // Ô trống hoàn toàn
+                    codeCell.border = { top: { style: 'dotted' }, left: { style: 'dotted' }, right: { style: 'dotted' } };
+                    contentCell.border = { bottom: { style: 'dotted' }, left: { style: 'dotted' }, right: { style: 'dotted' } };
+                }
+                worksheet.getColumn(excelColIdx).width = 30;
+            }
+            currentRowIdx += 2; // Tăng 2 hàng cho mỗi vòng lặp Y
+        }
+
+        currentRowIdx += 3; // Spacer between lobbies
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const fileName = `So_do_chi_tiet_sanh_${data.systemName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
     saveAs(new Blob([buffer]), fileName);
 }
 
