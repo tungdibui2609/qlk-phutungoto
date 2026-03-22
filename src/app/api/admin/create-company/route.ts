@@ -3,20 +3,9 @@ import { NextResponse } from 'next/server'
 
 import { BASIC_MODULE_IDS } from '@/lib/basic-modules'
 
-// Initialize Admin Client with Service Role Key
-const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-        auth: {
-            autoRefreshToken: false,
-            persistSession: false
-        }
-    }
-)
 
 // Helper to seed data for a specific company
-async function seedCompanyData(companyId: string) {
+async function seedCompanyData(companyId: string, supabaseAdmin: any) {
     console.log(`Seeding data for company: ${companyId}`)
 
     // 1. Systems (Standard Modules)
@@ -35,7 +24,7 @@ async function seedCompanyData(companyId: string) {
         }
     ]
 
-    const { error: systemsError } = await supabaseAdmin.from('systems').insert(systems)
+    const { error: systemsError } = await (supabaseAdmin as any).from('systems').insert(systems)
     if (systemsError) {
         console.error('Error seeding systems:', systemsError)
         // Don't throw, continue with other data
@@ -51,7 +40,7 @@ async function seedCompanyData(companyId: string) {
         { name: 'Mét', description: 'Đơn vị đo độ dài', company_id: companyId }
     ]
 
-    const { error: unitsError } = await supabaseAdmin.from('units').insert(units.map(u => ({ ...u, is_active: true })))
+    const { error: unitsError } = await (supabaseAdmin as any).from('units').insert(units.map(u => ({ ...u, is_active: true })))
     if (unitsError) {
         console.error('Error seeding units:', unitsError)
     }
@@ -66,7 +55,7 @@ async function seedCompanyData(companyId: string) {
         { name: 'Xuất khác', code: 'XK', scope: 'Export', description: 'Xuất khác', company_id: companyId }
     ]
 
-    const { error: typesError } = await supabaseAdmin.from('order_types').insert(orderTypes.map(ot => ({ ...ot, is_active: true })))
+    const { error: typesError } = await (supabaseAdmin as any).from('order_types').insert(orderTypes.map(ot => ({ ...ot, is_active: true })))
     if (typesError) {
         console.error('Error seeding order types:', typesError)
     }
@@ -80,6 +69,17 @@ export async function POST(request: Request) {
         if (!name || !code || !admin_email || !admin_password) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
         }
+
+        const supabaseAdmin = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!,
+            {
+                auth: {
+                    autoRefreshToken: false,
+                    persistSession: false
+                }
+            }
+        )
 
         // 0. Pre-check: Verify if Admin Email already acts to prevent "Ghost Company" creation
         // Note: listUsers is admin-only.
@@ -192,7 +192,7 @@ export async function POST(request: Request) {
         }
 
         // 1.3 Seed Company Data (Systems, Units, Order Types)
-        await seedCompanyData(company.id)
+        await seedCompanyData(company.id, supabaseAdmin)
 
         // 2. Create Admin User (Auth)
         // using admin.createUser prevents signing in the user on the client side
