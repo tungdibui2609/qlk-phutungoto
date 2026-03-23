@@ -534,6 +534,7 @@ export default function UserPermissionsPage() {
                                                             order: 'Phiếu nhập/xuất',
                                                             lotcode: 'Mã lô',
                                                             lot: 'LOT Sản Xuất',
+                                                             warehouse_lot: 'Quản lý LOT',
                                                             report: 'Báo cáo',
                                                             customer: 'Khách hàng',
                                                             supplier: 'Nhà cung cấp',

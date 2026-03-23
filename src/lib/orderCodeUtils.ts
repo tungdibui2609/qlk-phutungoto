@@ -6,7 +6,7 @@ import { supabase } from './supabaseClient'
  * mmyy: month and last two digits of year
  * A: Inbound (PNK), B: Outbound (PXK)
  */
-export async function generateOrderCode(type: 'PNK' | 'PXK' | 'SITE', systemCode?: string) {
+export async function generateOrderCode(type: 'PNK' | 'PXK' | 'SITE' | 'PROD', systemCode?: string) {
     const today = new Date()
     const month = String(today.getMonth() + 1).padStart(2, '0')
     const year = String(today.getFullYear()).slice(-2)
@@ -26,6 +26,10 @@ export async function generateOrderCode(type: 'PNK' | 'PXK' | 'SITE', systemCode
         suffix = 'S'
         tableName = 'lots'
         prefix = 'SITE-'
+    } else if (type === 'PROD') {
+        suffix = 'P'
+        tableName = 'lots'
+        prefix = 'PROD-'
     }
 
     // Query for the latest code in the current month/year to determine the STT

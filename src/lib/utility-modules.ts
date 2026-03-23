@@ -54,6 +54,14 @@ export const UTILITY_MODULES: UtilityModule[] = [
         default_enabled: false
     },
     {
+        id: 'production_inventory_manager',
+        name: 'Cấp phát sản xuất',
+        description: 'Theo dõi cấp phát vật tư, linh kiện cho các công đoạn sản xuất và lắp ráp.',
+        icon: Factory,
+        category: 'specialized',
+        default_enabled: false
+    },
+    {
         id: 'utility_qr_assign',
         name: 'Quét mã QR & Gán vị trí',
         description: 'Cho phép quét mã QR để gán nhanh vị trí kho. Hiển thị menu Quét mã QR trên thanh điều hướng.',
@@ -66,6 +74,15 @@ export const UTILITY_MODULES: UtilityModule[] = [
         name: 'Thành viên & Đội',
         description: 'Quản lý nhân sự và các đội nhóm thi công, vận hành.',
         icon: Users,
+        category: 'info',
+        is_basic: true,
+        default_enabled: true
+    },
+    {
+        id: 'production_code',
+        name: 'Quản lý Lệnh sản xuất',
+        description: 'Quản lý danh mục lệnh sản xuất, quy trình sản xuất tập trung cho toàn công ty.',
+        icon: Factory,
         category: 'info',
         is_basic: true,
         default_enabled: true

@@ -1,4 +1,4 @@
-import { MapPin, Layers, Truck, ShieldCheck, Info, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy } from 'lucide-react'
+import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy } from 'lucide-react'
 import { useState } from 'react'
 import { Lot } from '../_hooks/useLotManagement'
 import { useRouter, usePathname } from 'next/navigation'
@@ -21,9 +21,10 @@ interface LotCardProps {
     onExport?: (lot: Lot) => void
     onBulkClone?: (lot: Lot) => void
     onAssignLocation?: (lot: Lot) => void
+    managePermission?: string
 }
 
-export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone, onAssignLocation }: LotCardProps) {
+export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone, onAssignLocation, managePermission }: LotCardProps) {
     const router = useRouter()
     const pathname = usePathname()
     const [isExpanded, setIsExpanded] = useState(false)
@@ -125,11 +126,6 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                         <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap shadow-sm border border-black/5 dark:border-white/5">
                             LOT: {lot.code}
                         </span>
-                        {lot.production_code && (
-                            <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap shadow-sm border border-emerald-200 dark:border-emerald-800 animate-pulse">
-                                MSX: {lot.production_code}
-                            </span>
-                        )}
                     </div>
                     {lot.positions && lot.positions.length > 0 ? (
                         <button
@@ -214,6 +210,20 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
 
                 {renderInfoItems()}
 
+                {/* Production Info (LSX/MSX) - Moved here from header */}
+                {(lot.productions?.code || lot.production_code) && (
+                    <div className="mt-2 flex items-center gap-2 p-2 rounded-xl bg-orange-50/50 dark:bg-orange-900/10 border border-orange-100/50 dark:border-orange-900/20">
+                        <span className="p-1.5 rounded-lg bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400">
+                            <Factory size={14} />
+                        </span>
+                        <span className="text-[10px] font-bold uppercase text-orange-700 dark:text-orange-300 tracking-wider truncate">
+                            {lot.productions?.code 
+                                ? `LSX: ${lot.productions.name} - ${lot.productions.code}` 
+                                : `MSX: ${lot.production_code}`}
+                        </span>
+                    </div>
+                )}
+
                 {/* Product Info */}
                 <div className="mt-2 p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800/50">
                     <div className="flex items-center justify-between mb-2">
@@ -226,7 +236,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                         acc[unit] = (acc[unit] || 0) + (item.quantity || 0);
                                         return acc;
                                     }, {})
-                                ).map(([unit, total]) => (
+                                ).map(([unit, total]: [string, any]) => (
                                     <span key={unit} className="text-orange-600 font-bold text-sm bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-lg border border-orange-100 dark:border-orange-900/30">
                                         {total} <span className="text-[10px] font-medium text-orange-500/70">{unit}</span>
                                     </span>
@@ -245,7 +255,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                             <>
                                 <div className="space-y-0">
                                     {displayItems.length > 0 ? (
-                                        displayItems.map((item, index) => {
+                                        displayItems.map((item: any, index: number) => {
                                             // 1. Check history from metadata (New)
                                             const itemHistory = (lot.metadata as any)?.system_history?.item_history?.[item.id];
                                             let parsedHistory = itemHistory?.snapshot || null;
@@ -253,7 +263,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                             let sourceCode = itemHistory?.source_code || null;
 
                                             // 2. Check history from tags (Legacy/Compatibility)
-                                            const originTag = lot.lot_tags?.find(t => t.lot_item_id === item.id && (t.tag.startsWith('MERGED_') || t.tag.startsWith('SPLIT_')));
+                                            const originTag = lot.lot_tags?.find((t: any) => t.lot_item_id === item.id && (t.tag.startsWith('MERGED_') || t.tag.startsWith('SPLIT_')));
 
                                             if (!parsedHistory && originTag) {
                                                 const isMergedData = originTag.tag.startsWith('MERGED_DATA:');
@@ -319,14 +329,14 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                                             <div className="flex flex-wrap gap-1">
                                                                 <TagDisplay
                                                                     tags={lot.lot_tags
-                                                                        .filter(t =>
+                                                                        .filter((t: any) =>
                                                                             t.lot_item_id === item.id &&
                                                                             !t.tag.startsWith('MERGED_FROM:') &&
                                                                             !t.tag.startsWith('MERGED_DATA:') &&
                                                                             !t.tag.startsWith('SPLIT_FROM:') &&
                                                                             !t.tag.startsWith('SPLIT_DATA:')
                                                                         )
-                                                                        .map(t => t.tag)}
+                                                                        .map((t: any) => t.tag)}
                                                                     placeholderMap={{
                                                                         '@': (showInternal && item.products?.internal_code ? item.products.internal_code : item.products?.sku) || 'SẢN PHẨM'
                                                                     }}
@@ -356,7 +366,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                                         <div className="truncate">{showInternal && lot.products.internal_name ? lot.products.internal_name : lot.products.name}</div>
                                                         {lot.lot_tags && (
                                                             <div className="mt-1">
-                                                                <TagDisplay tags={lot.lot_tags.map(t => t.tag)} />
+                                                                <TagDisplay tags={lot.lot_tags.map((t: any) => t.tag)} />
                                                             </div>
                                                         )}
                                                     </div>
@@ -393,16 +403,16 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                 </div>
 
                 {/* Tags (Unassigned) */}
-                {lot.lot_tags && lot.lot_tags.filter(t => !t.lot_item_id).length > 0 && (
+                {lot.lot_tags && lot.lot_tags.filter((t: any) => !t.lot_item_id).length > 0 && (
                     <div className="mt-2 text-xs">
                         <TagDisplay
                             tags={lot.lot_tags
-                                .filter(t =>
+                                .filter((t: any) =>
                                     !t.lot_item_id &&
                                     !t.tag.startsWith('SPLIT_TO:') &&
                                     !t.tag.startsWith('MERGED_TO:')
                                 )
-                                .map(t => t.tag)}
+                                .map((t: any) => t.tag)}
                             placeholderMap={{
                                 '@': (showInternal && lot.products?.internal_code ? lot.products.internal_code : lot.products?.sku) || lot.products?.name || 'SẢN PHẨM'
                             }}
@@ -433,7 +443,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                     >
                         <Star size={16} fill={lot.metadata?.is_starred ? "currentColor" : "none"} />
                     </button>
-                    <Protected permission="lot.manage">
+                    <Protected permission={managePermission || "lot.manage"}>
                         <button
                             onClick={() => onAssignTag?.(lot)}
                             className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-zinc-800 transition-all border border-transparent"
@@ -484,7 +494,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                     >
                         <Eye size={16} />
                     </button>
-                    <Protected permission="lot.manage">
+                    <Protected permission={managePermission || "lot.manage"}>
                         {!isSanxuat && (
                             <button
                                 onClick={() => onEdit(lot)}

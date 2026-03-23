@@ -22,6 +22,8 @@ export type Lot = Database['public']['Tables']['lots']['Row'] & {
         zone_positions?: { zone_id: string }[] | null
     }[] | null
     lot_tags?: { tag: string; lot_item_id: string | null }[] | null
+    // Production link
+    productions?: { code: string } | null
     // Legacy support for display if needed
     products?: { name: string; unit: string | null; product_code?: string; sku?: string; cost_price?: number | null; internal_code?: string | null; internal_name?: string | null } | null
     images?: any
@@ -67,6 +69,7 @@ export function useLotManagement() {
     const [productUnits, setProductUnits] = useState<ProductUnit[]>([])
     const [branches, setBranches] = useState<any[]>([])
     const [existingTags, setExistingTags] = useState<string[]>([])
+    const [productions, setProductions] = useState<any[]>([])
 
     // Use Ref to access latest fetchLots in subscription without re-subscribing
     const fetchLotsRef = useRef(fetchLots)
@@ -135,7 +138,7 @@ export function useLotManagement() {
         let allData: any[] = []
         let from = 0
         while (true) {
-            let query = supabase.from(table as any).select(selectFields).range(from, from + pageSize - 1)
+            let query = (supabase.from(table as any) as any).select(selectFields).range(from, from + pageSize - 1)
             if (filter) query = filter(query)
             const { data, error } = await query
             if (error) { console.error(`Error fetching ${table}:`, error); break }
@@ -150,14 +153,15 @@ export function useLotManagement() {
     async function fetchCommonData() {
         if (!currentSystem?.code) return
 
-        const [prodData, suppData, qcData, branchData, unitData, pUnitData, tagData] = await Promise.all([
+        const [prodData, suppData, qcData, branchData, unitData, pUnitData, tagData, productionData] = await Promise.all([
             fetchAllPaginated('products', q => q.eq('system_type', currentSystem!.code).order('name')),
             fetchAllPaginated('suppliers', q => q.eq('system_code', currentSystem!.code).order('name')),
             fetchAllPaginated('qc_info', q => q.eq('system_code', currentSystem!.code).order('name')),
             fetchAllPaginated('branches', q => q.order('is_default', { ascending: false }).order('name')),
             fetchAllPaginated('units'),
             fetchAllPaginated('product_units'),
-            fetchAllPaginated('lot_tags', q => q.eq('lots.system_code', currentSystem!.code).order('tag'), 'tag, lots!inner(system_code)')
+            fetchAllPaginated('lot_tags', q => q.eq('lots.system_code', currentSystem!.code).order('tag'), 'tag, lots!inner(system_code)'),
+            fetchAllPaginated('productions', q => q.select('*, products(*), production_lots(products(*))').order('code', { ascending: false }))
         ])
 
         setProducts(prodData)
@@ -166,6 +170,8 @@ export function useLotManagement() {
         setBranches(branchData)
         setUnits(unitData)
         setProductUnits(pUnitData)
+        setProductions(productionData)
+        
         const uniqueTags = Array.from(new Set(tagData.map((t: any) => t.tag))).filter(Boolean) as string[]
         setExistingTags(uniqueTags)
     }
@@ -181,6 +187,8 @@ export function useLotManagement() {
     *,
     raw_material_date,
     production_code,
+    production_id,
+    productions(code, name),
     packaging_date,
     warehouse_name,
     images,
@@ -291,37 +299,37 @@ export function useLotManagement() {
                     console.log('[Search Debug] Products not loaded, using fallback query for:', searchTerm);
                     let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`, `internal_code.ilike.${term}`, `internal_name.ilike.${term}`];
                     if (isUUID) orConditionsProd.push(`id.eq.${searchTerm}`);
-                    const { data: prods, error: prodError } = await supabase.from('products').select('id').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
+                    const { data: prods, error: prodError } = await (supabase.from('products') as any).select('id').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
                     if (prodError) {
                         console.error('[Search Debug] Error fetching products:', prodError);
                     }
-                    prodIds = prods?.map(p => p.id) || [];
+                    prodIds = prods?.map((p: any) => p.id) || [];
                 }
 
                 // Suppliers - prefer local filtering
                 let suppIds: string[] = [];
                 if (suppliers && suppliers.length > 0) {
-                    suppIds = suppliers.filter(s => localMatch(s.name)).map(s => s.id);
+                    suppIds = suppliers.filter((s: any) => localMatch(s.name)).map((s: any) => s.id);
                 } else {
-                    const { data: supps } = await supabase.from('suppliers').select('id').ilike('name', term).eq('system_code', currentSystem.code);
-                    suppIds = supps?.map(s => s.id) || [];
+                    const { data: supps } = await (supabase.from('suppliers') as any).select('id').ilike('name', term).eq('system_code', currentSystem.code);
+                    suppIds = supps?.map((s: any) => s.id) || [];
                 }
 
                 // QC - prefer local filtering
                 let qcIds: string[] = [];
                 if (qcList && qcList.length > 0) {
-                    qcIds = qcList.filter(q => localMatch(q.name)).map(q => q.id);
+                    qcIds = qcList.filter((q: any) => localMatch(q.name)).map((q: any) => q.id);
                 } else {
-                    const { data: qcs } = await supabase.from('qc_info').select('id').ilike('name', term).eq('system_code', currentSystem.code);
-                    qcIds = qcs?.map(q => q.id) || [];
+                    const { data: qcs } = await (supabase.from('qc_info') as any).select('id').ilike('name', term).eq('system_code', currentSystem.code);
+                    qcIds = qcs?.map((q: any) => q.id) || [];
                 }
 
                 // Advanced parser for server-side
-                const orQueries = searchTerm.split(';').map(q => q.trim()).filter(Boolean);
+                const orQueries = searchTerm.split(';').map((q: any) => q.trim()).filter(Boolean);
                 let finalOrConditions: string[] = [];
 
                 for (const orQuery of orQueries) {
-                    const andParts = orQuery.split('&').map(q => q.trim()).filter(Boolean);
+                    const andParts = orQuery.split('&').map((q: any) => q.trim()).filter(Boolean);
                     if (andParts.length === 0) continue;
 
                     // For each OR group, we want to find lots that match ALL andParts
@@ -339,50 +347,50 @@ export function useLotManagement() {
 
                         if (searchMode === 'all') {
                             // Fetch all IDs for this part
-                            const { data: pMatched } = await supabase.from('products').select('id').or(`name.ilike.${partTerm},sku.ilike.${partTerm},internal_code.ilike.${partTerm}`).eq('system_code', currentSystem.code);
-                            const pIds = pMatched?.map(p => p.id) || [];
+                            const { data: pMatched } = await (supabase.from('products') as any).select('id').or(`name.ilike.${partTerm},sku.ilike.${partTerm},internal_code.ilike.${partTerm}`).eq('system_code', currentSystem.code);
+                            const pIds = pMatched?.map((p: any) => p.id) || [];
                             
                             const tagLots = await fetchAllPaginated('lot_tags', (q) => (q as any).ilike('tag', `%${partNormalized}%`), 'lot_id');
                             const tagLotIds = (tagLots || []).map((t: any) => t.lot_id).filter(Boolean);
 
                             let itemLotIds: string[] = [];
                             if (pIds.length > 0) {
-                                const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', pIds);
-                                if (items) itemLotIds.push(...items.map(i => i.lot_id));
-                                const { data: direct } = await supabase.from('lots').select('id').in('product_id', pIds).eq('system_code', currentSystem.code);
-                                if (direct) itemLotIds.push(...direct.map(l => l.id));
+                                const { data: items } = await (supabase.from('lot_items') as any).select('lot_id').in('product_id', pIds);
+                                if (items) itemLotIds.push(...items.map((i: any) => i.lot_id));
+                                const { data: direct } = await (supabase.from('lots') as any).select('id').in('product_id', pIds).eq('system_code', currentSystem.code);
+                                if (direct) itemLotIds.push(...direct.map((l: any) => l.id));
                             }
                             
-                            const { data: posLots } = await supabase.from('positions').select('lot_id').ilike('code', partTerm).not('lot_id', 'is', null);
-                            const posIds = (posLots?.map(p => p.lot_id).filter(Boolean) || []) as string[];
+                            const { data: posLots } = await (supabase.from('positions') as any).select('lot_id').ilike('code', partTerm).not('lot_id', 'is', null);
+                            const posIds = (posLots?.map((p: any) => p.lot_id).filter(Boolean) || []) as string[];
 
-                            const { data: lotsDirect } = await supabase.from('lots').select('id')
+                            const { data: lotsDirect } = await (supabase.from('lots') as any).select('id')
                                 .or(`code.ilike.${partTerm},notes.ilike.${partTerm},production_code.ilike.${partTerm}`)
                                 .eq('system_code', currentSystem.code);
-                            const directIds = lotsDirect?.map(l => l.id) || [];
+                            const directIds = lotsDirect?.map((l: any) => l.id) || [];
 
                             currentMatchIds = Array.from(new Set([...itemLotIds, ...tagLotIds, ...posIds, ...directIds]));
                         }
                         else if (searchMode === 'name') {
-                            const { data: pMatched } = await supabase.from('products').select('id').or(`name.ilike.${partTerm},internal_name.ilike.${partTerm}`).eq('system_type', currentSystem.code);
-                            const pIds = pMatched?.map(p => p.id) || [];
+                            const { data: pMatched } = await (supabase.from('products') as any).select('id').or(`name.ilike.${partTerm},internal_name.ilike.${partTerm}`).eq('system_type', currentSystem.code);
+                            const pIds = pMatched?.map((p: any) => p.id) || [];
                             if (pIds.length > 0) {
-                                const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', pIds);
-                                if (items) currentMatchIds.push(...items.map(i => i.lot_id));
-                                const { data: direct } = await supabase.from('lots').select('id').in('product_id', pIds).eq('system_code', currentSystem.code);
-                                if (direct) currentMatchIds.push(...direct.map(l => l.id));
+                                const { data: items } = await (supabase.from('lot_items') as any).select('lot_id').in('product_id', pIds);
+                                if (items) currentMatchIds.push(...items.map((i: any) => i.lot_id));
+                                const { data: direct } = await (supabase.from('lots') as any).select('id').in('product_id', pIds).eq('system_code', currentSystem.code);
+                                if (direct) currentMatchIds.push(...direct.map((l: any) => l.id));
                             }
                         }
                         else if (searchMode === 'code') {
-                            const { data: pMatched } = await supabase.from('products').select('id').or(`sku.ilike.${partTerm},internal_code.ilike.${partTerm}`).eq('system_type', currentSystem.code);
-                            const pIds = pMatched?.map(p => p.id) || [];
-                            const { data: lotsDirect } = await supabase.from('lots').select('id').ilike('code', partTerm).eq('system_code', currentSystem.code);
-                            const directIds = lotsDirect?.map(l => l.id) || [];
+                            const { data: pMatched } = await (supabase.from('products') as any).select('id').or(`sku.ilike.${partTerm},internal_code.ilike.${partTerm}`).eq('system_type', currentSystem.code);
+                            const pIds = pMatched?.map((p: any) => p.id) || [];
+                            const { data: lotsDirect } = await (supabase.from('lots') as any).select('id').ilike('code', partTerm).eq('system_code', currentSystem.code);
+                            const directIds = lotsDirect?.map((l: any) => l.id) || [];
                             
                             let itemLotIds: string[] = [];
                             if (pIds.length > 0) {
-                                const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', pIds);
-                                if (items) itemLotIds.push(...items.map(i => i.lot_id));
+                                const { data: items } = await (supabase.from('lot_items') as any).select('lot_id').in('product_id', pIds);
+                                if (items) itemLotIds.push(...items.map((i: any) => i.lot_id));
                             }
                             currentMatchIds = Array.from(new Set([...itemLotIds, ...directIds]));
                         }
@@ -391,20 +399,20 @@ export function useLotManagement() {
                             currentMatchIds = (tagLots || []).map((t: any) => t.lot_id).filter(Boolean);
                         }
                         else if (searchMode === 'position') {
-                            const { data: posLots } = await supabase.from('positions').select('lot_id').ilike('code', partTerm).not('lot_id', 'is', null);
-                            currentMatchIds = (posLots?.map(p => p.lot_id).filter(Boolean) || []) as string[];
+                            const { data: posLots } = await (supabase.from('positions') as any).select('lot_id').ilike('code', partTerm).not('lot_id', 'is', null);
+                            currentMatchIds = (posLots?.map((p: any) => p.lot_id).filter(Boolean) || []) as string[];
                         }
                         else if (searchMode === 'category') {
-                             const { data: matchedCats } = await supabase.from('categories').select('id').or(`name.ilike.${partTerm},name.ilike.${partUnaccented}`).eq('system_type', currentSystem.code);
-                             const catIds = matchedCats?.map(c => c.id) || [];
+                             const { data: matchedCats } = await (supabase.from('categories') as any).select('id').or(`name.ilike.${partTerm},name.ilike.${partUnaccented}`).eq('system_type', currentSystem.code);
+                             const catIds = matchedCats?.map((c: any) => c.id) || [];
                              if (catIds.length > 0) {
-                                 const { data: rels } = await supabase.from('product_category_rel').select('product_id').in('category_id', catIds);
-                                 const pIds = rels?.map(r => r.product_id) || [];
+                                 const { data: rels } = await (supabase.from('product_category_rel') as any).select('product_id').in('category_id', catIds);
+                                 const pIds = rels?.map((r: any) => r.product_id) || [];
                                  if (pIds.length > 0) {
-                                     const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', pIds);
-                                     if (items) currentMatchIds.push(...items.map(i => i.lot_id));
-                                     const { data: directLots } = await supabase.from('lots').select('id').in('product_id', pIds).eq('system_code', currentSystem.code);
-                                     if (directLots) currentMatchIds.push(...directLots.map(l => l.id));
+                                     const { data: items } = await (supabase.from('lot_items') as any).select('lot_id').in('product_id', pIds);
+                                     if (items) currentMatchIds.push(...items.map((i: any) => i.lot_id));
+                                     const { data: directLots } = await (supabase.from('lots') as any).select('id').in('product_id', pIds).eq('system_code', currentSystem.code);
+                                     if (directLots) currentMatchIds.push(...directLots.map((l: any) => l.id));
                                  }
                              }
                         }
@@ -458,7 +466,7 @@ export function useLotManagement() {
                     let changed = true
                     while (changed) {
                         changed = false
-                        for (const zone of allZones) {
+                        for (const zone of (allZones as any[])) {
                             if (zone.parent_id && descendantIds.has(zone.parent_id) && !descendantIds.has(zone.id)) {
                                 descendantIds.add(zone.id)
                                 changed = true
@@ -552,7 +560,7 @@ export function useLotManagement() {
                     setUnassignedTotal(count || 0)
                 } else {
                     // Quick count for unassigned only using robust join logic
-                    const { count: unassignedCount } = await supabase.from('lots')
+                    const { count: unassignedCount } = await (supabase.from('lots') as any)
                         .select('id, positions!positions_lot_id_fkey(id)', { count: 'exact', head: true })
                         .eq('system_code', currentSystem.code)
                         .is('positions', null)
@@ -621,27 +629,27 @@ export function useLotManagement() {
                 let prodIds: string[] = [];
                 if (products && products.length > 0) {
                     prodIds = products
-                        .filter(p =>
+                        .filter((p: any) =>
                             localMatch(p.name) ||
                             localMatch((p as any).sku) ||
                             localMatch((p as any).internal_code) ||
                             localMatch((p as any).internal_name) ||
                             (isUUID && p.id === searchTerm)
                         )
-                        .map(p => p.id);
+                        .map((p: any) => p.id);
                 } else {
                     let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`, `internal_code.ilike.${term}`, `internal_name.ilike.${term}`];
                     if (isUUID) orConditionsProd.push(`id.eq.${searchTerm}`);
-                    const { data: prods } = await supabase.from('products').select('id').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
-                    prodIds = prods?.map(p => p.id) || [];
+                    const { data: prods } = await (supabase.from('products') as any).select('id').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
+                    prodIds = prods?.map((p: any) => p.id) || [];
                 }
 
                 let suppIds: string[] = [];
                 if (suppliers && suppliers.length > 0) {
                     suppIds = suppliers.filter(s => localMatch(s.name)).map(s => s.id);
                 } else {
-                    const { data: supps } = await supabase.from('suppliers').select('id').ilike('name', term).eq('system_code', currentSystem.code);
-                    suppIds = supps?.map(s => s.id) || [];
+                    const { data: supps } = await (supabase.from('suppliers') as any).select('id').ilike('name', term).eq('system_code', currentSystem.code);
+                    suppIds = supps?.map((s: any) => s.id) || [];
                 }
 
                 const tagLots = await fetchAllPaginated('lot_tags', (q) => (q as any).ilike('tag', `%${escapedTerm}%`), 'lot_id');
@@ -651,8 +659,8 @@ export function useLotManagement() {
                 if (qcList && qcList.length > 0) {
                     qcIds = qcList.filter(q => localMatch(q.name)).map(q => q.id);
                 } else {
-                    const { data: qcs } = await supabase.from('qc_info').select('id').ilike('name', term).eq('system_code', currentSystem.code);
-                    qcIds = qcs?.map(q => q.id) || [];
+                    const { data: qcs } = await (supabase.from('qc_info') as any).select('id').ilike('name', term).eq('system_code', currentSystem.code);
+                    qcIds = qcs?.map((q: any) => q.id) || [];
                 }
 
                 let itemLotIds: string[] = [];
@@ -660,17 +668,17 @@ export function useLotManagement() {
                     const CHUNK = 500;
                     for (let i = 0; i < prodIds.length; i += CHUNK) {
                         const slice = prodIds.slice(i, i + CHUNK);
-                        const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', slice);
-                        if (items) itemLotIds.push(...items.map(i => i.lot_id));
+                        const { data: items } = await (supabase.from('lot_items') as any).select('lot_id').in('product_id', slice);
+                        if (items) itemLotIds.push(...items.map((i: any) => i.lot_id));
                     }
                     
                     // Also search in lots.product_id directly (for lots created without lot_items)
-                    const { data: lotsWithProductId } = await supabase.from('lots')
+                    const { data: lotsWithProductId } = await (supabase.from('lots') as any)
                         .select('id')
                         .in('product_id', prodIds)
                         .eq('system_code', currentSystem.code);
                     if (lotsWithProductId) {
-                        itemLotIds.push(...lotsWithProductId.map(l => l.id));
+                        itemLotIds.push(...lotsWithProductId.map((l: any) => l.id));
                     }
                 }
 
@@ -693,13 +701,13 @@ export function useLotManagement() {
             }
 
             if (selectedZoneId) {
-                const { data: allZones } = await supabase.from('zones').select('id, parent_id').eq('system_type', currentSystem.code);
+                const { data: allZones } = await (supabase.from('zones') as any).select('id, parent_id').eq('system_type', currentSystem.code);
                 if (allZones) {
                     const descendantIds = new Set<string>([selectedZoneId]);
                     let changed = true;
                     while (changed) {
                         changed = false;
-                        for (const zone of allZones) {
+                        for (const zone of (allZones as any[])) {
                             if (zone.parent_id && descendantIds.has(zone.parent_id) && !descendantIds.has(zone.id)) {
                                 descendantIds.add(zone.id);
                                 changed = true;
@@ -804,24 +812,24 @@ export function useLotManagement() {
                 } else {
                     let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`, `internal_code.ilike.${term}`, `internal_name.ilike.${term}`];
                     if (isUUID) orConditionsProd.push(`id.eq.${searchTerm}`);
-                    const { data: prods } = await supabase.from('products').select('id').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
-                    prodIds = prods?.map(p => p.id) || [];
+                    const { data: prods } = await (supabase.from('products') as any).select('id').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
+                    prodIds = prods?.map((p: any) => p.id) || [];
                 }
 
                 let suppIds: string[] = [];
                 if (suppliers && suppliers.length > 0) {
                     suppIds = suppliers.filter(s => localMatch(s.name)).map(s => s.id);
                 } else {
-                    const { data: supps } = await supabase.from('suppliers').select('id').ilike('name', term).eq('system_code', currentSystem.code);
-                    suppIds = supps?.map(s => s.id) || [];
+                    const { data: supps } = await (supabase.from('suppliers') as any).select('id').ilike('name', term).eq('system_code', currentSystem.code);
+                    suppIds = supps?.map((s: any) => s.id) || [];
                 }
 
                 let qcIds: string[] = [];
                 if (qcList && qcList.length > 0) {
                     qcIds = qcList.filter(q => localMatch(q.name)).map(q => q.id);
                 } else {
-                    const { data: qcs } = await supabase.from('qc_info').select('id').ilike('name', term).eq('system_code', currentSystem.code);
-                    qcIds = qcs?.map(q => q.id) || [];
+                    const { data: qcs } = await (supabase.from('qc_info') as any).select('id').ilike('name', term).eq('system_code', currentSystem.code);
+                    qcIds = qcs?.map((q: any) => q.id) || [];
                 }
 
                 let itemLotIds: string[] = [];
@@ -829,8 +837,8 @@ export function useLotManagement() {
                     const CHUNK = 500;
                     for (let i = 0; i < prodIds.length; i += CHUNK) {
                         const slice = prodIds.slice(i, i + CHUNK);
-                        const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', slice);
-                        if (items) itemLotIds.push(...items.map(i => i.lot_id));
+                        const { data: items } = await (supabase.from('lot_items') as any).select('lot_id').in('product_id', slice);
+                        if (items) itemLotIds.push(...items.map((i: any) => i.lot_id));
                     }
                 }
 
@@ -895,8 +903,8 @@ export function useLotManagement() {
     async function handleDeleteLot(id: string): Promise<boolean> {
         if (!await showConfirm('Bạn có chắc chắn muốn xóa LOT này?')) return false
 
-        const { error } = await supabase
-            .from('lots')
+        const { error } = await (supabase
+            .from('lots') as any)
             .delete()
             .eq('id', id)
 
@@ -915,8 +923,8 @@ export function useLotManagement() {
         const metadata = lot.metadata ? { ...lot.metadata } : {};
         metadata.is_starred = !metadata.is_starred;
 
-        const { error } = await supabase
-            .from('lots')
+        const { error } = await (supabase
+            .from('lots') as any)
             .update({ metadata: metadata as any })
             .eq('id', lot.id);
 
@@ -925,7 +933,7 @@ export function useLotManagement() {
             showToast('Lỗi khi đánh dấu: ' + error.message, 'error');
         } else {
             // Optimistic update
-            setLots(lots.map(l => l.id === lot.id ? { ...l, metadata } : l));
+            setLots(lots.map((l: any) => l.id === lot.id ? { ...l, metadata } : l));
         }
     };
 
@@ -966,6 +974,7 @@ export function useLotManagement() {
         productUnits,
         branches,
         existingTags,
+        productions,
 
         // Actions
         fetchLots,

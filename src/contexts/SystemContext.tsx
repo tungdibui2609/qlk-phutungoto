@@ -66,7 +66,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       // Fetch dynamic definition of "Basic" modules from DB
       const { data } = await supabase.from('app_modules').select('id').eq('is_basic', true)
       if (data) {
-        setBasicModuleIds(data.map(m => m.id))
+        setBasicModuleIds((data as any[]).map(m => m.id))
       }
     }
     fetchBasicModules()
@@ -269,7 +269,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
 
   const hasModule = (moduleId: string) => {
     // 1. Core System Modules: Always Enabled, Hidden from Admin
-    const CORE_MODULES = ['inbound_basic', 'inbound_supplier', 'outbound_basic', 'outbound_customer', 'images', 'warehouse_name']
+    const CORE_MODULES = ['inbound_basic', 'inbound_supplier', 'outbound_basic', 'outbound_customer', 'images', 'warehouse_name', 'production_code']
     if (CORE_MODULES.includes(moduleId)) {
       return true
     }

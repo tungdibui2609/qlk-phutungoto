@@ -46,13 +46,7 @@ export const LOT_MODULES: LotModule[] = [
         description: 'Hiển thị và cho phép chọn nhân viên kiểm soát chất lượng.',
         icon: ShieldCheck
     },
-    {
-        id: 'production_code',
-        name: 'Mã sản xuất',
-        description: 'Ghi lại mã sản xuất đa cấp cho lô hàng',
-        icon: Hash,
-        is_basic: false
-    },
+
     {
         id: 'raw_material_date',
         name: 'Ngày nhập nguyên liệu',

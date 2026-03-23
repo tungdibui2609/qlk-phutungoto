@@ -67,7 +67,8 @@ export function LotPageManager() {
         // FIFO
         isFifoAvailable,
         isFifoActive,
-        toggleFifo
+        toggleFifo,
+        productions
     } = useLotManagement()
 
     const { currentSystem } = useSystem()
@@ -161,7 +162,7 @@ export function LotPageManager() {
                         Sơ đồ vị trí
                     </Link>
 
-                    <Protected permission="lot.manage">
+                    <Protected permission="warehouse_lot.manage">
                         <div className="flex items-center gap-2">
                             {positionFilter === 'unassigned' && (
                                 <>
@@ -210,6 +211,8 @@ export function LotPageManager() {
                 productUnits={productUnits}
                 branches={branches}
                 existingTags={existingTags}
+                productions={productions}
+                managePermission="warehouse_lot.manage"
             />
 
             {/* Filter Bar */}
@@ -263,6 +266,7 @@ export function LotPageManager() {
                     lots={lots}
                     isModuleEnabled={isModuleEnabled}
                     isUtilityEnabled={isUtilityEnabled}
+                    managePermission="warehouse_lot.manage"
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                     onView={setViewingLot}
@@ -354,6 +358,7 @@ export function LotPageManager() {
                 }}
                 onDelete={handleDelete}
                 isModuleEnabled={isModuleEnabled}
+                managePermission="warehouse_lot.manage"
             />
 
             {taggingLot && (

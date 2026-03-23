@@ -35,6 +35,8 @@ interface LotFormProps {
     branches: any[]
     existingTags?: string[]
     initialProductionCode?: string
+    productions?: any[]
+    managePermission?: string
 }
 
 export function LotForm({
@@ -50,7 +52,9 @@ export function LotForm({
     branches,
     existingTags = [],
     onDelete,
-    initialProductionCode = ''
+    initialProductionCode = '',
+    productions = [],
+    managePermission
 }: LotFormProps) {
     const { currentSystem, hasModule } = useSystem()
     const { profile } = useUser()
@@ -79,6 +83,39 @@ export function LotForm({
     const [isInitialized, setIsInitialized] = useState(false)
     const [isPersistent, setIsPersistent] = useState(false)
     const [isInfoExpanded, setIsInfoExpanded] = useState(true)
+    const [selectedProductionId, setSelectedProductionId] = useState('')
+
+    // Product filtering based on selected production - Multi-item support
+    const selectedProduction = productions.find((p: any) => p.id === selectedProductionId)
+    let availableProducts = products
+    if (selectedProductionId) {
+        // IDs from main field and multiple item fields
+        const linkedProductIds = new Set<string>()
+        const supplementalProducts: any[] = []
+
+        if (selectedProduction?.product_id) linkedProductIds.add(selectedProduction.product_id)
+        if (selectedProduction?.products) supplementalProducts.push(selectedProduction.products)
+
+        // Add products from production_lots list
+        if (Array.isArray(selectedProduction?.production_lots)) {
+            selectedProduction.production_lots.forEach((pl: any) => {
+                if (pl.products?.id) {
+                    linkedProductIds.add(pl.products.id)
+                    supplementalProducts.push(pl.products)
+                }
+            })
+        }
+
+        // Filter current products list
+        availableProducts = products.filter(p => linkedProductIds.has(p.id))
+
+        // Supplemental check: Ensure products from join data are included (handles system_type mismatch)
+        supplementalProducts.forEach(sp => {
+            if (!availableProducts.some(p => p.id === sp.id)) {
+                availableProducts.push(sp)
+            }
+        })
+    }
 
     const formRef = useRef<HTMLDivElement>(null)
 
@@ -97,15 +134,16 @@ export function LotForm({
                 setNewLotCode(editingLot.code)
                 setNewLotNotes(editingLot.notes || '')
                 setProductionCode((editingLot as any).production_code || '')
+                setSelectedProductionId((editingLot as any).production_id || '')
 
                 // Populate items
                 if (editingLot.lot_items && editingLot.lot_items.length > 0) {
-                    setLotItems(editingLot.lot_items.map(item => ({
+                    setLotItems(editingLot.lot_items.map((item: any) => ({
                         id: item.id,
                         productId: item.product_id,
                         quantity: item.quantity,
                         unit: (item as any).unit || '',
-                        tag: editingLot.lot_tags?.find(t => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_') && !t.tag.startsWith('SPLIT_'))?.tag || ''
+                        tag: editingLot.lot_tags?.find((t: any) => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_') && !t.tag.startsWith('SPLIT_'))?.tag || ''
                     })))
                 } else if (editingLot.products) {
                     // Fallback for legacy
@@ -115,7 +153,7 @@ export function LotForm({
                             productId: legacyPId,
                             quantity: editingLot.quantity || 0,
                             unit: editingLot.products?.unit || '',
-                            tag: editingLot.lot_tags?.find(t => !t.lot_item_id && !t.tag.startsWith('MERGED_') && !t.tag.startsWith('SPLIT_'))?.tag || ''
+                            tag: editingLot.lot_tags?.find((t: any) => !t.lot_item_id && !t.tag.startsWith('MERGED_') && !t.tag.startsWith('SPLIT_'))?.tag || ''
                         }])
                     } else {
                         setLotItems([{ productId: '', quantity: 0, unit: '', tag: '' }])
@@ -455,7 +493,7 @@ export function LotForm({
                     // 1. Snapshot OLD items for diffing
                     const oldItemsMap: Record<string, number> = {}
                     if (editingLot.lot_items) {
-                        editingLot.lot_items.forEach(li => {
+                        editingLot.lot_items.forEach((li: any) => {
                             const key = `${li.product_id}|${(li as any).unit || ''}`
                             oldItemsMap[key] = (oldItemsMap[key] || 0) + li.quantity
                         })
@@ -554,6 +592,7 @@ export function LotForm({
             warehouse_name: warehouseName || null,
             batch_code: batchCode || null,
             production_code: productionCode || null,
+            production_id: selectedProductionId || null,
             quantity: totalQuantity,
             status: 'active',
             system_code: currentSystem?.code,
@@ -595,16 +634,17 @@ export function LotForm({
         if (lotId && validItems.length > 0) {
             // SYNC items instead of deleting all
             const existingItems = editingLot?.lot_items || []
-            const existingIds = existingItems.map(i => i.id)
+            const existingIds = existingItems.map((i: any) => i.id)
+            const existingIdsSet = new Set(existingIds)
 
-            const itemsToInsert = validItems.filter(i => !i.id).map(item => ({
+            const itemsToInsert = validItems.filter((i: any) => !i.id).map((item: any) => ({
                 lot_id: lotId,
                 product_id: item.productId,
                 quantity: Number(Number(item.quantity).toFixed(6)),
                 unit: item.unit
             }))
 
-            const itemsToUpdate = validItems.filter(i => i.id).map(item => ({
+            const itemsToUpdate = validItems.filter((i: any) => i.id).map((item: any) => ({
                 id: item.id!,
                 lot_id: lotId,
                 product_id: item.productId,
@@ -612,12 +652,12 @@ export function LotForm({
                 unit: item.unit
             }))
 
-            const newIds = validItems.filter(i => i.id).map(i => i.id!)
-            const idsToDelete = existingIds.filter(id => !newIds.includes(id))
+            const newIds = validItems.filter((i: any) => i.id).map((i: any) => i.id!)
+            const idsToDelete = existingIds.filter((id: any) => !newIds.includes(id))
 
             // Process Updates
-            const updatePromises = itemsToUpdate.map(item =>
-                supabase.from('lot_items').update({
+            const updatePromises = itemsToUpdate.map((item: any) =>
+                (supabase.from('lot_items') as any).update({
                     quantity: item.quantity,
                     unit: item.unit,
                     product_id: item.product_id
@@ -691,7 +731,7 @@ export function LotForm({
             }
 
             if (tagsToInsert.length > 0) {
-                const { error: tagInsertError } = await supabase.from('lot_tags').insert(tagsToInsert)
+                const { error: tagInsertError } = await (supabase.from('lot_tags') as any).insert(tagsToInsert)
                 if (tagInsertError) {
                     console.error('Tags Insert Error Details:', JSON.stringify(tagInsertError, null, 2))
                     alert('Lỗi khi lưu mã phụ: ' + (tagInsertError.message || 'Lỗi không xác định'))
@@ -735,88 +775,124 @@ export function LotForm({
                 </div>
 
                 <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isInfoExpanded ? 'max-h-[1500px] opacity-100 mb-8' : 'max-h-0 opacity-0 mb-0 pointer-events-none'}`}>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    {/* Hàng 1: Định danh & Phân loại chính */}
-                    {/* Mã LOT */}
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                            Mã LOT Nội bộ <span className="text-red-500">*</span>
-                        </label>
-                        <div className="relative">
-                            <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                            <input
-                                type="text"
-                                value={newLotCode}
-                                readOnly
-                                className="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 cursor-not-allowed outline-none font-mono"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Mã sản xuất */}
-                    {hasModule('production_code') && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Hàng 1: Định danh & Phân loại chính */}
+                        {/* Mã LOT */}
                         <div className="space-y-2">
-                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Mã sản xuất
+                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                Mã LOT Nội bộ <span className="text-red-500">*</span>
                             </label>
                             <div className="relative">
                                 <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 <input
                                     type="text"
-                                    value={productionCode}
-                                    onChange={(e) => setProductionCode(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-slate-900 dark:text-slate-100 transition-all"
-                                    placeholder="Nhập mã sản xuất..."
+                                    value={newLotCode}
+                                    readOnly
+                                    className="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 cursor-not-allowed outline-none font-mono"
                                 />
                             </div>
                         </div>
-                    )}
 
-                    {/* Kho nhập hàng */}
-                    {hasModule('warehouse_name') && (
+                        {/* Kho nhập hàng */}
+                        {hasModule('warehouse_name') && (
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                    Kho nhập hàng
+                                </label>
+                                <div className="relative">
+                                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                    <select
+                                        value={warehouseName}
+                                        onChange={(e) => setWarehouseName(e.target.value)}
+                                        className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all"
+                                    >
+                                        <option value="">-- Chọn kho hàng --</option>
+                                        {branches.map(b => (
+                                            <option key={b.id} value={b.name}>{b.name}</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* QC Selection */}
+                        {hasModule('qc_info') && (
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                    Nhân viên QC
+                                </label>
+                                <div className="relative">
+                                    <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                    <select
+                                        value={selectedQCId}
+                                        onChange={(e) => setSelectedQCId(e.target.value)}
+                                        className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all"
+                                    >
+                                        <option value="">-- Chọn QC --</option>
+                                        {qcList.map(qc => (
+                                            <option key={qc.id} value={qc.id}>{qc.name}</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Hàng 2: Thông tin sản xuất (Tách riêng 1 hàng) */}
+                    <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-orange-50/30 dark:bg-orange-900/5 rounded-2xl border border-orange-100 dark:border-orange-900/20">
+                        <div className="space-y-2 col-span-1 md:col-span-2">
+                             <div className="flex items-center gap-2 text-orange-700 dark:text-orange-400 font-bold text-xs uppercase tracking-wider mb-1">
+                                 <Factory size={14} />
+                                 Thông tin sản xuất
+                             </div>
+                        </div>
+
+                        {/* LSX Nội bộ */}
                         <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Kho nhập hàng
+                            <label className="text-[11px] font-bold text-orange-600/70 dark:text-orange-400/70 uppercase flex items-center gap-1">
+                                <Plus size={10} />
+                                Lệnh sản xuất nội bộ
                             </label>
                             <div className="relative">
-                                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-400" size={16} />
                                 <select
-                                    value={warehouseName}
-                                    onChange={(e) => setWarehouseName(e.target.value)}
-                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all"
+                                    value={selectedProductionId}
+                                    onChange={(e) => {
+                                        const val = e.target.value
+                                        setSelectedProductionId(val)
+                                    }}
+                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-900 border border-orange-200 dark:border-orange-800 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all font-bold text-sm"
                                 >
-                                    <option value="">-- Chọn kho hàng --</option>
-                                    {branches.map(b => (
-                                        <option key={b.id} value={b.name}>{b.name}</option>
+                                    <option value="">-- Chọn lệnh SX --</option>
+                                    {(productions as any[]).map(p => (
+                                        <option key={p.id} value={p.id}>{p.name} - {p.code}</option>
                                     ))}
                                 </select>
-                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-orange-400 pointer-events-none" size={16} />
                             </div>
                         </div>
-                    )}
 
-                    {/* QC Selection */}
-                    {hasModule('qc_info') && (
+                        {/* Mã sản xuất (MSX) */}
                         <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Nhân viên QC
+                            <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase">
+                                Mã sản xuất (Tùy chỉnh)
                             </label>
                             <div className="relative">
-                                <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                <select
-                                    value={selectedQCId}
-                                    onChange={(e) => setSelectedQCId(e.target.value)}
-                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all"
-                                >
-                                    <option value="">-- Chọn QC --</option>
-                                    {qcList.map(qc => (
-                                        <option key={qc.id} value={qc.id}>{qc.name}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                <input
+                                    type="text"
+                                    value={productionCode}
+                                    onChange={(e) => setProductionCode(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-slate-900 dark:text-zinc-100 transition-all text-sm font-bold"
+                                    placeholder="Nhập mã SX..."
+                                />
                             </div>
                         </div>
-                    )}
+                    </div>
+
+                    <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
 
                     {/* Hàng 2: Các mốc thời gian */}
                     {/* Ngày nhập nguyên liệu */}
@@ -1014,7 +1090,7 @@ export function LotForm({
                                     <div className="flex-1 w-full space-y-1">
                                         <div className="relative">
                                             <Combobox
-                                                options={products.map(p => ({
+                                                options={availableProducts.map(p => ({
                                                     value: p.id,
                                                     label: hasModule('internal_products') && (p as any).internal_code
                                                         ? `${(p as any).internal_code} - ${(p as any).internal_name || p.name}`
@@ -1098,14 +1174,14 @@ export function LotForm({
                                                     if (product.unit) availableUnits.add(product.unit)
 
                                                     productUnits
-                                                        .filter(pu => pu.product_id === item.productId)
-                                                        .forEach(pu => {
-                                                            const u = units.find(u => u.id === pu.unit_id)
+                                                        .filter((pu: any) => pu.product_id === item.productId)
+                                                        .forEach((pu: any) => {
+                                                            const u = units.find((u: any) => u.id === pu.unit_id)
                                                             if (u) {
-                                                                const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                                                const isBase = pu.conversion_factor === 1 || !pu.conversion_factor
                                                                 const labelStr = isBase
                                                                     ? u.name
-                                                                    : `${u.name} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
+                                                                    : `${u.name} (${pu.conversion_factor} ${product.unit || 'Cơ bản'})`
                                                                 availableUnits.add(labelStr)
                                                             }
                                                         })

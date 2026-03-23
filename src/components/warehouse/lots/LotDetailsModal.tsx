@@ -17,9 +17,10 @@ interface LotDetailsModalProps {
     onOpenQr: (lot: Lot) => void
     onDelete?: (id: string) => void
     isModuleEnabled: (moduleId: string) => boolean
+    managePermission?: string
 }
 
-export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, onOpenQr, onDelete, isModuleEnabled }) => {
+export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, onOpenQr, onDelete, isModuleEnabled, managePermission }) => {
     const router = useRouter()
     const pathname = usePathname()
     const { profile } = useUser() // Assuming useUser provides a profile
@@ -132,7 +133,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                 </div>
                                 <div className="flex flex-wrap gap-1">
                                     {lot.positions && lot.positions.length > 0 ? (
-                                        lot.positions.map(p => (
+                                        lot.positions.map((p: any) => (
                                             <span key={p.code} className="text-sm font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-lg border border-orange-100 dark:border-orange-900/10">
                                                 {p.code}
                                             </span>
@@ -279,7 +280,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                             </div>
                             <div className="rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900/50">
                                 <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                                    {lot.lot_items?.map((item, idx) => (
+                                    {lot.lot_items?.map((item: any, idx: number) => (
                                         <div
                                             key={item.id}
                                             className={`p-3 flex items-start justify-between gap-3 ${idx % 2 === 1 ? 'bg-slate-50/50 dark:bg-white/5' : ''}`}
@@ -344,18 +345,18 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                                     {lot.lot_tags && (
                                                         <TagDisplay
                                                             tags={lot.lot_tags
-                                                                .filter(t =>
+                                                                .filter((t: any) =>
                                                                     t.lot_item_id === item.id &&
                                                                     !t.tag.startsWith('MERGED_FROM:') &&
                                                                     !t.tag.startsWith('MERGED_DATA:')
                                                                 )
-                                                                .map(t => t.tag)}
+                                                                .map((t: any) => t.tag)}
                                                             placeholderMap={{ '@': (isModuleEnabled('internal_products') && item.products?.internal_code ? item.products.internal_code : item.products?.sku) || '' }}
                                                         />
                                                     )}
 
                                                     {(() => {
-                                                        const mergedTag = lot.lot_tags?.find(t => t.lot_item_id === item.id && (t.tag.startsWith('MERGED_FROM:') || t.tag.startsWith('MERGED_DATA:')));
+                                                        const mergedTag = lot.lot_tags?.find((t: any) => t.lot_item_id === item.id && (t.tag.startsWith('MERGED_FROM:') || t.tag.startsWith('MERGED_DATA:')));
                                                         if (!mergedTag) return null;
                                                         const isMergedData = mergedTag.tag.startsWith('MERGED_DATA:');
                                                         let history = null;
@@ -395,7 +396,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                 <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center gap-3">
                     <div className="flex gap-2">
                         {onDelete && (
-                            <Protected permission="lot.manage">
+                            <Protected permission={managePermission || "lot.manage"}>
                                 <button
                                     onClick={() => lot?.id && onDelete(lot.id)}
                                     className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"

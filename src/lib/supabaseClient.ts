@@ -668,6 +668,86 @@ type InternalProductCodeRulesTable = {
     Relationships: []
 }
 
+type ProductionsTable = {
+    Row: {
+        id: string
+        company_id: string | null
+        code: string
+        name: string
+        description: string | null
+        status: string
+        start_date: string | null
+        end_date: string | null
+        customer_id: string | null
+        target_system_code: string | null
+        created_at: string
+        updated_at: string
+    }
+    Insert: {
+        id?: string
+        company_id?: string | null
+        code: string
+        name: string
+        description?: string | null
+        status?: string
+        start_date?: string | null
+        end_date?: string | null
+        customer_id?: string | null
+        target_system_code?: string | null
+        created_at?: string
+        updated_at?: string
+    }
+    Update: {
+        id?: string
+        company_id?: string | null
+        code?: string
+        name?: string
+        description?: string | null
+        status?: string
+        start_date?: string | null
+        end_date?: string | null
+        customer_id?: string | null
+        target_system_code?: string | null
+        created_at?: string
+        updated_at?: string
+    }
+    Relationships: []
+}
+
+type ProductionLotsTable = {
+    Row: {
+        id: string
+        production_id: string | null
+        product_id: string | null
+        lot_code: string
+        weight_per_unit: number
+        planned_quantity: number | null
+        company_id: string | null
+        created_at: string
+    }
+    Insert: {
+        id?: string
+        production_id?: string | null
+        product_id?: string | null
+        lot_code: string
+        weight_per_unit?: number
+        planned_quantity?: number | null
+        company_id?: string | null
+        created_at?: string
+    }
+    Update: {
+        id?: string
+        production_id?: string | null
+        product_id?: string | null
+        lot_code?: string
+        weight_per_unit?: number
+        planned_quantity?: number | null
+        company_id?: string | null
+        created_at?: string
+    }
+    Relationships: []
+}
+
 type ProductionCodeLevelsTable = {
     Row: {
         id: string
@@ -776,6 +856,8 @@ type TypedTables = Database['public']['Tables'] & {
     product_category_rel: ProductCategoryRelTable
     internal_product_code_rules: InternalProductCodeRulesTable
     production_code_levels: ProductionCodeLevelsTable
+    productions: ProductionsTable
+    production_lots: ProductionLotsTable
 }
 
 // Manually extend the Database type

@@ -34,6 +34,11 @@
     - [ ] Update other forms if necessary (Inbound/Outbound)
 - [ ] Dashboard: General View (Aggregate)
     - [ ] Create specialized read-only view for "General" system
+- [x] Liên kết Lệnh sản xuất vào Quản lý Lot
+    - [x] Database: Thêm cột `production_id` vào bảng `lots`
+    - [x] Hook: Cập nhật `useLotManagement` để fetch dữ liệu quan hệ `productions`
+    - [x] Frontend: Cập nhật `LotForm` để chọn Lệnh sản xuất nội bộ
+    - [x] Frontend: Cập nhật `LotCard` để hiển thị mã `LSX` (Lệnh sản xuất nội bộ)
 - [ ] Verification
-    - [ ] Verify data isolation (Frozen user sees only Frozen data)
-    - [ ] Verify conditional fields
+    - [ ] Kiểm tra tạo Lot mới liên kết với Lệnh sản xuất
+    - [ ] Kiểm tra hiển thị mã LSX trên danh sách Lot

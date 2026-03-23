@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone } from 'lucide-react'
+import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -46,6 +46,7 @@ const menuItems: MenuItem[] = [
             { id: 'order_types', name: 'Loại phiếu', href: '/order-types', icon: FileText, requiredPermission: 'warehouse.manage' },
             { id: 'qc', name: 'QC', href: '/qc', icon: ShieldCheck, requiredPermission: 'qc.view' },
             { id: 'work_areas', name: 'Khu vực', href: '/work-areas', icon: MapPin, requiredPermission: 'warehouse.manage' },
+            { id: 'production', name: 'Sản xuất', href: '/production', icon: Factory, requiredPermission: 'warehouse.manage' },
             { id: 'members_teams', name: 'Thành viên & Đội', href: '/members-teams', icon: Users, requiredModule: 'member_team_manager' },
         ]
     },
@@ -57,7 +58,7 @@ const menuItems: MenuItem[] = [
             { id: 'infrastructure', name: 'Hạ tầng', href: '/warehouses', icon: Warehouse, requiredPermission: 'warehouse.view' },
             { id: 'warehouse_map', name: 'Sơ đồ kho', href: '/warehouses/map', icon: Map, requiredPermission: 'warehousemap.manage' },
             { id: 'warehouse_status', name: 'Trạng thái kho', href: '/warehouses/status', icon: BarChart3, requiredPermission: 'warehouse.view' },
-            { id: 'lots', name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes, requiredPermission: 'inventory.view' },
+            { id: 'lots', name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes, requiredPermission: 'warehouse_lot.view' },
             { id: 'requisitions', name: 'Phiếu xuất SX', href: '/warehouses/requisitions', icon: ArrowUpFromLine, requiredPermission: 'inventory.manage' },
             { id: 'notes', name: 'Ghi chú vận hành', href: '/operations/notes', icon: StickyNote, requiredPermission: 'warehouse.view' },
         ]
@@ -84,6 +85,14 @@ const menuItems: MenuItem[] = [
         children: [
             { id: 'construction_overview', name: 'Tổng quan', href: '/construction', icon: LayoutDashboard, requiredPermission: 'site_inventory.view' },
             { id: 'site_inventory', name: 'Cấp phát', href: '/site-inventory', icon: ClipboardCheck, requiredPermission: 'site_inventory.view' },
+        ]
+    },
+    {
+        id: 'production_cat',
+        name: 'Cấp phát sản xuất',
+        icon: Factory,
+        children: [
+            { id: 'production_inventory', name: 'Sổ cấp phát', href: '/production-inventory', icon: ClipboardCheck, requiredPermission: 'site_inventory.view' },
         ]
     },
     {
@@ -153,6 +162,12 @@ export default function Sidebar() {
 
     // Utility helper
     const isUtilityEnabled = (utilityId: string) => {
+        // 1. Check new structure
+        if (Array.isArray(currentSystem?.utility_modules) && currentSystem.utility_modules.includes(utilityId)) {
+            return true
+        }
+
+        // 2. Fallback for legacy structure
         if (!currentSystem?.modules) return false
         const modules = typeof currentSystem.modules === 'string'
             ? JSON.parse(currentSystem.modules)
@@ -191,6 +206,9 @@ export default function Sidebar() {
                 return null
             }
             if (item.id === 'construction_cat' && !isUtilityEnabled('site_inventory_manager')) {
+                return null
+            }
+            if (item.id === 'production_cat' && !isUtilityEnabled('production_inventory_manager')) {
                 return null
             }
             // Check Item Permission
