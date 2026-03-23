@@ -15,7 +15,7 @@ export default function ProductionPage() {
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [editingItem, setEditingItem] = useState<any>(null)
     const [isReadOnly, setIsReadOnly] = useState(false)
-    const [actualStats, setActualStats] = useState<Record<string, { actual: number, factor: number }>>({}) // production_lot_id -> stats
+    const [actualStats, setActualStats] = useState<Record<string, { actual: number, by_unit: any[] }>>({}) // production_lot_id -> stats
 
     const {
         filteredData: productions,
@@ -47,15 +47,15 @@ export default function ProductionPage() {
 
             const { data, error } = await supabase
                 .from('production_item_statistics' as any)
-                .select('production_lot_id, actual_quantity, weight_factor')
+                .select('production_lot_id, actual_quantity, quantity_by_unit')
                 .in('production_lot_id', lotIds)
             
             if (data) {
-                const map: Record<string, { actual: number, factor: number }> = {}
+                const map: Record<string, { actual: number, by_unit: any[] }> = {}
                 data.forEach((item: any) => {
                     map[item.production_lot_id] = {
                         actual: item.actual_quantity,
-                        factor: item.weight_factor
+                        by_unit: item.quantity_by_unit || []
                     }
                 })
                 setActualStats(map)
@@ -70,7 +70,7 @@ export default function ProductionPage() {
         production_lots: (p as any).production_lots?.map((l: any) => ({
             ...l,
             actual_quantity: actualStats[l.id]?.actual || 0,
-            weight_factor: actualStats[l.id]?.factor || 0
+            quantity_by_unit: actualStats[l.id]?.by_unit || []
         }))
     }))
 

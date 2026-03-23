@@ -29,6 +29,8 @@ WITH lot_item_stats AS (
     SELECT 
         l.production_id,
         li.product_id,
+        li.unit,
+        SUM(li.quantity) as total_qty,
         -- Calculate weight factor for each item
         COALESCE(
             (
@@ -45,13 +47,13 @@ WITH lot_item_stats AS (
             NULLIF(p.weight_kg, 0),
             public.extract_weight_from_unit(li.unit),
             1.0
-        ) as item_weight_factor,
-        li.quantity
+        ) as item_weight_factor
     FROM public.lot_items li
     JOIN public.lots l ON l.id = li.lot_id
     JOIN public.products p ON p.id = li.product_id
     WHERE COALESCE(l.status, '') != 'deleted'
       AND l.production_id IS NOT NULL
+    GROUP BY l.production_id, li.product_id, li.unit, p.weight_kg
 )
 SELECT 
     pl.id AS production_lot_id,
@@ -60,16 +62,16 @@ SELECT
     p.sku AS product_sku,
     p.unit AS product_unit,
     (
-        SELECT COALESCE(SUM(lis.quantity * lis.item_weight_factor), 0)
+        SELECT COALESCE(SUM(lis.total_qty * lis.item_weight_factor), 0)
         FROM lot_item_stats lis
         WHERE lis.production_id = pl.production_id
           AND lis.product_id = p.id
     ) AS actual_quantity,
     (
-        SELECT MAX(lis.item_weight_factor)
+        SELECT JSON_AGG(JSON_BUILD_OBJECT('qty', lis.total_qty, 'unit', lis.unit))
         FROM lot_item_stats lis
         WHERE lis.production_id = pl.production_id
           AND lis.product_id = p.id
-    ) AS weight_factor
+    ) AS quantity_by_unit
 FROM public.production_lots pl
 JOIN public.products p ON p.id = pl.product_id;
