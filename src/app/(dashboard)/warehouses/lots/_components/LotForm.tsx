@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Boxes, MapPin, Calendar, Factory, ShieldCheck, Package, Hash, Layers, X, Plus, Trash2, ChevronDown } from 'lucide-react'
+import { Boxes, MapPin, Calendar, Factory, ShieldCheck, Package, Hash, Layers, X, Plus, Trash2, ChevronDown, Loader2 } from 'lucide-react'
 import { Combobox } from '@/components/ui/Combobox'
 import { ImageUpload } from '@/components/ui/ImageUpload'
 import { supabase } from '@/lib/supabaseClient'
@@ -23,7 +23,7 @@ interface LotFormProps {
     isVisible: boolean
     editingLot: Lot | null
     onClose: () => void
-    onSuccess: (lot?: any) => void
+    onSuccess: (lot?: any) => Promise<void> | void
     onDelete?: (id: string) => void
 
     // Common Data Props
@@ -84,6 +84,7 @@ export function LotForm({
     const [isPersistent, setIsPersistent] = useState(false)
     const [isInfoExpanded, setIsInfoExpanded] = useState(true)
     const [selectedProductionId, setSelectedProductionId] = useState('')
+    const [isSubmitting, setIsSubmitting] = useState(false)
 
     // Product filtering based on selected production - Multi-item support
     const selectedProduction = productions.find((p: any) => p.id === selectedProductionId)
@@ -226,8 +227,12 @@ export function LotForm({
 
                             if (parsed.productionCode && currentSystem?.code === 'SANXUAT') {
                                 setProductionCode(parsed.productionCode)
-                            } else {
-                                setProductionCode('') // Ensure it's empty in Warehouse systems
+                            } else if (currentSystem?.code !== 'SANXUAT' && !parsed.productionCode) {
+                                setProductionCode('') 
+                            }
+
+                            if (parsed.selectedProductionId) {
+                                setSelectedProductionId(parsed.selectedProductionId)
                             }
                             if (parsed.batchCode) setBatchCode(parsed.batchCode)
                             if (parsed.extraInfo) setExtraInfo(parsed.extraInfo.toUpperCase())
@@ -298,6 +303,7 @@ export function LotForm({
                 warehouseName: isPersistent ? warehouseName : '',
                 batchCode: isPersistent ? batchCode : '',
                 productionCode: isPersistent ? productionCode : '',
+                selectedProductionId: isPersistent ? selectedProductionId : '',
                 extraInfo: isPersistent ? extraInfo : '',
                 inboundDate: isPersistent ? inboundDate : '',
                 rawMaterialDate: isPersistent ? rawMaterialDate : '',
@@ -318,6 +324,7 @@ export function LotForm({
         warehouseName,
         batchCode,
         productionCode,
+        selectedProductionId,
         extraInfo,
         inboundDate,
         rawMaterialDate,
@@ -391,7 +398,10 @@ export function LotForm({
     }
 
     async function handleSubmit() {
-        if (!newLotCode.trim()) return
+        if (!newLotCode.trim() || isSubmitting) return
+        setIsSubmitting(true)
+
+        try {
 
         const processedItems = lotItems.map(item => ({
             ...item,
@@ -754,7 +764,13 @@ export function LotForm({
             console.error('Failed to log activity', err)
         }
 
-        onSuccess(lotId ? { id: lotId, ...lotData } : undefined)
+        await onSuccess(lotId ? { id: lotId, ...lotData } : undefined)
+        } catch (error: any) {
+            console.error('Submit Error:', error)
+            alert(`Lỗi ${editingLot ? 'cập nhật' : 'tạo'} LOT: ` + error.message)
+        } finally {
+            setIsSubmitting(false)
+        }
     }
 
     return (
@@ -1294,10 +1310,17 @@ export function LotForm({
                         </button>
                         <button
                             onClick={handleSubmit}
-                            disabled={!newLotCode.trim()}
-                            className="px-6 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-medium shadow-lg shadow-orange-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={!newLotCode.trim() || isSubmitting}
+                            className="px-6 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-medium shadow-lg shadow-orange-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[120px]"
                         >
-                            {editingLot ? 'Cập nhật' : 'Lưu LOT'}
+                            {isSubmitting ? (
+                                <>
+                                    <Loader2 className="animate-spin" size={18} />
+                                    {editingLot ? 'Đang cập nhật...' : 'Đang lưu...'}
+                                </>
+                            ) : (
+                                editingLot ? 'Cập nhật' : 'Lưu LOT'
+                            )}
                         </button>
                     </div>
                 </div>
