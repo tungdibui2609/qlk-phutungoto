@@ -56,15 +56,18 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
                     .single()
 
                 if (!error && data) {
-                    setProfile(data as any)
+                    const profileData = data as any
+                    setProfile(profileData)
 
                     // 2. Fetch Company Unlocked Modules
-                    if (data.company_id) {
-                        const { data: companyData, error: companyError } = await supabase
+                    if (profileData.company_id) {
+                        const { data: cData, error: companyError } = await supabase
                             .from('companies')
                             .select('name, unlocked_modules') // Fetch name
-                            .eq('id', data.company_id)
+                            .eq('id', profileData.company_id)
                             .single()
+
+                        const companyData = cData as any
 
                         if (!companyError && companyData) {
                             // Update profile with company name
@@ -151,6 +154,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const isRouteBlocked = (path: string): boolean => {
         // SUPERUSER BYPASS
         if (profile?.email === 'tungdibui2609@gmail.com' || user?.email === 'tungdibui2609@gmail.com') {
+            return false
+        }
+
+        // LEVEL 1 & 2 BYPASS (Super Admin & Company Admin)
+        if (profile?.account_level === 1 || profile?.account_level === 2) {
             return false
         }
 

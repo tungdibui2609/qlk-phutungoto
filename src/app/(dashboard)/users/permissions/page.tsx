@@ -236,7 +236,12 @@ export default function UserPermissionsPage() {
         const availablePermissions = permissions.filter(p => {
             const isSystemModule = p.module.toUpperCase() === 'HỆ THỐNG' || p.module.toUpperCase() === 'SYSTEM'
             const isSystemPrefix = p.code.startsWith('system.') || p.code.startsWith('user.')
-            return !isSystemModule && !isSystemPrefix
+            const isImportantPrefix = 
+                p.code.startsWith('lot.') || 
+                p.code.startsWith('warehouse_lot.') || 
+                p.code.startsWith('inventory.') || 
+                p.code.startsWith('warehouse.')
+            return (!isSystemModule && !isSystemPrefix) || isImportantPrefix
         }).map(p => p.code)
 
         const allSelected = availablePermissions.every(code => selectedPermissions.includes(code))
@@ -467,6 +472,7 @@ export default function UserPermissionsPage() {
                                                             // Always allow these important features
                                                             const isCriticalFeature = 
                                                                 p.code.startsWith('lot.') || 
+                                                                p.code.startsWith('warehouse_lot.') || 
                                                                 p.code.startsWith('utility') || 
                                                                 p.code.startsWith('inbound.') || 
                                                                 p.code.startsWith('outbound.') ||
