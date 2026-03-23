@@ -103,13 +103,48 @@ export default function ProductionTable({ data, onEdit, onDelete, onStatusToggle
 
                                                     {/* Sản lượng Thực tế (Rút gọn) */}
                                                     <div className="flex items-baseline gap-1 px-3 py-1.5 rounded-xl bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100/50 dark:border-blue-900/20 shadow-sm">
-                                                        <span className="text-sm font-black text-blue-600 dark:text-blue-400 tabular-nums leading-tight">{lot.actual_quantity || 0}</span>
-                                                        <span className="text-[9px] text-blue-500/70 font-bold lowercase">
-                                                            {lot.weight_per_unit > 0 ? 'thùng' : (lot.products?.unit || '')}
-                                                        </span>
-                                                        {lot.weight_per_unit > 0 && (
-                                                            <span className="text-[7px] text-zinc-400 font-bold ml-0.5">({lot.weight_per_unit}kg)</span>
-                                                        )}
+                                                        {(() => {
+                                                            const extractWeight = (name?: string) => {
+                                                                if (!name) return 0;
+                                                                const match = name.match(/\(\s*.*?\s*(\d+(\.\d+)?)\s*[kK]?[gG]\s*\)/i);
+                                                                return match ? parseFloat(match[1]) : 0;
+                                                            };
+                                                            
+                                                            const weightFactor = lot.weight_factor || (lot.products as any)?.weight_kg || extractWeight(lot.products?.name) || 1;
+                                                            const actual = lot.actual_quantity || 0;
+
+                                                            if (weightFactor > 1) {
+                                                                const fullUnits = Math.floor(actual / weightFactor);
+                                                                const remainingKg = actual % weightFactor;
+                                                                return (
+                                                                    <>
+                                                                        <span className="text-sm font-black text-blue-600 dark:text-blue-400 tabular-nums leading-tight">
+                                                                            {fullUnits}
+                                                                        </span>
+                                                                        <span className="text-[9px] text-blue-500/70 font-bold lowercase">thùng</span>
+                                                                        {remainingKg >= 0.01 && (
+                                                                            <>
+                                                                                <span className="text-sm font-black text-blue-600 dark:text-blue-400 tabular-nums leading-tight ml-1">
+                                                                                    {remainingKg.toFixed(1).replace(/\.0$/, '')}
+                                                                                </span>
+                                                                                <span className="text-[9px] text-blue-500/70 font-bold lowercase">kg</span>
+                                                                            </>
+                                                                        )}
+                                                                    </>
+                                                                );
+                                                            } else {
+                                                                return (
+                                                                    <>
+                                                                        <span className="text-sm font-black text-blue-600 dark:text-blue-400 tabular-nums leading-tight">
+                                                                            {actual.toFixed(1).replace(/\.0$/, '')}
+                                                                        </span>
+                                                                        <span className="text-[9px] text-blue-500/70 font-bold lowercase">
+                                                                            {lot.products?.unit || 'kg'}
+                                                                        </span>
+                                                                    </>
+                                                                );
+                                                            }
+                                                        })()}
                                                     </div>
                                                 </div>
                                                 {/* Tên sản phẩm nhỏ gọn tinh tế */}

@@ -27,10 +27,18 @@ interface ProductionModalProps {
 }
 
 export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, readOnly = false }: ProductionModalProps) {
-    const { showToast } = useToast()
+    const { showToast, showConfirm } = useToast()
     const { profile } = useUser()
     const { systems } = useSystem()
-    const [submitting, setSubmitting] = useState(false)
+    const [isSaving, setIsSaving] = useState(false)
+
+    // Helper to extract weight from name pattern like "(10 Kg)"
+    const extractWeight = (name?: string) => {
+        if (!name) return 0;
+        // Match weight even if there's other text inside parentheses like "(Thùng 10 Kg)"
+        const match = name.match(/\(\s*.*?\s*(\d+(\.\d+)?)\s*[kK]?[gG]\s*\)/i);
+        return match ? parseFloat(match[1]) : 0;
+    };
 
     // Form states
     const [code, setCode] = useState('')
@@ -115,7 +123,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
         setLoadingProducts(true)
         const { data } = await supabase
             .from('products')
-            .select('id, name, sku')
+            .select('id, name, sku, weight_kg, unit')
             .eq('system_type', sysCode)
             .eq('is_active', true)
             .order('name')
@@ -127,7 +135,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
         // First get basic lot info & products
         const { data: lotsData } = await supabase
             .from('production_lots')
-            .select('*, products(name, sku, unit)')
+            .select('*, products(name, sku, unit, weight_kg)') // Added weight_kg here
             .eq('production_id', prodId)
         
         if (lotsData) {
@@ -191,7 +199,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
         newLots[index] = { 
             ...newLots[index], 
             product_id: product.id, 
-            product_name: product.name 
+            product_name: product.name,
+            unit: product.unit,
+            weight_per_unit: newLots[index].weight_per_unit || product.weight_kg || 0
         }
         setLots(newLots)
         setRowSearchTerms(prev => ({ ...prev, [index]: product.name }))
@@ -209,7 +219,15 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             return
         }
 
-        setSubmitting(true)
+        // Check if weight_per_unit is 0 for products that are likely to need conversion (non-kg units)
+        const missingWeight = lots.find(l => (!l.weight_per_unit || l.weight_per_unit <= 0) && l.unit?.toLowerCase() !== 'kg')
+        if (missingWeight) {
+            if (!await showConfirm(`Sản phẩm "${missingWeight.product_name}" đang có trọng lượng quy cách là 0. Hệ thống sẽ dùng mặc định 1.0 kg/đv. Bạn có chắc muốn lưu?`)) {
+                return
+            }
+        }
+
+        setIsSaving(true)
         try {
             const productionPayload = {
                 code,
@@ -272,7 +290,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
         } catch (error: any) {
             showToast('Lỗi: ' + error.message, 'error')
         } finally {
-            setSubmitting(false)
+            setIsSaving(false)
         }
     }
 
@@ -449,7 +467,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                 </div>
                             ) : (
                                 <div className="space-y-3">
-                                    {lots.map((lot, idx) => (
+                                    {lots.map((lot, idx) => {
+                                        const product = products.find(p => p.id === lot.product_id);
+                                        return (
                                         <div key={idx} className="grid grid-cols-12 gap-4 items-center bg-white dark:bg-zinc-800/40 p-4 rounded-[24px] border border-stone-200 dark:border-zinc-800 shadow-sm relative animate-in slide-in-from-right-2 duration-200">
                                             {/* Product Search Input (Span 4) */}
                                             <div className="col-span-12 lg:col-span-4 relative">
@@ -502,8 +522,8 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                 {activeRowIdx === idx && !readOnly && <div className="fixed inset-0 z-[115]" onClick={() => setActiveRowIdx(null)} />}
                                             </div>
 
-                                            {/* Lot Code (Span 3) */}
-                                            <div className="col-span-12 lg:col-span-3 relative">
+                                            {/* Lot Code (Span 4 - Increased because weight_per_unit is hidden) */}
+                                            <div className="col-span-12 lg:col-span-4 relative">
                                                 <input
                                                     type="text"
                                                     placeholder="Mã LOT"
@@ -514,36 +534,55 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                 />
                                                 <Hash size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" />
                                             </div>
-
-                                            {/* Weight (Span 1) */}
-                                            <div className="col-span-12 lg:col-span-1 relative" title="Khối lượng đơn vị (kg/đv)">
-                                                <input
-                                                    type="number"
-                                                    step="0.01"
-                                                    placeholder="kg/đv"
-                                                    value={lot.weight_per_unit}
-                                                    onChange={e => updateLotRow(idx, 'weight_per_unit', parseFloat(e.target.value) || 0)}
-                                                    className="w-full px-3 py-3 rounded-2xl bg-stone-50 dark:bg-zinc-800 border border-stone-100 dark:border-zinc-700 font-bold focus:ring-4 focus:ring-orange-100 outline-none transition-all text-xs"
-                                                    disabled={readOnly}
-                                                />
-                                            </div>
+                                            
+                                            {/* weight_per_unit is hidden by user request "mày đừng quan tâm, ko thì bỏ luôn cho tao" */}
 
                                             {/* Actual Qty (Span 2) */}
                                             <div className="col-span-12 lg:col-span-2 relative">
                                                 <div className="flex flex-col gap-0.5">
                                                     <span className="text-[8px] text-blue-500 font-bold uppercase tracking-wider pl-1">Thực tế</span>
                                                     <div className="relative">
-                                                        <input
-                                                            type="text"
-                                                            value={`${lot.actual_quantity || 0} ${lot.weight_per_unit > 0 ? 'thùng' : (lot.unit || '')}`}
-                                                            className="w-full px-4 py-3 pl-10 rounded-2xl bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/20 font-black text-blue-600 outline-none text-sm"
-                                                            readOnly
-                                                        />
-                                                        <CheckCircle2 size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400" />
+                                                        <div className="flex flex-col p-1">
+                                                            <div className="font-black text-stone-900 dark:text-stone-100 text-xs truncate">
+                                                                {(() => {
+                                                                    // Determine the best weight factor to use for display formatting
+                                                                    // We ignore lot.weight_per_unit as requested
+                                                                    const weightFactor = (lot as any).weight_factor || product?.weight_kg || extractWeight(product?.name) || 1;
+                                                                    const isKg = (lot.unit?.toLowerCase() === 'kg') || (product?.unit?.toLowerCase() === 'kg');
+                                                                    const actual = lot.actual_quantity || 0;
+                                                                    
+                                                                    if (weightFactor > 1 && !isKg) {
+                                                                        const fullUnits = Math.floor(actual / weightFactor);
+                                                                        const remainingKg = actual % weightFactor;
+                                                                        
+                                                                        return (
+                                                                            <span>
+                                                                                {fullUnits} 
+                                                                                <span className="text-[10px] ml-0.5 font-normal text-stone-500 uppercase tracking-wider">Thùng</span>
+                                                                                {remainingKg >= 0.01 && (
+                                                                                    <span className="ml-1">
+                                                                                        {remainingKg.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
+                                                                                        <span className="text-[10px] ml-0.5 font-normal text-stone-500 uppercase tracking-wider">Kg</span>
+                                                                                    </span>
+                                                                                )}
+                                                                            </span>
+                                                                        );
+                                                                    }
+                                                                    
+                                                                    return (
+                                                                        <span>
+                                                                            {actual.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
+                                                                            <span className="text-[10px] ml-0.5 font-normal text-stone-500 uppercase tracking-wider">
+                                                                                {lot.unit || product?.unit || 'Kg'}
+                                                                            </span>
+                                                                        </span>
+                                                                    );
+                                                                })()}
+                                                            </div>
+                                                            <span className="text-[8px] text-zinc-400 font-bold italic line-clamp-1">Tổng: {(lot.actual_quantity || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} kg</span>
+                                                        </div>
+                                                        <CheckCircle2 size={12} className="absolute -left-2 top-1 text-blue-400" />
                                                     </div>
-                                                    {lot.weight_per_unit > 0 && (
-                                                        <span className="text-[8px] text-zinc-400 font-bold italic pl-1">({(lot.actual_quantity || 0) * lot.weight_per_unit}kg)</span>
-                                                    )}
                                                 </div>
                                             </div>
 
@@ -564,7 +603,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                         <Activity size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-orange-400" />
                                                     </div>
                                                     {lot.weight_per_unit > 0 && (
-                                                        <span className="text-[8px] text-zinc-400 font-bold italic pl-1">({(lot.planned_quantity || 0) * lot.weight_per_unit}kg)</span>
+                                                        <span className="text-[8px] text-zinc-400 font-bold italic pl-1 text-center truncate">~ {(lot.planned_quantity || 0) * lot.weight_per_unit}kg</span>
                                                     )}
                                                 </div>
                                             </div>
@@ -582,7 +621,8 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                 )}
                                             </div>
                                         </div>
-                                    ))}
+                                        )
+                                    })}
                                 </div>
                             )}
                         </div>
@@ -612,10 +652,10 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                     <button
                         form="prod-form"
                         type="submit"
-                        disabled={submitting}
+                        disabled={isSaving}
                         className="px-10 py-3 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-black uppercase tracking-widest shadow-xl shadow-orange-600/30 flex items-center gap-2 transition-all transform active:scale-95 disabled:opacity-70"
                     >
-                        {submitting ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
+                        {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
                         {editItem ? 'LƯU THAY ĐỔI' : 'TẠO LỆNH SẢN XUẤT'}
                     </button>
                 </div>

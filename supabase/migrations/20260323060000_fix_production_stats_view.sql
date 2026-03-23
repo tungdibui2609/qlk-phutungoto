@@ -1,41 +1,75 @@
--- Sửa lỗi View thống kê sản lượng hiển thị 0
--- Bổ sung cột planned_quantity nếu chưa có
-DO $$ 
-BEGIN 
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='production_lots' AND column_name='planned_quantity') THEN
-        ALTER TABLE public.production_lots ADD COLUMN planned_quantity NUMERIC DEFAULT 0;
-    END IF;
-END $$;
+-- Ensure lots table has production_lot_id column to link to specific production items
+ALTER TABLE public.lots 
+ADD COLUMN IF NOT EXISTS production_lot_id UUID REFERENCES public.production_lots(id) ON DELETE SET NULL;
 
+COMMENT ON COLUMN public.lots.production_lot_id IS 'Liên kết trực tiếp với hạng mục trong lệnh sản xuất';
+
+-- Helper function to extract weight from unit name (e.g. "Thùng (10 Kg)" -> 10)
+CREATE OR REPLACE FUNCTION public.extract_weight_from_unit(unit_name text) RETURNS numeric AS $$
+DECLARE
+    weight_match text[];
+BEGIN
+    -- Look for pattern like "(10 Kg)" or "(Thùng 10 kg)" or "(... 10.5 kg)"
+    -- Matches: (10 kg), (10.5 Kg), (Thùng 10kg), (Thùng 10.5 KG)
+    weight_match := regexp_matches(unit_name, '\(\s*.*?\s*(\d+(\.\d+)?)\s*[kK]?[gG]\s*\)');
+    IF weight_match IS NOT NULL AND array_length(weight_match, 1) >= 1 THEN
+        RETURN weight_match[1]::numeric;
+    END IF;
+    RETURN 1.0; -- Default if no pattern found (e.g. "Kg", "Cái")
+EXCEPTION WHEN OTHERS THEN
+    RETURN 1.0;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- Drop and recreate the view with granular item-level conversion logic
 DROP VIEW IF EXISTS public.production_item_statistics;
 
 CREATE OR REPLACE VIEW public.production_item_statistics AS
+WITH lot_item_stats AS (
+    SELECT 
+        l.production_id,
+        li.product_id,
+        -- Calculate weight factor for each item
+        COALESCE(
+            (
+                SELECT pu.conversion_rate 
+                FROM public.product_units pu 
+                JOIN public.units u ON u.id = pu.unit_id 
+                WHERE pu.product_id = li.product_id 
+                  AND (
+                      LOWER(TRIM(u.name)) = LOWER(TRIM(li.unit))
+                      OR LOWER(TRIM(u.name)) = LOWER(TRIM(regexp_replace(li.unit, '\s*\(.*\)', '')))
+                  )
+                LIMIT 1
+            ),
+            NULLIF(p.weight_kg, 0),
+            public.extract_weight_from_unit(li.unit),
+            1.0
+        ) as item_weight_factor,
+        li.quantity
+    FROM public.lot_items li
+    JOIN public.lots l ON l.id = li.lot_id
+    JOIN public.products p ON p.id = li.product_id
+    WHERE COALESCE(l.status, '') != 'deleted'
+      AND l.production_id IS NOT NULL
+)
 SELECT 
-    pl.id as production_lot_id,
-    pl.production_id,
-    pl.product_id,
-    pl.planned_quantity,
-    COALESCE((
-        -- Tổng hợp số lượng từ lot_items liên quan đến lot có production_id này
-        SELECT SUM(li.quantity)
-        FROM public.lots l
-        JOIN public.lot_items li ON li.lot_id = l.id
-        WHERE l.production_id = pl.production_id
-          AND (li.product_id = pl.product_id OR l.product_id = pl.product_id)
-          AND l.status = 'active'
-    ), 0) + 
-    COALESCE((
-        -- Trường hợp lot gán trực tiếp product_id nhưng không dùng lot_items (phòng hờ)
-        SELECT SUM(l.quantity)
-        FROM public.lots l
-        WHERE l.production_id = pl.production_id
-          AND l.product_id = pl.product_id
-          AND l.status = 'active'
-          AND NOT EXISTS (SELECT 1 FROM public.lot_items WHERE lot_id = l.id)
-    ), 0) as actual_quantity
-FROM public.production_lots pl;
-
--- Cấp quyền truy cập cho View
-GRANT SELECT ON public.production_item_statistics TO authenticated;
-GRANT SELECT ON public.production_item_statistics TO anon;
-GRANT SELECT ON public.production_item_statistics TO service_role;
+    pl.id AS production_lot_id,
+    p.id AS product_id,
+    p.name AS product_name,
+    p.sku AS product_sku,
+    p.unit AS product_unit,
+    (
+        SELECT COALESCE(SUM(lis.quantity * lis.item_weight_factor), 0)
+        FROM lot_item_stats lis
+        WHERE lis.production_id = pl.production_id
+          AND lis.product_id = p.id
+    ) AS actual_quantity,
+    (
+        SELECT MAX(lis.item_weight_factor)
+        FROM lot_item_stats lis
+        WHERE lis.production_id = pl.production_id
+          AND lis.product_id = p.id
+    ) AS weight_factor
+FROM public.production_lots pl
+JOIN public.products p ON p.id = pl.product_id;

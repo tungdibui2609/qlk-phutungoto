@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { User } from '@supabase/supabase-js'
+import { APP_ROUTES, RouteItem } from '@/config/routes'
 
 type UserProfile = {
     id: string
@@ -164,6 +165,35 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
         if (!profile || !profile.blocked_routes) return false
 
+        // 1. Get all explicit routes from config
+        const getExplicitPaths = (items: RouteItem[]): string[] => {
+            let paths: string[] = []
+            items.forEach(item => {
+                paths.push(item.path)
+                if (item.children) {
+                    paths = [...paths, ...getExplicitPaths(item.children)]
+                }
+            })
+            return paths
+        }
+        const explicitPaths = getExplicitPaths(APP_ROUTES)
+
+        // 2. If the current path is an explicit route, use EXACT match
+        if (explicitPaths.includes(path)) {
+            return profile.blocked_routes.includes(path)
+        }
+
+        // 3. For dynamic/sub-routes, find the LONGEST matching explicit base route
+        const baseRoute = explicitPaths
+            .filter(rp => path.startsWith(rp + '/'))
+            .sort((a, b) => b.length - a.length)[0]
+
+        if (baseRoute) {
+            // If the base menu route is blocked, the sub-route is blocked
+            return profile.blocked_routes.includes(baseRoute)
+        }
+
+        // 4. Default prefix check for any other unexpected patterns
         return profile.blocked_routes.some(blockedPath =>
             path === blockedPath || path.startsWith(blockedPath + '/')
         )
