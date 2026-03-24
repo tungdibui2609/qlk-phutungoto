@@ -1121,10 +1121,16 @@ export function LotForm({
                                                     setLotItems(prev => {
                                                         const newItems = [...prev]
                                                         const product = products.find(p => p.id === val)
+                                                        const baseUnit = product?.unit || ''
+                                                        const baseWeight = (product as any)?.weight_kg || 0
+                                                        const formattedUnit = baseWeight > 0 
+                                                            ? `${baseUnit} (${baseWeight}kg)` 
+                                                            : baseUnit
+
                                                         newItems[index] = {
                                                             ...newItems[index],
                                                             productId: val || '',
-                                                            unit: product?.unit || ''
+                                                            unit: formattedUnit
                                                         }
                                                         return newItems
                                                     })
@@ -1187,7 +1193,14 @@ export function LotForm({
                                                     if (!product) return <option value="">Đơn vị</option>
 
                                                     const availableUnits = new Set<string>()
-                                                    if (product.unit) availableUnits.add(product.unit)
+                                                    // Base Unit with weight if available
+                                                    const baseUnit = product.unit || ''
+                                                    const baseWeight = (product as any).weight_kg || 0
+                                                    const formattedBaseUnit = baseWeight > 0 
+                                                        ? `${baseUnit} (${baseWeight}kg)` 
+                                                        : baseUnit
+                                                    
+                                                    if (baseUnit) availableUnits.add(formattedBaseUnit)
 
                                                     productUnits
                                                         .filter((pu: any) => pu.product_id === item.productId)
@@ -1195,9 +1208,16 @@ export function LotForm({
                                                             const u = units.find((u: any) => u.id === pu.unit_id)
                                                             if (u) {
                                                                 const isBase = pu.conversion_factor === 1 || !pu.conversion_factor
-                                                                const labelStr = isBase
-                                                                    ? u.name
-                                                                    : `${u.name} (${pu.conversion_factor} ${product.unit || 'Cơ bản'})`
+                                                                // Extract weight from unit name if it's already there, or use conversion factor
+                                                                const weightInName = u.name.match(/\(\s*(\d+(\.\d+)?)\s*k?g\s*\)/i)
+                                                                
+                                                                let labelStr = u.name
+                                                                if (!weightInName && !isBase) {
+                                                                    labelStr = `${u.name} (${pu.conversion_factor} ${product.unit || 'kg'})`
+                                                                } else if (!weightInName && isBase && baseWeight > 0) {
+                                                                    labelStr = `${u.name} (${baseWeight}kg)`
+                                                                }
+                                                                
                                                                 availableUnits.add(labelStr)
                                                             }
                                                         })

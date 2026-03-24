@@ -68,7 +68,15 @@ SELECT
           AND lis.product_id = p.id
     ) AS actual_quantity,
     (
-        SELECT JSON_AGG(JSON_BUILD_OBJECT('qty', lis.total_qty, 'unit', lis.unit))
+        SELECT JSON_AGG(
+            JSON_BUILD_OBJECT(
+                'qty', lis.total_qty, 
+                'unit', CASE 
+                    WHEN lis.unit NOT LIKE '%(%)%' AND lis.item_weight_factor > 1 AND lis.item_weight_factor != 1.0 THEN lis.unit || ' (' || ROUND(lis.item_weight_factor, 2) || 'kg)'
+                    ELSE lis.unit
+                END
+            )
+        )
         FROM lot_item_stats lis
         WHERE lis.production_id = pl.production_id
           AND lis.product_id = p.id

@@ -285,7 +285,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
         
         // Initialize with rule: 1 [Default alternative??] = [Weight] [Base Unit]
         // Actually, if we follow ProductUnits, we start with 0 rules or 1 default
-        const initialRules = defaultWeight > 0 ? [{ factor: defaultWeight, unit_name: 'Thùng', ref_unit_name: defaultUnit }] : []
+        const initialRules = defaultWeight > 0 
+            ? [{ factor: defaultWeight, unit_name: `Thùng (${defaultWeight}kg)`, ref_unit_name: defaultUnit }] 
+            : []
 
         newLots[index] = { 
             ...newLots[index], 
@@ -821,9 +823,20 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                                         className="w-full bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 text-stone-800 dark:text-stone-200 text-sm rounded-lg focus:ring-orange-500 focus:border-orange-500 block p-2.5 outline-none"
                                                                     >
                                                                         <option value="">-- Chọn Đơn vị --</option>
-                                                                        {units.filter(u => u.name !== lot.unit).map(u => (
-                                                                            <option key={u.id} value={u.name}>{u.name}</option>
-                                                                        ))}
+                                                                        {units.filter(u => u.name !== lot.unit).map(u => {
+                                                                            // Try to find if this unit has a known conversion factor or weight in name
+                                                                            const weightInName = u.name.match(/\(\s*(\d+(\.\d+)?)\s*k?g\s*\)/i)
+                                                                            let label = u.name
+                                                                            
+                                                                            // If no weight in name, we might want to hint at the current rule's factor if it matches
+                                                                            // But for the dropdown, we just show the name. 
+                                                                            // However, the user wants "Thùng (20kg)"
+                                                                            if (!weightInName && u.name === 'Thùng' && lot.weight_per_unit > 0) {
+                                                                                label = `${u.name} (${lot.weight_per_unit}kg)`
+                                                                            }
+
+                                                                            return <option key={u.id} value={label}>{label}</option>
+                                                                        })}
                                                                     </select>
                                                                 </div>
 
