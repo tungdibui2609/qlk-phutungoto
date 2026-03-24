@@ -2,7 +2,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { Database } from '@/lib/database.types'
-import { toBaseAmount as toBaseAmountLogic, getBaseToKgRate as getBaseToKgRateLogic, convertUnit as convertUnitLogic } from '@/lib/unitConversion'
+import { convertUnit as convertUnitLogic, normalizeUnit, isKg, extractWeightFromName } from '@/lib/unitConversion'
 
 export const dynamic = 'force-dynamic'
 
@@ -217,21 +217,35 @@ export async function GET(request: Request) {
         const categoryMap = new Map<string, string>() // ID -> Name
         ; (categoriesData as any[])?.forEach(c => categoryMap.set(c.id, c.name))
 
-        const unitNameMap = new Map<string, string>() // Name -> ID
+        const unitNameMap = new Map<string, string>() // Normalized Name -> ID
         const unitIdMap = new Map<string, string>()   // ID -> Name
-            ; (unitsData as any[])?.forEach(u => {
-                unitNameMap.set(u.name.toLowerCase(), u.id)
-                unitIdMap.set(u.id, u.name)
-            })
+        ; (unitsData as any[])?.forEach(u => {
+            const normalized = normalizeUnit(u.name)
+            unitNameMap.set(normalized, u.id)
+            unitIdMap.set(u.id, u.name)
+            
+            // Also map the name without weight suffix if present (e.g. "Thùng" for "Thùng (20kg)")
+            const withoutWeight = normalized.replace(/\s*\([^)]*\)/, '').trim()
+            if (!unitNameMap.has(withoutWeight)) {
+                unitNameMap.set(withoutWeight, u.id)
+            }
+        })
 
         // Product Units Map: ProductID -> UnitID -> Rate (to Base)
         const conversionMap = new Map<string, Map<string, number>>()
-            ; (prodUnitsData as any[])?.forEach(pu => {
-                if (!conversionMap.has(pu.product_id)) {
-                    conversionMap.set(pu.product_id, new Map())
-                }
-                conversionMap.get(pu.product_id)!.set(pu.unit_id, pu.conversion_rate)
-            })
+        ; (prodUnitsData as any[])?.forEach(pu => {
+            if (!conversionMap.has(pu.product_id)) {
+                conversionMap.set(pu.product_id, new Map())
+            }
+            const innerMap = conversionMap.get(pu.product_id)!
+            innerMap.set(pu.unit_id, pu.conversion_rate)
+            
+            const normName = unitIdMap.get(pu.unit_id)
+            if (normName) {
+                innerMap.set(normName, pu.conversion_rate)
+            }
+        })
+
 
         const inventoryMap = new Map<string, InventoryItem>()
         const targetUnitId = searchParams.get('targetUnitId')
@@ -255,21 +269,44 @@ export async function GET(request: Request) {
             const baseUnitName = prod?.unit || null
 
             // Determine if convertible
+            const isTargetKg = targetUnit && isKg(targetUnit.name)
+            const hasWeightSuffix = extractWeightFromName(uName) !== null
+            
             const isConvertible = targetUnitId && prod && (
                 baseUnitName?.toLowerCase() === targetUnit?.name?.toLowerCase() ||
-                conversionMap.get(pid)?.has(targetUnitId)
+                conversionMap.get(pid)?.has(targetUnitId) ||
+                (isTargetKg && hasWeightSuffix)
             )
 
             if (targetUnitId && isConvertible) {
                 // CONVERTIBLE
                 key = `${pid}_${wName}_${targetUnitId}`
-                unitDisplay = targetUnit.name
-                quantity = convertUnitLogic(pid, uName, targetUnit.name, quantity, baseUnitName, unitNameMap, conversionMap)
+                // Display the suffix if the target unit is not already formatted and has a weight factor
+                const rate = conversionMap.get(pid)?.get(targetUnitId)
+                const suffix = (rate && rate > 1 && !targetUnit!.name.includes('(')) ? ` (${rate}kg)` : ''
+                unitDisplay = targetUnit!.name + suffix
+                quantity = convertUnitLogic(pid, uName, targetUnit!.name, quantity, baseUnitName, unitNameMap, conversionMap)
             } else {
                 // NOT CONVERTIBLE or NO TARGET UNIT
                 key = `${pid}_${wName}_${uName}`
                 if (targetUnitId) {
                     isUnconvertible = true
+                }
+                
+                // Even if not converted, try to add suffix for better display if it's missing
+                const normUName = normalizeUnit(uName)
+                const productRates = pid ? conversionMap.get(pid) : null
+                let rate = undefined
+                if (productRates) {
+                    const matchingUnit = (unitsData as any[]).find(u => {
+                        const n = normalizeUnit(u.name)
+                        return (n === normUName || n.replace(/\s*\([^)]*\)/, '').trim() === normUName) && productRates.has(u.id)
+                    })
+                    if (matchingUnit) rate = productRates.get(matchingUnit.id)
+                }
+
+                if (rate && rate > 1 && !unitDisplay.includes('(')) {
+                    unitDisplay = uName + ` (${rate}kg)`
                 }
             }
 

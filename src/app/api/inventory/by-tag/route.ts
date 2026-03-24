@@ -1,10 +1,8 @@
-
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { Database } from "@/lib/database.types";
-import { convertUnit as convertUnitLogic } from '@/lib/unitConversion'
-// Removed fs/path imports
+import { convertUnit as convertUnitLogic, normalizeUnit, isKg, extractWeightFromName } from '@/lib/unitConversion'
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +33,7 @@ export async function GET(req: NextRequest) {
         )
 
         const searchParams = req.nextUrl.searchParams;
-        const tagFilter = (searchParams.get("tag") || "").toLowerCase(); // Case-insensitive filter
+        const tagFilter = (searchParams.get("tag") || "").toLowerCase(); 
         const warehouse = searchParams.get("warehouse") || "";
         const systemParam = searchParams.get('systemType')
         const systemType = systemParam || cookieStore.get('systemType')?.value || 'FROZEN'
@@ -43,12 +41,10 @@ export async function GET(req: NextRequest) {
         const q = searchParams.get('q')
         const searchMode = searchParams.get('searchMode') || 'all'
 
-        // Normalize systemType: Handle common mismatches
         let normalizedSystemType = systemType;
         if (systemType === 'FROZEN') normalizedSystemType = 'KHO_DONG_LANH';
-        if (systemType === 'DRY') normalizedSystemType = 'KHO_VAT_TU_BAO_BI'; // Or whatever DRY maps to
+        if (systemType === 'DRY') normalizedSystemType = 'KHO_VAT_TU_BAO_BI';
 
-        // Fetch Support Data with pagination to bypass 1000 limit
         const fetchAllWithPagination = async (tableName: string, selectCols: string) => {
             let allResults: any[] = [];
             let currentFrom = 0;
@@ -71,22 +67,10 @@ export async function GET(req: NextRequest) {
         const productsData = await fetchAllWithPagination('products', 'id, sku, name, unit');
         const prodUnitsData = await fetchAllWithPagination('product_units', 'product_id, unit_id, conversion_rate');
 
-        const targetUnit = targetUnitId ? (unitsData as any[])?.find(u => u.id === targetUnitId) : null
-        const unitNameMap = new Map<string, string>()
-            ; (unitsData as any[])?.forEach(u => unitNameMap.set(u.name.toLowerCase(), u.id))
+        const units = unitsData as any[]
+        const targetUnit = targetUnitId ? units?.find(u => u.id === targetUnitId) : null
 
-        const productMap = new Map<string, any>()
-            ; (productsData as any[])?.forEach(p => productMap.set(p.id, p))
 
-        const conversionMap = new Map<string, Map<string, number>>()
-            ; (prodUnitsData as any[])?.forEach(pu => {
-                if (!conversionMap.has(pu.product_id)) {
-                    conversionMap.set(pu.product_id, new Map())
-                }
-                conversionMap.get(pu.product_id)!.set(pu.unit_id, pu.conversion_rate)
-            })
-
-        // Build query and Fetch ALL lots using pagination
         let allFetchedLots: any[] = [];
         let from = 0;
         const PAGE_SIZE = 1000;
@@ -138,7 +122,38 @@ export async function GET(req: NextRequest) {
         }
 
         if (allFetchedLots.length === 0) return NextResponse.json({ ok: true, items: [], uniqueTags: [] });
-        const lots = allFetchedLots; // Re-use the 'lots' variable name for the rest of processing
+        const lots = allFetchedLots;
+
+        const productMap = new Map<string, any>()
+        productsData.forEach(p => productMap.set(p.id, p))
+
+        const unitNameMap = new Map<string, string>()
+        const unitIdMap = new Map<string, string>()
+        units.forEach(u => {
+            const normalized = normalizeUnit(u.name)
+            unitNameMap.set(normalized, u.id)
+            unitIdMap.set(u.id, u.name)
+            
+            // Also map the name without weight suffix if present (e.g. "Thùng" for "Thùng (20kg)")
+            const withoutWeight = normalized.replace(/\s*\([^)]*\)/, '').trim()
+            if (!unitNameMap.has(withoutWeight)) {
+                unitNameMap.set(withoutWeight, u.id)
+            }
+        })
+
+        const conversionMap = new Map<string, Map<string, number>>()
+        prodUnitsData.forEach(pu => {
+            if (!conversionMap.has(pu.product_id)) {
+                conversionMap.set(pu.product_id, new Map())
+            }
+            const innerMap = conversionMap.get(pu.product_id)!
+            innerMap.set(pu.unit_id, pu.conversion_rate)
+            
+            const normName = unitIdMap.get(pu.unit_id)
+            if (normName) {
+                innerMap.set(normName, pu.conversion_rate)
+            }
+        })
 
         const tagInventory = new Map<string, Map<string, {
             productCode: string;
@@ -154,7 +169,7 @@ export async function GET(req: NextRequest) {
             if (!val) return false
             const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
             const nVal = normalize(val)
-            
+
             const orParts = query.split(';').map(p => p.trim()).filter(Boolean)
             return orParts.some(orPart => {
                 const andParts = orPart.split('&').map(p => p.trim()).filter(Boolean)
@@ -169,12 +184,10 @@ export async function GET(req: NextRequest) {
         lots.forEach((lot: any) => {
             if (!lot.lot_items) return;
 
-            // 1. Get General Tags for the LOT
             const generalTags = (lot.lot_tags || [])
                 .filter((t: any) => !t.lot_item_id)
                 .map((t: any) => t.tag);
 
-            // 2. Map Specific Tags per item
             const itemTagsMap = new Map<string, string[]>();
             (lot.lot_tags || []).filter((t: any) => t.lot_item_id).forEach((t: any) => {
                 if (!itemTagsMap.has(t.lot_item_id)) itemTagsMap.set(t.lot_item_id, []);
@@ -187,18 +200,15 @@ export async function GET(req: NextRequest) {
                 if (!prod) return;
 
                 const specificTags = itemTagsMap.get(item.id) || [];
-                // FLATTEN: Instead of one composite string, we treat each tag separately
-                // Also handle "No Tag" case
                 let combinedTags = Array.from(new Set([...generalTags, ...specificTags]));
                 if (combinedTags.length === 0) combinedTags = ["Chưa gắn mã"];
 
                 combinedTags.forEach(currentTag => {
-                    // Search logic
                     if (q) {
                         const checkTag = (searchMode === 'all' || searchMode === 'tag') && matchSearch(currentTag, q)
                         const checkProd = (searchMode === 'all' || searchMode === 'name') && matchSearch(prod.name, q)
                         const checkCode = (searchMode === 'all' || searchMode === 'code') && (matchSearch(prod.sku, q) || matchSearch(lot.code, q))
-                        
+
                         if (!checkTag && !checkProd && !checkCode) return
                     }
 
@@ -217,17 +227,36 @@ export async function GET(req: NextRequest) {
                     let key = `${prod.sku}__${uName}`
 
                     const baseUnitName = prod.unit || null
+                    const isTargetKg = targetUnit && isKg(targetUnit.name)
+                    const hasWeightSuffix = extractWeightFromName(uName) !== null
+
                     const isConvertible = targetUnitId && prod && (
-                        baseUnitName?.toLowerCase() === targetUnit?.name?.toLowerCase() ||
-                        conversionMap.get(pid)?.has(targetUnitId)
+                        normalizeUnit(baseUnitName) === normalizeUnit(targetUnit?.name) ||
+                        conversionMap.get(pid)?.has(targetUnitId) ||
+                        (isTargetKg && hasWeightSuffix)
                     )
 
                     if (targetUnitId && isConvertible) {
                         key = `${prod.sku}__${targetUnitId}`
-                        unitDisplay = targetUnit.name
-                        quantity = convertUnitLogic(pid, uName, targetUnit.name, quantity, baseUnitName, unitNameMap, conversionMap)
+                        const rate = conversionMap.get(pid)?.get(targetUnitId)
+                        const suffix = (rate && rate > 1 && !targetUnit!.name.includes('(')) ? ` (${rate}kg)` : ''
+                        unitDisplay = targetUnit!.name + suffix
+                        quantity = convertUnitLogic(pid, uName, targetUnit!.name, quantity, baseUnitName, unitNameMap, conversionMap)
                     } else {
                         if (targetUnitId) isUnconvertible = true
+                        const normUName = normalizeUnit(uName);
+                        const productRates = pid ? conversionMap.get(pid) : null
+                        let rate = undefined
+                        if (productRates) {
+                            const matchingUnit = (unitsData as any[]).find(u => {
+                                const n = normalizeUnit(u.name)
+                                return (n === normUName || n.replace(/\s*\([^)]*\)/, '').trim() === normUName) && productRates.has(u.id)
+                            })
+                            if (matchingUnit) rate = productRates.get(matchingUnit.id)
+                        }
+                        if (rate && rate > 1 && !unitDisplay.includes('(')) {
+                            unitDisplay = uName + ` (${rate}kg)`
+                        }
                     }
 
                     if (!productMapForTag.has(key)) {
@@ -279,7 +308,6 @@ export async function GET(req: NextRequest) {
             });
         });
 
-        // Sort: "Chưa gắn mã" at the end, others by name
         items.sort((a, b) => {
             if (a.tag === "Chưa gắn mã") return 1;
             if (b.tag === "Chưa gắn mã") return -1;

@@ -11,7 +11,7 @@ import { SearchMode } from '@/app/(dashboard)/warehouses/map/_hooks/useMapFilter
 export type Lot = Database['public']['Tables']['lots']['Row'] & {
     system_code?: string
     lot_items: (Database['public']['Tables']['lot_items']['Row'] & {
-        products: { name: string; unit: string | null; product_code?: string; sku: string; cost_price?: number | null; internal_code?: string | null; internal_name?: string | null } | null
+        products: { name: string; unit: string | null; product_code?: string; sku: string; weight_kg?: number | null; cost_price?: number | null; internal_code?: string | null; internal_name?: string | null } | null
         unit?: string | null
     })[] | null
     suppliers: { name: string } | null
@@ -25,7 +25,7 @@ export type Lot = Database['public']['Tables']['lots']['Row'] & {
     // Production link
     productions?: { code: string } | null
     // Legacy support for display if needed
-    products?: { name: string; unit: string | null; product_code?: string; sku?: string; cost_price?: number | null; internal_code?: string | null; internal_name?: string | null } | null
+    products?: { name: string; unit: string | null; product_code?: string; sku?: string; weight_kg?: number | null; cost_price?: number | null; internal_code?: string | null; internal_name?: string | null } | null
     images?: any
     metadata?: any
 }
@@ -205,6 +205,7 @@ export function useLotManagement() {
             internal_code,
             internal_name,
             product_code: id,
+            weight_kg,
             product_category_rel(categories(name))
         ),
         unit
@@ -212,7 +213,7 @@ export function useLotManagement() {
     suppliers(name),
     qc_info(name),
     lot_tags(tag, lot_item_id),
-    products(name, unit, sku, cost_price, internal_code, internal_name, product_category_rel(categories(name)))
+    products(name, unit, sku, weight_kg, cost_price, internal_code, internal_name, product_category_rel(categories(name)))
         `
 
             let query: any;

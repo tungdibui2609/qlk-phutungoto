@@ -3,65 +3,110 @@
 export type UnitNameMap = Map<string, string>; // name (lowercase) -> id
 export type ConversionMap = Map<string, Map<string, number>>; // productId -> unitId -> rate
 
-// Helper to normalize and clean unit names for comparison
-const normalizeUnit = (s: string | null | undefined) => {
+export const normalizeUnit = (s: string | null | undefined): string => {
     if (!s) return '';
     return s.normalize('NFC').toLowerCase().trim();
 };
 
+const KG_NAMES = ['kg', 'kilogram', 'ki-lo-gam', 'kgs', 'kilo', 'kg.'];
+
+export const isKg = (name: string | null | undefined): boolean => {
+    if (!name) return false;
+    return KG_NAMES.includes(normalizeUnit(name));
+};
+
+/**
+ * Formats a unit name with its weight suffix, ensuring redundant suffixes like "Kg (1kg)" are avoided.
+ */
+export const formatUnitWeight = (unitName: string | null | undefined, weight: number): string => {
+    if (!unitName) return '';
+    const norm = normalizeUnit(unitName);
+    const hasWeightInName = unitName.includes('(') && (unitName.toLowerCase().includes('kg') || unitName.toLowerCase().includes('g'));
+    
+    if (hasWeightInName) return unitName;
+    
+    // Avoid redundant (1kg) for Kg unit
+    if (isKg(norm)) return unitName;
+    
+    if (weight > 0) {
+        return `${unitName} (${weight}kg)`;
+    }
+    return unitName;
+};
+
+export const extractWeightFromName = (name: string | null | undefined): number | null => {
+    if (!name) return null;
+    const match = name.toLowerCase().match(/\(\s*(\d+(\.\d+)?)\s*(k?g|kilogram|ki-lo-gam|kilo|kgs|kg\.)\s*\)/i);
+    if (match) {
+        const weight = parseFloat(match[1]);
+        return isNaN(weight) ? null : weight;
+    }
+    return null;
+};
+
+// Common units that usually represent the main package of a product
+export const MAIN_PACKAGE_UNITS = ['thùng', 'bao', 'két', 'sọt', 'túi', 'hộp', 'khay', 'bịch', 'gói', 'lon', 'chai', 'bình'];
+
 /**
  * Converts a quantity from a specific unit to the base unit amount.
  */
-export function toBaseAmount(
+export const toBaseAmount = (
     productId: string | null,
     unitName: string | null,
     qty: number,
     baseUnitName: string | null,
     unitNameMap: UnitNameMap,
     conversionMap: ConversionMap
-): number {
-    if (!productId || !unitName || !baseUnitName) return qty;
+): number => {
+    if (!unitName || !qty) return qty;
 
     const normInput = normalizeUnit(unitName);
     const normBase = normalizeUnit(baseUnitName);
 
-    // If unit is Base Unit, return qty
-    if (normInput === normBase) return qty;
+    // If already in base unit (e.g. "kg" -> "kg")
+    if (normInput === normBase || (isKg(normInput) && isKg(normBase))) {
+        return qty;
+    }
+    // Shortcut: Use extracted weights if possible (e.g. "Thùng (20kg)")
+    const inputWeight = extractWeightFromName(unitName);
+    const baseWeight = extractWeightFromName(baseUnitName);
+    
+    if (inputWeight && isKg(baseUnitName)) {
+        return qty * inputWeight;
+    }
+    if (inputWeight && baseWeight) {
+        return qty * (inputWeight / baseWeight);
+    }
 
-    // Look up unit ID
-    // Step 1: Exact match (e.g. "thùng")
-    let uid = unitNameMap.get(normInput);
+    // Step 3: Database matching (conversionMap) - Enhanced with name-based fallback
+    if (productId) {
+        const rates = conversionMap.get(productId);
+        if (rates) {
+            // Priority 1: Match by direct name (Robust against ID mismatches)
+            let rate = rates.get(normInput);
+            if (rate !== undefined) return qty * rate;
 
-    // Step 2: Extract weight from name if possible (e.g. "thùng (13 Kg)" -> 13)
-    // Priority: If the name contains something like "(13 kg)" and base is kg, use that 13 directly
-    const kgNames = ['kg', 'kilogram', 'ki-lo-gam', 'kgs'];
-    if (kgNames.includes(normBase)) {
-        const weightMatch = normInput.match(/\(\s*(\d+(\.\d+)?)\s*k?g\s*\)/i);
-        if (weightMatch) {
-            const weight = parseFloat(weightMatch[1]);
-            if (!isNaN(weight)) {
-                return Number((qty * weight).toFixed(6));
+            // Priority 2: Match by exact UID from unitNameMap
+            let uid = unitNameMap.get(normInput);
+            if (uid && rates.has(uid)) {
+                return qty * rates.get(uid)!;
+            }
+
+            // Priority 3: Match by stripped name (e.g. "thùng (20 kg)" -> "thùng")
+            const stripped = normInput.replace(/\s*\([^)]*\)/g, '').trim();
+            rate = rates.get(stripped);
+            if (rate !== undefined) return qty * rate;
+            
+            // Priority 4: Match by stripped name's UID
+            const strippedUid = unitNameMap.get(stripped);
+            if (strippedUid && rates.has(strippedUid)) {
+                return qty * rates.get(strippedUid)!;
             }
         }
     }
 
-    // Step 3: If no exact match and no weight extraction, try stripping parentheses (e.g. "thùng (20 kg)" -> "thùng")
-    if (!uid) {
-        const stripped = normInput.replace(/\s*\([^)]*\)/g, '');
-        uid = unitNameMap.get(stripped);
-    }
-
-    if (!uid) return qty;
-
-    // Look up rate from database
-    const rates = conversionMap.get(productId);
-    if (rates && rates.has(uid)) {
-        const result = qty * rates.get(uid)!;
-        return Number(result.toFixed(6));
-    }
-
-    return Number(qty.toFixed(6));
-}
+    return qty;
+};
 
 /**
  * Calculates the conversion rate from the Base Unit to Kilograms (KG).
@@ -96,10 +141,15 @@ export function getBaseToKgRate(
     if (!rates) return null;
 
     for (const name of kgNames) {
+        // Try by name directly in rates
+        const rateByNm = rates.get(name);
+        if (rateByNm !== undefined && rateByNm !== 0) return 1 / rateByNm;
+
+        // Try by UID
         const uid = unitNameMap.get(name);
         if (uid && rates.has(uid)) {
             const rateKgToBase = rates.get(uid)!;
-            if (rateKgToBase === 0) return null;
+            if (rateKgToBase === 0) continue;
             return 1 / rateKgToBase;
         }
     }
@@ -109,18 +159,8 @@ export function getBaseToKgRate(
 
 /**
  * Converts a quantity from one unit to another for a specific product.
- * Both source and target units can be either the base unit or any alternative unit.
- *
- * @param productId - The ID of the product.
- * @param fromUnitName - The name of the source unit.
- * @param toUnitName - The name of the target unit.
- * @param qty - The quantity to convert.
- * @param baseUnitName - The name of the product's base unit.
- * @param unitNameMap - Map of unit names to unit IDs.
- * @param conversionMap - Map of conversion rates (productId -> unitId -> rate).
- * @returns The converted quantity, or original if conversion is not possible.
  */
-export function convertUnit(
+export const convertUnit = (
     productId: string | null,
     fromUnitName: string | null,
     toUnitName: string | null,
@@ -128,8 +168,8 @@ export function convertUnit(
     baseUnitName: string | null,
     unitNameMap: UnitNameMap,
     conversionMap: ConversionMap
-): number {
-    if (!productId || !fromUnitName || !toUnitName || !baseUnitName) return qty;
+): number => {
+    if (!fromUnitName || !toUnitName || !qty) return qty;
 
     const normFrom = normalizeUnit(fromUnitName);
     const normTo = normalizeUnit(toUnitName);
@@ -141,19 +181,40 @@ export function convertUnit(
     const qtyBase = toBaseAmount(productId, fromUnitName, qty, baseUnitName, unitNameMap, conversionMap);
 
     // 2. If target is base unit, we are done
-    if (normTo === normBase) return qtyBase;
+    if (normTo === normBase || (isKg(normTo) && isKg(normBase))) return qtyBase;
 
-    // 3. Convert from base unit to target unit
-    const toUnitId = unitNameMap.get(normTo);
-    if (!toUnitId) return qtyBase; // Fallback to base unit amount if target unit ID unknown
-
-    const rates = conversionMap.get(productId);
-    if (rates && rates.has(toUnitId)) {
-        const rate = rates.get(toUnitId)!;
-        if (rate === 0) return qtyBase;
-        const result = qtyBase / rate;
-        return Number(result.toFixed(6));
+    // 3. Try to convert base unit to target unit
+    // Shortcut: if target has weight in name (e.g. "Thùng (20kg)")
+    const toWeight = extractWeightFromName(toUnitName);
+    if (toWeight && toWeight > 0) {
+        return qtyBase / toWeight;
     }
 
-    return qtyBase; // Fallback to base unit amount if no conversion rate found
-}
+    const targetRates = conversionMap.get(productId as string);
+    if (targetRates && productId) {
+        // Priority 1: Match target by name
+        let rate = targetRates.get(normTo);
+        if (rate && rate > 0) return qtyBase / rate;
+
+        // Priority 2: Match target by UID
+        const targetUid = unitNameMap.get(normTo);
+        if (targetUid) {
+            rate = targetRates.get(targetUid as string);
+            if (rate && rate > 0) return qtyBase / rate;
+        }
+
+        // Priority 3: Match target by stripped name
+        const strippedTo = normTo.replace(/\s*\([^)]*\)/g, '').trim();
+        rate = targetRates.get(strippedTo);
+        if (rate && rate > 0) return qtyBase / rate;
+
+        // Priority 4: Match target by stripped UID
+        const strippedUid = unitNameMap.get(strippedTo);
+        if (strippedUid) {
+            rate = targetRates.get(strippedUid);
+            if (rate && rate > 0) return qtyBase / rate;
+        }
+    }
+
+    return qtyBase;
+};

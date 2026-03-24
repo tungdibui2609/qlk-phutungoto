@@ -9,6 +9,8 @@ import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import Protected from '@/components/auth/Protected'
 import { useUser } from '@/contexts/UserContext'
 import { getProductColorStyle } from '@/lib/warehouseUtils'
+import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
 
 
 interface LotDetailsModalProps {
@@ -43,6 +45,47 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
             return () => clearTimeout(timer)
         }
     }, [positionsHash, lot, lastPositionsHash])
+
+    const { units, conversionMap } = useUnitConversion()
+
+    const formatUnitWithWeight = React.useCallback((productId: string | null, unitName: string | null) => {
+        if (!unitName) return ''
+        if (unitName.includes('(')) return unitName
+        const normU = normalizeUnit(unitName)
+        
+        // Find base weight for this specific product from the lot object
+        let baseWeight = 0
+        let baseUnitName = ''
+        if (lot.products) {
+            baseWeight = (lot.products as any).weight_kg || 0
+            baseUnitName = lot.products.unit || ''
+        } else if (lot.lot_items) {
+            const item = lot.lot_items.find((i: any) => i.product_id === productId)
+            if (item?.products) {
+                baseWeight = (item.products as any).weight_kg || 0
+                baseUnitName = item.products.unit || ''
+            }
+        }
+
+        // Fallback: If base unit is Kg and weight is not set, assume 1kg
+        const nb = normalizeUnit(baseUnitName)
+        if (baseWeight <= 0 && (nb === 'kg' || nb === 'kilogram')) {
+            baseWeight = 1
+        }
+
+        const productRates = productId ? conversionMap.get(productId) : null
+        let rate = 1
+        if (productRates) {
+            const matchingUnit = units.find(u => {
+                const n = normalizeUnit(u.name)
+                return (n === normU || n.replace(/\s*\([^)]*\)/, '').trim() === normU) && productRates.has(u.id)
+            })
+            if (matchingUnit) rate = productRates.get(matchingUnit.id) || 1
+        }
+
+        const totalWeight = rate * baseWeight
+        return formatUnitWeight(unitName, totalWeight)
+    }, [units, conversionMap, lot])
 
     if (!lot) return null
 
@@ -266,7 +309,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                     {(() => {
                                         const items = lot.lot_items || [];
                                         const summary = items.reduce((acc: Record<string, number>, item: any) => {
-                                            const unit = (item as any).unit || item.products?.unit || 'Đơn vị';
+                                            const unit = formatUnitWithWeight(item.product_id, (item as any).unit || item.products?.unit || 'Đơn vị');
                                             acc[unit] = (acc[unit] || 0) + (item.quantity || 0);
                                             return acc;
                                         }, {});
@@ -311,7 +354,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                                         </div>
                                                         <div className="flex items-center gap-1 px-2 py-1 bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 rounded-lg border border-orange-100 dark:border-orange-900/30 shrink-0 self-start">
                                                             <span className="text-xs font-bold">{item.quantity}</span>
-                                                            <span className="text-[10px] font-medium opacity-80">{(item as any).unit || item.products?.unit}</span>
+                                                            <span className="text-[10px] font-medium opacity-80">{formatUnitWithWeight(item.product_id, (item as any).unit || item.products?.unit)}</span>
                                                         </div>
 
                                                     {/* QR Button for Product */}

@@ -5,6 +5,9 @@ import { useRouter, usePathname } from 'next/navigation'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { LotMergeHistoryModal } from '@/components/warehouse/lots/LotMergeHistoryModal'
 import Protected from '@/components/auth/Protected'
+import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
+import React from 'react'
 
 interface LotCardProps {
     lot: Lot
@@ -42,6 +45,47 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
         setIsHighlighting(true)
         setTimeout(() => setIsHighlighting(false), 1500)
     }
+
+    const { units, conversionMap } = useUnitConversion()
+
+    const formatUnitWithWeight = React.useCallback((productId: string | null, unitName: string | null) => {
+        if (!unitName) return ''
+        if (unitName.includes('(')) return unitName
+        const normU = normalizeUnit(unitName)
+        
+        // Find base weight for this specific product from the lot object
+        let baseWeight = 0
+        let baseUnitName = ''
+        if (lot.products) {
+            baseWeight = (lot.products as any).weight_kg || 0
+            baseUnitName = lot.products.unit || ''
+        } else if (lot.lot_items) {
+            const item = lot.lot_items.find((i: any) => i.product_id === productId)
+            if (item?.products) {
+                baseWeight = (item.products as any).weight_kg || 0
+                baseUnitName = item.products.unit || ''
+            }
+        }
+
+        // Fallback: If base unit is Kg and weight is not set, assume 1kg
+        const nb = normalizeUnit(baseUnitName)
+        if (baseWeight <= 0 && (nb === 'kg' || nb === 'kilogram')) {
+            baseWeight = 1
+        }
+
+        const productRates = productId ? conversionMap.get(productId) : null
+        let rate = 1
+        if (productRates) {
+            const matchingUnit = units.find(u => {
+                const n = normalizeUnit(u.name)
+                return (n === normU || n.replace(/\s*\([^)]*\)/, '').trim() === normU) && productRates.has(u.id)
+            })
+            if (matchingUnit) rate = productRates.get(matchingUnit.id) || 1
+        }
+
+        const totalWeight = rate * baseWeight
+        return formatUnitWeight(unitName, totalWeight)
+    }, [units, conversionMap, lot])
 
     // Helper to render info items dynamically
     const renderInfoItems = () => {
@@ -232,7 +276,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                             {lot.lot_items && lot.lot_items.length > 0 ? (
                                 Object.entries(
                                     lot.lot_items.reduce((acc: Record<string, number>, item: any) => {
-                                        const unit = (item as any).unit || item.products?.unit || 'Đơn vị';
+                                        const unit = formatUnitWithWeight(item.product_id, (item as any).unit || item.products?.unit || 'Đơn vị');
                                         acc[unit] = (acc[unit] || 0) + (item.quantity || 0);
                                         return acc;
                                     }, {})
@@ -305,7 +349,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                                                 </div>
                                                                 <div className="flex items-center gap-1 font-mono text-xs bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 px-2 py-0.5 rounded border border-orange-100 dark:border-orange-900/30 shrink-0">
                                                                     <span className="font-bold">{item.quantity}</span>
-                                                                    <span className="opacity-80">{(item as any).unit || item.products?.unit}</span>
+                                                                    <span className="opacity-80">{formatUnitWithWeight(item.product_id, (item as any).unit || item.products?.unit)}</span>
                                                                 </div>
                                                                 {(parsedHistory || originTag) && (
                                                                     <div
@@ -371,7 +415,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                                         )}
                                                     </div>
                                                     <span className="font-mono text-xs bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300 h-fit">
-                                                        {lot.quantity} {lot.products.unit}
+                                                        {lot.quantity} {formatUnitWithWeight(lot.product_id, lot.products.unit)}
                                                     </span>
                                                 </div>
                                             ) : '---'}

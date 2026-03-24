@@ -14,7 +14,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
     const { showToast } = useToast()
     const { currentSystem, hasModule } = useSystem()
     const { profile } = useUser()
-    const { toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
+    const { getBaseAmount: toBaseAmount, convertUnit, unitNameMap, conversionMap } = useUnitConversion()
 
     // Form State
     const [code, setCode] = useState('')
@@ -80,7 +80,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                 .from('outbound_orders')
                 .select('*, items:outbound_order_items(*)')
                 .eq('id', id)
-                .single()
+                .single() as { data: any, error: any }
 
             if (error) throw error
             if (!order) return
@@ -168,7 +168,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
 
                     invRes.items.forEach((item: any) => {
                         if (item.productId) {
-                            const prod = prodRes.data.find(p => p.id === item.productId)
+                            const prod = (prodRes.data as any[]).find(p => p.id === item.productId)
                             const baseQty = toBaseAmount(item.productId, item.unit, item.balance, prod?.unit || null)
                             totalStockMap.set(item.productId, (totalStockMap.get(item.productId) || 0) + baseQty)
 
@@ -252,6 +252,29 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                 if (prod && (!prod.product_units || prod.product_units.length === 0) && prod.unit) initialUnit = prod.unit
                 updatedItem = { ...updatedItem, productId: value, productName: prod?.name || '', unit: initialUnit, price: prod?.cost_price || 0 }
             }
+            
+            if (field === 'unit') {
+                const newVal = value as string
+                const oldVal = item.unit
+                const prod = products.find(p => p.id === item.productId)
+                const baseUnitName = prod?.unit || ''
+                
+                const newQty = convertUnit(
+                    item.productId,
+                    oldVal,
+                    newVal,
+                    item.quantity || 0,
+                    baseUnitName
+                )
+
+                updatedItem = { 
+                    ...updatedItem, 
+                    unit: newVal, 
+                    quantity: Number(newQty.toFixed(3)),
+                    document_quantity: !item.isDocQtyVisible ? Number(newQty.toFixed(3)) : item.document_quantity
+                }
+            }
+
             if (field === 'quantity') {
                 const newValue = Number(value)
                 updatedItem = { ...updatedItem, quantity: newValue, document_quantity: !item.isDocQtyVisible ? newValue : item.document_quantity }
@@ -422,7 +445,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
             // Cleanup LOT metadata if this was a buffer sync
             if (initialData?.batchData) {
                 for (const p of initialData.batchData) {
-                    const { data: lot } = await supabase.from('lots').select('metadata').eq('id', p.lot_id).single()
+                    const { data: lot } = await supabase.from('lots').select('metadata').eq('id', p.lot_id).single() as any
                     if (lot) {
                         const metadata = { ...lot.metadata as any }
                         metadata.system_history.exports = metadata.system_history.exports.map((exp: any) => {
@@ -431,7 +454,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                             }
                             return exp
                         })
-                        await supabase.from('lots').update({ metadata }).eq('id', p.lot_id)
+                        await (supabase.from('lots') as any).update({ metadata }).eq('id', p.lot_id)
 
                         // [NEW] Sync LOT Status and Quantity
                         await lotService.syncLotStatus({

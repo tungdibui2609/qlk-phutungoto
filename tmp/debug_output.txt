@@ -1,0 +1,101 @@
+Product: Sầu riêng cấp đông nguyên trái Ri 6 B - Nito (Hàng đóng sọt tạm) (SKU: HH1010102.03.004) ID: aae8433f-c503-4ae0-ab1c-2e7699ee1dc5 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Ri 6 kem (SKU: HH101020206) ID: 2ade0b4f-838d-4a2c-9b6d-b6410f9b31c4 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Ri 6 C (SKU: HH101020204) ID: 65317790-e50c-46e6-9e35-c8628f4cec9d Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong B (4 túi) - Hầm đông (SKU: HH101020103.04.001) ID: 3e822ee7-6f3f-432a-8fc5-8c85b8c5860d Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông nguyên trái Dona/Monthong A - Nito (Hàng đóng sọt tạm) (SKU: HH1010101.02.004) ID: 5138b50d-fdbc-49ef-ade7-57e2b2161c49 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong A (Hàng hạt + vụn) (SKU: HH101020102.07) ID: 5305e6ef-c9dc-4573-bbe7-a59251ba1931 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông nguyên trái Ri 6 A - Hầm đông (SKU: HH1010102.02.001) ID: 38ecc115-d2c0-4795-8556-464d047ce816 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong A (Hàng đã tách hạt) (SKU: HH101020102.06) ID: 46cc0ea0-cfc8-40d3-a0d8-4d8e0b09a02a Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Ri 6 B (4 túi) - Hầm đông (SKU: HH101020203.04.001) ID: 0f9d8a37-7cee-4169-a8a3-a6662175f367 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong A (4 túi) - Hầm đông (SKU: HH101020102.04.001) ID: fa28fd25-8c91-462b-bb44-df938e61b50d Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong C- Hàng không hạt (SKU: HH101020104.001) ID: 9da49bac-13a9-4fec-ae4a-5444d74f1a6f Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong B To (4 túi) - Hầm đông (SKU: HH101020103.04.004) ID: 18f66d77-72ee-4f49-89af-694618b4c209 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông nguyên trái Ri 6 A - Nito (Hàng đóng sọt tạm) (SKU: HH1010102.02.004) ID: 2ad7acdd-a3e4-4f15-bcae-a330fce71bce Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong kem (SKU: HH101020106) ID: 6968c59a-5a19-40f1-8eb0-a5c2c6b41d08 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu Riêng Cấp Đông Múi (SKU: SRM.CD) ID: 8206449d-ff98-4587-a258-29b931b5f52c Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Ri 6 A (4 túi) - Hầm đông (SKU: HH101020202.04.001) ID: d57d3f44-4f46-4196-b41e-9b7f726cae5c Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu Riêng Cấp Đông Trái (SKU: SRT.CD) ID: 4b471508-0735-4a4a-a796-2d01bbb3fad2 Base: Kg
+  - 1 Thùng = 13 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong C hạt ( PHƯƠNG BẢO LỘC ) (SKU: L-SP004) ID: c967e89e-a4d2-45e0-8a9d-4ef5dbae2333 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Ri 6 C Vụn (SKU: L-SP003) ID: 9e1fa351-097c-4482-a695-c6d984324bc0 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông nguyên trái Ri 6 A - Nito (SKU: HH1010102.02.002) ID: 30fc4122-ed3e-4ca8-a33a-a626c937b86c Base: Kg
+  - 1 Thùng = 13 Kg
+  - 1 Thùng = 12 Kg
+
+Product: Sầu riêng cấp đông múi ( O HUYỀN ) (SKU: L-SP005) ID: 791c94df-cc5b-4b22-99c3-4fc8042f2f5d Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong C kem (SKU: HH101020104.003) ID: b406fdcc-da1e-407f-8209-1153ea73d798 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong C To - Hàng có hạt (SKU: HH101020104.004) ID: 2f453168-a075-4ea8-896f-a98b61fe6fd5 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Dụng cụ tách sầu riêng (SKU: DC-SP030) ID: f84e83d4-a46c-4497-b240-25150f00187b Base: Cái
+
+Product: Sầu riêng cấp đông múi Dona/Monthong C- Hàng có hạt (SKU: HH101020104.002) ID: 16beb9d8-daac-48ff-8310-0036fa308f77 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong C- Hàng có hạt - Ký gửi (SKU: L-SP007) ID: 6d1bc36b-9d03-40f3-9e50-acc642f7db0c Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong A (4 túi) - Hầm đông - Green farm (SKU: L-SP009) ID: 9091c0c2-03da-41c5-86b2-54e3e75b22aa Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong C Kem - Hiếu Long Khánh (SKU: L-SP008) ID: f5d5d190-642f-4b1b-9304-943b7d5ead07 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong B (4 túi) - Hầm đông - GREEN FARM (SKU: L-SP010) ID: 841e84d2-e95c-45e8-8e5d-40d06c9188a0 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong C đen hủy - PHƯƠNG BẢO LỘC (SKU: L-SP011) ID: d6513f64-a311-4036-a49a-4a99e5073023 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong C hạt - Phương Bảo Lộc (SKU: L-SP012) ID: b0aee899-64f9-4c85-a08d-fdf0bf11282a Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông trái monthong - O HUYỀN (SKU: L-SP013) ID: bab306d1-6c02-4a24-a14b-6a9b73fbd8d2 Base: Kg
+
+Product: Sầu riêng cấp đông múi - O HUYỀN  (SKU: L-SP014) ID: 7a5e7853-7e60-4332-b421-4ea34f34ed34 Base: Kg
+  - 1 Thùng = 20 Kg
+
+Product: Sầu riêng cấp đông múi Dona/Monthong C đen hủy-CTBT (SKU: L-SP016) ID: 33a55053-6759-4477-9a22-c1b0ca975a44 Base: Kg
+  - 1 Thùng = 20 Kg
+

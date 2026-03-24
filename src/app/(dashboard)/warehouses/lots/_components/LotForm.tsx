@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Boxes, MapPin, Calendar, Factory, ShieldCheck, Package, Hash, Layers, X, Plus, Trash2, ChevronDown, Loader2 } from 'lucide-react'
 import { Combobox } from '@/components/ui/Combobox'
 import { ImageUpload } from '@/components/ui/ImageUpload'
@@ -10,6 +10,7 @@ import { QuantityInput } from '@/components/ui/QuantityInput'
 import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '../_hooks/useLotManagement'
 import { useUser } from '@/contexts/UserContext'
 import Protected from '@/components/auth/Protected'
+import { extractWeightFromName, MAIN_PACKAGE_UNITS, normalizeUnit, formatUnitWeight, convertUnit } from '@/lib/unitConversion'
 
 interface LotItemInput {
     id?: string
@@ -117,6 +118,25 @@ export function LotForm({
             }
         })
     }
+    
+    const unitNameMap = useMemo(() => {
+        const map = new Map<string, string>()
+        units.forEach(u => {
+            map.set(normalizeUnit(u.name), u.id)
+        })
+        return map
+    }, [units])
+
+    const conversionMap = useMemo(() => {
+        const map = new Map<string, Map<string, number>>()
+        productUnits.forEach(pu => {
+            if (!map.has(pu.product_id)) {
+                map.set(pu.product_id, new Map())
+            }
+            map.get(pu.product_id)?.set(pu.unit_id, pu.conversion_rate || 1)
+        })
+        return map
+    }, [productUnits])
 
     const formRef = useRef<HTMLDivElement>(null)
 
@@ -146,19 +166,6 @@ export function LotForm({
                         unit: (item as any).unit || '',
                         tag: editingLot.lot_tags?.find((t: any) => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_') && !t.tag.startsWith('SPLIT_'))?.tag || ''
                     })))
-                } else if (editingLot.products) {
-                    // Fallback for legacy
-                    const legacyPId = (editingLot as any).product_id
-                    if (legacyPId) {
-                        setLotItems([{
-                            productId: legacyPId,
-                            quantity: editingLot.quantity || 0,
-                            unit: editingLot.products?.unit || '',
-                            tag: editingLot.lot_tags?.find((t: any) => !t.lot_item_id && !t.tag.startsWith('MERGED_') && !t.tag.startsWith('SPLIT_'))?.tag || ''
-                        }])
-                    } else {
-                        setLotItems([{ productId: '', quantity: 0, unit: '', tag: '' }])
-                    }
                 } else {
                     setLotItems([{ productId: '', quantity: 0, unit: '', tag: '' }])
                 }
@@ -1122,15 +1129,41 @@ export function LotForm({
                                                         const newItems = [...prev]
                                                         const product = products.find(p => p.id === val)
                                                         const baseUnit = product?.unit || ''
-                                                        const baseWeight = (product as any)?.weight_kg || 0
-                                                        const formattedUnit = baseWeight > 0 
-                                                            ? `${baseUnit} (${baseWeight}kg)` 
-                                                            : baseUnit
+                                                        let baseWeight = (product as any)?.weight_kg || 0
+                                                        
+                                                        // Fallback: If base unit is Kg and weight is not set, assume 1kg
+                                                        const normBase = normalizeUnit(baseUnit)
+                                                        if (baseWeight <= 0 && (normBase === 'kg' || normBase === 'kilogram')) {
+                                                            baseWeight = 1
+                                                        }
+                                                        
+                                                        // Strategy: Find a default unit to show. Prefer "Thùng" > Base Unit.
+                                                        const pUnits = productUnits.filter(pu => pu.product_id === val)
+                                                        const thungUnit = pUnits.find(pu => {
+                                                            const u = units.find(ux => ux.id === pu.unit_id)
+                                                            return u && normalizeUnit(u.name) === 'thung'
+                                                        })
+                                                        
+                                                        let initialUnit = baseUnit
+                                                        let unitWeight = baseWeight
 
-                                                        newItems[index] = {
-                                                            ...newItems[index],
+                                                        if (thungUnit) {
+                                                            const u = units.find(ux => ux.id === thungUnit.unit_id)
+                                                            if (u) {
+                                                                initialUnit = u.name
+                                                                unitWeight = (thungUnit.conversion_rate || 1) * baseWeight
+                                                            }
+                                                        }
+
+                                                        const normInitial = normalizeUnit(initialUnit)
+                                                        const isKg = normInitial === 'kg' || normInitial === 'kilogram'
+                                                        
+                                                        const formattedUnit = formatUnitWeight(initialUnit, unitWeight)
+                                                        
+                                                        newItems[index] = { 
+                                                            ...newItems[index], 
                                                             productId: val || '',
-                                                            unit: formattedUnit
+                                                            unit: formattedUnit 
                                                         }
                                                         return newItems
                                                     })
@@ -1179,10 +1212,41 @@ export function LotForm({
                                             <select
                                                 value={item.unit}
                                                 onChange={(e) => {
-                                                    const val = e.target.value
+                                                    const newVal = e.target.value
+                                                    const oldVal = item.unit
+                                                    const product = products.find(p => p.id === item.productId)
+                                                    const baseUnitName = product?.unit || ''
+                                                    
+                                                    if (!item.productId) {
+                                                        setLotItems(prev => {
+                                                            const newItems = [...prev]
+                                                            newItems[index] = { ...newItems[index], unit: newVal }
+                                                            return newItems
+                                                        })
+                                                        return
+                                                    }
+
+                                                    const currentQty = typeof item.quantity === 'string' 
+                                                        ? parseFloat(item.quantity) || 0 
+                                                        : item.quantity || 0
+
+                                                    const newQty = convertUnit(
+                                                        item.productId,
+                                                        oldVal,
+                                                        newVal,
+                                                        currentQty,
+                                                        baseUnitName,
+                                                        unitNameMap,
+                                                        conversionMap
+                                                    )
+
                                                     setLotItems(prev => {
                                                         const newItems = [...prev]
-                                                        newItems[index] = { ...newItems[index], unit: val }
+                                                        newItems[index] = { 
+                                                            ...newItems[index], 
+                                                            unit: newVal,
+                                                            quantity: Number(newQty.toFixed(3))
+                                                        }
                                                         return newItems
                                                     })
                                                 }}
@@ -1195,29 +1259,27 @@ export function LotForm({
                                                     const availableUnits = new Set<string>()
                                                     // Base Unit with weight if available
                                                     const baseUnit = product.unit || ''
-                                                    const baseWeight = (product as any).weight_kg || 0
-                                                    const formattedBaseUnit = baseWeight > 0 
-                                                        ? `${baseUnit} (${baseWeight}kg)` 
-                                                        : baseUnit
+                                                    let baseWeight = (product as any).weight_kg || 0
+                                                    // Fallback: If base unit is Kg and weight is not set, assume 1kg
+                                                    const normBase = normalizeUnit(baseUnit)
+                                                    if (baseWeight <= 0 && (normBase === 'kg' || normBase === 'kilogram')) {
+                                                        baseWeight = 1
+                                                    }
+                                                    const formattedBaseUnit = formatUnitWeight(baseUnit, baseWeight)
                                                     
                                                     if (baseUnit) availableUnits.add(formattedBaseUnit)
 
-                                                    productUnits
-                                                        .filter((pu: any) => pu.product_id === item.productId)
+                                                    const pUnitsOfProduct = productUnits.filter((pu: any) => pu.product_id === item.productId)
+                                                    
+                                                    pUnitsOfProduct
                                                         .forEach((pu: any) => {
                                                             const u = units.find((u: any) => u.id === pu.unit_id)
                                                             if (u) {
-                                                                const isBase = pu.conversion_factor === 1 || !pu.conversion_factor
-                                                                // Extract weight from unit name if it's already there, or use conversion factor
-                                                                const weightInName = u.name.match(/\(\s*(\d+(\.\d+)?)\s*k?g\s*\)/i)
-                                                                
-                                                                let labelStr = u.name
-                                                                if (!weightInName && !isBase) {
-                                                                    labelStr = `${u.name} (${pu.conversion_factor} ${product.unit || 'kg'})`
-                                                                } else if (!weightInName && isBase && baseWeight > 0) {
-                                                                    labelStr = `${u.name} (${baseWeight}kg)`
-                                                                }
-                                                                
+                                                                const normU = normalizeUnit(u.name)
+                                                                if (normU === normalizeUnit(baseUnit)) return // Skip base unit
+
+                                                                const weight = (pu.conversion_rate || 1) * baseWeight
+                                                                const labelStr = formatUnitWeight(u.name, weight)
                                                                 availableUnits.add(labelStr)
                                                             }
                                                         })

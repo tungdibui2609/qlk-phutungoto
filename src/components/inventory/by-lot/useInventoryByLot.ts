@@ -4,6 +4,12 @@ import { useSystem } from '@/contexts/SystemContext'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { normalizeSearchString, advancedMatchSearch } from '@/lib/searchUtils'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
+import { 
+    normalizeUnit, 
+    isKg, 
+    extractWeightFromName,
+    MAIN_PACKAGE_UNITS 
+} from '@/lib/unitConversion'
 
 interface ProductInfo {
     name: string
@@ -60,7 +66,7 @@ export function useInventoryByLot(
     const [internalSelectedZoneId, setInternalSelectedZoneId] = useState<string | null>(null)
     const [internalTargetUnitId, setInternalTargetUnitId] = useState<string | null>(null)
     
-    // Sycn with external filters if provided
+    // Sync with external filters if provided
     const searchTerm = externalFilters?.searchTerm !== undefined ? externalFilters.searchTerm : internalSearchTerm
     const searchMode = externalFilters?.searchMode || 'all'
     const setSearchTerm = externalFilters?.searchTerm !== undefined ? (() => {}) : setInternalSearchTerm
@@ -75,7 +81,7 @@ export function useInventoryByLot(
     const setSelectedZoneId = externalFilters?.selectedZoneId !== undefined ? (() => {}) : setInternalSelectedZoneId
 
     const selectedCategoryIds = externalFilters?.selectedCategoryIds || []
-    const [branches, setBranches] = useState<{ id: string, name: string }[]>([])
+    const [branches, setBranches] = useState<{ id: string, name: string, is_default?: boolean }[]>([])
     const [allZones, setAllZones] = useState<any[]>([])
     const [posToZoneMap, setPosToZoneMap] = useState<Record<string, string>>({})
     const [zoneHierarchy, setZoneHierarchy] = useState<Record<string, string | null>>({})
@@ -90,7 +96,7 @@ export function useInventoryByLot(
         fetchBranches()
         fetchLots()
 
-        // 🟢 Real-time Subscription: Listen for changes in positions
+        // Real-time Subscription: Listen for changes in positions
         const channel = supabase
             .channel('inventory-by-lot-positions')
             .on(
@@ -122,8 +128,9 @@ export function useInventoryByLot(
             console.error('Error fetching branches:', error)
         }
         if (data) {
-            setBranches(data)
-            const defaultBranch = data.find(b => b.is_default)
+            setBranches(data as any)
+            const branchList = data as any[]
+            const defaultBranch = branchList.find(b => b.is_default)
             if (defaultBranch) {
                 setSelectedBranch(defaultBranch.name)
             }
@@ -133,12 +140,7 @@ export function useInventoryByLot(
     async function fetchLots(showLoading = true) {
         if (showLoading) setLoading(true)
 
-        let allData: any[] = []
-        let fetchFrom = 0
-        const FETCH_PAGE_SIZE = 1000
-
         try {
-            // 0. Helper for paginated fetch on any table
             const fetchAll = async (tableName: string, selectStr: string = '*', filterFn?: (q: any) => any) => {
                 let results: any[] = []
                 let from = 0
@@ -164,23 +166,11 @@ export function useInventoryByLot(
                 return results
             }
 
-            // 2. Fetch all components separately
             let sysCode = (systemType || 'FROZEN').trim().toUpperCase()
             if (sysCode === 'FROZEN') sysCode = 'KHO_DONG_LANH'
             else if (sysCode === 'DRY') sysCode = 'KHO_VAT_TU_BAO_BI'
 
-            console.log('Fetching inventory data for system:', sysCode)
-
-            // Define individual fetch promises to handle errors independently if needed
-            const fetchLotsData = fetchAll('lots', '*', (q: any) => q.eq('system_code', sysCode))
-            const fetchItemsData = fetchAll('lot_items', '*')
-            const fetchProductsData = fetchAll('products', '*', (q: any) => q.or(`system_code.eq.${sysCode},system_type.eq.${sysCode}`))
-            const fetchSuppliersData = fetchAll('suppliers', 'id, name')
-            const fetchTagsData = fetchAll('lot_tags', 'tag, lot_id, lot_item_id')
-            const fetchPositionsData = fetchAll('positions', 'id, code, lot_id', (q: any) => q.eq('system_type', sysCode))
-            const fetchZonePosData = fetchAll('zone_positions', 'position_id, zone_id')
-            const fetchCatRelData = fetchAll('product_category_rel', 'product_id, category_id')
-
+            //@ts-ignore
             const [
                 allLots, 
                 allLotItems, 
@@ -193,30 +183,18 @@ export function useInventoryByLot(
                 allZonesData,
                 allCategories
             ] = await Promise.all([
-                fetchLotsData,
-                fetchItemsData,
-                fetchProductsData,
-                fetchSuppliersData,
-                fetchTagsData,
-                fetchPositionsData,
-                fetchZonePosData,
-                fetchCatRelData,
+                fetchAll('lots', '*', (q: any) => q.eq('system_code', sysCode)),
+                fetchAll('lot_items', '*'),
+                fetchAll('products', '*', (q: any) => q.or(`system_code.eq.${sysCode},system_type.eq.${sysCode}`)),
+                fetchAll('suppliers', 'id, name'),
+                fetchAll('lot_tags', 'tag, lot_id, lot_item_id'),
+                fetchAll('positions', 'id, code, lot_id', (q: any) => q.eq('system_type', sysCode)),
+                fetchAll('zone_positions', 'position_id, zone_id'),
+                fetchAll('product_category_rel', 'product_id, category_id'),
                 fetchAll('zones', '*', (q: any) => q.eq('system_type', sysCode)),
                 fetchAll('categories', 'id, name')
             ])
 
-            console.log(`[Inventory Data Debug]`, {
-                lots: allLots.length,
-                items: allLotItems.length,
-                products: allProducts.length,
-                categories: allCategories.length,
-                suppliers: allSuppliers.length,
-                tags: allTags.length,
-                positions: allLotPositions.length,
-                zones: allZonesData.length
-            })
-
-            // 3. Build Maps for Efficiency
             const cMap: Record<string, string> = {}
             allCategories.forEach((c: any) => cMap[c.id] = c.name)
             setCategoryMap(cMap)
@@ -269,13 +247,12 @@ export function useInventoryByLot(
             })
             setPosToZoneMap(pToZMap)
 
-            // Re-apply grouping logic with ALL fresh data
             const allPositionsWithZones = allLotPositions.map((p: any) => ({
                 ...p,
                 zone_id: pToZMap[p.id] || null
             }))
             
-            const { zones: groupedZones, positions: _ } = groupWarehouseData(allZonesData, allPositionsWithZones)
+            const { zones: groupedZones } = groupWarehouseData(allZonesData, allPositionsWithZones)
             setAllZones(groupedZones)
             
             const hierarchy: Record<string, string | null> = {}
@@ -284,7 +261,6 @@ export function useInventoryByLot(
             })
             setZoneHierarchy(hierarchy)
 
-            // 4. Assemble and Filter
             const assembled = allLots
                 .filter((lot: any) => lot.status === 'active')
                 .map((lot: any) => {
@@ -300,10 +276,7 @@ export function useInventoryByLot(
                 })
 
             const filtered = assembled.filter((lot: any) => {
-                // System Filter (Secondary safety)
                 if (sysCode && lot.system_code && lot.system_code.toUpperCase() !== sysCode) return false
-                
-                // Branch Filter
                 if (selectedBranch && selectedBranch !== "Tất cả") {
                     const lotWarehouse = (lot.warehouse_name || '').trim()
                     const targetBranch = selectedBranch.trim()
@@ -313,14 +286,8 @@ export function useInventoryByLot(
             })
             setLots(filtered as any)
         } catch (err: any) {
-            console.error('Error in fetchLots loop:', err)
-            // supbase error fix: if err is object, log its properties
-            let errMsg = 'Lỗi khi tải dữ liệu.'
-            if (err && typeof err === 'object') {
-                errMsg = err.message || err.details || JSON.stringify(err)
-            }
-            // Show alert to user for better visibility
-            alert('Lỗi tải dữ liệu tồn kho: ' + errMsg)
+            console.error('Error in fetchLots:', err)
+            alert('Lỗi tải dữ liệu tồn kho: ' + (err.message || 'Unknown error'))
         } finally {
             setLoading(false)
         }
@@ -328,7 +295,6 @@ export function useInventoryByLot(
 
     const groupedInventory = useMemo(() => {
         const searchVal = searchTerm || ''
-        console.log(`[Search Debug] Run: val="${searchVal}", mode="${searchMode}", lots=${lots.length}`)
         
         const getCatNames = (p: any) => {
             if (!p) return []
@@ -353,48 +319,35 @@ export function useInventoryByLot(
             }
             return ids
         }
+
         const getSearchable = (p: any, l: any, mode: string) => {
             const res: string[] = []
-            
-            // 1. Mã (Lot, SKU, Internal Code)
             if (mode === 'all' || mode === 'code') {
                 if (l.code) res.push(l.code)
                 if (p?.sku) res.push(p.sku)
                 if (p?.internal_code) res.push(p.internal_code)
             }
-
-            // 2. Tên (Sản phẩm, Tên nội bộ)
             if (mode === 'all' || mode === 'name') {
                 if (p?.name) res.push(p.name)
                 if (p?.internal_name) res.push(p.internal_name)
             }
-
-            // 3. Mã phụ (Tags)
             if (mode === 'all' || mode === 'tag') {
                 l.lot_tags?.forEach((t: any) => res.push(t.tag))
             }
-
-            // 4. Vị trí
             if (mode === 'all' || mode === 'position') {
                 l.positions?.forEach((pos: any) => res.push(pos.code))
             }
-
-            // 5. Danh mục
             if (mode === 'all' || mode === 'category') {
                 getCatNames(p).forEach(cn => res.push(cn))
             }
-
-            // 6. Các trường khác (Chỉ cho mode 'all')
             if (mode === 'all') {
                 if (l.suppliers?.name) res.push(l.suppliers.name)
                 if (l.notes) res.push(l.notes)
                 if (l.warehouse_name) res.push(l.warehouse_name)
             }
-
             return res
         }
 
-        // 1. Helper for Zone Filtering
         const isDescendantOrSelf = (targetId: string, searchId: string): boolean => {
             if (targetId === searchId) return true
             let current = zoneHierarchy[targetId]
@@ -405,9 +358,7 @@ export function useInventoryByLot(
             return false
         }
 
-        // 2. Perform Filtering on LOTs first
         const filteredLots = lots.filter(lot => {
-            // Zone Filter
             if (selectedZoneId) {
                 const matchesZone = lot.positions?.some((p: any) => {
                     const zId = posToZoneMap[p.id]
@@ -415,27 +366,20 @@ export function useInventoryByLot(
                 })
                 if (!matchesZone) return false
             }
-
-            // 🟢 Category Filter
             if (selectedCategoryIds.length > 0) {
                 const lotCatIds = getCatIds(lot.products)
                 const matchesCategory = lotCatIds.some(id => selectedCategoryIds.includes(id))
                 const matchesItemCategory = lot.lot_items?.some(item => getCatIds(item.products).some(id => selectedCategoryIds.includes(id)))
                 if (!matchesCategory && !matchesItemCategory) return false
             }
-
-            // Generic Matcher 
             if (!searchVal) return true
-            
             const matchInLot = advancedMatchSearch(getSearchable(lot.products, lot, searchMode), searchVal)
             const matchInItems = lot.lot_items?.some(item => advancedMatchSearch(getSearchable(item.products, lot, searchMode), searchVal))
-
             return matchInLot || matchInItems
         })
 
         const groups = new Map<string, GroupedProduct>()
 
-        // 3. Aggregate only the matching lots
         filteredLots.forEach(lot => {
             const processItem = (
                 sku: string,
@@ -456,19 +400,48 @@ export function useInventoryByLot(
                 let displayQty = qty
                 let displayUnit = unit
                 let key = `${sku}__${unit}`
+                let isUnconvertible = false
 
                 const targetUnit = targetUnitId ? units.find(u => u.id === targetUnitId) : null
+                const isTargetKg = targetUnit && isKg(targetUnit.name)
+                const hasWeightSuffix = extractWeightFromName(unit) !== null
+
                 const isConvertible = targetUnitId && productId && baseUnit && (
                     baseUnit.toLowerCase() === targetUnit?.name?.toLowerCase() ||
-                    conversionMap.get(productId)?.has(targetUnitId)
+                    conversionMap.get(productId)?.has(targetUnitId) ||
+                    (isTargetKg && hasWeightSuffix)
                 )
 
                 if (targetUnitId && isConvertible) {
-                    displayUnit = targetUnit!.name
+                    const rate = conversionMap.get(productId)?.get(targetUnitId)
+                    const suffix = (rate && rate > 1 && !targetUnit!.name.includes('(')) ? ` (${rate}kg)` : ''
+                    displayUnit = targetUnit!.name + suffix
                     displayQty = convertUnit(productId, unit, targetUnit!.name, qty, baseUnit)
                     key = `${sku}__${targetUnitId}`
                 } else if (targetUnitId) {
                     key = `${sku}__${unit}__UNCONVERTIBLE`
+                    isUnconvertible = true
+                }
+                
+                if (!displayUnit.includes('(')) {
+                    const normU = normalizeUnit(displayUnit)
+                    const productRates = productId ? conversionMap.get(productId) : null
+                    let rate = undefined
+
+                    if (productRates) {
+                        // Find a unit ID that matches the display name AND has a rule for this product
+                        const matchingUnit = units.find(u => {
+                            const n = normalizeUnit(u.name)
+                            return (n === normU || n.replace(/\s*\([^)]*\)/, '').trim() === normU) && productRates.has(u.id)
+                        })
+                        if (matchingUnit) {
+                            rate = productRates.get(matchingUnit.id)
+                        }
+                    }
+
+                    if (rate && rate > 1) {
+                        displayUnit = displayUnit + ` (${rate}kg)`
+                    }
                 }
 
                 const catIds: string[] = []
@@ -494,7 +467,6 @@ export function useInventoryByLot(
                 group.totalQuantity += displayQty
                 if (!group.lotCodes.includes(lot.code)) group.lotCodes.push(lot.code)
                 
-                // Ensure all categories are collected if they differ between lots (unlikely but safe)
                 catIds.forEach(cid => {
                     if (!group.categoryIds.includes(cid)) group.categoryIds.push(cid)
                 })

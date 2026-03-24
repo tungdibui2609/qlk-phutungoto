@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Plus, Save, FileText, Calendar, Info, Activity, Factory, Package, Users, Weight, Hash, Trash2, Wand2, Search, Loader2, Warehouse, ChevronDown, CheckCircle2, X, Scale } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
 import { useSystem } from '@/contexts/SystemContext'
+import { extractWeightFromName, MAIN_PACKAGE_UNITS, normalizeUnit, convertUnit } from '@/lib/unitConversion'
 
 interface ProductionLot {
     id?: string
@@ -50,9 +51,6 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const calculateFinalWeight = (lot: any) => {
         const rules = lot.conversion_rules || [];
         if (rules.length === 0) return 0;
-        
-        // Find the weight of the FIRST unit in the chain (usually the largest one like 'Thùng')
-        // We need to find how many base units (Kg) it represents.
         
         const getUnitWeight = (unitName: string): number => {
             if (unitName.toLowerCase() === 'kg') return 1;
@@ -165,8 +163,32 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
         if (isOpen) {
             fetchCustomers()
             fetchUnits()
+            // Fetch product units for conversion logic
+            fetchProductUnits()
         }
     }, [isOpen])
+
+    const [productUnits, setProductUnits] = useState<any[]>([])
+
+    const fetchProductUnits = async () => {
+        const { data } = await supabase.from('product_units').select('*')
+        if (data) setProductUnits(data)
+    }
+
+    const unitNameMap = useMemo(() => {
+        const map = new Map<string, string>()
+        units.forEach(u => map.set(normalizeUnit(u.name), u.id))
+        return map
+    }, [units])
+
+    const conversionMap = useMemo(() => {
+        const map = new Map<string, Map<string, number>>()
+        productUnits.forEach(pu => {
+            if (!map.has(pu.product_id)) map.set(pu.product_id, new Map())
+            map.get(pu.product_id)?.set(pu.unit_id, pu.conversion_rate || 1)
+        })
+        return map
+    }, [productUnits])
 
     useEffect(() => {
         if (targetSystemCode) {
@@ -175,6 +197,20 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             setProducts([])
         }
     }, [targetSystemCode])
+
+    // Helper to get unit weight from database or name (if explicitly bracketed)
+    const getUnitWeight = useCallback((productId: string | null, unitName: string | null, baseUnitName: string | null) => {
+        if (!productId || !unitName || !baseUnitName) return null
+        const normIn = normalizeUnit(unitName)
+        const normBase = normalizeUnit(baseUnitName)
+        if (normIn === normBase || (normIn === 'kg' || normIn === 'kilogram')) return 1
+        
+        // Use extracted weight if present in unit name (e.g. "Thùng (20kg)")
+        const extracted = extractWeightFromName(unitName)
+        if (extracted) return extracted
+
+        return null // Removed product name fallback
+    }, [])
 
     const fetchCustomers = async () => {
         if (!profile?.company_id) return
@@ -200,7 +236,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
         setLoadingProducts(true)
         const { data } = await supabase
             .from('products')
-            .select('id, name, sku, weight_kg, unit')
+            .select('id, name, sku, weight_kg, unit, product_units(unit_id, conversion_rate)')
             .eq('system_type', sysCode)
             .eq('is_active', true)
             .order('name')
@@ -616,6 +652,11 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                 <div className={readOnly ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-3'}>
                                     {lots.map((lot, idx) => {
                                         const product = products.find(p => p.id === lot.product_id);
+                                        // Placeholder for convertUnit, assuming it would be provided by a context or hook
+                                        // For now, it's a no-op to avoid runtime errors.
+                                        // const convertUnit = (productId: string, fromUnit: string, toUnit: string, quantity: number, baseUnit: string, unitMap: Map<string, string>, convMap: Map<string, Map<string, number>>) => quantity;
+                                        // Example usage if `selectedProduct` was defined:
+                                        // (qty, from, to) => convertUnit(selectedProduct.id, from, to, qty, selectedProduct.unit, unitNameMap, conversionMap);
                                         
                                         if (readOnly) {
                                             return (
@@ -824,15 +865,19 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                                     >
                                                                         <option value="">-- Chọn Đơn vị --</option>
                                                                         {units.filter(u => u.name !== lot.unit).map(u => {
-                                                                            // Try to find if this unit has a known conversion factor or weight in name
-                                                                            const weightInName = u.name.match(/\(\s*(\d+(\.\d+)?)\s*k?g\s*\)/i)
+                                                                            const hasWeightInName = u.name.includes('(') && (u.name.toLowerCase().includes('kg') || u.name.toLowerCase().includes('g'))
                                                                             let label = u.name
                                                                             
-                                                                            // If no weight in name, we might want to hint at the current rule's factor if it matches
-                                                                            // But for the dropdown, we just show the name. 
-                                                                            // However, the user wants "Thùng (20kg)"
-                                                                            if (!weightInName && u.name === 'Thùng' && lot.weight_per_unit > 0) {
-                                                                                label = `${u.name} (${lot.weight_per_unit}kg)`
+                                                                            if (!hasWeightInName) {
+                                                                                const product = products.find(p => p.id === lot.product_id)
+                                                                                const pUnit = (product as any)?.product_units?.find((pu: any) => pu.unit_id === u.id)
+                                                                                
+                                                                                // Prefer conversion_rate from DB, fallback to current lot weight if it's "Thùng"
+                                                                                const factor = pUnit ? pUnit.conversion_rate : (u.name === 'Thùng' ? lot.weight_per_unit : 0)
+                                                                                
+                                                                                if (factor > 0) {
+                                                                                    label = `${u.name} (${factor}kg)`
+                                                                                }
                                                                             }
 
                                                                             return <option key={u.id} value={label}>{label}</option>

@@ -1,6 +1,13 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { toBaseAmount as toBaseAmountLogic, getBaseToKgRate as getBaseToKgRateLogic, convertUnit as convertUnitLogic, UnitNameMap, ConversionMap } from '@/lib/unitConversion'
+import { 
+    toBaseAmount as toBaseAmountLogic, 
+    getBaseToKgRate as getBaseToKgRateLogic, 
+    convertUnit as convertUnitLogic, 
+    normalizeUnit,
+    UnitNameMap, 
+    ConversionMap 
+} from '@/lib/unitConversion'
 
 interface Unit {
     id: string
@@ -15,16 +22,13 @@ interface ProductUnit {
 
 export function useUnitConversion() {
     const [loading, setLoading] = useState(true)
-
-    // Maps for O(1) access
-    const [unitNameMap, setUnitNameMap] = useState<UnitNameMap>(new Map()) // Name (lower) -> ID
-    const [conversionMap, setConversionMap] = useState<ConversionMap>(new Map()) // ProductID -> UnitID -> Rate
+    const [units, setUnits] = useState<Unit[]>([])
+    const [productUnits, setProductUnits] = useState<ProductUnit[]>([])
 
     useEffect(() => {
         async function fetchData() {
             setLoading(true)
             try {
-                // Fetch all with pagination to bypass 1000 limit
                 const fetchAll = async (tableName: string, query: any) => {
                     let allResults: any[] = [];
                     let from = 0;
@@ -45,22 +49,8 @@ export function useUnitConversion() {
                     fetchAll('product_units', supabase.from('product_units').select('product_id, unit_id, conversion_rate'))
                 ]);
 
-                if (unitsData) {
-                    const uMap = new Map<string, string>()
-                    unitsData.forEach((u: Unit) => uMap.set(u.name.toLowerCase(), u.id))
-                    setUnitNameMap(uMap)
-                }
-
-                if (prodUnitsData) {
-                    const cMap = new Map<string, Map<string, number>>()
-                    prodUnitsData.forEach((pu: ProductUnit) => {
-                        if (!cMap.has(pu.product_id)) {
-                            cMap.set(pu.product_id, new Map())
-                        }
-                        cMap.get(pu.product_id)!.set(pu.unit_id, pu.conversion_rate)
-                    })
-                    setConversionMap(cMap)
-                }
+                setUnits(unitsData || [])
+                setProductUnits(prodUnitsData || [])
             } catch (error) {
                 console.error('Error fetching conversion data', error)
             } finally {
@@ -70,26 +60,78 @@ export function useUnitConversion() {
         fetchData()
     }, [])
 
-    // Wrapper: Convert any unit to Base Unit amount
-    const toBaseAmount = useCallback((productId: string | null, unitName: string | null, qty: number, baseUnitName: string | null): number => {
+    const unitNameMap = useMemo(() => {
+        const m = new Map<string, string>()
+        units.forEach(u => {
+            const normalized = normalizeUnit(u.name)
+            m.set(normalized, u.id)
+            // Also map the name without weight suffix if present (e.g. "Thùng" for "Thùng (20kg)")
+            const withoutWeight = normalized.replace(/\s*\([^)]*\)/, '').trim()
+            if (!m.has(withoutWeight)) {
+                m.set(withoutWeight, u.id)
+            }
+        })
+        return m
+    }, [units])
+
+    const unitIdMap = useMemo(() => {
+        const m = new Map<string, string>()
+        units.forEach(u => m.set(u.id, normalizeUnit(u.name)))
+        return m
+    }, [units])
+
+    const conversionMap = useMemo(() => {
+        const cMap = new Map<string, Map<string, number>>()
+        productUnits.forEach((pu: ProductUnit) => {
+            if (!cMap.has(pu.product_id)) {
+                cMap.set(pu.product_id, new Map())
+            }
+            const innerMap = cMap.get(pu.product_id)!
+            // Map by ID
+            innerMap.set(pu.unit_id, pu.conversion_rate)
+            
+            // Also map by Name (Normalized)
+            const normName = unitIdMap.get(pu.unit_id)
+            if (normName) {
+                innerMap.set(normName, pu.conversion_rate)
+            }
+        })
+        return cMap
+    }, [productUnits, unitIdMap])
+
+    const getBaseAmount = useCallback((
+        productId: string | null, 
+        unitName: string | null, 
+        qty: number, 
+        baseUnitName: string | null
+    ): number => {
         return toBaseAmountLogic(productId, unitName, qty, baseUnitName, unitNameMap, conversionMap)
     }, [unitNameMap, conversionMap])
 
-    // Wrapper: Get Product's KG conversion rate
-    const getBaseToKgRate = useCallback((productId: string | null, baseUnitName: string | null): number | null => {
+    const getBaseToKgRate = useCallback((
+        productId: string | null, 
+        baseUnitName: string | null
+    ): number | null => {
         return getBaseToKgRateLogic(productId, baseUnitName, unitNameMap, conversionMap)
     }, [unitNameMap, conversionMap])
 
-    const convertUnit = useCallback((productId: string | null, fromUnit: string | null, toUnit: string | null, qty: number, baseUnit: string | null): number => {
+    const getConvertedUnit = useCallback((
+        productId: string | null, 
+        fromUnit: string | null, 
+        toUnit: string | null, 
+        qty: number, 
+        baseUnit: string | null
+    ): number => {
         return convertUnitLogic(productId, fromUnit, toUnit, qty, baseUnit, unitNameMap, conversionMap)
     }, [unitNameMap, conversionMap])
 
     return {
         loading,
-        toBaseAmount,
+        units,
+        getBaseAmount,
         getBaseToKgRate,
-        convertUnit,
-        unitNameMap, // Export maps if needed for memoization dependencies
+        convertUnit: getConvertedUnit, // Maintain internal naming consistency
+        unitNameMap,
         conversionMap
     }
 }

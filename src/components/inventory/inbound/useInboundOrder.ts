@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
 import { Product, Supplier, Unit, OrderItem } from '../types'
 import { generateOrderCode } from '@/lib/orderCodeUtils'
+import { normalizeUnit, convertUnit } from '@/lib/unitConversion'
 
 export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, onSuccess, onClose }: any) {
     const { showToast } = useToast()
@@ -38,6 +39,25 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
     const [orderTypes, setOrderTypes] = useState<any[]>([])
     const [loadingData, setLoadingData] = useState(false)
     const [submitting, setSubmitting] = useState(false)
+
+    const unitNameMap = useMemo(() => {
+        const map = new Map<string, string>()
+        units.forEach(u => map.set(normalizeUnit(u.name), u.id))
+        return map
+    }, [units])
+
+    const conversionMap = useMemo(() => {
+        const map = new Map<string, Map<string, number>>()
+        products.forEach(p => {
+            if (!map.has(p.id)) map.set(p.id, new Map())
+            if (p.product_units) {
+                p.product_units.forEach((pu: any) => {
+                    map.get(p.id)?.set(pu.unit_id, pu.conversion_rate || 1)
+                })
+            }
+        })
+        return map
+    }, [products])
 
     useEffect(() => {
         if (isOpen) {
@@ -131,7 +151,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                 // Fix Supplier: Use fetched data instead of waiting for state update
                 if (initialData.supplierId) {
                     setSupplierId(initialData.supplierId)
-                    const s = (suppRes.data || []).find((x: any) => x.id === initialData.supplierId)
+                    const s = (suppRes.data as any[] || []).find((x: any) => x.id === initialData.supplierId)
                     if (s) {
                         setSupplierAddress(s.address || '')
                         setSupplierPhone(s.phone || '')
@@ -186,6 +206,29 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
             if (field === 'quantity') {
                 const newValue = Number(value)
                 return { ...item, quantity: newValue, document_quantity: !item.isDocQtyVisible ? newValue : item.document_quantity }
+            }
+            if (field === 'unit') {
+                const newVal = value as string
+                const oldVal = item.unit
+                const prod = products.find(p => p.id === item.productId)
+                const baseUnitName = prod?.unit || ''
+                
+                const newQty = convertUnit(
+                    item.productId,
+                    oldVal,
+                    newVal,
+                    item.quantity || 0,
+                    baseUnitName,
+                    unitNameMap,
+                    conversionMap
+                )
+
+                return { 
+                    ...item, 
+                    unit: newVal, 
+                    quantity: Number(newQty.toFixed(3)),
+                    document_quantity: !item.isDocQtyVisible ? Number(newQty.toFixed(3)) : item.document_quantity
+                }
             }
             return { ...item, [field]: value }
         }))
@@ -248,7 +291,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
             // Cleanup LOT metadata if this was a buffer sync
             if (initialData?.batchData) {
                 for (const p of initialData.batchData) {
-                    const { data: lot } = await supabase.from('lots').select('metadata').eq('id', p.lot_id).single()
+                    const { data: lot } = await supabase.from('lots').select('metadata').eq('id', p.lot_id).single() as any
                     if (lot) {
                         const metadata = { ...lot.metadata as any }
                         metadata.system_history.inbound = metadata.system_history.inbound.map((inb: any) => {
@@ -257,7 +300,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                             }
                             return inb
                         })
-                        await supabase.from('lots').update({ metadata }).eq('id', p.lot_id)
+                        await (supabase.from('lots') as any).update({ metadata }).eq('id', p.lot_id)
                     }
                 }
             }
