@@ -27,11 +27,12 @@ const PositionCell = React.memo<{
     onViewDetails?: (lotId: string) => void,
     onPositionMenu?: (pos: any, event: React.MouseEvent) => void,
     isPrintPage?: boolean,
-    isSanh?: boolean
+    isSanh?: boolean,
+    isEmptyMode?: boolean
 }>(({
     pos, cellHeight, cellWidth, isMobile, isOccupied, isSelected,
     isTargetLot, lotDetail, isAssignmentMode, isHighlightBlinking, displayInternalCode, isGrouped,
-    onPositionSelect, onViewDetails, onPositionMenu, isPrintPage, isSanh
+    onPositionSelect, onViewDetails, onPositionMenu, isPrintPage, isSanh, isEmptyMode
 }) => {
     const ids = (pos as any).realIds || [pos.id]
     let bgClass = 'bg-white dark:bg-gray-700'
@@ -54,13 +55,20 @@ const PositionCell = React.memo<{
     return (
         <div
             style={{
-                height: cellHeight > 0 
-                    ? `${cellHeight}px` 
-                    : (isPrintPage ? '100%' : (isMobile ? '100px' : '125px')),
-                minHeight: cellHeight > 0 
-                    ? `${cellHeight}px` 
-                    : (isPrintPage ? (isSanh ? '60px' : '125px') : (isMobile ? '100px' : '125px')),
-                width: cellWidth > 0 ? `${cellWidth}px` : '100%'
+                height: isEmptyMode 
+                    ? 'auto'
+                    : (cellHeight > 0 
+                        ? `${cellHeight}px` 
+                        : (isPrintPage ? '100%' : (isMobile ? '100px' : '125px'))),
+                minHeight: isEmptyMode
+                    ? '45px'
+                    : (cellHeight > 0 
+                        ? `${cellHeight}px` 
+                        : (isPrintPage ? (isSanh ? '60px' : '125px') : (isMobile ? '100px' : '125px'))),
+                width: isEmptyMode 
+                    ? '100%' 
+                    : (cellWidth > 0 ? `${cellWidth}px` : '100%'),
+                minWidth: isEmptyMode ? '70px' : '0'
             }}
             className={`
                 relative ${isAssignmentMode ? 'cursor-pointer' : ''} ${isMobile ? 'p-0.5' : 'p-1'} rounded-lg border-2 transition-all
@@ -68,7 +76,8 @@ const PositionCell = React.memo<{
                 ${bgClass} ${borderClass} ${ringClass}
                 ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.02] hover:z-10' : ''}
                 ${isHighlightBlinking ? 'animate-highlight-blink' : ''}
-                ${isPrintPage ? `min-h-${isSanh ? '0' : '[125px]'} h-${isSanh ? 'auto' : '[125px]'} print:overflow-visible` : ''}
+                ${isPrintPage && !isEmptyMode ? `min-h-${isSanh ? '0' : '[125px]'} h-${isSanh ? 'auto' : '[125px]'} print:overflow-visible` : ''}
+                ${isEmptyMode ? 'items-start justify-start !p-0.5 rounded-md border-[1.5px]' : ''}
             `}
             onClick={() => isAssignmentMode && onPositionSelect?.(ids)}
         >
@@ -96,8 +105,8 @@ const PositionCell = React.memo<{
                     )}
                 </button>
             )}
-
-            <div className="flex justify-center items-start w-full relative mb-1 shrink-0">
+            
+            <div className={`flex justify-center items-start w-full relative mb-1 shrink-0 ${isEmptyMode ? 'h-auto !mb-0' : ''}`}>
                 {!isAssignmentMode && isOccupied && lotDetail && !isPrintPage && (
                     <button
                         onClick={(e) => {
@@ -111,7 +120,7 @@ const PositionCell = React.memo<{
                     </button>
                 )}
 
-                <div className={`font-mono ${isGrouped ? 'text-[8px]' : 'text-[10px]'} flex justify-center items-center text-black dark:text-white font-bold leading-tight w-full text-center ${cellWidth === 0 && !isGrouped ? 'whitespace-nowrap px-1' : 'break-all px-0.5'}`} style={{ minWidth: 0 }}>
+                <div className={`font-mono ${isGrouped ? 'text-[8px]' : 'text-[10px]'} flex justify-center items-center text-black dark:text-white font-bold leading-tight w-full text-center ${isEmptyMode ? 'whitespace-nowrap px-1 overflow-hidden' : (cellWidth === 0 && !isGrouped ? 'whitespace-nowrap px-1' : 'break-all px-0.5')}`} style={{ minWidth: 0 }}>
                     {pos.code}
                 </div>
 
@@ -141,7 +150,7 @@ const PositionCell = React.memo<{
                 </div>
             </div>
 
-            {lotDetail && isOccupied ? (
+            {lotDetail && isOccupied && !isEmptyMode ? (
                 <div className="flex flex-col items-center w-full flex-1 min-h-0 gap-0.5 mt-0.5">
                     <div className={`${isGrouped ? 'text-[8px]' : 'text-[10px]'} font-bold leading-tight w-full text-center shrink-0 ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'} ${isGrouped ? 'break-all' : 'line-clamp-1 text-ellipsis overflow-hidden'}`}>
                         {lotDetail.code}
@@ -207,9 +216,11 @@ const PositionCell = React.memo<{
                     </div>
                 </div>
             ) : (
-                <div className={`flex-1 shrink-0 flex items-center justify-center ${isPrintPage ? 'opacity-100' : 'opacity-0 hover:opacity-100'} transition-opacity`}>
-                    <span className="text-[10px] text-gray-400 font-medium font-mono uppercase">Trống</span>
-                </div>
+                !isEmptyMode && (
+                    <div className={`flex-1 shrink-0 flex items-center justify-center ${isPrintPage ? 'opacity-100' : 'opacity-0 hover:opacity-100'} transition-opacity`}>
+                        <span className="text-[10px] text-gray-400 font-medium font-mono uppercase">Trống</span>
+                    </div>
+                )
             )}
         </div>
     )
@@ -228,7 +239,8 @@ const PositionCell = React.memo<{
         prev.displayInternalCode === next.displayInternalCode &&
         prev.isGrouped === next.isGrouped &&
         prev.isPrintPage === next.isPrintPage &&
-        prev.isSanh === next.isSanh
+        prev.isSanh === next.isSanh &&
+        prev.isEmptyMode === next.isEmptyMode
 });
 
 export default PositionCell;

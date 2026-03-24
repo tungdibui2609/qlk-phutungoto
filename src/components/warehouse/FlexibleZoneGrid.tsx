@@ -18,6 +18,13 @@ interface PositionWithZone extends Position {
     zone_id?: string | null
 }
 
+type ZoneTreeNode = Zone & { 
+    children: ZoneTreeNode[], 
+    positions: PositionWithZone[], 
+    totalPositions: number, 
+    descendantIds: string[] 
+}
+
 interface FlexibleZoneGridProps {
     zones: Zone[]
     positions: PositionWithZone[]
@@ -46,6 +53,7 @@ interface FlexibleZoneGridProps {
     onToggleMergeZone?: (zoneId: string) => void
     isCapturing?: boolean
     isPrintPage?: boolean
+    isEmptyMode?: boolean
 }
 
 export default function FlexibleZoneGrid({
@@ -75,7 +83,8 @@ export default function FlexibleZoneGrid({
     mergedZones = new Set(),
     onToggleMergeZone,
     isCapturing = false,
-    isPrintPage = false
+    isPrintPage = false,
+    isEmptyMode = false
 }: FlexibleZoneGridProps) {
     const [isMobile, setIsMobile] = React.useState(false)
     const [localNotes, setLocalNotes] = React.useState<Record<string, string>>({})
@@ -88,7 +97,7 @@ export default function FlexibleZoneGrid({
     }, [])
 
     const zoneTree = useMemo(() => {
-        const map = new Map<string, Zone & { children: Zone[], positions: PositionWithZone[], totalPositions: number, descendantIds: string[] }>()
+        const map = new Map<string, ZoneTreeNode>()
 
         zones.forEach(z => {
             map.set(z.id, { ...z, children: [], positions: [], totalPositions: 0, descendantIds: [] })
@@ -108,7 +117,7 @@ export default function FlexibleZoneGrid({
 
         const computeNodeData = (nodeId: string) => {
             const node = map.get(nodeId)!
-            node.children.sort((a, b) => {
+            node.children.sort((a: ZoneTreeNode, b: ZoneTreeNode) => {
                 const oa = (a as any).display_order ?? 0
                 const ob = (b as any).display_order ?? 0
                 if (oa !== ob) return oa - ob
@@ -123,7 +132,7 @@ export default function FlexibleZoneGrid({
             let totalPos = node.positions.length
             let descIds: string[] = []
 
-            node.children.forEach(child => {
+            node.children.forEach((child: ZoneTreeNode) => {
                 computeNodeData(child.id)
                 const computedChild = map.get(child.id)!
                 totalPos += computedChild.totalPositions
@@ -140,7 +149,7 @@ export default function FlexibleZoneGrid({
 
         return rootNodes
             .map(z => map.get(z.id)!)
-            .sort((a, b) => {
+            .sort((a: ZoneTreeNode, b: ZoneTreeNode) => {
                 const oa = (a as any).display_order ?? 0
                 const ob = (b as any).display_order ?? 0
                 if (oa !== ob) return oa - ob
@@ -148,7 +157,7 @@ export default function FlexibleZoneGrid({
             })
     }, [zones, positions])
 
-    function renderPositionCell(pos: any, cellHeight: number, cellWidth: number, isSanh?: boolean) {
+    function renderPositionCell(pos: PositionWithZone | any, cellHeight: number, cellWidth: number, isSanh?: boolean) {
         const realIds = pos.realIds || [pos.id]
         const isOccupied = realIds.some((id: string) => occupiedIds.has(id)) || !!pos.lot_id
         const isSelected = realIds.some((id: string) => selectedPositionIds.has(id))
@@ -178,6 +187,7 @@ export default function FlexibleZoneGrid({
                     isPrintPage={isPrintPage}
                     isGrouped={isGrouped}
                     isSanh={isSanh}
+                    isEmptyMode={isEmptyMode}
                 />
             )
         }
@@ -202,12 +212,13 @@ export default function FlexibleZoneGrid({
                 isPrintPage={isPrintPage}
                 isGrouped={isGrouped}
                 isSanh={isSanh}
+                isEmptyMode={isEmptyMode}
             />
         )
     }
 
     // Build a virtual merged position from an array of positions
-    function buildMergedPosition(positions: any[], mergedLevels?: string[]) {
+    function buildMergedPosition(positions: PositionWithZone[] | any[], mergedLevels?: string[]) {
         const sorted = [...positions].sort((a, b) =>
             (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })
         )
@@ -241,7 +252,7 @@ export default function FlexibleZoneGrid({
     }
 
     // Render positions grid — if zone is merged, render as single big cell
-    function renderPositionsGrid(zone: any, cellHeight: number, cellWidth: number, positionColumns: number, breadcrumb?: string[]) {
+    function renderPositionsGrid(zone: ZoneTreeNode, cellHeight: number, cellWidth: number, positionColumns: number, breadcrumb?: string[]) {
         const nameUpper = zone.name.toUpperCase()
         const isSanh = nameUpper.startsWith('SẢNH') || nameUpper.startsWith('SÀNH') || nameUpper.startsWith('SANH')
         const isBigBin = isGrouped && (zone.id.startsWith('v-bin-') || nameUpper.startsWith('Ô ') || isSanh)
@@ -251,8 +262,8 @@ export default function FlexibleZoneGrid({
         if (isBinMerged && isBigBin) {
             // Collect all positions from all descendant levels
             const allPositions: any[] = [...zone.positions]
-            const collectFromChildren = (node: any) => {
-                node.children.forEach((child: any) => {
+            const collectFromChildren = (node: ZoneTreeNode) => {
+                node.children.forEach((child: ZoneTreeNode) => {
                     allPositions.push(...child.positions)
                     collectFromChildren(child)
                 })
@@ -268,13 +279,13 @@ export default function FlexibleZoneGrid({
             const levelGroups: Array<{ name: string, items: any[] }> = []
 
             if (isBinMerged && isBigBin) {
-                const collectFromChildren = (node: any) => {
-                    node.children.forEach((child: any) => {
+                const collectFromChildren = (node: ZoneTreeNode) => {
+                    node.children.forEach((child: ZoneTreeNode) => {
                         levelNames.push(child.name)
                         
                         // Collect items for this level
                         const levelItemMap = new Map<string, any>()
-                        child.positions.forEach((p: any) => {
+                        child.positions.forEach((p: PositionWithZone) => {
                             if (p.lot_id && lotInfo[p.lot_id]?.items) {
                                 lotInfo[p.lot_id].items.forEach((item: any) => {
                                     const key = `${item.sku || ''}_${item.unit || ''}`
@@ -312,7 +323,7 @@ export default function FlexibleZoneGrid({
 
             // Aggregate all lot items from all real positions
             const itemMap = new Map<string, { product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string }>()
-            targetPositions.forEach((p: any) => {
+            targetPositions.forEach((p: PositionWithZone) => {
                 if (p.lot_id && lotInfo[p.lot_id]?.items) {
                     lotInfo[p.lot_id].items.forEach((item: any) => {
                         const key = `${item.sku || ''}_${item.unit || ''}`
@@ -350,6 +361,7 @@ export default function FlexibleZoneGrid({
                         isGrouped={isGrouped}
                         isSanh={isSanh}
                         isManualMerge={isManualMerge}
+                        isEmptyMode={isEmptyMode}
                     />
                 </div>
             )
@@ -357,21 +369,25 @@ export default function FlexibleZoneGrid({
 
         return (
             <div
-                className={`flex flex-col flex-1 ${mergedZones?.has(zone.id) ? 'h-full min-h-0' : 'h-auto'} gap-1.5 print:gap-1.5`}
+                className={`w-full ${isEmptyMode ? 'grid' : 'flex flex-col'} flex-1 ${mergedZones?.has(zone.id) ? 'h-full min-h-0' : 'h-auto'} ${isEmptyMode ? 'gap-1' : 'gap-2'} print:gap-1.5 overflow-visible`}
                 style={{
-                    display: 'grid',
-                    gridTemplateColumns: cellWidth > 0
-                        ? `repeat(${positionColumns}, ${cellWidth}px)`
-                        : `repeat(${positionColumns}, minmax(0, 1fr))`
+                    gridTemplateColumns: isEmptyMode 
+                        ? (cellWidth > 0 ? `repeat(auto-fill, ${cellWidth}px)` : `repeat(3, minmax(0, 1fr))`)
+                        : (!isEmptyMode && cellWidth > 0
+                            ? `repeat(${positionColumns}, ${cellWidth}px)`
+                            : `repeat(${positionColumns}, minmax(0, 1fr))`),
+                    width: isEmptyMode ? '100%' : '100%',
+                    minWidth: isEmptyMode ? '70px' : '0',
+                    gap: isEmptyMode ? '2px' : '6px'
                 }}
             >
-                {zone.positions.map((pos: any) => renderPositionCell(pos, cellHeight, cellWidth, isSanh))}
+                {zone.positions.map((pos: PositionWithZone) => renderPositionCell(pos, cellHeight, cellWidth, isSanh))}
             </div>
         )
     }
 
     function renderZone(
-        zone: Zone & { children: Zone[], positions: PositionWithZone[], totalPositions: number, descendantIds: string[] },
+        zone: ZoneTreeNode,
         depth: number = 0,
         breadcrumb: string[] = [],
         overrideBgStyle?: React.CSSProperties
@@ -393,6 +409,10 @@ export default function FlexibleZoneGrid({
             positionColumns = 2
         }
 
+        if (isEmptyMode) {
+            positionColumns = 10 // Giảm số cột để dễ chia hàng
+        }
+
         let cellWidth = layout?.cell_width ?? 0
         let cellHeight = layout?.cell_height ?? 0
 
@@ -400,6 +420,9 @@ export default function FlexibleZoneGrid({
             positionColumns = 3
             cellWidth = 0
             cellHeight = 0
+            if (isEmptyMode) {
+                // Header tầng cực nhỏ khi in sơ đồ trống
+            }
         }
         const childLayout = layout?.child_layout ?? 'vertical'
         const childColumns = layout?.child_columns ?? 0
@@ -409,7 +432,10 @@ export default function FlexibleZoneGrid({
         const alternatingRows = layout?.alternating_rows ?? false
         const headerColor = layout?.header_color ?? null
         const headerTextColor = layout?.header_text_color ?? null
-        const effectiveChildCols = childColumns > 0 ? childColumns : 3
+        let effectiveChildCols = childColumns > 0 ? childColumns : 3
+        if (isEmptyMode && depth <= 1) {
+            effectiveChildCols = 4
+        }
 
         if (depth === 0 && displayType === 'hidden') {
             displayType = 'auto'
@@ -421,20 +447,20 @@ export default function FlexibleZoneGrid({
         // Exclude virtual/empty positions from being selectable if not in assignment mode
         const selectablePositions = isAssignmentMode
             ? zone.positions
-            : zone.positions.filter(p => occupiedIds.has(p.id))
+            : zone.positions.filter((p: PositionWithZone) => occupiedIds.has(p.id))
 
         // Find all selectable IDs in this zone + descendants
         const allSelectableDescendantIds: string[] = []
 
         // Quick extraction to get all positions in descendant zones
-        const exploreSelectableIds = (z: typeof zone) => {
+        const exploreSelectableIds = (z: ZoneTreeNode) => {
             const zSelectable = isAssignmentMode
-                ? z.positions.map(p => p.id)
-                : z.positions.filter(p => occupiedIds.has(p.id)).map(p => p.id)
+                ? z.positions.map((p: PositionWithZone) => p.id)
+                : z.positions.filter((p: PositionWithZone) => occupiedIds.has(p.id)).map((p: PositionWithZone) => p.id)
             allSelectableDescendantIds.push(...zSelectable)
-            z.children.forEach(child => exploreSelectableIds(child as any))
+            z.children.forEach((child: ZoneTreeNode) => exploreSelectableIds(child))
         }
-        exploreSelectableIds(zone)
+        exploreSelectableIds(zone as ZoneTreeNode)
 
         const selectedCount = allSelectableDescendantIds.filter(id => selectedPositionIds.has(id)).length
         const totalSelectableCount = allSelectableDescendantIds.length
@@ -485,10 +511,10 @@ export default function FlexibleZoneGrid({
                                             : `repeat(${positionColumns}, minmax(auto, 1fr))`
                                     }}
                                 >
-                                    {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth))}
+                                    {zone.positions.map((pos: PositionWithZone) => renderPositionCell(pos, cellHeight, cellWidth, isSanh))}
                                 </div>
                             )}
-                            {zone.children.map(child => renderZone(child as any, depth + 1, currentBreadcrumb))}
+                            {zone.children.map((child: ZoneTreeNode) => renderZone(child, depth + 1, currentBreadcrumb))}
                         </div>
                     </div>
                 )
@@ -505,10 +531,10 @@ export default function FlexibleZoneGrid({
                                     : `repeat(${positionColumns}, minmax(auto, 1fr))`
                             }}
                         >
-                            {zone.positions.map(pos => renderPositionCell(pos, cellHeight, cellWidth, isSanh))}
+                            {zone.positions.map((pos: PositionWithZone) => renderPositionCell(pos, cellHeight, cellWidth, isSanh))}
                         </div>
                     )}
-                    {zone.children.map(child => renderZone(child as any, depth, currentBreadcrumb))}
+                    {zone.children.map((child: ZoneTreeNode) => renderZone(child, depth, currentBreadcrumb))}
                 </div>
             )
         }
@@ -625,7 +651,7 @@ export default function FlexibleZoneGrid({
                                                 onUpdateCollapsedZones(prev => {
                                                     const next = new Set(prev)
                                                     next.delete(zone.id)
-                                                    descendantIds.forEach(id => next.add(id))
+                                                    descendantIds.forEach((id: string) => next.add(id))
                                                     return next
                                                 })
                                             }}
@@ -642,7 +668,7 @@ export default function FlexibleZoneGrid({
                                                 onUpdateCollapsedZones(prev => {
                                                     const next = new Set(prev)
                                                     next.delete(zone.id)
-                                                    descendantIds.forEach(id => next.delete(id))
+                                                    descendantIds.forEach((id: string) => next.delete(id))
                                                     return next
                                                 })
                                             }}
@@ -723,7 +749,7 @@ export default function FlexibleZoneGrid({
                                     {shouldRenderGrid && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
                                     {hasChildren && !mergedZones.has(zone.id) && (
                                         <div className="mt-2 print:mt-0 space-y-1.5 px-1 pb-1 print:block">
-                                            {zone.children.map((child, idx) => (
+                                            {zone.children.map((child: ZoneTreeNode, idx: number) => (
                                                 <React.Fragment key={child.id}>
                                                     {isPrintPage && onTogglePageBreak && idx > 0 && (
                                                         <>
@@ -857,7 +883,7 @@ export default function FlexibleZoneGrid({
                                                 onUpdateCollapsedZones(prev => {
                                                     const next = new Set(prev)
                                                     next.delete(zone.id)
-                                                    descendantIds.forEach(id => next.add(id))
+                                                    descendantIds.forEach((id: string) => next.add(id))
                                                     return next
                                                 })
                                             }}
@@ -874,7 +900,7 @@ export default function FlexibleZoneGrid({
                                                 onUpdateCollapsedZones(prev => {
                                                     const next = new Set(prev)
                                                     next.delete(zone.id)
-                                                    descendantIds.forEach(id => next.delete(id))
+                                                    descendantIds.forEach((id: string) => next.delete(id))
                                                     return next
                                                 })
                                             }}
@@ -950,7 +976,7 @@ export default function FlexibleZoneGrid({
                         </div>
 
                         {!isCollapsed && (
-                            <div className={`p-2 ${mergedZones.has(zone.id) ? 'flex-1 flex flex-col h-full min-h-0' : 'flex flex-col h-auto'} bg-emerald-50/10 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800 print:border-t-none print:flex print:flex-col print:overflow-visible print:h-auto`}>
+                            <div className={`${isEmptyMode ? 'p-0' : 'p-2'} ${mergedZones.has(zone.id) ? 'flex-1 flex flex-col h-full min-h-0' : 'flex flex-col h-auto'} bg-emerald-50/10 dark:bg-gray-900/10 ${isEmptyMode ? '' : 'border-t border-gray-100 dark:border-gray-800'} print:border-t-none print:flex print:flex-col print:overflow-visible print:h-auto`}>
                                 {shouldRenderGrid && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
                                 {hasChildren && !isBinMerged && (
                                     <div className="w-full">
@@ -967,20 +993,20 @@ export default function FlexibleZoneGrid({
                                                 <div
                                                     className={
                                                         childLayout === 'horizontal'
-                                                            ? 'flex gap-1.5 overflow-x-auto pb-2 print:flex print:flex-wrap print:gap-1.5'
+                                                            ? `flex ${isEmptyMode ? 'gap-1' : 'gap-1.5'} overflow-x-auto pb-2 print:flex print:flex-wrap print:gap-1.5`
                                                             : childLayout === 'grid'
-                                                                ? `grid items-stretch gap-1.5 ${mergedZones.has(zone.id) ? 'flex-1 h-full' : 'h-auto'} print:flex print:flex-wrap print:gap-[2%]`
-                                                                : `space-y-1.5 print:space-y-1 ${mergedZones.has(zone.id) ? 'flex-1 h-full' : 'h-auto'} print:block`
+                                                                ? `grid items-stretch ${isEmptyMode ? 'gap-1' : 'gap-1.5'} ${mergedZones.has(zone.id) ? 'flex-1 h-full' : 'h-auto'} print:flex print:flex-wrap print:gap-[2%]`
+                                                                : `${isEmptyMode ? 'space-y-0.5' : 'space-y-1.5'} print:space-y-1 ${mergedZones.has(zone.id) ? 'flex-1 h-full' : 'h-auto'} print:block`
                                                     }
                                                     style={
-                                                        childLayout === 'grid' && childColumns > 0
-                                                            ? { gridTemplateColumns: `repeat(${childColumns}, minmax(0, 1fr))` }
+                                                        childLayout === 'grid' && (childColumns > 0 || (isEmptyMode && depth <= 1))
+                                                            ? { gridTemplateColumns: `repeat(${isEmptyMode && depth <= 1 ? 4 : (childColumns > 0 ? childColumns : effectiveChildCols)}, minmax(0, 1fr))` }
                                                             : childLayout === 'grid'
-                                                                ? { gridTemplateColumns: `repeat(auto-fill, minmax(300px, 1fr))` }
+                                                                ? { gridTemplateColumns: `repeat(auto-fill, minmax(${isEmptyMode ? '150px' : '300px'}, 1fr))` }
                                                                 : undefined
                                                     }
                                                 >
-                                                    {zone.children.map((child, idx) => {
+                                                    {zone.children.map((child: ZoneTreeNode, idx: number) => {
                                             const rowIdx = childLayout === 'grid' ? Math.floor(idx / effectiveChildCols) : 0
                                             const rowStyle: React.CSSProperties | undefined = alternatingRows && childLayout === 'grid' && rowIdx % 2 !== 0
                                                 ? { backgroundColor: 'rgba(219, 234, 254, 0.55)', borderColor: 'rgba(147, 197, 253, 0.4)' }
@@ -1039,7 +1065,7 @@ export default function FlexibleZoneGrid({
                         style={overrideBgStyle}
                     >
                         <div
-                            className={`flex items-center justify-between px-4 border-b cursor-pointer transition-colors print:py-1 ${isLevelUnderBin ? 'py-1' : isBigBin ? 'py-1.5' : 'py-2'} ${headerColor ? '' : `border-gray-100 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/50 ${depth === 0 ? 'bg-gray-50 dark:bg-gray-900/50' : ''}`}`}
+                            className={`flex items-center justify-between px-4 border-b cursor-pointer transition-colors print:py-1 ${isLevelUnderBin ? 'py-1' : isBigBin ? (isEmptyMode ? 'py-0.5 px-2' : 'py-1.5') : 'py-2'} ${headerColor ? '' : `border-gray-100 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/50 ${depth === 0 ? 'bg-gray-50 dark:bg-gray-900/50' : ''}`}`}
                             style={headerColor
                                 ? { backgroundColor: headerColor, borderColor: headerColor }
                                 : undefined
@@ -1150,7 +1176,7 @@ export default function FlexibleZoneGrid({
                                                 onUpdateCollapsedZones(prev => {
                                                     const next = new Set(prev)
                                                     next.delete(zone.id)
-                                                    descendantIds.forEach(id => next.add(id))
+                                                    descendantIds.forEach((id: string) => next.add(id))
                                                     return next
                                                 })
                                             }}
@@ -1167,7 +1193,7 @@ export default function FlexibleZoneGrid({
                                                 onUpdateCollapsedZones(prev => {
                                                     const next = new Set(prev)
                                                     next.delete(zone.id)
-                                                    descendantIds.forEach(id => next.delete(id))
+                                                    descendantIds.forEach((id: string) => next.delete(id))
                                                     return next
                                                 })
                                             }}
@@ -1226,11 +1252,11 @@ export default function FlexibleZoneGrid({
                         </div>
 
                         {!isCollapsed && (
-                            <div className={`p-1.5 ${isBinMerged ? 'flex-1 flex flex-col h-full print:h-auto' : 'flex flex-col h-auto'} bg-emerald-50/5 dark:bg-gray-900/10 border-t border-gray-100 dark:border-gray-800 print:border-t-none print:flex print:flex-col print:overflow-visible`}>
+                            <div className={`${isEmptyMode ? 'p-0' : 'p-1.5'} ${isBinMerged ? 'flex-1 flex flex-col h-full print:h-auto' : 'flex flex-col h-auto'} bg-emerald-50/5 dark:bg-gray-900/10 ${isEmptyMode ? '' : 'border-t border-gray-100 dark:border-gray-800'} print:border-t-none print:flex print:flex-col print:overflow-visible`}>
                                 {shouldRenderGrid && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
                                 {hasChildren && !isBinMerged && (
-                                    <div className="space-y-1.5 print:space-y-1 print:block">
-                                        {zone.children.map((child, idx) => (
+                                    <div className={`${isEmptyMode ? 'space-y-0.5' : 'space-y-1.5'} print:space-y-1 print:block`}>
+                                        {zone.children.map((child: ZoneTreeNode, idx: number) => (
                                             <React.Fragment key={child.id}>
                                                 {isPrintPage && onTogglePageBreak && idx > 0 && (
                                                     <>
@@ -1262,7 +1288,7 @@ export default function FlexibleZoneGrid({
 
     return (
         <div className="space-y-2 print:space-y-2">
-            {zoneTree.map(root => renderZone(root as any))}
+            {zoneTree.map((root: ZoneTreeNode) => renderZone(root))}
         </div>
     )
 }

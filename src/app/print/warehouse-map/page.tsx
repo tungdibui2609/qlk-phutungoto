@@ -80,6 +80,7 @@ export default function WarehouseMapPrintPage() {
     const [expandedZoneIds, setExpandedZoneIds] = useState<Set<string>>(new Set())
     const [isGrouped, setIsGrouped] = useState(true)
     const [mergedZones, setMergedZones] = useState<Set<string>>(new Set())
+    const [isEmptyMap, setIsEmptyMap] = useState(false)
 
     const toggleMergeZone = (zoneId: string) => {
         setMergedZones(prev => {
@@ -932,6 +933,20 @@ export default function WarehouseMapPrintPage() {
                                             Bảng
                                         </button>
                                     </div>
+                                    {!showTable && (
+                                        <label className="flex items-center gap-3 cursor-pointer group mt-1">
+                                            <div className="relative inline-flex items-center">
+                                                <input
+                                                    type="checkbox"
+                                                    className="sr-only peer"
+                                                    checked={isEmptyMap}
+                                                    onChange={(e) => setIsEmptyMap(e.target.checked)}
+                                                />
+                                                <div className="w-8 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
+                                            </div>
+                                            <span className="text-[11px] font-medium text-gray-700 group-hover:text-blue-600 transition-colors">In sơ đồ trống (ô nhỏ)</span>
+                                        </label>
+                                    )}
                                 </div>
                             </div>
 
@@ -1137,6 +1152,7 @@ export default function WarehouseMapPrintPage() {
                                     onToggleMergeZone={toggleMergeZone}
                                     isCapturing={isCapturing}
                                     isPrintPage={true}
+                                    isEmptyMode={isEmptyMap}
                                 />
                             </div>
                         ) : (

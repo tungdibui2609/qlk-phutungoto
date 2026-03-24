@@ -21,8 +21,9 @@ const MergedBigCell = React.memo<{
     isPrintPage?: boolean,
     isGrouped?: boolean,
     isSanh?: boolean,
-    isManualMerge?: boolean
-}>(({ pos, isMobile, isOccupied, isSelected, isTargetLot, aggregatedItems, isAssignmentMode, isHighlightBlinking, displayInternalCode, zoneBreadcrumb, onPositionSelect, onViewDetails, onPositionMenu, mergedLevels, levelGroups, isPrintPage, isGrouped, isSanh, isManualMerge }) => {
+    isManualMerge?: boolean,
+    isEmptyMode?: boolean
+}>(({ pos, isMobile, isOccupied, isSelected, isTargetLot, aggregatedItems, isAssignmentMode, isHighlightBlinking, displayInternalCode, zoneBreadcrumb, onPositionSelect, onViewDetails, onPositionMenu, mergedLevels, levelGroups, isPrintPage, isGrouped, isSanh, isManualMerge, isEmptyMode }) => {
     const ids = pos.realIds || [pos.id]
     const mergedCount = pos.mergedCount || ids.length
     const originalCodes = pos.originalCodes || [pos.code]
@@ -48,8 +49,12 @@ const MergedBigCell = React.memo<{
         <div
             style={{ 
                 gridColumn: '1 / -1', 
-                minHeight: isPrintPage ? (isSanh ? '60px' : (isManualMerge ? '250px' : '125px')) : (isMobile ? '110px' : '150px'),
-                height: isPrintPage ? '100%' : '100%'
+                minHeight: isEmptyMode 
+                    ? '45px' 
+                    : (isPrintPage ? (isSanh ? '60px' : (isManualMerge ? '250px' : '125px')) : (isMobile ? '110px' : '150px')),
+                height: isPrintPage || isEmptyMode ? 'auto' : '100%',
+                width: isEmptyMode ? '100%' : '100%',
+                minWidth: isEmptyMode ? '70px' : '0'
             }}
             className={`
                 relative ${isAssignmentMode ? 'cursor-pointer' : ''} p-2.5 print:p-1.5 rounded-xl border-2 transition-all
@@ -57,14 +62,15 @@ const MergedBigCell = React.memo<{
                 ${bgClass} ${borderClass} ${ringClass}
                 ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.01] hover:z-10' : ''}
                 ${isHighlightBlinking ? 'animate-highlight-blink' : ''}
+                ${isEmptyMode ? 'items-start justify-start !p-0.5 rounded-md border-[1.5px]' : ''}
             `}
             onClick={() => isAssignmentMode && onPositionSelect?.(ids)}
         >
             {/* Top row: badge + code + actions */}
-            <div className="flex items-center justify-between gap-2 mb-1.5">
-                <div className="flex items-center gap-2 min-w-0">
+            <div className={`flex items-start justify-between gap-2 ${isEmptyMode ? 'm-0 h-auto' : 'mb-1.5'}`}>
+                <div className={`flex items-start gap-2 min-w-0 ${isEmptyMode ? 'justify-center w-full' : ''}`}>
                     {/* Checkbox */}
-                    {!isAssignmentMode && !isPrintPage && (
+                    {!isAssignmentMode && !isPrintPage && !isEmptyMode && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onPositionSelect?.(ids) }}
                             className={`w-5 h-5 rounded shrink-0 border-2 transition-all flex items-center justify-center
@@ -84,53 +90,57 @@ const MergedBigCell = React.memo<{
                     )}
 
                     {/* Big Position Title */}
-                    <div className="flex items-center gap-1.5 min-w-0">
-                        <Maximize2 size={14} className="text-indigo-500 dark:text-indigo-400 shrink-0" />
-                        <span className="text-[9px] font-bold text-indigo-700 dark:text-indigo-300 whitespace-nowrap">
-                            {zoneBreadcrumb && zoneBreadcrumb.length > 0
+                    <div className={`flex items-center gap-1.5 min-w-0 ${isEmptyMode ? 'justify-center' : ''}`}>
+                        <Maximize2 size={isEmptyMode ? 10 : 14} className="text-indigo-500 dark:text-indigo-400 shrink-0" />
+                        <span className={`${isEmptyMode ? 'text-[9px]' : 'text-[9px]'} font-bold text-indigo-700 dark:text-indigo-300 whitespace-nowrap overflow-hidden`}>
+                            {zoneBreadcrumb && zoneBreadcrumb.length > 0 && !isEmptyMode
                                 ? zoneBreadcrumb.join(' • ')
                                 : pos.code
                             }
                         </span>
-                        <span className="text-[9px] bg-indigo-100 dark:bg-indigo-800/50 text-indigo-600 dark:text-indigo-300 px-1.5 py-0.5 rounded-full font-bold shrink-0 whitespace-nowrap">
-                            {mergedLevels && mergedLevels.length > 0 
-                                ? `Gộp ${mergedLevels.length} tầng`
-                                : `${mergedCount} ô gộp`
-                            }
-                        </span>
+                        {!isEmptyMode && (
+                            <span className="text-[9px] bg-indigo-100 dark:bg-indigo-800/50 text-indigo-600 dark:text-indigo-300 px-1.5 py-0.5 rounded-full font-bold shrink-0 whitespace-nowrap">
+                                {mergedLevels && mergedLevels.length > 0 
+                                    ? `Gộp ${mergedLevels.length} tầng`
+                                    : `${mergedCount} ô gộp`
+                                }
+                            </span>
+                        )}
                     </div>
                 </div>
 
-                <div className="flex items-center gap-1 shrink-0">
-                    {!isAssignmentMode && isOccupied && aggregatedItems.length > 0 && !isPrintPage && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); onViewDetails?.(pos.lot_id!) }}
-                            className="text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors"
-                            title="Xem chi tiết LOT"
-                        >
-                            <Eye size={14} />
-                        </button>
-                    )}
-                    {isOccupied && !isPrintPage && (
-                        <Package size={14} className="text-amber-500 dark:text-amber-400" />
-                    )}
-                    {isTargetLot && (
-                        <div className="w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse" />
-                    )}
-                    {!isAssignmentMode && !isPrintPage && (
-                        <button
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPositionMenu?.(pos, e) }}
-                            className="text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                            title="Tùy chọn"
-                        >
-                            <MoreHorizontal size={16} />
-                        </button>
-                    )}
-                </div>
+                {!isEmptyMode && (
+                    <div className="flex items-center gap-1 shrink-0">
+                        {!isAssignmentMode && isOccupied && aggregatedItems.length > 0 && !isPrintPage && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onViewDetails?.(pos.lot_id!) }}
+                                className="text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors"
+                                title="Xem chi tiết LOT"
+                            >
+                                <Eye size={14} />
+                            </button>
+                        )}
+                        {isOccupied && !isPrintPage && (
+                            <Package size={14} className="text-amber-500 dark:text-amber-400" />
+                        )}
+                        {isTargetLot && (
+                            <div className="w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse" />
+                        )}
+                        {!isAssignmentMode && !isPrintPage && (
+                            <button
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPositionMenu?.(pos, e) }}
+                                className="text-gray-300 hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300 transition-colors p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                                title="Tùy chọn"
+                            >
+                                <MoreHorizontal size={16} />
+                            </button>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Content: Aggregated product summary */}
-            {aggregatedItems.length > 0 || (levelGroups && levelGroups.length > 0) ? (
+            {!isEmptyMode && (aggregatedItems.length > 0 || (levelGroups && levelGroups.length > 0)) ? (
                 <div className={`flex flex-col gap-1.5 flex-1 ${isPrintPage ? 'overflow-visible' : 'overflow-y-auto'} custom-scrollbar pr-1`}>
                     {levelGroups && levelGroups.length > 0 ? (
                         <div className="space-y-2">
@@ -200,11 +210,13 @@ const MergedBigCell = React.memo<{
                     )}
                 </div>
             ) : (
-                <div className="flex-1 flex items-center justify-center">
-                    <span className={`text-[10px] text-gray-400 font-medium ${isPrintPage ? 'font-mono uppercase not-italic' : 'italic'}`}>
-                        {isPrintPage ? 'Trống' : 'Ô lớn trống — gán LOT để sử dụng'}
-                    </span>
-                </div>
+                !isEmptyMode && (
+                    <div className="flex-1 flex items-center justify-center">
+                        <span className={`text-[10px] text-gray-400 font-medium ${isPrintPage ? 'font-mono uppercase not-italic' : 'italic'}`}>
+                            {isPrintPage ? 'Trống' : 'Ô lớn trống — gán LOT để sử dụng'}
+                        </span>
+                    </div>
+                )
             )}
 
             {/* Footer: original position codes - Hide in print view */}
@@ -236,7 +248,8 @@ const MergedBigCell = React.memo<{
         prev.isPrintPage === next.isPrintPage &&
         prev.isGrouped === next.isGrouped &&
         prev.isSanh === next.isSanh &&
-        prev.isManualMerge === next.isManualMerge
+        prev.isManualMerge === next.isManualMerge &&
+        prev.isEmptyMode === next.isEmptyMode
 });
 
 export default MergedBigCell;
