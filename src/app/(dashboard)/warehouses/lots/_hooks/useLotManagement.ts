@@ -23,7 +23,7 @@ export type Lot = Database['public']['Tables']['lots']['Row'] & {
     }[] | null
     lot_tags?: { tag: string; lot_item_id: string | null }[] | null
     // Production link
-    productions?: { code: string } | null
+    productions?: { code: string; name: string } | null
     // Legacy support for display if needed
     products?: { name: string; unit: string | null; product_code?: string; sku?: string; weight_kg?: number | null; cost_price?: number | null; internal_code?: string | null; internal_name?: string | null } | null
     images?: any
@@ -372,6 +372,14 @@ export function useLotManagement() {
 
                             currentMatchIds = Array.from(new Set([...itemLotIds, ...tagLotIds, ...posIds, ...directIds]));
                         }
+                        else if (searchMode === 'production') {
+                            const { data: prodMatched } = await (supabase.from('productions') as any).select('id').or(`code.ilike.${partTerm},name.ilike.${partTerm}`).eq('company_id', currentSystem.id);
+                            const prodIds = prodMatched?.map((p: any) => p.id) || [];
+                            if (prodIds.length > 0) {
+                                const { data: linkedLots } = await (supabase.from('lots') as any).select('id').in('production_id', prodIds).eq('system_code', currentSystem.code);
+                                if (linkedLots) currentMatchIds.push(...linkedLots.map((l: any) => l.id));
+                            }
+                        }
                         else if (searchMode === 'name') {
                             const { data: pMatched } = await (supabase.from('products') as any).select('id').or(`name.ilike.${partTerm},internal_name.ilike.${partTerm}`).eq('system_type', currentSystem.code);
                             const pIds = pMatched?.map((p: any) => p.id) || [];
@@ -541,6 +549,10 @@ export function useLotManagement() {
                         if (l.notes) res.push(l.notes)
                         l.lot_tags?.forEach((t: any) => res.push(t.tag))
                         l.positions?.forEach((p: any) => res.push(p.code))
+                        
+                        if (l.productions?.code) res.push(l.productions.code)
+                        if (l.productions?.name) res.push(l.productions.name)
+                        
                         return res
                     }
 

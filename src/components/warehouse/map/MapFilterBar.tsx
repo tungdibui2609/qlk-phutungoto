@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, Filter, HelpCircle, Tag, Package, Hash, MapPin, Layers, LayoutGrid, X } from 'lucide-react'
+import { Search, Filter, HelpCircle, Tag, Package, Hash, MapPin, Layers, LayoutGrid, X, ClipboardList } from 'lucide-react'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { DateRangeFilter, DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { SearchHelpModal } from '@/components/shared/SearchHelpModal'
@@ -71,6 +71,7 @@ export function MapFilterBar({
                         {searchMode === 'tag' && <Tag size={14} className="text-emerald-500 mr-1.5" />}
                         {searchMode === 'position' && <MapPin size={14} className="text-orange-500 mr-1.5" />}
                         {searchMode === 'category' && <LayoutGrid size={14} className="text-indigo-500 mr-1.5" />}
+                        {searchMode === 'production' && <ClipboardList size={14} className="text-rose-500 mr-1.5" />}
                         
                         <select
                             value={searchMode}
@@ -83,6 +84,7 @@ export function MapFilterBar({
                             <option value="tag">Mã phụ</option>
                             <option value="position">Vị trí</option>
                             <option value="category">Danh mục</option>
+                            <option value="production">Lệnh sản xuất</option>
                         </select>
                     </div>
 
@@ -96,6 +98,7 @@ export function MapFilterBar({
                                 searchMode === 'tag' ? "Nhập mã phụ (tag)..." :
                                 searchMode === 'position' ? "Nhập mã vị trí (A01...)..." :
                                 searchMode === 'category' ? "Nhập tên danh mục..." :
+                                searchMode === 'production' ? "Nhập mã lệnh sản xuất..." :
                                 "Tìm kiếm nhanh..."
                             }
                             value={localSearchTerm}

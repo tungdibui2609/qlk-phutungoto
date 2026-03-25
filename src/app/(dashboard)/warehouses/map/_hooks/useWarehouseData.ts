@@ -45,9 +45,9 @@ export function useWarehouseData() {
 
         const { data: l, error } = await supabase
             .from('lots')
-            .select('*, suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)')
+            .select('*, productions(code, name), suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)')
             .eq('id', lotId)
-            .single()
+            .single() as any
 
         if (error || !l) {
             console.error(`Error refreshing lot info for ${lotId}:`, error?.message || 'Lot not found', error)
@@ -97,7 +97,8 @@ export function useWarehouseData() {
             items,
             tags: accumulatedTags,
             qc_name: l.qc_info?.name,
-            supplier_name: l.suppliers?.name
+            supplier_name: l.suppliers?.name,
+            productions: l.productions
         }
 
         setLotInfo(prev => ({
@@ -157,7 +158,7 @@ export function useWarehouseData() {
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
                 fetchAllZonesPos(),
                 fetchAll('zone_layouts', q => q.order('id')),
-                fetchAll('lots', q => q.eq('system_code', systemType), '*, suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)')
+                fetchAll('lots', q => q.eq('system_code', systemType), '*, productions(code, name), suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)') as Promise<any[]>
             ])
 
             // Create lookup map for positions -> zone_id
@@ -228,7 +229,8 @@ export function useWarehouseData() {
                     items,
                     tags: accumulatedTags,
                     qc_name: l.qc_info?.name,
-                    supplier_name: l.suppliers?.name
+                    supplier_name: l.suppliers?.name,
+                    productions: l.productions
                 }
             })
 

@@ -157,8 +157,8 @@ function WarehouseMapContent() {
                 }))
 
                 // DB Updates
-                const updatePromises = updates.map(u =>
-                    supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id)
+                const updatePromises: any[] = updates.map(u =>
+                    (supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id) as any)
                 )
 
                 Promise.all(updatePromises).then(results => {
@@ -186,8 +186,8 @@ function WarehouseMapContent() {
             ))
 
             // DB Update
-            const promises = targetIds.map(id =>
-                supabase.from('positions').update({ lot_id: newLotId } as any).eq('id', id)
+            const promises: any[] = targetIds.map(id =>
+                (supabase.from('positions').update({ lot_id: newLotId } as any).eq('id', id) as any)
             )
 
             Promise.all(promises).then(results => {
@@ -266,7 +266,7 @@ function WarehouseMapContent() {
         try {
             const { data, error } = await supabase
                 .from('lots')
-                .select(`*, created_at, suppliers(name), qc_info(name), lot_items(id, quantity, unit, products(name, sku, unit)), positions!positions_lot_id_fkey(code), lot_tags(tag, lot_item_id)`)
+                .select(`*, created_at, productions(code, name), suppliers(name), qc_info(name), lot_items(id, quantity, unit, products(name, sku, unit)), positions!positions_lot_id_fkey(code), lot_tags(tag, lot_item_id)`)
                 .eq('id', lotId)
                 .single()
             if (error) throw error
@@ -339,36 +339,36 @@ function WarehouseMapContent() {
                 const chunk = lotIds.slice(i, i + chunkSize);
 
                 // 1. Clear lot_id in positions (Reference)
-                const { error: posError } = await supabase
+                const { error: posError } = await (supabase
                     .from('positions')
-                    .update({ lot_id: null })
-                    .in('lot_id', chunk)
+                    .update({ lot_id: null } as any)
+                    .in('lot_id', chunk) as any)
 
                 if (posError) throw posError
 
                 // 2. Delete lot_tags (Child)
-                const { error: tagError } = await supabase
+                const { error: tagError } = await (supabase
                     .from('lot_tags')
                     .delete()
-                    .in('lot_id', chunk)
+                    .in('lot_id', chunk) as any)
 
                 if (tagError) {
                     console.warn('Could not delete all tags, continuing...', tagError)
                 }
 
                 // 3. Delete lot_items (Child)
-                const { error: itemError } = await supabase
+                const { error: itemError } = await (supabase
                     .from('lot_items')
                     .delete()
-                    .in('lot_id', chunk)
+                    .in('lot_id', chunk) as any)
 
                 if (itemError) throw itemError
 
                 // 4. Finally delete lots (Owner)
-                const { error: lotError } = await supabase
+                const { error: lotError } = await (supabase
                     .from('lots')
                     .delete()
-                    .in('id', chunk)
+                    .in('id', chunk) as any)
 
                 if (lotError) throw lotError
             }
@@ -454,7 +454,7 @@ function WarehouseMapContent() {
         // Find available positions in the Hall's zones
         // Find available positions in the Hall's zones and sort by Bin-priority
         const rawAvailable = positions.filter(p => p.zone_id && hallZoneIds.has(p.zone_id) && !p.lot_id)
-        const availablePositions = sortPositionsByBinPriority(rawAvailable)
+        const availablePositions = sortPositionsByBinPriority(rawAvailable as any[])
 
         if (availablePositions.length < lotIdsToMove.size) {
             showToast(`Không đủ vị trí trống trong Sảnh này. Cần ${lotIdsToMove.size}, nhưng chỉ còn ${availablePositions.length} vị trí.`, 'error')
@@ -484,9 +484,9 @@ function WarehouseMapContent() {
             for (let i = 0; i < clearUpdates.length; i += chunkSize) {
                 const chunk = clearUpdates.slice(i, i + chunkSize);
                 const results = await Promise.all(
-                    chunk.map(u => supabase.from('positions').update({ lot_id: null } as any).eq('id', u.id))
+                    chunk.map(u => (supabase.from('positions').update({ lot_id: null } as any).eq('id', u.id) as any))
                 )
-                const error = results.find(r => r.error)?.error
+                const error = (results as any).find((r: any) => r.error)?.error
                 if (error) throw error
             }
 
@@ -494,9 +494,9 @@ function WarehouseMapContent() {
             for (let i = 0; i < assignUpdates.length; i += chunkSize) {
                 const chunk = assignUpdates.slice(i, i + chunkSize);
                 const results = await Promise.all(
-                    chunk.map(u => supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id))
+                    chunk.map(u => (supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id) as any))
                 )
-                const error = results.find(r => r.error)?.error
+                const error = (results as any).find((r: any) => r.error)?.error
                 if (error) throw error
             }
 
@@ -538,7 +538,7 @@ function WarehouseMapContent() {
         // Find available positions in the target Zone's descendant zones
         // Find available positions in the target Zone's descendant zones and sort by Bin-priority
         const rawAvailable = positions.filter(p => p.zone_id && targetZoneIds.has(p.zone_id) && !p.lot_id)
-        const availablePositions = sortPositionsByBinPriority(rawAvailable)
+        const availablePositions = sortPositionsByBinPriority(rawAvailable as any[])
 
         console.log(`Moving items: targetZoneId=${targetZoneId}, descendantZones=${targetZoneIds.size}, available=${availablePositions.length}, toMove=${lotIdsToMove.size}`)
 
@@ -570,9 +570,9 @@ function WarehouseMapContent() {
             for (let i = 0; i < clearUpdates.length; i += chunkSize) {
                 const chunk = clearUpdates.slice(i, i + chunkSize);
                 const results = await Promise.all(
-                    chunk.map(u => supabase.from('positions').update({ lot_id: null } as any).eq('id', u.id))
+                    chunk.map(u => (supabase.from('positions').update({ lot_id: null } as any).eq('id', u.id) as any))
                 )
-                const error = results.find(r => r.error)?.error
+                const error = (results as any).find((r: any) => r.error)?.error
                 if (error) throw error
             }
 
@@ -580,9 +580,9 @@ function WarehouseMapContent() {
             for (let i = 0; i < assignUpdates.length; i += chunkSize) {
                 const chunk = assignUpdates.slice(i, i + chunkSize);
                 const results = await Promise.all(
-                    chunk.map(u => supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id))
+                    chunk.map(u => (supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id) as any))
                 )
-                const error = results.find(r => r.error)?.error
+                const error = (results as any).find((r: any) => r.error)?.error
                 if (error) throw error
             }
 

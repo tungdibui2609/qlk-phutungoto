@@ -8,7 +8,7 @@ import {
     DialogTitle,
     DialogDescription,
 } from '@/components/ui/Dialog'
-import { HelpCircle, Search, Info, CheckCircle2, Tag, Package, Hash, MapPin, Layers, LayoutGrid } from 'lucide-react'
+import { HelpCircle, Search, Info, CheckCircle2, Tag, Package, Hash, MapPin, Layers, LayoutGrid, ClipboardList } from 'lucide-react'
 
 interface SearchHelpModalProps {
     isOpen: boolean
@@ -80,6 +80,12 @@ export function SearchHelpModal({ isOpen, onOpenChange }: SearchHelpModalProps) 
                                     <Layers className="h-4 w-4" /> Theo Danh mục
                                 </div>
                                 <p className="text-sm text-muted-foreground italic">Tìm sản phẩm thuộc danh mục. Hỗ trợ tìm đa danh mục. Ví dụ: "Trái cây", "Điện tử".</p>
+                            </div>
+                            <div className="p-3 bg-muted/50 rounded-lg border border-border/50">
+                                <div className="flex items-center gap-2 mb-1 font-medium text-rose-600 dark:text-rose-400">
+                                    <ClipboardList className="h-4 w-4" /> Lệnh sản xuất
+                                </div>
+                                <p className="text-sm text-muted-foreground italic">Tìm theo mã hoặc tên lệnh sản xuất. Ví dụ: "LSX001", "SX CAM".</p>
                             </div>
                         </div>
                     </div>

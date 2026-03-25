@@ -43,7 +43,7 @@ interface FlexibleZoneGridProps {
     onConfigureZone?: (zone: Zone) => void
     highlightLotId?: string | null
     highlightingPositionIds?: Set<string>
-    lotInfo?: Record<string, { code: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>, inbound_date?: string, created_at?: string, packaging_date?: string, peeling_date?: string, tags?: string[] }>
+    lotInfo?: Record<string, { code: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>, inbound_date?: string, created_at?: string, packaging_date?: string, peeling_date?: string, tags?: string[], productions?: { code: string, name: string } }>
     pageBreakIds?: Set<string>
     onTogglePageBreak?: (zoneId: string) => void
     onPrintZone?: (zoneId: string) => void
@@ -322,16 +322,18 @@ export default function FlexibleZoneGrid({
             const isHighlightBlinking = realIds.some((id: string) => highlightingPositionIds.has(id))
 
             // Aggregate all lot items from all real positions
-            const itemMap = new Map<string, { product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string }>()
+            const itemMap = new Map<string, { product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string, production_name?: string, production_code?: string }>()
             targetPositions.forEach((p: PositionWithZone) => {
                 if (p.lot_id && lotInfo[p.lot_id]?.items) {
+                    const prodName = lotInfo[p.lot_id].productions?.name
+                    const prodCode = lotInfo[p.lot_id].productions?.code
                     lotInfo[p.lot_id].items.forEach((item: any) => {
-                        const key = `${item.sku || ''}_${item.unit || ''}`
+                        const key = `${item.sku || ''}_${item.unit || ''}_${prodName || ''}`
                         const existing = itemMap.get(key)
                         if (existing) {
                             existing.quantity += (item.quantity || 0)
                         } else {
-                            itemMap.set(key, { ...item, quantity: item.quantity || 0 })
+                            itemMap.set(key, { ...item, quantity: item.quantity || 0, production_name: prodName, production_code: prodCode })
                         }
                     })
                 }
@@ -744,9 +746,9 @@ export default function FlexibleZoneGrid({
                             </div>
                         </div>
 
-                        <div className={`p-2 flex-1 flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1' : 'h-auto'} print:flex print:flex-col print:h-auto`}>
+                        <div className={`p-1 flex-1 flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1' : 'h-auto'} print:flex print:flex-col print:h-auto`}>
                             {!isCollapsed && (
-                                <div className={`p-3 flex-1 flex flex-col bg-white/50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-800 print:border-t-none print:flex print:flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1' : 'h-auto'} print:h-auto`}>
+                                <div className={`p-1.5 flex-1 flex flex-col bg-white/50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-800 print:border-t-none print:flex print:flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1' : 'h-auto'} print:h-auto`}>
                                     {shouldRenderGrid && renderPositionsGrid(zone, cellHeight, cellWidth, positionColumns, currentBreadcrumb)}
                                     {hasChildren && !mergedZones.has(zone.id) && (
                                         <div className="mt-2 print:mt-0 space-y-1.5 px-1 pb-1 print:block">

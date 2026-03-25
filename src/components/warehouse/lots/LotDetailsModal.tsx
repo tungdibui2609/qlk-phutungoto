@@ -189,6 +189,22 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                             </div>
                         </div>
 
+                        {/* Production Order Section */}
+                        {lot.productions?.name && (
+                            <div className="flex items-start gap-3 p-4 rounded-2xl border border-rose-100 dark:border-rose-800 bg-rose-50/30 dark:bg-rose-900/10">
+                                <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                                    <Factory size={20} />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-[10px] font-bold text-rose-400 uppercase mb-0.5">Lệnh sản xuất</p>
+                                    <p className="text-sm font-bold text-rose-900 dark:text-rose-100 truncate">{lot.productions.name}</p>
+                                    {lot.productions.code && (
+                                        <p className="text-[10px] font-mono text-rose-500/70 dark:text-rose-400/50 truncate">Mã: {lot.productions.code}</p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Main Info List */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {isModuleEnabled('supplier_info') && (

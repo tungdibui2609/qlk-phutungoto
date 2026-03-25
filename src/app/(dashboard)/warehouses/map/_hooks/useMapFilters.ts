@@ -11,7 +11,7 @@ interface UseMapFiltersProps {
     isFifoEnabled?: boolean
 }
 
-export type SearchMode = 'all' | 'name' | 'code' | 'tag' | 'position' | 'category'
+export type SearchMode = 'all' | 'name' | 'code' | 'tag' | 'position' | 'category' | 'production'
 
 export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseMapFiltersProps) {
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
@@ -74,6 +74,12 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
                             if (!lot.tags?.length && lot.lot_tags) {
                                 lot.lot_tags.forEach((t: any) => res.push(t.tag))
                             }
+                        }
+
+                        // Production Order
+                        if (mode === 'all' || mode === 'production') {
+                            if (lot.productions?.code) res.push(lot.productions.code)
+                            if (lot.productions?.name) res.push(lot.productions.name)
                         }
 
                         // Other fields

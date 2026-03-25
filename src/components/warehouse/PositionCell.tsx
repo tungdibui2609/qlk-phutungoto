@@ -59,12 +59,12 @@ const PositionCell = React.memo<{
                     ? 'auto'
                     : (cellHeight > 0 
                         ? `${cellHeight}px` 
-                        : (isPrintPage ? '100%' : (isMobile ? '100px' : '125px'))),
+                        : (isPrintPage ? '100%' : (isMobile ? '100px' : '145px'))),
                 minHeight: isEmptyMode
                     ? '45px'
                     : (cellHeight > 0 
                         ? `${cellHeight}px` 
-                        : (isPrintPage ? (isSanh ? '60px' : '125px') : (isMobile ? '100px' : '125px'))),
+                        : (isPrintPage ? (isSanh ? '60px' : '145px') : (isMobile ? '100px' : '145px'))),
                 width: isEmptyMode 
                     ? '100%' 
                     : (cellWidth > 0 ? `${cellWidth}px` : '100%'),
@@ -142,11 +142,6 @@ const PositionCell = React.memo<{
                     {isTargetLot && (
                         <div title="Đang chọn" className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
                     )}
-                    {isOccupied && !isTargetLot && !isPrintPage && (
-                        <div title="Có hàng">
-                            <Package size={10} className="text-amber-500 dark:text-amber-400" />
-                        </div>
-                    )}
                 </div>
             </div>
 
@@ -155,6 +150,12 @@ const PositionCell = React.memo<{
                     <div className={`${isGrouped ? 'text-[8px]' : 'text-[10px]'} font-bold leading-tight w-full text-center shrink-0 ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'} ${isGrouped ? 'break-all' : 'line-clamp-1 text-ellipsis overflow-hidden'}`}>
                         {lotDetail.code}
                     </div>
+
+                    {lotDetail.productions?.name && (
+                        <div className="text-[9px] font-bold text-rose-500 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/30 px-1 rounded leading-tight line-clamp-1 text-center w-fit mx-auto" title={`Mã LSX: ${lotDetail.productions.code || ''}`}>
+                            {lotDetail.productions.name}
+                        </div>
+                    )}
 
                     <div className="w-full space-y-1 flex-1 min-h-0">
                         {lotDetail.items?.map((item: any, idx: number) => {

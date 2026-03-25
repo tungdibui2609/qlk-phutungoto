@@ -8,7 +8,7 @@ const MergedBigCell = React.memo<{
     isOccupied: boolean,
     isSelected: boolean,
     isTargetLot: boolean,
-    aggregatedItems: Array<{ product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string }>,
+    aggregatedItems: Array<{ product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string, production_name?: string, production_code?: string }>,
     isAssignmentMode: boolean,
     isHighlightBlinking: boolean,
     displayInternalCode?: boolean,
@@ -17,7 +17,7 @@ const MergedBigCell = React.memo<{
     onViewDetails?: (lotId: string) => void,
     onPositionMenu?: (pos: any, event: React.MouseEvent) => void,
     mergedLevels?: string[],
-    levelGroups?: Array<{ name: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string }> }>,
+    levelGroups?: Array<{ name: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string, production_name?: string, production_code?: string }> }>,
     isPrintPage?: boolean,
     isGrouped?: boolean,
     isSanh?: boolean,
@@ -120,9 +120,6 @@ const MergedBigCell = React.memo<{
                                 <Eye size={14} />
                             </button>
                         )}
-                        {isOccupied && !isPrintPage && (
-                            <Package size={14} className="text-amber-500 dark:text-amber-400" />
-                        )}
                         {isTargetLot && (
                             <div className="w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse" />
                         )}
@@ -156,7 +153,10 @@ const MergedBigCell = React.memo<{
                                                 const codeObj = displayInternalCode && item.internal_code ? item.internal_code : item.sku;
                                                 return (
                                                     <React.Fragment key={idx}>
-                                                        <span className="text-[10px] text-gray-600 dark:text-gray-300 line-clamp-1">{nameObj}{nameObj ? ` (${codeObj || '-'})` : (codeObj || '-')}</span>
+                                                        <span className="text-[10px] text-gray-600 dark:text-gray-300 line-clamp-1">
+                                                            {nameObj}{nameObj ? ` (${codeObj || '-'})` : (codeObj || '-')}
+                                                            {item.production_name && <span className="ml-1.5 px-1 bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 font-bold rounded text-[8px]" title={`Mã LSX: ${item.production_code || ''}`}>{item.production_name}</span>}
+                                                        </span>
                                                         <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap text-right">
                                                             : {item.quantity} {item.unit || '-'}
                                                         </span>
@@ -177,8 +177,11 @@ const MergedBigCell = React.memo<{
                                 const codeObj = displayInternalCode && item.internal_code ? item.internal_code : item.sku;
                                 return (
                                     <React.Fragment key={idx}>
-                                        <span className="text-[10px] text-gray-600 dark:text-gray-300">{nameObj}{nameObj ? ` (${codeObj || '-'})` : (codeObj || '-')}</span>
-                                        <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap text-right">
+                                        <span className="text-[10px] text-gray-600 dark:text-gray-300">
+                                            {nameObj}{nameObj ? ` (${codeObj || '-'})` : (codeObj || '-')}
+                                            {item.production_name && <span className="ml-1.5 px-1 bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 font-bold rounded text-[8px]" title={`Mã LSX: ${item.production_code || ''}`}>{item.production_name}</span>}
+                                        </span>
+                                        <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap text-right" style={{ verticalAlign: 'middle' }}>
                                             : {item.quantity} {item.unit || '-'}
                                         </span>
                                     </React.Fragment>
