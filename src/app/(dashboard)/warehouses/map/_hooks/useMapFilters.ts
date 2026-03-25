@@ -189,10 +189,24 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
             descendants.forEach(d => allowedIds.add(d))
         })
 
-        // IMPORTANT: In Map view, if we filtered by a virtual zone, 
-        // we might still need to include the "Path" to that zone so it's not orphaned.
-        // However, for pure filtering of content, this is enough.
-        return zones.filter(z => allowedIds.has(z.id))
+        // IMPORTANT: In Map view, we MUST include original ancestors 
+        // for the hierarchy-based grouping logic (groupWarehouseData) to work.
+        // It needs to see containers like "Dãy", "Sảnh" to trigger merging.
+        const idsWithAncestors = new Set<string>(allowedIds)
+        
+        const findAncestors = (childId: string) => {
+            const zone = zones.find(z => z.id === childId)
+            if (zone && zone.parent_id) {
+                if (!idsWithAncestors.has(zone.parent_id)) {
+                    idsWithAncestors.add(zone.parent_id)
+                    findAncestors(zone.parent_id)
+                }
+            }
+        }
+
+        allowedIds.forEach(id => findAncestors(id))
+
+        return zones.filter(z => idsWithAncestors.has(z.id))
     }, [zones, positions, selectedZoneId])
 
     return {

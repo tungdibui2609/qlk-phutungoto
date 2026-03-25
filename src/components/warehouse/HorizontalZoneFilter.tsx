@@ -55,33 +55,33 @@ export default function HorizontalZoneFilter({
         if (accessToken && systemType) {
             setLoading(true)
             
-            const promises: Promise<any>[] = [
-                supabase
-                    .from('zones')
-                    .select('*')
-                    .eq('system_type', systemType)
-                    .order('level')
-                    .order('name') as any
-            ]
-
-            if (grouped && !externalZones) {
-                promises.push(
-                    supabase
-                        .from('positions')
-                        .select('id, code, system_type, lot_id')
-                        .eq('system_type', systemType) as any
-                )
+            const fetchAllPaginated = async (tableName: string, select: string, queryBuilder: (q: any) => any) => {
+                let results: any[] = []
+                let from = 0
+                const PAGE_SIZE = 1000
+                while (true) {
+                    let query = supabase.from(tableName as any).select(select).range(from, from + PAGE_SIZE - 1)
+                    query = queryBuilder(query)
+                    const { data, error } = await query
+                    if (error) throw error
+                    if (!data || data.length === 0) break
+                    results = [...results, ...data]
+                    if (data.length < PAGE_SIZE) break
+                    from += PAGE_SIZE
+                }
+                return results
             }
 
-            Promise.all(promises).then(([zonesRes, posRes]) => {
-                if (!zonesRes.error && zonesRes.data) {
-                    setInternalZones(zonesRes.data)
-                }
-                if (posRes && !posRes.error && posRes.data) {
-                    setInternalPositions(posRes.data)
-                }
-                setLoading(false)
-            }).catch(() => setLoading(false))
+            fetchAllPaginated('zones', '*', (q) => q.eq('system_type', systemType).order('level').order('name'))
+                .then((zonesData) => {
+                    setInternalZones(zonesData)
+                    setLoading(false)
+                })
+                .catch((err) => {
+                    console.error('Error fetching zone filter data:', err)
+                    if (err?.message) console.error('Supabase Error:', err.message)
+                    setLoading(false)
+                })
 
         } else {
             setLoading(false)
@@ -92,15 +92,15 @@ export default function HorizontalZoneFilter({
     const zones = useMemo(() => {
         const rawZones = externalZones || internalZones
         if (grouped && rawZones.length > 0) {
-            // If externalZones is provided, we assumes it's already grouped (like in Inventory)
-            // Or if we have internalPositions, we group them locally.
-            if (!externalZones && internalPositions.length > 0) {
-                const { zones: gZones } = groupWarehouseData(rawZones, internalPositions)
+            // If we're grouped, we call groupWarehouseData to get the virtual structure.
+            // We pass an empty array for positions since the filter only needs the zone hierarchy.
+            if (!externalZones) {
+                const { zones: gZones } = groupWarehouseData(rawZones, [])
                 return gZones
             }
         }
         return rawZones
-    }, [externalZones, internalZones, internalPositions, grouped])
+    }, [externalZones, internalZones, grouped])
 
     // Helper: Build tree or map for easy lookup
     const zoneMap = useMemo(() => {
