@@ -25,7 +25,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
     const { systemType, currentSystem, hasModule } = useSystem()
     const showInternal = hasModule('internal_products')
     const { showToast } = useToast()
-    const { toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
+    const { getBaseAmount: toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
     const [exportQuantities, setExportQuantities] = useState<Record<string, number>>({})
     const [exportUnits, setExportUnits] = useState<Record<string, string>>({})
     const [customerName, setCustomerName] = useState('')
@@ -48,7 +48,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
         const initialQuantities: Record<string, number> = {}
         const initialUnits: Record<string, string> = {}
 
-        lot.lot_items?.forEach(item => {
+        lot.lot_items?.forEach((item: any) => {
             initialQuantities[item.id] = 0 // Start with 0
             
             // Logic: Pick "Thùng" unit defined for product if it exists
@@ -56,8 +56,8 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
             const availableUnits = [
                 baseUnit,
                 ...productUnits
-                    .filter(pu => pu.product_id === item.product_id)
-                    .map(pu => units.find(u => u.id === pu.unit_id)?.name)
+                    .filter((pu: any) => pu.product_id === item.product_id)
+                    .map((pu: any) => units.find((u: any) => u.id === pu.unit_id)?.name)
             ].filter(Boolean) as string[]
 
             const thungUnit = availableUnits
@@ -66,7 +66,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                     const bHasExtra = b.includes('(') ? 1 : 0
                     return bHasExtra - aHasExtra // Prioritize unit with (
                 })
-                .find(u => 
+                .find((u: any) => 
                     u.toLowerCase().normalize('NFC').includes('thùng')
                 )
 
@@ -80,7 +80,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
         if (autoExportAll) {
             const allExportAll: Record<string, boolean> = {}
             const maxQuantities: Record<string, number> = {}
-            lot.lot_items?.forEach(item => {
+            lot.lot_items?.forEach((item: any) => {
                 allExportAll[item.id] = true
                 maxQuantities[item.id] = item.quantity || 0
             })
@@ -131,7 +131,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
     }
 
     const getConsumedOriginalQty = (itemId: string, selectedQty: number, selectedUnit: string) => {
-        const item = lot.lot_items?.find(i => i.id === itemId)
+        const item = lot.lot_items?.find((i: any) => i.id === itemId)
         if (!item || !item.product_id) return selectedQty
 
         const baseUnit = item.products?.unit || ''
@@ -248,7 +248,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
             })
 
             // Final Update to LOT
-            await supabase.from('lots').update({
+            await (supabase.from('lots') as any).update({
                 quantity: totalRemainingLotQty,
                 metadata: newMetadata,
                 status: totalRemainingLotQty <= 0.000001 ? 'exported' : lot.status
@@ -256,7 +256,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
 
             // Map Cleanup: If lot is empty, clear from positions
             if (totalRemainingLotQty <= 0.000001) {
-                await supabase.from('positions').update({ lot_id: null }).eq('lot_id', lot.id)
+                await (supabase.from('positions') as any).update({ lot_id: null }).eq('lot_id', lot.id)
             }
 
             showToast('Đã thêm vào hàng chờ xuất kho', 'success')
@@ -313,7 +313,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                                             // Apply immediately
                                             const allExportAll: Record<string, boolean> = {}
                                             const maxQuantities: Record<string, number> = {}
-                                            lot.lot_items?.forEach(item => {
+                                            lot.lot_items?.forEach((item: any) => {
                                                 allExportAll[item.id] = true
                                                 maxQuantities[item.id] = item.quantity || 0
                                             })
@@ -330,7 +330,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                         </div>
 
                         <div className="space-y-3">
-                            {lot.lot_items?.map(item => (
+                            {lot.lot_items?.map((item: any) => (
                                 <div key={item.id} className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hover:border-emerald-500/50 transition-all">
                                     <div className="flex items-start justify-between gap-4">
                                         <div className="flex-1 min-w-0">
@@ -579,7 +579,7 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
 
                 {/* Footer */}
                 {(() => {
-                    const isAnyOverLimit = (lot.lot_items || []).some(item => {
+                    const isAnyOverLimit = (lot.lot_items || []).some((item: any) => {
                         const selectedQty = exportQuantities[item.id] || 0
                         if (selectedQty <= 0) return false
                         const consumed = getConsumedOriginalQty(item.id, selectedQty, exportUnits[item.id] || '')

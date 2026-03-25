@@ -123,7 +123,7 @@ export default function PrintInventoryPage() {
     const [reconcileItems, setReconcileItems] = useState<ReconciliationItem[]>([])
 
     // Unit Conversion Support
-    const { convertUnit, toBaseAmount, getBaseToKgRate, conversionMap, unitNameMap } = useUnitConversion()
+    const { convertUnit, getBaseAmount: toBaseAmount, getBaseToKgRate, conversionMap, unitNameMap } = useUnitConversion()
 
     // Zone states for recursive filtering
     const [posToZoneMap, setPosToZoneMap] = useState<Record<string, string>>({})
@@ -248,7 +248,7 @@ export default function PrintInventoryPage() {
                     const { data, error } = await supabase.from('zones').select('id, parent_id').eq('system_type', systemType).range(zonesFrom, zonesFrom + PAGE_SIZE_FIXED - 1)
                     if (error) throw error
                     if (!data || data.length === 0) break
-                    data.forEach(z => { activeHierarchy[z.id] = z.parent_id })
+                    (data as any[]).forEach(z => { activeHierarchy[z.id] = z.parent_id })
                     if (data.length < PAGE_SIZE_FIXED) break
                     zonesFrom += PAGE_SIZE_FIXED
                 }
@@ -260,7 +260,7 @@ export default function PrintInventoryPage() {
                     const { data, error } = await supabase.from('zone_positions').select('zone_id, position_id').range(zpFrom, zpFrom + PAGE_SIZE_FIXED - 1)
                     if (error) throw error
                     if (!data || data.length === 0) break
-                    data.forEach(item => {
+                    (data as any[]).forEach(item => {
                         if (item.position_id && item.zone_id) activePosMap[item.position_id] = item.zone_id
                     })
                     if (data.length < PAGE_SIZE_FIXED) break
@@ -423,7 +423,7 @@ export default function PrintInventoryPage() {
                             if (searchModeParam === 'position') return item.positions?.map((p: any) => p.code) || []
                             if (searchModeParam === 'tag') return item.tags || []
                             if (searchModeParam === 'category') {
-                                return item.categoryIds?.map((cid: string) => categories.find(c => c.id === cid)?.name || '') || []
+                                return item.categoryIds?.map((cid: string) => (fetchedCategories as any[]).find(c => c.id === cid)?.name || '') || []
                             }
                             // searchMode === 'all'
                             return [
@@ -432,7 +432,7 @@ export default function PrintInventoryPage() {
                                 item.lotCode,
                                 ...(item.positions?.map((p: any) => p.code) || []),
                                 ...(item.tags || []),
-                                ...(item.categoryIds?.map((cid: string) => categories.find(c => c.id === cid)?.name || '') || [])
+                                ...(item.categoryIds?.map((cid: string) => (fetchedCategories as any[]).find(c => c.id === cid)?.name || '') || [])
                             ]
                         }
 
@@ -466,10 +466,10 @@ export default function PrintInventoryPage() {
                             }
                         }
 
-                        const targetUnit = targetUnitId ? fetchedUnits.find(u => u.id === targetUnitId) : null
+                        const targetUnit = targetUnitId ? (fetchedUnits as any[]).find((u: any) => u.id === targetUnitId) : null
                         if (targetUnitId && targetUnit && item.productId && item.baseUnit) {
-                            displayUnit = targetUnit.name
-                            displayQty = convertUnit(item.productId, item.productUnit, targetUnit.name, item.quantity, item.baseUnit)
+                            displayUnit = (targetUnit as any).name
+                            displayQty = convertUnit(item.productId, item.productUnit, (targetUnit as any).name, item.quantity, item.baseUnit)
                         }
 
                         if (reportType === 'category') {
@@ -481,8 +481,8 @@ export default function PrintInventoryPage() {
                             }
 
                             itemCatIds.forEach(catId => {
-                                const category = catId ? fetchedCategories.find(c => c.id === catId) : null
-                                const groupHeader = category?.name || 'Chưa phân loại'
+                                const category = catId ? (fetchedCategories as any[]).find(c => c.id === catId) : null
+                                const groupHeader = (category as any)?.name || 'Chưa phân loại'
                                 const groupKey = `${groupHeader}__${item.productSku}__${displayUnit}`
                                 addToGroups(groupKey, groupHeader, displayUnit, displayQty, item, groupsMap)
                             })
@@ -657,7 +657,7 @@ export default function PrintInventoryPage() {
             type: type as any,
             dateTitle,
             warehouse: warehouse || 'Tất cả',
-            items: type === 'accounting' ? accountingItems : type === 'lot' ? groupedLots : reconcileItems,
+            items: (type === 'lot' || type === 'category' || type === 'tags') ? groupedLots : (type === 'accounting' ? accountingItems : reconcileItems),
             companyInfo
         })
     }

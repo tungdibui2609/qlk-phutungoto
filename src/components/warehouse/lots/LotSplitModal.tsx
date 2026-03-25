@@ -23,7 +23,7 @@ interface LotSplitModalProps {
 export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSuccess, units, productUnits, isUtilityEnabled }) => {
     const { currentSystem, hasModule } = useSystem()
     const showInternal = hasModule('internal_products')
-    const { toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
+    const { getBaseAmount: toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
     const [splitQuantities, setSplitQuantities] = useState<Record<string, number>>({})
     const [splitUnits, setSplitUnits] = useState<Record<string, string>>({}) // lot_item_id -> selected unit name
     const [splitAll, setSplitAll] = useState<Record<string, boolean>>({}) // Track "split all" per item
@@ -35,14 +35,14 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
         generateNewLotCode()
         // Initialize splitUnits with item's current unit or product base unit
         const initialUnits: Record<string, string> = {}
-        lot.lot_items?.forEach(item => {
+        lot.lot_items?.forEach((item: any) => {
             // Logic: Pick "Thùng" unit defined for product if it exists
             const baseUnit = item.unit || item.products?.unit || ''
             const availableUnits = [
                 baseUnit,
                 ...productUnits
-                    .filter(pu => pu.product_id === item.product_id)
-                    .map(pu => units.find(u => u.id === pu.unit_id)?.name)
+                    .filter((pu: any) => pu.product_id === item.product_id)
+                    .map((pu: any) => units.find((u: any) => u.id === pu.unit_id)?.name)
             ].filter(Boolean) as string[]
 
             const thungUnit = availableUnits
@@ -51,7 +51,7 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                     const bHasExtra = b.includes('(') ? 1 : 0
                     return bHasExtra - aHasExtra // Prioritize unit with (
                 })
-                .find(u => 
+                .find((u: any) => 
                     u.toLowerCase().normalize('NFC').includes('thùng')
                 )
 
@@ -101,7 +101,7 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
     }
 
     const getConsumedOriginalQty = (itemId: string, selectedQty: number, selectedUnit: string) => {
-        const item = lot.lot_items?.find(i => i.id === itemId)
+        const item = lot.lot_items?.find((item: any) => item.id === itemId)
         if (!item || !item.product_id) return selectedQty
 
         const baseUnit = item.products?.unit || ''
@@ -257,7 +257,7 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                 conversionMap
             })
 
-            const { error: newLotUpdateErr } = await supabase.from('lots').update({
+            const { error: newLotUpdateErr } = await (supabase.from('lots') as any).update({
                 quantity: finalTotalNewLotQty,
                 metadata: {
                     ...(newLot.metadata as any || {}),
@@ -282,7 +282,7 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
             if (!originalMetadata.system_history.split_to) originalMetadata.system_history.split_to = []
             originalMetadata.system_history.split_to.push(newLotCode)
 
-            const { error: origLotUpdateErr } = await supabase.from('lots').update({
+            const { error: origLotUpdateErr } = await (supabase.from('lots') as any).update({
                 quantity: finalTotalRemainingOriginalQty,
                 metadata: originalMetadata,
                 status: finalTotalRemainingOriginalQty <= 0.000001 ? 'exported' : lot.status
@@ -291,7 +291,7 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
 
             // Clear position references if empty
             if (finalTotalRemainingOriginalQty <= 0.000001) {
-                await supabase.from('positions').update({ lot_id: null }).eq('lot_id', lot.id)
+                await (supabase.from('positions') as any).update({ lot_id: null }).eq('lot_id', lot.id)
             }
 
             onSuccess()
@@ -328,7 +328,7 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                         </h4>
 
                         <div className="space-y-3">
-                            {lot.lot_items?.map(item => (
+                            {lot.lot_items?.map((item: any) => (
                                 <div key={item.id} className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hover:border-purple-500/50 transition-all">
                                     <div className="flex items-start justify-between gap-4">
                                         <div className="flex-1 min-w-0">
@@ -505,7 +505,7 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
 
                 {/* Footer */}
                 {(() => {
-                    const isAnyOverLimit = (lot.lot_items || []).some(item => {
+                    const isAnyOverLimit = (lot.lot_items || []).some((item: any) => {
                         const selectedQty = splitQuantities[item.id] || 0
                         if (selectedQty <= 0) return false
                         const consumed = getConsumedOriginalQty(item.id, selectedQty, splitUnits[item.id] || '')

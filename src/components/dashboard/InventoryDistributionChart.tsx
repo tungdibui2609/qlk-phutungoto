@@ -57,7 +57,7 @@ export default function InventoryDistributionChart() {
     const [showCategoryFilter, setShowCategoryFilter] = useState(false)
     const [showSettings, setShowSettings] = useState(false)
     const [isLegendExpanded, setIsLegendExpanded] = useState(false)
-    const { toBaseAmount, getBaseToKgRate, unitNameMap, conversionMap, loading: conversionLoading } = useUnitConversion()
+    const { getBaseAmount: toBaseAmount, getBaseToKgRate, unitNameMap, conversionMap, loading: conversionLoading } = useUnitConversion()
 
     // Fetch Data
     const fetchData = async () => {
@@ -166,8 +166,8 @@ export default function InventoryDistributionChart() {
 
         try {
             // Get latest modules to avoid overwritting other configs
-            const { data: sysData } = await supabase
-                .from('systems')
+            const { data: sysData } = await (supabase
+                .from('systems') as any)
                 .select('modules')
                 .eq('id', currentSystem.id)
                 .single()
@@ -182,8 +182,8 @@ export default function InventoryDistributionChart() {
                 }
             }
 
-            const { error } = await supabase
-                .from('systems')
+            const { error } = await (supabase
+                .from('systems') as any)
                 .update({ modules: updatedModules })
                 .eq('id', currentSystem.id)
 
@@ -235,7 +235,7 @@ export default function InventoryDistributionChart() {
             }
 
             if (lot.lot_items && lot.lot_items.length > 0) {
-                lot.lot_items.forEach(item => {
+                (lot.lot_items as any[]).forEach(item => {
                     if (item.products && item.products.sku) {
                         const u = item.unit || item.products.unit
                         process(
@@ -246,7 +246,7 @@ export default function InventoryDistributionChart() {
                             item.products.unit,
                             item.products.internal_name,
                             item.products.internal_code,
-                            item.products.product_category_rel?.map(r => r.category_id) || []
+                            item.products.product_category_rel?.map((r: any) => r.category_id) || []
                         )
                     }
                 })
@@ -263,7 +263,7 @@ export default function InventoryDistributionChart() {
                         lot.products.unit,
                         lot.products.internal_name,
                         lot.products.internal_code,
-                        lot.products.product_category_rel?.map(r => r.category_id) || []
+                        lot.products.product_category_rel?.map((r: any) => r.category_id) || []
                     )
                 }
             }

@@ -3,7 +3,7 @@ import { saveAs } from 'file-saver';
 import { CompanyInfo } from '@/hooks/usePrintCompanyInfo';
 
 interface InventoryReportExportData {
-    type: 'accounting' | 'lot' | 'reconciliation';
+    type: 'accounting' | 'lot' | 'reconciliation' | 'category' | 'tags';
     dateTitle: string;
     warehouse: string;
     items: any[];
@@ -32,12 +32,12 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
             { header: 'Xuất', key: 'qtyOut', width: 15 },
             { header: 'Tồn Cuối', key: 'balance', width: 15 },
         ];
-    } else if (data.type === 'lot') {
+    } else if (data.type === 'lot' || data.type === 'category' || data.type === 'tags') {
         worksheet.columns = [
             { header: 'STT', key: 'stt', width: 6 },
             { header: 'Mã SP', key: 'productCode', width: 20 },
             { header: 'Tên sản phẩm', key: 'productName', width: 40 },
-            { header: 'Mã phụ / Phân loại', key: 'tags', width: 30 },
+            ...(data.type !== 'category' ? [{ header: 'Mã phụ / Phân loại', key: 'tags', width: 30 }] : []),
             { header: 'ĐVT', key: 'unit', width: 10 },
             { header: 'Số lượng', key: 'quantity', width: 15 },
             { header: 'Quy đổi (Kg)', key: 'kg', width: 15 },
@@ -80,9 +80,11 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
     // 3. Report Title
     const title = data.type === 'accounting' 
         ? 'BÁO CÁO TỔNG HỢP NHẬP XUẤT TỒN' 
-        : data.type === 'lot' 
+        : (data.type === 'lot' || data.type === 'tags')
             ? 'BÁO CÁO TỒN KHO THEO LOT' 
-            : 'BẢNG ĐỐI CHIẾU TỒN KHO VS KẾ TOÁN';
+            : data.type === 'category'
+                ? 'BÁO CÁO TỒN KHO THEO DANH MỤC'
+                : 'BẢNG ĐỐI CHIẾU TỒN KHO VS KẾ TOÁN';
     
     const lastCol = String.fromCharCode(65 + worksheet.columns.length - 1);
     worksheet.mergeCells(`A${currentRow}:${lastCol}${currentRow}`);
@@ -151,25 +153,68 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
                 row.getCell(col).numFmt = '#,##0';
             });
         });
-    } else if (data.type === 'lot') {
+    } else if (data.type === 'lot' || data.type === 'category' || data.type === 'tags') {
         // Here item is GroupedLot or variant logic
         // We'll follow the visual structure: Main row then variant rows
         let stt = 1;
+        let lastCategory: string | null = null;
+        
         data.items.forEach((group: any) => {
-            const mainRow = worksheet.addRow([
+            // Category Header Logic
+            if (data.type === 'category' && group.categoryName && group.categoryName !== lastCategory) {
+                const catItems = data.items.filter((g: any) => g.categoryName === group.categoryName);
+                const catTotalQty = catItems.reduce((sum: number, item: any) => sum + (item.totalQuantity || 0), 0);
+                const catTotalKg = catItems.reduce((sum: number, item: any) => sum + (item.totalKg || 0), 0);
+
+                const catRow = worksheet.addRow([
+                    `DANH MỤC: ${group.categoryName}`,
+                    '',
+                    '',
+                    '',
+                    `Tổng SL: ${catTotalQty.toLocaleString('vi-VN')}`,
+                    `Tổng KG: ${catTotalKg.toLocaleString('vi-VN')}`
+                ]);
+                
+                worksheet.mergeCells(`A${catRow.number}:D${catRow.number}`);
+                catRow.font = { bold: true };
+                catRow.eachCell((cell, colNumber) => {
+                    cell.fill = {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: { argb: 'FFF2CC' } // Light orange/yellow
+                    };
+                    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                    if (colNumber >= 5) {
+                        cell.font = { bold: false, italic: true, size: 9 };
+                        cell.alignment = { horizontal: 'right' };
+                    }
+                });
+                
+                lastCategory = group.categoryName;
+            }
+
+            const rowValues = [
                 stt++,
                 group.productSku,
                 group.productName,
-                '', // Tag is empty for main group
                 group.productUnit,
                 cleanNum(group.totalQuantity),
                 cleanNum(group.totalKg)
-            ]);
+            ];
+            
+            // Insert tags if not category
+            if (data.type !== 'category') {
+                rowValues.splice(3, 0, ''); // Insert empty tag at index 3
+            }
+
+            const mainRow = worksheet.addRow(rowValues);
             mainRow.font = { bold: true };
             mainRow.eachCell(cell => {
                 cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
             });
-            [6, 7].forEach(col => {
+            const qtyCol = data.type === 'category' ? 5 : 6;
+            const kgCol = data.type === 'category' ? 6 : 7;
+            [qtyCol, kgCol].forEach(col => {
                 mainRow.getCell(col).alignment = { horizontal: 'right' };
                 mainRow.getCell(col).numFmt = '#,##0';
             });
@@ -178,7 +223,7 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
             let variantEntries = Array.from(group.variants.entries() as any[]);
             const hasRealVariants = variantEntries.length > 1 || (variantEntries.length === 1 && variantEntries[0][0] !== 'Không có mã phụ');
             
-            if (hasRealVariants) {
+            if (hasRealVariants && data.type !== 'category') {
                 // Sort to put 'Không có mã phụ' at the end
                 variantEntries.sort((a, b) => {
                     if (a[0] === 'Không có mã phụ') return 1;

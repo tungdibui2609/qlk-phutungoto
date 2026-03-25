@@ -62,7 +62,7 @@ export default function WarehouseMapPrintPage() {
     const [lotInfo, setLotInfo] = useState<Record<string, any>>({})
     const [occupiedIds, setOccupiedIds] = useState<Set<string>>(new Set())
 
-    const { toBaseAmount, getBaseToKgRate, unitNameMap, conversionMap } = useUnitConversion()
+    const { getBaseAmount: toBaseAmount, getBaseToKgRate, unitNameMap, conversionMap } = useUnitConversion()
 
     // Editable Titles
     const [editReportTitle, setEditReportTitle] = useState('SƠ ĐỒ BỐ TRÍ KHO')
