@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { productionLoanService } from '@/services/production-inventory/productionLoanService'
 import { QuantityInput } from '@/components/ui/QuantityInput'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUser } from '@/contexts/UserContext'
 import { Combobox, ComboboxOption } from '@/components/ui/Combobox'
 import { lotService } from '@/services/warehouse/lotService'
 
@@ -33,17 +34,25 @@ export const LoanIssueModal: React.FC<LoanIssueModalProps> = ({ isOpen, onClose,
     const [notes, setNotes] = useState('')
     const [submitting, setSubmitting] = useState(false)
 
+    // Production Order Selection
+    const { profile } = useUser()
+    const [productions, setProductions] = useState<any[]>([])
+    const [selectedProductionId, setSelectedProductionId] = useState<string>('')
+    const [fetchingProductions, setFetchingProductions] = useState(false)
+
     useEffect(() => {
         if (isOpen) {
             fetchInventory()
             fetchBorrowers()
+            fetchProductions()
             setStep(1)
             setSelectedItem(null)
             setWorkerName('')
+            setSelectedProductionId('')
             setQuantity(0)
             setNotes('')
         }
-    }, [isOpen, systemType])
+    }, [isOpen, systemType, profile?.company_id])
 
     async function fetchBorrowers() {
         if (!systemType) return
@@ -89,6 +98,19 @@ export const LoanIssueModal: React.FC<LoanIssueModalProps> = ({ isOpen, onClose,
             console.error('Error fetching borrowers:', err)
         } finally {
             setFetchingBorrowers(false)
+        }
+    }
+
+    async function fetchProductions() {
+        if (!profile?.company_id) return
+        setFetchingProductions(true)
+        try {
+            const data = await productionLoanService.getInProgressProductions(supabase, profile.company_id)
+            setProductions(data || [])
+        } catch (err) {
+            console.error('Error fetching productions:', err)
+        } finally {
+            setFetchingProductions(false)
         }
     }
 
@@ -158,6 +180,7 @@ export const LoanIssueModal: React.FC<LoanIssueModalProps> = ({ isOpen, onClose,
                 quantity,
                 unit: selectedItem.unit,
                 systemCode: systemType as string,
+                productionId: selectedProductionId || undefined,
                 notes
             })
 
@@ -254,6 +277,23 @@ export const LoanIssueModal: React.FC<LoanIssueModalProps> = ({ isOpen, onClose,
                                     allowCustom={true}
                                     className="w-full"
                                 />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-sm font-bold text-stone-500">Lệnh sản xuất (Không bắt buộc)</label>
+                                <select
+                                    value={selectedProductionId}
+                                    onChange={e => setSelectedProductionId(e.target.value)}
+                                    className="w-full p-3 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 outline-none focus:border-orange-500 font-medium"
+                                >
+                                    <option value="">-- Không gắn lệnh --</option>
+                                    {productions.map(p => (
+                                        <option key={p.id} value={p.id}>
+                                            [{p.code}] {p.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                {fetchingProductions && <p className="text-[10px] text-stone-400 animate-pulse">Đang tải danh sách lệnh...</p>}
                             </div>
 
                             <div className="space-y-2">

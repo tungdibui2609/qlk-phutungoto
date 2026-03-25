@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Plus, Search, Hammer, AlertCircle, RefreshCw, CheckCircle2 } from 'lucide-react'
+import { Plus, Search, Hammer, AlertCircle, RefreshCw, CheckCircle2, Factory } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { productionLoanService } from '@/services/production-inventory/productionLoanService'
 import { useSystem } from '@/contexts/SystemContext'
@@ -127,6 +127,12 @@ export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, set
                                 <div>
                                     <div className="font-bold text-sm text-stone-800 dark:text-gray-200">{loan.worker_name}</div>
                                     <div className="text-[10px] text-stone-500">Cấp phát: {format(new Date(loan.loan_date), 'dd/MM/yyyy HH:mm')}</div>
+                                    {loan.productions && (
+                                        <div className="mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/30 text-[10px] font-bold text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/50">
+                                            <Factory size={10} />
+                                            Lệnh: {loan.productions.code}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 

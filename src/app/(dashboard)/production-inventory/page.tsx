@@ -9,10 +9,11 @@ import { LoanHistory } from './_components/LoanHistory'
 import { SiteDirectInboundModal } from './_components/SiteDirectInboundModal'
 import { SiteStockReport } from './_components/SiteStockReport'
 import { SiteInboundHistory } from './_components/SiteInboundHistory'
+import { AllocationStats } from './_components/AllocationStats'
 
 export default function ProductionInventoryPage() {
     const { currentSystem } = useSystem()
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'inbound' | 'summary'>('dashboard')
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'inbound' | 'summary' | 'allocation-stats'>('dashboard')
     const [isInboundOpen, setIsInboundOpen] = useState(false)
 
     // Check if module is enabled
@@ -109,6 +110,16 @@ export default function ProductionInventoryPage() {
                     <BarChart3 size={18} />
                     Tồn kho Tổng hợp
                 </button>
+                <button
+                    onClick={() => setActiveTab('allocation-stats')}
+                    className={`flex items-center gap-2 px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'allocation-stats'
+                        ? 'border-blue-500 text-blue-600 dark:text-blue-500'
+                        : 'border-transparent text-stone-500 hover:text-stone-800 dark:hover:text-stone-300'
+                        }`}
+                >
+                    <BarChart3 size={18} />
+                    Thống kê Cấp phát
+                </button>
             </div>
 
             {/* Content */}
@@ -122,6 +133,7 @@ export default function ProductionInventoryPage() {
                 {activeTab === 'history' && <LoanHistory />}
                 {activeTab === 'inbound' && <SiteInboundHistory />}
                 {activeTab === 'summary' && <SiteStockReport />}
+                {activeTab === 'allocation-stats' && <AllocationStats />}
             </div>
 
             <SiteDirectInboundModal 

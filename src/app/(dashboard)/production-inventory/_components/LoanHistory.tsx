@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { History, RefreshCw, Search } from 'lucide-react'
+import { History, RefreshCw, Search, Factory } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { productionLoanService } from '@/services/production-inventory/productionLoanService'
 import { useSystem } from '@/contexts/SystemContext'
@@ -63,6 +63,7 @@ export const LoanHistory = () => {
                             <tr>
                                 <th className="p-4">Thời gian</th>
                                 <th className="p-4">Người nhận</th>
+                                <th className="p-4">Lệnh sản xuất</th>
                                 <th className="p-4">Sản phẩm</th>
                                 <th className="p-4 text-center">Số lượng</th>
                                 <th className="p-4">Trạng thái</th>
@@ -77,6 +78,21 @@ export const LoanHistory = () => {
                                     </td>
                                     <td className="p-4 text-sm font-bold text-stone-800 dark:text-gray-200">
                                         {item.worker_name}
+                                    </td>
+                                    <td className="p-4">
+                                        {item.productions ? (
+                                            <div className="flex items-center gap-2">
+                                                <div className="p-1.5 bg-blue-50 dark:bg-blue-900/30 rounded-lg text-blue-600 dark:text-blue-400">
+                                                    <Factory size={14} />
+                                                </div>
+                                                <div>
+                                                    <div className="text-sm font-bold text-stone-800 dark:text-gray-200">{item.productions.code}</div>
+                                                    <div className="text-[10px] text-stone-500 truncate max-w-[120px]">{item.productions.name}</div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <span className="text-xs text-stone-400 font-medium italic">Không gắn lệnh</span>
+                                        )}
                                     </td>
                                     <td className="p-4">
                                         <div className="font-bold text-sm text-stone-800 dark:text-gray-200">{item.products?.name}</div>

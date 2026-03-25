@@ -8,6 +8,9 @@ export const productionLoanService = {
                 *,
                 products (
                    id, name, sku, system_type
+                ),
+                productions (
+                   id, code, name
                 )
             `)
             .eq('system_code', systemCode)
@@ -25,6 +28,9 @@ export const productionLoanService = {
                 *,
                 products (
                    id, name, sku, system_type
+                ),
+                productions (
+                   id, code, name
                 )
             `)
             .eq('system_code', systemCode)
@@ -36,7 +42,7 @@ export const productionLoanService = {
         return data || []
     },
 
-    async issueLoan({ supabase, lotItemId, productId, workerName, quantity, unit, systemCode, notes }: {
+    async issueLoan({ supabase, lotItemId, productId, workerName, quantity, unit, systemCode, productionId, notes }: {
         supabase: SupabaseClient,
         lotItemId: string,
         productId: string,
@@ -44,6 +50,7 @@ export const productionLoanService = {
         quantity: number,
         unit: string,
         systemCode: string,
+        productionId?: string,
         notes?: string
     }) {
         const { data: loan, error: loanError } = await (supabase.from('production_loans') as any)
@@ -55,7 +62,8 @@ export const productionLoanService = {
                 unit,
                 notes,
                 status: 'active',
-                system_code: systemCode
+                system_code: systemCode,
+                production_id: productionId
             })
             .select()
             .single()
@@ -193,5 +201,27 @@ export const productionLoanService = {
 
         if (error) throw error
         return data
+    },
+
+    async getInProgressProductions(supabase: SupabaseClient, companyId: string) {
+        const { data, error } = await supabase
+            .from('productions')
+            .select('id, code, name')
+            .eq('company_id', companyId)
+            .eq('status', 'IN_PROGRESS')
+            .order('code', { ascending: false })
+
+        if (error) throw error
+        return data || []
+    },
+
+    async getAllocationStatsByProduction(supabase: SupabaseClient, systemCode: string) {
+        const { data, error } = await supabase
+            .from('production_allocation_statistics')
+            .select('*')
+            .order('production_code', { ascending: false })
+
+        if (error) throw error
+        return data || []
     }
 }
