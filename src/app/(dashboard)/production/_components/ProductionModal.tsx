@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Plus, Save, FileText, Calendar, Info, Activity, Factory, Package, Users, Weight, Hash, Trash2, Wand2, Search, Loader2, Warehouse, ChevronDown, CheckCircle2, X, Scale } from 'lucide-react'
+import { Plus, Save, FileText, Calendar, Info, Activity, Factory, Package, Users, Weight, Hash, Trash2, Wand2, Search, Loader2, Warehouse, ChevronDown, CheckCircle2, X, Scale, Truck, TrendingUp, PieChart, ArrowRight } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
 import { useSystem } from '@/contexts/SystemContext'
 import { extractWeightFromName, MAIN_PACKAGE_UNITS, normalizeUnit, convertUnit } from '@/lib/unitConversion'
+import { formatQuantityFull } from '@/lib/numberUtils'
+import { productionLoanService } from '@/services/production-inventory/productionLoanService'
 
 interface ProductionLot {
     id?: string
@@ -107,6 +109,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     
     // Dynamic Product & Lot Lines
     const [lots, setLots] = useState<ProductionLot[]>([])
+    const [allocations, setAllocations] = useState<any[]>([])
+    const [loadingAllocations, setLoadingAllocations] = useState(false)
+    const [activeTab, setActiveTab] = useState<'products' | 'allocations' | 'analysis'>('products')
 
     // Data lists for selection
     const [products, setProducts] = useState<any[]>([])
@@ -119,7 +124,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const [rowSearchTerms, setRowSearchTerms] = useState<Record<number, string>>({})
     const [activeRowIdx, setActiveRowIdx] = useState<number | null>(null)
 
-    // Summary calculations for View Mode
+    // Summary calculations
     const summary = useMemo(() => {
         let planned = 0
         let actual = 0
@@ -130,6 +135,45 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
         const rate = planned > 0 ? (actual / planned) * 100 : 0
         return { planned, actual, rate }
     }, [lots])
+
+    const analysisSummary = useMemo(() => {
+        if (!readOnly || !editItem) return null;
+        
+        // 1. Material aggregation
+        const materialStats: Record<string, { name: string, sku: string, total: number, unit: string }> = {};
+        allocations.forEach(aln => {
+            const pid = aln.product_id;
+            if (!materialStats[pid]) {
+                materialStats[pid] = { 
+                    name: aln.products?.name || 'Vật tư ẩn', 
+                    sku: aln.products?.sku || '---', 
+                    total: 0, 
+                    unit: aln.unit 
+                };
+            }
+            materialStats[pid].total += aln.quantity || 0;
+        });
+
+        // 2. Consumption per Ton
+        const actualTons = summary.actual / 1000;
+        const materials = Object.values(materialStats).map(m => ({
+            ...m,
+            perTon: actualTons > 0 ? (m.total / actualTons) : 0
+        }));
+
+        // 3. Time Progress
+        let timeProgress = 0;
+        if (startDate && endDate) {
+            const start = new Date(startDate).getTime();
+            const end = new Date(endDate).getTime();
+            const now = new Date().getTime();
+            if (end > start) {
+                timeProgress = Math.min(100, Math.max(0, ((now - start) / (end - start)) * 100));
+            }
+        }
+
+        return { materials, timeProgress, actualTons };
+    }, [allocations, summary.actual, startDate, endDate, readOnly, editItem])
 
     useEffect(() => {
         if (editItem) {
@@ -145,6 +189,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             
             // Fetch production lots if editing (now includes product details)
             fetchProductionLots(editItem.id)
+            if (readOnly) {
+                fetchAllocations(editItem.id)
+            }
         } else {
             setCode('')
             setName('')
@@ -155,9 +202,11 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             setTargetSystemCode('')
             setCustomerId('')
             setLots([])
+            setAllocations([])
+            setActiveTab('products')
             setRowSearchTerms({})
         }
-    }, [editItem, isOpen])
+    }, [editItem, isOpen, readOnly])
 
     useEffect(() => {
         if (isOpen) {
@@ -287,6 +336,28 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                 if (l.product_name) searches[idx] = l.product_name
             })
             setRowSearchTerms(searches)
+        }
+    }
+
+    const fetchAllocations = async (prodId: string) => {
+        setLoadingAllocations(true)
+        try {
+            const { data, error } = await supabase
+                .from('production_loans')
+                .select(`
+                    *,
+                    products (
+                        id, name, sku
+                    )
+                `)
+                .eq('production_id', prodId)
+            
+            if (error) throw error
+            setAllocations(data || [])
+        } catch (err: any) {
+            console.error('Fetch allocations error:', err)
+        } finally {
+            setLoadingAllocations(false)
         }
     }
 
@@ -627,11 +698,11 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
 
                         {/* Section 3: Product & Lot List (DYNAMIC) */}
                         <div className="space-y-4">
-                            <div className="flex items-center justify-between px-2">
-                                <div className="flex items-center gap-2 text-stone-400 font-black text-[10px] uppercase tracking-widest">
-                                    <Package size={14} className="text-orange-500" /> Danh sách sản phẩm & Lot
-                                </div>
-                                {!readOnly && (
+                            {!readOnly && (
+                                <div className="flex items-center justify-between px-2">
+                                    <div className="flex items-center gap-2 text-stone-400 font-black text-[10px] uppercase tracking-widest">
+                                        <Package size={14} className="text-orange-500" /> Danh sách sản phẩm & Lot
+                                    </div>
                                     <button
                                         type="button"
                                         onClick={addLotRow}
@@ -640,13 +711,198 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                     >
                                         <Plus size={16} /> Thêm sản phẩm
                                     </button>
-                                )}
-                            </div>
+                                </div>
+                            )}
 
-                            {lots.length === 0 ? (
-                                <div className="p-20 text-center bg-white dark:bg-zinc-800/40 rounded-[32px] border border-stone-200 dark:border-zinc-800 border-dashed">
-                                    <Package className="mx-auto text-stone-200 mb-4" size={48} />
-                                    <p className="text-stone-400 font-bold text-sm uppercase tracking-widest">Chưa có sản phẩm nào.</p>
+                            {/* Section Header for ReadOnly Mode */}
+                            {readOnly && (
+                                <div className="flex items-center gap-2 px-2 text-stone-400 font-black text-[10px] uppercase tracking-widest mb-2">
+                                    <Package size={14} className="text-orange-500" /> Chi tiết Lệnh sản xuất {activeTab === 'allocations' && '& Cấp phát'}
+                                </div>
+                            )}
+                            
+                            {/* Tabs for View Mode */}
+                            {readOnly && (
+                                <div className="flex p-1 bg-stone-100 dark:bg-zinc-800 rounded-2xl w-fit mb-6">
+                                    <button
+                                        type="button"
+                                        onClick={() => setActiveTab('products')}
+                                        className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === 'products' ? 'bg-white dark:bg-zinc-700 text-orange-600 shadow-sm' : 'text-stone-400'}`}
+                                    >
+                                        <Package size={14} />
+                                        Sản phẩm đầu ra
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setActiveTab('allocations')}
+                                        className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === 'allocations' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-stone-400'}`}
+                                    >
+                                        <Truck className={activeTab === 'allocations' ? 'text-blue-600' : 'text-stone-400'} size={14} />
+                                        Vật tư đã cấp phát
+                                        {allocations.length > 0 && (
+                                            <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'allocations' ? 'bg-blue-100 text-blue-600' : 'bg-stone-200 text-stone-500'}`}>
+                                                {allocations.length}
+                                            </span>
+                                        )}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setActiveTab('analysis')}
+                                        className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === 'analysis' ? 'bg-white dark:bg-zinc-700 text-emerald-600 shadow-sm' : 'text-stone-400'}`}
+                                    >
+                                        <TrendingUp className={activeTab === 'analysis' ? 'text-emerald-600' : 'text-stone-400'} size={14} />
+                                        Phân tích hiệu suất
+                                    </button>
+                                </div>
+                            )}
+
+                            {readOnly && activeTab === 'analysis' && analysisSummary ? (
+                                <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
+                                    {/* Progress Grid */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[32px] border border-stone-200 dark:border-zinc-800 shadow-sm space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="p-2 bg-emerald-500/10 rounded-lg">
+                                                        <PieChart size={18} className="text-emerald-600" />
+                                                    </div>
+                                                    <span className="text-xs font-black uppercase tracking-widest text-stone-500">Tiến độ sản xuất</span>
+                                                </div>
+                                                <span className="text-lg font-black text-emerald-600">{summary.rate.toFixed(1)}%</span>
+                                            </div>
+                                            <div className="w-full bg-stone-100 dark:bg-zinc-700 h-3 rounded-full overflow-hidden">
+                                                <div className="h-full bg-emerald-500 transition-all duration-1000" style={{ width: `${Math.min(100, summary.rate)}%` }} />
+                                            </div>
+                                            <div className="flex justify-between text-[10px] font-bold text-stone-400">
+                                                <span>THỰC TẾ: {summary.actual.toLocaleString('vi-VN')} KG</span>
+                                                <span>KẾ HOẠCH: {summary.planned.toLocaleString('vi-VN')} KG</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[32px] border border-stone-200 dark:border-zinc-800 shadow-sm space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="p-2 bg-blue-500/10 rounded-lg">
+                                                        <Calendar size={18} className="text-blue-600" />
+                                                    </div>
+                                                    <span className="text-xs font-black uppercase tracking-widest text-stone-500">Tiến độ thời gian</span>
+                                                </div>
+                                                <span className="text-lg font-black text-blue-600">{analysisSummary.timeProgress.toFixed(1)}%</span>
+                                            </div>
+                                            <div className="w-full bg-stone-100 dark:bg-zinc-700 h-3 rounded-full overflow-hidden">
+                                                <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${analysisSummary.timeProgress}%` }} />
+                                            </div>
+                                            <div className="flex justify-between text-[10px] font-bold text-stone-400">
+                                                <span>BẮT ĐẦU: {startDate ? new Date(startDate).toLocaleDateString('vi-VN') : '---'}</span>
+                                                <span>KẾ THÚC: {endDate ? new Date(endDate).toLocaleDateString('vi-VN') : '---'}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Material Analysis */}
+                                    <div className="p-8 bg-black/5 dark:bg-white/5 rounded-[32px] border border-stone-200 dark:border-zinc-800">
+                                        <div className="flex items-center gap-3 mb-6">
+                                            <div className="p-3 bg-white dark:bg-zinc-800 rounded-2xl shadow-sm text-emerald-600">
+                                                <TrendingUp size={24} />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-black text-stone-900 dark:text-white uppercase tracking-widest text-sm">Phân tích tỉ lệ tiêu hao</h3>
+                                                <p className="text-xs text-stone-500 font-bold italic">Dựa trên {analysisSummary.actualTons.toFixed(2)} tấn thành phẩm thực tế</p>
+                                            </div>
+                                        </div>
+
+                                        {analysisSummary.materials.length === 0 ? (
+                                            <div className="p-12 text-center text-stone-400 font-bold bg-white/50 dark:bg-zinc-900/50 rounded-2xl border border-dashed border-stone-300 dark:border-zinc-700">
+                                                Chưa có dữ liệu cấp phát để phân tích.
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                {analysisSummary.materials.map((m, idx) => (
+                                                    <div key={idx} className="bg-white dark:bg-zinc-800 p-6 rounded-2xl border border-stone-100 dark:border-zinc-700 shadow-sm flex flex-col gap-3 relative overflow-hidden group">
+                                                        <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                                                            <Package size={48} />
+                                                        </div>
+                                                        <div className="flex flex-col">
+                                                            <span className="text-[10px] font-black text-stone-400 uppercase tracking-tighter truncate">{m.name}</span>
+                                                            <span className="text-[9px] font-mono text-stone-300">{m.sku}</span>
+                                                        </div>
+                                                        
+                                                        <div className="flex items-center gap-4 mt-2">
+                                                            <div className="flex-1 flex flex-col items-center">
+                                                                <span className="text-[10px] font-bold text-stone-400 uppercase">TIÊU THỤ</span>
+                                                                <span className="text-sm font-black text-stone-700 dark:text-stone-200">{formatQuantityFull(m.total)} <span className="text-[10px]">{m.unit}</span></span>
+                                                            </div>
+                                                            <ArrowRight size={16} className="text-stone-200" />
+                                                            <div className="flex-1 flex flex-col items-center">
+                                                                <span className="text-[10px] font-black text-emerald-600 uppercase">TỈ LỆ / TẤN</span>
+                                                                <span className="text-lg font-black text-emerald-600">
+                                                                    {m.perTon.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
+                                                                    <span className="text-[10px] ml-1 font-bold">{m.unit}</span>
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : readOnly && activeTab === 'allocations' ? (
+                                <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
+                                    {loadingAllocations ? (
+                                        <div className="p-12 text-center bg-white dark:bg-zinc-800/40 rounded-[32px] border border-stone-200 dark:border-zinc-800 border-dashed">
+                                            <Loader2 className="animate-spin mx-auto text-stone-300 mb-4" size={32} />
+                                            <p className="text-stone-400 font-bold text-sm uppercase tracking-widest">Đang tải dữ liệu cấp phát...</p>
+                                        </div>
+                                    ) : allocations.length === 0 ? (
+                                        <div className="p-20 text-center bg-white dark:bg-zinc-800/40 rounded-[32px] border border-stone-200 dark:border-zinc-800 border-dashed">
+                                            <Package className="mx-auto text-stone-200 mb-4" size={48} />
+                                            <p className="text-stone-400 font-bold text-sm uppercase tracking-widest">Chưa có vật tư nào được cấp phát cho lệnh này.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-white dark:bg-zinc-800/40 rounded-[32px] border border-stone-200 dark:border-zinc-800 overflow-hidden shadow-sm">
+                                            <table className="w-full text-left border-collapse">
+                                                <thead>
+                                                    <tr className="bg-stone-50/50 dark:bg-zinc-800/50 border-b border-stone-100 dark:border-zinc-800">
+                                                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-stone-400">Vật tư / Nguyên liệu</th>
+                                                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-stone-400">Số lượng nhận</th>
+                                                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-stone-400">Người nhận</th>
+                                                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-stone-400 text-right">Ngày cấp</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
+                                                    {allocations.map((aln, aIdx) => (
+                                                        <tr key={aln.id || aIdx} className="hover:bg-stone-50/50 dark:hover:bg-zinc-800/30 transition-colors">
+                                                            <td className="px-6 py-4">
+                                                                <div className="font-bold text-stone-900 dark:text-white text-sm">{aln.products?.name}</div>
+                                                                <div className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-tighter">{aln.products?.sku || '---'}</div>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <div className="font-black text-blue-600 dark:text-blue-400 flex items-baseline gap-1">
+                                                                    {formatQuantityFull(aln.quantity)}
+                                                                    <span className="text-[10px] font-bold text-stone-400 uppercase">{aln.unit}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <div className="text-sm font-medium text-stone-600 dark:text-stone-400 flex items-center gap-2">
+                                                                    <Users size={14} className="text-stone-300" />
+                                                                    {aln.worker_name || 'N/A'}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-right">
+                                                                <div className="text-xs font-bold text-stone-500">
+                                                                    {new Date(aln.created_at).toLocaleDateString('vi-VN')}
+                                                                </div>
+                                                                <div className="text-[9px] text-stone-400 italic">
+                                                                    {new Date(aln.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
                                 <div className={readOnly ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-3'}>

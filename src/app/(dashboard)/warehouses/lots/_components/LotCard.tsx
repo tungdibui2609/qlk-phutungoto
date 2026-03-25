@@ -8,6 +8,7 @@ import Protected from '@/components/auth/Protected'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
 import React from 'react'
+import { formatQuantityFull } from '@/lib/numberUtils'
 
 interface LotCardProps {
     lot: Lot
@@ -282,7 +283,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                     }, {})
                                 ).map(([unit, total]: [string, any]) => (
                                     <span key={unit} className="text-orange-600 font-bold text-sm bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-lg border border-orange-100 dark:border-orange-900/30">
-                                        {total} <span className="text-[10px] font-medium text-orange-500/70">{unit}</span>
+                                        {formatQuantityFull(total)} <span className="text-[10px] font-medium text-orange-500/70">{unit}</span>
                                     </span>
                                 ))
                             ) : (
@@ -348,7 +349,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                                                     {showInternal && item.products?.internal_code ? item.products.internal_code : item.products?.sku}
                                                                 </div>
                                                                 <div className="flex items-center gap-1 font-mono text-xs bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 px-2 py-0.5 rounded border border-orange-100 dark:border-orange-900/30 shrink-0">
-                                                                    <span className="font-bold">{item.quantity}</span>
+                                                                    <span className="font-bold">{formatQuantityFull(item.quantity)}</span>
                                                                     <span className="opacity-80">{formatUnitWithWeight(item.product_id, (item as any).unit || item.products?.unit)}</span>
                                                                 </div>
                                                                 {(parsedHistory || originTag) && (
@@ -415,7 +416,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                                         )}
                                                     </div>
                                                     <span className="font-mono text-xs bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300 h-fit">
-                                                        {lot.quantity} {formatUnitWithWeight(lot.product_id, lot.products.unit)}
+                                                        {formatQuantityFull(lot.quantity)} {formatUnitWithWeight(lot.product_id, lot.products.unit)}
                                                     </span>
                                                 </div>
                                             ) : '---'}

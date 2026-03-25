@@ -10,6 +10,7 @@ import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
 import { Combobox, ComboboxOption } from '@/components/ui/Combobox'
 import { lotService } from '@/services/warehouse/lotService'
+import { formatQuantityFull } from '@/lib/numberUtils'
 
 interface LoanIssueModalProps {
     isOpen: boolean
@@ -249,7 +250,9 @@ export const LoanIssueModal: React.FC<LoanIssueModalProps> = ({ isOpen, onClose,
                                                 <div className="text-xs text-stone-500">{item.products.sku} • {item.lots.code}</div>
                                             </div>
                                             <div className="text-right">
-                                                <div className="font-mono font-bold">{item.quantity} <span className="text-xs text-stone-400">{item.unit}</span></div>
+                                                <div className="font-mono font-bold text-sm">
+                                                    {formatQuantityFull(item.quantity)} <span className="text-[10px] text-stone-400 font-bold uppercase">{item.unit}</span>
+                                                </div>
                                             </div>
                                         </div>
                                     ))
@@ -262,7 +265,7 @@ export const LoanIssueModal: React.FC<LoanIssueModalProps> = ({ isOpen, onClose,
                                 <Package className="text-orange-500" />
                                 <div>
                                     <div className="font-bold">{selectedItem.products.name}</div>
-                                    <div className="text-xs text-stone-500">Tồn kho: {selectedItem.quantity} {selectedItem.unit}</div>
+                                    <div className="text-xs text-stone-500 font-bold">Tồn kho hiện tại: <span className="text-orange-600">{formatQuantityFull(selectedItem.quantity)}</span> {selectedItem.unit}</div>
                                 </div>
                             </div>
 

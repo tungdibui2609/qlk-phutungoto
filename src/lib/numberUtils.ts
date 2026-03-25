@@ -13,10 +13,32 @@ export function parseQuantity(val: string | number | undefined | null): number {
     if (val === undefined || val === null) return 0
     if (typeof val === 'number') return val
 
-    // Replace comma with dot for standard float parsing
-    const normalized = val.replace(',', '.')
-    const parsed = parseFloat(normalized)
+    let s = val.trim()
+    if (!s) return 0
 
+    // VIETNAMESE NUMERIC PARSING LOGIC:
+    // 1. If comma exists: it's definitely the decimal separator (VN Standard).
+    //    We remove all dots (thousand separators) and replace comma with dot for parseFloat.
+    if (s.includes(',')) {
+        s = s.replace(/\./g, '').replace(',', '.')
+    } else {
+        // 2. If no comma exists, handle dots.
+        const dots = s.match(/\./g)
+        if (dots && dots.length > 1) {
+            // Multiple dots -> always thousand separators.
+            s = s.replace(/\./g, '')
+        } else if (dots && dots.length === 1) {
+            // Single dot: ambiguous. 
+            // Heuristic: If followed by exactly 3 digits, it's likely a thousand separator in vi-VN.
+            // e.g. "13.964" -> "13964", but "13.9" -> "13.9", "1.50" -> "1.50"
+            const parts = s.split('.')
+            if (parts[1].length === 3) {
+                s = s.replace('.', '')
+            }
+        }
+    }
+
+    const parsed = parseFloat(s)
     return isNaN(parsed) ? 0 : parsed
 }
 

@@ -11,6 +11,7 @@ import { useUser } from '@/contexts/UserContext'
 import { getProductColorStyle } from '@/lib/warehouseUtils'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
+import { formatQuantityFull } from '@/lib/numberUtils'
 
 
 interface LotDetailsModalProps {
@@ -315,7 +316,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                         }, {});
                                         return Object.entries(summary).map(([unit, total]) => (
                                             <span key={unit} className="text-[10px] font-bold text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-lg border border-orange-100 dark:border-orange-900/10">
-                                                {total as number} {unit}
+                                                {formatQuantityFull(total as number)} {unit}
                                             </span>
                                         ));
                                     })()}
@@ -353,7 +354,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                                             )}
                                                         </div>
                                                         <div className="flex items-center gap-1 px-2 py-1 bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 rounded-lg border border-orange-100 dark:border-orange-900/30 shrink-0 self-start">
-                                                            <span className="text-xs font-bold">{item.quantity}</span>
+                                                            <span className="text-xs font-bold">{formatQuantityFull(item.quantity)}</span>
                                                             <span className="text-[10px] font-medium opacity-80">{formatUnitWithWeight(item.product_id, (item as any).unit || item.products?.unit)}</span>
                                                         </div>
 

@@ -8,6 +8,7 @@ import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
 import { supabase } from '@/lib/supabaseClient'
 import { LotLabel } from '@/components/warehouse/lots/LotLabel'
+import { formatQuantityFull } from '@/lib/numberUtils'
 
 
 interface QrCodeModalProps {
@@ -34,9 +35,9 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
 
     // Products
     if (lot.lot_items && lot.lot_items.length > 0) {
-        const productInfo = lot.lot_items.map(item => {
+        const productInfo = lot.lot_items.map((item: any) => {
             const name = showInternal && item.products?.internal_name ? item.products.internal_name : (item.products?.name || 'SP')
-            return `${name} (${item.quantity} ${item.unit || item.products?.unit || ''})`
+            return `${name} (${formatQuantityFull(item.quantity)} ${item.unit || item.products?.unit || ''})`
         }).join(', ')
         qrLines.push(`Sản phẩm: ${productInfo}`)
     }
@@ -48,7 +49,7 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
 
     // Positions
     if (lot.positions && lot.positions.length > 0) {
-        const posInfo = lot.positions.map(p => p.code).join(', ')
+        const posInfo = lot.positions.map((p: any) => p.code).join(', ')
         qrLines.push(`Vị trí: ${posInfo}`)
     }
 
@@ -106,17 +107,17 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
                 supplier: lot.suppliers?.name || 'N/A',
                 work_area_name: workArea?.name || '',
                 label_quantity: printQuantity,
-                products: lot.lot_items?.map(item => ({
+                products: lot.lot_items?.map((item: any) => ({
                     name: (showInternal && item.products?.internal_name) || item.products?.name || 'SP',
                     internal_name: item.products?.internal_name || '',
                     sku: (showInternal && item.products?.internal_code) || item.products?.sku || '',
                     internal_code: item.products?.internal_code || '',
                     quantity: item.quantity,
                     unit: item.unit || item.products?.unit || '',
-                    tags: lot.lot_tags?.filter(t => t.lot_item_id === item.id).map(t => t.tag) || []
+                    tags: lot.lot_tags?.filter((t: any) => t.lot_item_id === item.id).map((t: any) => t.tag) || []
                 })) || [],
                 packaging_date: lot.packaging_date,
-                positions: lot.positions?.map(p => p.code) || []
+                positions: lot.positions?.map((p: any) => p.code) || []
             }
 
             console.log('Sending print data:', printData)
@@ -214,13 +215,13 @@ export function QrCodeModal({ lot, onClose, workArea }: QrCodeModalProps) {
                                     product_name: (showInternal && lot.lot_items?.[0]?.products?.internal_name) || lot.lot_items?.[0]?.products?.name || 'SP',
                                     quantity: lot.lot_items?.[0]?.quantity,
                                     unit: lot.lot_items?.[0]?.unit || lot.lot_items?.[0]?.products?.unit || '',
-                                    positions: lot.positions?.map(p => p.code) || [],
-                                    products: lot.lot_items?.map(item => ({
+                                    positions: lot.positions?.map((p: any) => p.code) || [],
+                                    products: lot.lot_items?.map((item: any) => ({
                                         name: (showInternal && item.products?.internal_name) || item.products?.name || 'SP',
                                         sku: (showInternal && item.products?.internal_code) || item.products?.sku || '',
                                         quantity: item.quantity,
                                         unit: item.unit || item.products?.unit || '',
-                                        tags: lot.lot_tags?.filter(t => t.lot_item_id === item.id).map(t => t.tag) || []
+                                        tags: lot.lot_tags?.filter((t: any) => t.lot_item_id === item.id).map((t: any) => t.tag) || []
                                     })) || [],
                                 }}
                                 showBorder={false}
