@@ -5,6 +5,7 @@ import {
     getBaseToKgRate as getBaseToKgRateLogic, 
     convertUnit as convertUnitLogic, 
     normalizeUnit,
+    canonicalizeUnit,
     UnitNameMap, 
     ConversionMap 
 } from '@/lib/unitConversion'
@@ -64,9 +65,13 @@ export function useUnitConversion() {
         const m = new Map<string, string>()
         units.forEach(u => {
             const normalized = normalizeUnit(u.name)
+            const canonical = canonicalizeUnit(u.name)
             m.set(normalized, u.id)
-            // Also map the name without weight suffix if present (e.g. "Thùng" for "Thùng (20kg)")
-            const withoutWeight = normalized.replace(/\s*\([^)]*\)/, '').trim()
+            if (canonical !== normalized) {
+                m.set(canonical, u.id)
+            }
+            // Also map the name without weight suffix if present
+            const withoutWeight = canonical.replace(/\(\d+(\.\d+)?k?g\)/, '').trim()
             if (!m.has(withoutWeight)) {
                 m.set(withoutWeight, u.id)
             }
@@ -132,6 +137,7 @@ export function useUnitConversion() {
         getBaseToKgRate,
         convertUnit: getConvertedUnit, // Maintain internal naming consistency
         unitNameMap,
+        unitIdMap,
         conversionMap
     }
 }

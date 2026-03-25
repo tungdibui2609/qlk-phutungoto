@@ -2,7 +2,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { Database } from '@/lib/database.types'
-import { convertUnit as convertUnitLogic, normalizeUnit, isKg, extractWeightFromName } from '@/lib/unitConversion'
+import { convertUnit as convertUnitLogic, normalizeUnit, isKg, extractWeightFromName, canonicalizeUnit, getMatchingUnitName } from '@/lib/unitConversion'
 
 export const dynamic = 'force-dynamic'
 
@@ -155,6 +155,8 @@ export async function GET(request: Request) {
             internalName?: string | null
             warehouse: string
             unit: string
+            unitId?: string | null
+            unitRaw?: string | null
             opening: number
             qtyIn: number
             qtyOut: number
@@ -217,15 +219,15 @@ export async function GET(request: Request) {
         const categoryMap = new Map<string, string>() // ID -> Name
         ; (categoriesData as any[])?.forEach(c => categoryMap.set(c.id, c.name))
 
-        const unitNameMap = new Map<string, string>() // Normalized Name -> ID
+        const unitNameMap = new Map<string, string>() // Canonical Name -> ID
         const unitIdMap = new Map<string, string>()   // ID -> Name
         ; (unitsData as any[])?.forEach(u => {
-            const normalized = normalizeUnit(u.name)
-            unitNameMap.set(normalized, u.id)
+            const canonical = canonicalizeUnit(u.name)
+            unitNameMap.set(canonical, u.id)
             unitIdMap.set(u.id, u.name)
             
-            // Also map the name without weight suffix if present (e.g. "Thùng" for "Thùng (20kg)")
-            const withoutWeight = normalized.replace(/\s*\([^)]*\)/, '').trim()
+            // Also map the name without weight suffix if present
+            const withoutWeight = canonical.replace(/\(\d+(\.\d+)?k?g\)/, '').trim()
             if (!unitNameMap.has(withoutWeight)) {
                 unitNameMap.set(withoutWeight, u.id)
             }
@@ -263,6 +265,7 @@ export async function GET(request: Request) {
             let key = ''
             let quantity = item.quantity
             let unitDisplay = uName
+            let unitIdVal: string | null = null
             let isUnconvertible = false
 
             const prod = productMap.get(pid)
@@ -280,6 +283,7 @@ export async function GET(request: Request) {
 
             if (targetUnitId && isConvertible) {
                 // CONVERTIBLE
+                unitIdVal = targetUnitId
                 key = `${pid}_${wName}_${targetUnitId}`
                 // Display the suffix if the target unit is not already formatted and has a weight factor
                 const rate = conversionMap.get(pid)?.get(targetUnitId)
@@ -288,6 +292,8 @@ export async function GET(request: Request) {
                 quantity = convertUnitLogic(pid, uName, targetUnit!.name, quantity, baseUnitName, unitNameMap, conversionMap)
             } else {
                 // NOT CONVERTIBLE or NO TARGET UNIT
+                const canonicalUName = canonicalizeUnit(uName)
+                unitIdVal = unitNameMap.get(canonicalUName) || null
                 key = `${pid}_${wName}_${uName}`
                 if (targetUnitId) {
                     isUnconvertible = true
@@ -319,6 +325,8 @@ export async function GET(request: Request) {
                     internalName: prod?.internal_name || null,
                     warehouse: wName,
                     unit: unitDisplay,
+                    unitId: unitIdVal,
+                    unitRaw: uName,
                     opening: 0,
                     qtyIn: 0,
                     qtyOut: 0,

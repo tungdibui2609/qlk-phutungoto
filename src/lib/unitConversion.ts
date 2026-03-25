@@ -8,6 +8,20 @@ export const normalizeUnit = (s: string | null | undefined): string => {
     return s.normalize('NFC').toLowerCase().trim();
 };
 
+export const canonicalizeUnit = (s: string | null | undefined): string => {
+    if (!s) return '';
+    return s.normalize('NFC').toLowerCase().replace(/\s+/g, '');
+};
+
+/**
+ * Returns a unit name suffix-stripped for matching purposes.
+ * e.g. "thùng(20kg)" -> "thùng"
+ */
+export const getMatchingUnitName = (s: string | null | undefined): string => {
+    const canonical = canonicalizeUnit(s);
+    return canonical.replace(/\(\d+(\.\d+)?k?g\)/g, '');
+};
+
 const KG_NAMES = ['kg', 'kilogram', 'ki-lo-gam', 'kgs', 'kilo', 'kg.'];
 
 export const isKg = (name: string | null | undefined): boolean => {

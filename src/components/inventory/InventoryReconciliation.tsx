@@ -7,6 +7,7 @@ import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import MobileReconciliationList from './MobileReconciliationList'
 import { getLotInventoryForReconciliation } from '@/lib/inventoryService'
+import { canonicalizeUnit, getMatchingUnitName, normalizeUnit } from '@/lib/unitConversion'
 
 // Types
 interface AccountingItem {
@@ -15,6 +16,8 @@ interface AccountingItem {
     productName: string
     balance: number
     unit: string
+    unitId?: string | null
+    unitRaw?: string | null
 }
 
 interface ItemReconciliation {
@@ -33,7 +36,7 @@ import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { useUser } from '@/contexts/UserContext'
 
 export default function InventoryReconciliation({ units }: { units: any[] }) {
-    const { convertUnit, unitNameMap, conversionMap } = useUnitConversion()
+    const { convertUnit, unitNameMap, unitIdMap, conversionMap, loading: loadingUnits } = useUnitConversion()
     const { systemType } = useSystem()
     // Use company info for printing params, prioritized from user profile
     const { profile } = useUser()
@@ -59,8 +62,9 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
                 .order('name')
 
             if (data) {
-                setBranches(data as any)
-                const defaultBranch = data.find(b => b.is_default)
+                const branchData = data as any[]
+                setBranches(branchData)
+                const defaultBranch = branchData.find(b => b.is_default)
                 if (defaultBranch) {
                     setSelectedBranch(defaultBranch.name)
                 }
@@ -70,10 +74,13 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
     }, [])
 
     useEffect(() => {
-        fetchAndCompare()
-    }, [systemType, targetUnitId, dateTo, selectedBranch])
+        if (!loadingUnits) {
+            fetchAndCompare()
+        }
+    }, [systemType, targetUnitId, dateTo, selectedBranch, loadingUnits])
 
     async function fetchAndCompare() {
+        if (loadingUnits) return
         setLoading(true)
         try {
             // 1. Fetch Accounting Inventory
@@ -88,10 +95,17 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
             const accData = await accRes.json()
             const rawAccountingItems: AccountingItem[] = accData.ok ? accData.items : []
 
-            // Aggregate Accounting Items by Product ID + Unit
+            // Aggregate Accounting Items by Product ID + Unit (Using standard key logic)
             const accountingMap = new Map<string, { qty: number, code: string, name: string, unit: string, productId: string }>()
+            
+            const targetUnit = targetUnitId ? units.find(u => u.id === targetUnitId) : null
+
             rawAccountingItems.forEach(acc => {
-                const key = `${acc.productId}_${acc.unit}`
+                const sKey = (acc.productCode || '').trim().toLowerCase().replace(/\s+/g, '')
+                // Use canonical name for matching
+                const uKey = (acc.unitId && targetUnitId) ? targetUnitId : canonicalizeUnit(acc.unitRaw || acc.unit)
+                const key = `${sKey}_${uKey}`
+                
                 const current = accountingMap.get(key) || { qty: 0, code: acc.productCode, name: acc.productName, unit: acc.unit, productId: acc.productId }
                 current.qty += acc.balance
                 accountingMap.set(key, current)
@@ -103,24 +117,53 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
             // 3. Aggregate Lot Data by Product + Unit
             const lotQtyMap = new Map<string, { qty: number, code: string, name: string, unit: string, productId: string }>()
 
-            const targetUnit = targetUnitId ? units.find(u => u.id === targetUnitId) : null
-
             lots?.forEach((lot: any) => {
                 const processItem = (pid: string, qty: number, unit: string, sku: string, name: string, baseUnit: string) => {
                     let displayQty = qty
                     let displayUnit = unit
-                    let key = `${pid}_${unit}`
+                    const sKey = (sku || '').trim().toLowerCase().replace(/\s+/g, '')
+                    const normU = unit.toLowerCase().trim()
+
+                    // Enrich unit name with weight suffix if missing
+                    if (unit && !unit.includes('(')) {
+                        const productRates = pid ? conversionMap.get(pid) : null
+                        if (productRates) {
+                            // 1. Try direct ID match
+                            const unitId = unitNameMap.get(normU)
+                            let rate = unitId ? productRates.get(unitId) : null
+                            
+                            // 2. If no direct rate, search for any unit of this product that matches the base name
+                            if (!rate || rate === 1) {
+                                for (const [key, r] of productRates.entries()) {
+                                    const fullName = unitIdMap.get(key) || (typeof key === 'string' ? key : '')
+                                    if (fullName && normalizeUnit(fullName).replace(/\s*\([^)]*\)/, '').trim() === normU && r > 1) {
+                                        rate = r
+                                        break
+                                    }
+                                }
+                            }
+
+                            if (rate && rate > 1) {
+                                displayUnit = `${unit} (${rate}kg)`
+                            }
+                        }
+                    }
 
                     const isConvertible = targetUnitId && pid && (
                         baseUnit?.toLowerCase() === targetUnit?.name?.toLowerCase() ||
                         conversionMap.get(pid)?.has(targetUnitId)
                     )
 
+                    let uKey = ''
                     if (targetUnitId && isConvertible) {
                         displayUnit = targetUnit!.name
                         displayQty = convertUnit(pid, unit, targetUnit!.name, qty, baseUnit)
-                        key = `${pid}_${targetUnit!.name}`
+                        uKey = targetUnitId
+                    } else {
+                        uKey = canonicalizeUnit(displayUnit)
                     }
+                    
+                    const key = `${sKey}_${uKey}`
 
                     const current = lotQtyMap.get(key) || {
                         qty: 0,
@@ -172,7 +215,7 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
                     unit: acc.unit,
                     accountingBalance: acc.qty,
                     lotBalance: lotQty,
-                    diff: acc.qty - lotQty
+                    diff: Number((acc.qty - lotQty).toFixed(4))
                 })
                 lotQtyMap.delete(key)
             })
@@ -186,7 +229,7 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
                     unit: lot.unit,
                     accountingBalance: 0,
                     lotBalance: lot.qty,
-                    diff: 0 - lot.qty
+                    diff: Number((0 - lot.qty).toFixed(4))
                 })
             })
 
@@ -201,7 +244,7 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
 
     const displayedItems = useMemo(() => {
         if (showOnlyDiff) {
-            return items.filter(i => i.diff !== 0)
+            return items.filter(i => Math.abs(i.diff) >= 0.001)
         }
         return items
     }, [items, showOnlyDiff])
@@ -344,7 +387,7 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
                                         </tr>
                                     ) : (
                                         displayedItems.map((item, idx) => {
-                                            const isDiff = item.diff !== 0
+                                            const isDiff = Math.abs(item.diff) >= 0.001
                                             return (
                                                 <tr key={`${item.productId}_${item.unit}_${idx}`} className={`hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors ${isDiff ? 'bg-orange-50/50 dark:bg-orange-900/10' : ''}`}>
                                                     <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-400">{item.productCode}</td>
