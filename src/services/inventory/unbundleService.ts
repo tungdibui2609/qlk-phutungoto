@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { lotService } from '@/services/warehouse/lotService'
+import { enrichUnitName, ConversionMap, UnitNameMap } from '@/lib/unitConversion'
 
 export interface UnbundleParams {
     supabase: SupabaseClient
@@ -15,6 +16,9 @@ export interface UnbundleParams {
     systemCode: string
     mainOrderCode: string
     convTypeId?: string
+    conversionMap: ConversionMap
+    unitNameMap: UnitNameMap
+    unitIdMap: Map<string, string>
     generateOrderCode: (type: 'PNK' | 'PXK') => Promise<string>
 }
 
@@ -48,10 +52,11 @@ export const unbundleService = {
         products: any[]
         units: any[]
         unitNameMap: Map<string, string>
+        unitIdMap: Map<string, string>
         conversionMap: Map<string, Map<string, number>>
         unitStockMap: Map<string, number>
     }): { needsUnbundle: boolean, unbundleInfo?: string, sourceUnit?: string, rate?: number } {
-        const { productId, unit, qty, products, units, unitNameMap, conversionMap, unitStockMap } = params
+        const { productId, unit, qty, products, units, unitNameMap, unitIdMap, conversionMap, unitStockMap } = params
         const product = products.find(p => p.id === productId)
         if (!product || !unit) return { needsUnbundle: false }
 
@@ -130,9 +135,11 @@ export const unbundleService = {
                     const baseToBreak = Math.ceil(deficit / rateBaseToReq - 0.000001)
 
                     if (currentBase >= baseToBreak) {
+                        const enrichedBase = enrichUnitName(productId, product.unit, conversionMap, unitNameMap, unitIdMap)
+                        const enrichedReq = enrichUnitName(productId, unit, conversionMap, unitNameMap, unitIdMap)
                         return {
                             needsUnbundle: true,
-                            unbundleInfo: `Tự động: Bẻ ${baseToBreak} ${product.unit} -> ${(baseToBreak * rateBaseToReq).toFixed(2).replace(/\.00$/, '')} ${unit}`,
+                            unbundleInfo: `Tự động: Bẻ ${baseToBreak} ${enrichedBase} -> ${(baseToBreak * rateBaseToReq).toFixed(2).replace(/\.00$/, '')} ${enrichedReq}`,
                             sourceUnit: product.unit ?? undefined,
                             rate: rateBaseToReq
                         }
@@ -181,9 +188,11 @@ export const unbundleService = {
                     const altToBreak = Math.ceil(deficit / rateAltToReq - 0.000001)
 
                     if (currentAlt >= altToBreak) {
+                        const enrichedBase = enrichUnitName(productId, altUnitName, conversionMap, unitNameMap, unitIdMap)
+                        const enrichedReq = enrichUnitName(productId, unit, conversionMap, unitNameMap, unitIdMap)
                         return {
                             needsUnbundle: true,
-                            unbundleInfo: `Tự động: Bẻ ${altToBreak} ${altUnitName} -> ${(altToBreak * rateAltToReq).toFixed(2).replace(/\.00$/, '')} ${unit}`,
+                            unbundleInfo: `Tự động: Bẻ ${altToBreak} ${enrichedBase} -> ${(altToBreak * rateAltToReq).toFixed(2).replace(/\.00$/, '')} ${enrichedReq}`,
                             sourceUnit: altUnitName,
                             rate: rateAltToReq
                         }
@@ -204,13 +213,17 @@ export const unbundleService = {
         const {
             supabase, productId, productName, baseUnit, reqUnit, reqQty,
             currentLiquid, costPrice, rate, warehouseName, systemCode,
-            mainOrderCode, convTypeId, generateOrderCode
+            mainOrderCode, convTypeId, conversionMap, unitNameMap, unitIdMap, generateOrderCode
         } = params
 
         const deficit = reqQty - currentLiquid
         const baseToBreak = Math.ceil(deficit / rate - 0.000001)
 
         if (baseToBreak <= 0) return null
+
+        // Enrich Unit Names for Orders
+        const enrichedBaseUnit = enrichUnitName(productId, baseUnit, conversionMap, unitNameMap, unitIdMap)
+        const enrichedReqUnit = enrichUnitName(productId, reqUnit, conversionMap, unitNameMap, unitIdMap)
 
         // A. Create PXK (Chuyển đổi) - Out Base Units
         const pxkCode = await generateOrderCode('PXK')
@@ -231,7 +244,7 @@ export const unbundleService = {
             order_id: pxk.id,
             product_id: productId,
             product_name: productName,
-            unit: baseUnit,
+            unit: enrichedBaseUnit,
             quantity: Number(baseToBreak.toFixed(6)),
             price: costPrice || 0
         })
@@ -255,7 +268,7 @@ export const unbundleService = {
             order_id: pnk.id,
             product_id: productId,
             product_name: productName,
-            unit: reqUnit,
+            unit: enrichedReqUnit,
             quantity: Number((baseToBreak * rate).toFixed(6)),
             price: costPrice || 0
         })

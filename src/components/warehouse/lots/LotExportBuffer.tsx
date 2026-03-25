@@ -84,14 +84,15 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             supabase.from('units').select('*').eq('is_active', true).order('name')
         ])
 
-        if (typesRes.data) setOrderTypes(typesRes.data)
-        if (custRes.data) setCustomers(custRes.data)
+        if (typesRes.data) setOrderTypes(typesRes.data as any[])
+        if (custRes.data) setCustomers(custRes.data as any[])
         if (branchRes.data) {
-            setBranches(branchRes.data)
-            const defaultBranch = branchRes.data.find((b: any) => b.is_default) || branchRes.data[0]
+            const branchData = branchRes.data as any[]
+            setBranches(branchData)
+            const defaultBranch = branchData.find((b: any) => b.is_default) || branchData[0]
             if (defaultBranch) setQuickBranchName(defaultBranch.name)
         }
-        if (unitRes.data) setUnits(unitRes.data)
+        if (unitRes.data) setUnits(unitRes.data as any[])
     }
 
     const fetchPendingExports = async () => {
@@ -111,7 +112,7 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             const activationDate = (currentSystem?.modules as any)?.activation_dates?.lot_accounting_sync
             const buffer: PendingExport[] = []
 
-            data?.forEach(lot => {
+            ;(data as any[])?.forEach(lot => {
                 const metadata = lot.metadata as any
                 const history = metadata?.system_history || {}
                 const exports = [
@@ -167,10 +168,10 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
         if (!await showConfirm('Bạn có chắc chắn muốn xóa dòng này khỏi hàng chờ? (Lưu ý: Thao tác này KHÔNG hoàn lại số lượng sản phẩm vào LOT)')) return
 
         try {
-            const { data: lot } = await supabase.from('lots').select('metadata').eq('id', lotId).single()
-            if (!lot) return
+            const { data: lotData } = await (supabase.from('lots') as any).select('metadata').eq('id', lotId).single()
+            if (!lotData) return
 
-            const metadata = { ...lot.metadata as any }
+            const metadata = { ...lotData.metadata as any }
             if (!metadata.system_history) metadata.system_history = {}
 
             // Clean up both possible locations
@@ -181,7 +182,7 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                 metadata.system_history.accounting_sync.exports = metadata.system_history.accounting_sync.exports.filter((exp: any) => exp.id !== exportId)
             }
 
-            await supabase.from('lots').update({ metadata }).eq('id', lotId)
+            await (supabase.from('lots') as any).update({ metadata }).eq('id', lotId)
             setPendingExports(prev => prev.filter(p => p.export_id !== exportId))
             const newSelected = new Set(selectedIds)
             newSelected.delete(exportId)
@@ -208,9 +209,9 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             })
 
             for (const [lotId, exportIds] of lotsMap.entries()) {
-                const { data: lot } = await supabase.from('lots').select('metadata').eq('id', lotId).single()
-                if (lot) {
-                    const metadata = { ...lot.metadata as any }
+                const { data: lotData } = await (supabase.from('lots') as any).select('metadata').eq('id', lotId).single()
+                if (lotData) {
+                    const metadata = { ...lotData.metadata as any }
                     if (!metadata.system_history) metadata.system_history = {}
 
                     // Filter in both potential locations
@@ -225,7 +226,7 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                         )
                     }
 
-                    await supabase.from('lots').update({ metadata }).eq('id', lotId)
+                    await (supabase.from('lots') as any).update({ metadata }).eq('id', lotId)
                 }
             }
 
@@ -297,7 +298,12 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
 
             // 5. Build necessary maps
             const localUnitNameMap: UnitNameMap = new Map()
-            unitsData?.forEach((u: any) => localUnitNameMap.set(u.name.toLowerCase().trim(), u.id))
+            const localUnitIdMap = new Map<string, string>()
+            unitsData?.forEach((u: any) => {
+                const normName = u.name.toLowerCase().trim()
+                localUnitNameMap.set(normName, u.id)
+                localUnitIdMap.set(u.id, u.name)
+            })
 
             const localConversionMap: ConversionMap = new Map()
             productsData?.forEach((p: any) => {
@@ -368,6 +374,7 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                     products: productsData || [],
                     units: unitsData || [],
                     unitNameMap: localUnitNameMap,
+                    unitIdMap: localUnitIdMap,
                     conversionMap: localConversionMap,
                     unitStockMap: proxyStockMap // Pass the proxy map for this lot
                 })
@@ -392,6 +399,9 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                         systemCode: systemType,
                         mainOrderCode: orderCode,
                         convTypeId: convType?.id,
+                        conversionMap: localConversionMap,
+                        unitNameMap: localUnitNameMap,
+                        unitIdMap: localUnitIdMap,
                         generateOrderCode: (type) => generateOrderCode(type, systemType)
                     })
 
@@ -478,16 +488,16 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
 
             // 5. Update all LOTs to clear the draft flag
             for (const p of toSync) {
-                const { data: lot } = await supabase.from('lots').select('metadata').eq('id', p.lot_id).single()
-                if (lot) {
-                    const metadata = { ...lot.metadata as any }
+                const { data: lotData } = await (supabase.from('lots') as any).select('metadata').eq('id', p.lot_id).single()
+                if (lotData) {
+                    const metadata = { ...lotData.metadata as any }
                     metadata.system_history.exports = metadata.system_history.exports.map((exp: any) => {
                         if (exp.id === p.export_id) {
                             return { ...exp, draft: false, order_id: order.id, order_code: orderCode }
                         }
                         return exp
                     })
-                    await supabase.from('lots').update({ metadata }).eq('id', p.lot_id)
+                    await (supabase.from('lots') as any).update({ metadata }).eq('id', p.lot_id)
                 }
             }
 

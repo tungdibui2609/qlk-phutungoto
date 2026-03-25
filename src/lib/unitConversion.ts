@@ -232,3 +232,46 @@ export const convertUnit = (
 
     return qtyBase;
 };
+
+/**
+ * Enriches a unit name with its weight suffix (e.g., "Thùng" -> "Thùng (20kg)")
+ * based on the product's conversion rates.
+ */
+export const enrichUnitName = (
+    productId: string | null,
+    unitName: string | null | undefined,
+    conversionMap: ConversionMap,
+    unitNameMap: UnitNameMap,
+    unitIdMap: Map<string, string>
+): string => {
+    if (!unitName || !productId) return unitName || '';
+    
+    // If it already has a suffix, return as is
+    if (unitName.includes('(')) return unitName;
+    
+    const normU = normalizeUnit(unitName);
+    const productRates = conversionMap.get(productId);
+    if (!productRates) return unitName;
+
+    // 1. Try direct ID match for the unit name
+    const unitId = unitNameMap.get(normU);
+    let rate = unitId ? productRates.get(unitId) : null;
+    
+    // 2. If no direct rate (or rate is 1), search for any unit of this product that matches the base name
+    if (!rate || rate === 1) {
+        for (const [key, r] of productRates.entries()) {
+            // key can be a unit ID
+            const fullName = unitIdMap.get(key);
+            if (fullName && normalizeUnit(fullName).replace(/\s*\([^)]*\)/, '').trim() === normU && r > 1) {
+                rate = r;
+                break;
+            }
+        }
+    }
+
+    if (rate && rate > 1) {
+        return `${unitName} (${rate}kg)`;
+    }
+
+    return unitName;
+};

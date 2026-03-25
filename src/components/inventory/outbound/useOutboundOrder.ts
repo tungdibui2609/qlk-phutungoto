@@ -14,7 +14,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
     const { showToast } = useToast()
     const { currentSystem, hasModule } = useSystem()
     const { profile } = useUser()
-    const { getBaseAmount: toBaseAmount, convertUnit, unitNameMap, conversionMap } = useUnitConversion()
+    const { getBaseAmount: toBaseAmount, convertUnit, unitNameMap, conversionMap, unitIdMap } = useUnitConversion()
 
     // Form State
     const [code, setCode] = useState('')
@@ -236,6 +236,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
             products,
             units,
             unitNameMap,
+            unitIdMap,
             conversionMap,
             unitStockMap
         })
@@ -362,6 +363,9 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                             systemCode,
                             mainOrderCode: code,
                             convTypeId,
+                            conversionMap,
+                            unitNameMap,
+                            unitIdMap,
                             generateOrderCode: (type) => generateOrderCode(type, systemCode)
                         })
 
