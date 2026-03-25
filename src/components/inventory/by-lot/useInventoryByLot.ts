@@ -83,6 +83,8 @@ export function useInventoryByLot(
     const selectedCategoryIds = externalFilters?.selectedCategoryIds || []
     const [branches, setBranches] = useState<{ id: string, name: string, is_default?: boolean }[]>([])
     const [allZones, setAllZones] = useState<any[]>([])
+    const [rawZones, setRawZones] = useState<any[]>([])
+    const [rawPositions, setRawPositions] = useState<any[]>([])
     const [posToZoneMap, setPosToZoneMap] = useState<Record<string, string>>({})
     const [zoneHierarchy, setZoneHierarchy] = useState<Record<string, string | null>>({})
     const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
@@ -254,6 +256,8 @@ export function useInventoryByLot(
             
             const { zones: groupedZones } = groupWarehouseData(allZonesData, allPositionsWithZones)
             setAllZones(groupedZones)
+            setRawZones(allZonesData)
+            setRawPositions(allPositionsWithZones)
             
             const hierarchy: Record<string, string | null> = {}
             allZonesData.forEach((z: any) => {
@@ -348,21 +352,33 @@ export function useInventoryByLot(
             return res
         }
 
-        const isDescendantOrSelf = (targetId: string, searchId: string): boolean => {
-            if (targetId === searchId) return true
-            let current = zoneHierarchy[targetId]
-            while (current) {
-                if (current === searchId) return true
-                current = zoneHierarchy[current]
-            }
-            return false
-        }
+        const { virtualToRealMap } = groupWarehouseData(rawZones, rawPositions)
 
         const filteredLots = lots.filter(lot => {
             if (selectedZoneId) {
+                const resolveRealIds = (id: string): string[] => {
+                    const mapped = virtualToRealMap?.get(id)
+                    return mapped ? mapped : [id]
+                }
+
+                const baseRealIds = resolveRealIds(selectedZoneId)
+                const allAllowedRealIds = new Set<string>()
+                
+                baseRealIds.forEach(rid => {
+                    allAllowedRealIds.add(rid)
+                    const descendants = (parentId: string) => {
+                        const children = rawZones.filter((z: any) => z.parent_id === parentId)
+                        children.forEach((c: any) => {
+                            allAllowedRealIds.add(c.id)
+                            descendants(c.id)
+                        })
+                    }
+                    descendants(rid)
+                })
+
                 const matchesZone = lot.positions?.some((p: any) => {
                     const zId = posToZoneMap[p.id]
-                    return zId && isDescendantOrSelf(zId, selectedZoneId)
+                    return zId && allAllowedRealIds.has(zId)
                 })
                 if (!matchesZone) return false
             }
@@ -516,7 +532,7 @@ export function useInventoryByLot(
 
         return Array.from(groups.values()).sort((a, b) => a.productSku.localeCompare(b.productSku))
 
-    }, [lots, searchTerm, searchMode, targetUnitId, unitNameMap, conversionMap, units, convertUnit, selectedZoneId, posToZoneMap, zoneHierarchy, categoryMap, selectedCategoryIds])
+    }, [lots, searchTerm, searchMode, targetUnitId, unitNameMap, conversionMap, units, convertUnit, selectedZoneId, posToZoneMap, zoneHierarchy, categoryMap, selectedCategoryIds, rawZones, rawPositions])
 
     const toggleExpand = (key: string) => {
         const newSet = new Set(expandedProducts)

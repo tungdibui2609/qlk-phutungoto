@@ -5,6 +5,7 @@ import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import { matchSearch, advancedMatchSearch, normalizeSearchString, calculateSearchScore } from '@/lib/searchUtils'
 import { matchDateRange } from '@/lib/dateUtils'
+import { groupWarehouseData } from '@/lib/warehouseUtils'
 import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { SearchMode } from '@/app/(dashboard)/warehouses/map/_hooks/useMapFilters'
 
@@ -365,15 +366,24 @@ export function useLotManagement() {
                             const { data: posLots } = await (supabase.from('positions') as any).select('lot_id').ilike('code', partTerm).not('lot_id', 'is', null);
                             const posIds = (posLots?.map((p: any) => p.lot_id).filter(Boolean) || []) as string[];
 
+                             // Production Orders search in 'all' mode
+                            const { data: prodMatched } = await (supabase.from('productions') as any).select('id').or(`code.ilike.${partTerm},name.ilike.${partTerm}`).eq('company_id', currentSystem.company_id);
+                            const prodIdsInAll = prodMatched?.map((p: any) => p.id) || [];
+                            let prodLotIds: string[] = [];
+                            if (prodIdsInAll.length > 0) {
+                                const { data: linkedLots } = await (supabase.from('lots') as any).select('id').in('production_id', prodIdsInAll).eq('system_code', currentSystem.code);
+                                if (linkedLots) prodLotIds = linkedLots.map((l: any) => l.id);
+                            }
+
                             const { data: lotsDirect } = await (supabase.from('lots') as any).select('id')
                                 .or(`code.ilike.${partTerm},notes.ilike.${partTerm},production_code.ilike.${partTerm}`)
                                 .eq('system_code', currentSystem.code);
                             const directIds = lotsDirect?.map((l: any) => l.id) || [];
 
-                            currentMatchIds = Array.from(new Set([...itemLotIds, ...tagLotIds, ...posIds, ...directIds]));
+                            currentMatchIds = Array.from(new Set([...itemLotIds, ...tagLotIds, ...posIds, ...directIds, ...prodLotIds]));
                         }
                         else if (searchMode === 'production') {
-                            const { data: prodMatched } = await (supabase.from('productions') as any).select('id').or(`code.ilike.${partTerm},name.ilike.${partTerm}`).eq('company_id', currentSystem.id);
+                            const { data: prodMatched } = await (supabase.from('productions') as any).select('id').or(`code.ilike.${partTerm},name.ilike.${partTerm}`).eq('company_id', currentSystem.company_id);
                             const prodIds = prodMatched?.map((p: any) => p.id) || [];
                             if (prodIds.length > 0) {
                                 const { data: linkedLots } = await (supabase.from('lots') as any).select('id').in('production_id', prodIds).eq('system_code', currentSystem.code);
@@ -461,30 +471,50 @@ export function useLotManagement() {
             // 'unassigned' is handled by RPC call above.
 
             if (selectedZoneId) {
-                // Fetch all zones to find descendants of selectedZoneId
-                // This is needed because positions are assigned to leaf zones,
-                // but user may select a parent zone (warehouse, section, etc.)
-                const { data: allZones } = await supabase
-                    .from('zones')
-                    .select('id, parent_id')
-                    .eq('system_type', currentSystem.code)
+                // Fetch all zones and positions to perform grouping and resolve virtual IDs
+                const [allZones, allPositions] = await Promise.all([
+                    supabase
+                        .from('zones')
+                        .select('*')
+                        .eq('system_type', currentSystem.code),
+                    supabase
+                        .from('positions')
+                        .select('id, code, system_type')
+                        .eq('system_type', currentSystem.code)
+                ])
 
-                if (allZones) {
-                    // Build set of all descendant zone IDs including the selected one
-                    const descendantIds = new Set<string>([selectedZoneId])
-                    let changed = true
-                    while (changed) {
-                        changed = false
-                        for (const zone of (allZones as any[])) {
-                            if (zone.parent_id && descendantIds.has(zone.parent_id) && !descendantIds.has(zone.id)) {
-                                descendantIds.add(zone.id)
-                                changed = true
-                            }
+                if (allZones.data) {
+                    const rawZones = allZones.data
+                    const rawPositions = allPositions.data || []
+                    if (selectedZoneId) {
+                        const { virtualToRealMap } = groupWarehouseData(rawZones as any[], rawPositions as any[])
+                        
+                        // Resolve selectedZoneId to the set of real IDs it represents
+                        const resolveRealIds = (id: string): string[] => {
+                            const mapped = virtualToRealMap?.get(id)
+                            return mapped ? mapped : [id]
                         }
-                    }
 
-                    const zoneIds = Array.from(descendantIds)
-                    query = query.in('positions.zone_positions.zone_id', zoneIds)
+                        const baseRealIds = resolveRealIds(selectedZoneId)
+
+                        // Helper to find all descendants
+                        const getDescendantIds = (parentId: string): string[] => {
+                            const children = (rawZones as any[]).filter(z => z.parent_id === parentId)
+                            const descendantIds = children.map(z => z.id)
+                            children.forEach(child => {
+                                descendantIds.push(...getDescendantIds(child.id))
+                            })
+                            return descendantIds
+                        }
+
+                        const allRealIds = new Set<string>()
+                        baseRealIds.forEach(id => {
+                            allRealIds.add(id)
+                            getDescendantIds(id).forEach(dId => allRealIds.add(dId))
+                        })
+
+                        query = query.in('positions.zone_positions.zone_id', Array.from(allRealIds))
+                    }
                 }
             }
 

@@ -1,8 +1,8 @@
-import { Search, Filter, Warehouse, HelpCircle, Tag, Package, Hash, MapPin, Layers, LayoutGrid, ClipboardList } from 'lucide-react'
+import { Search, Filter, Warehouse, HelpCircle, Tag, Package, Hash, MapPin, Layers, LayoutGrid, ClipboardList, X } from 'lucide-react'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { DateRangeFilter, DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { SearchHelpModal } from '@/components/shared/SearchHelpModal'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { SearchMode } from '@/app/(dashboard)/warehouses/map/_hooks/useMapFilters'
 
 interface LotFilterProps {
@@ -42,7 +42,24 @@ export function LotFilter({
     showMobileFilters,
     toggleMobileFilters
 }: LotFilterProps) {
+    // Local state for search to avoid immediate filtering (Manual trigger like Map)
+    const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm)
     const [isHelpOpen, setIsHelpOpen] = useState(false)
+
+    // Sync local state when parent state changes (e.g. clear filter from elsewhere)
+    useEffect(() => {
+        setLocalSearchTerm(searchTerm)
+    }, [searchTerm])
+
+    const handleSearch = () => {
+        onSearchChange(localSearchTerm)
+    }
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            handleSearch()
+        }
+    }
 
     return (
         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-2.5 shadow-sm space-y-2">
@@ -74,7 +91,7 @@ export function LotFilter({
                         </select>
                     </div>
 
-                    <div className="relative flex-1">
+                    <div className="relative flex-1 flex items-center">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
                             type="text"
@@ -87,18 +104,42 @@ export function LotFilter({
                                 searchMode === 'production' ? "Mã lệnh sản xuất..." :
                                 "Tìm kiếm..."
                             }
-                            value={searchTerm}
-                            onChange={(e) => onSearchChange(e.target.value)}
-                            className="w-full pl-9 pr-8 py-1.5 bg-transparent border-none outline-none font-medium text-xs lg:text-sm"
+                            value={localSearchTerm}
+                            onChange={(e) => setLocalSearchTerm(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            className="w-full pl-9 pr-28 py-1.5 bg-transparent border-none outline-none font-medium text-xs lg:text-sm"
                         />
-                        <button
-                            type="button"
-                            onClick={() => setIsHelpOpen(true)}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-orange-500 transition-colors rounded-full p-0.5"
-                            title="Hướng dẫn tìm kiếm"
-                        >
-                            <HelpCircle size={14} />
-                        </button>
+                        <div className="absolute right-1 flex items-center gap-1">
+                            {localSearchTerm && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setLocalSearchTerm('')
+                                        onSearchChange('')
+                                    }}
+                                    className="text-slate-400 hover:text-red-500 transition-colors rounded-full p-1"
+                                    title="Xóa tìm kiếm"
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => setIsHelpOpen(true)}
+                                className="text-slate-400 hover:text-orange-500 transition-colors rounded-full p-1"
+                                title="Hướng dẫn tìm kiếm"
+                            >
+                                <HelpCircle size={14} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSearch}
+                                className="bg-orange-500 hover:bg-orange-600 text-white text-[10px] lg:text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all shadow-sm active:scale-95 flex items-center gap-1"
+                            >
+                                <Search size={12} />
+                                Tìm
+                            </button>
+                        </div>
                     </div>
                     <SearchHelpModal isOpen={isHelpOpen} onOpenChange={setIsHelpOpen} />
                 </div>
@@ -150,12 +191,19 @@ export function LotFilter({
             </div>
 
             {/* Row 2: Advanced Position Filter (From Map) - Always full width but compact */}
-            <div className={`${showMobileFilters ? 'block' : 'hidden lg:block'}`}>
+            {/* Cascading Zone Filter */}
+            <div className="space-y-1.5 pt-1">
+                <div className="flex items-center gap-2 px-1">
+                    <div className="w-1 h-4 bg-orange-500 rounded-full" />
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Khu vực / Dãy hàng</span>
+                </div>
                 <HorizontalZoneFilter
                     selectedZoneId={selectedZoneId}
                     onZoneSelect={onZoneSelect}
                     showSearch={false}
                     compact={true}
+                    variant="subtle"
+                    grouped={true}
                 />
             </div>
         </div>

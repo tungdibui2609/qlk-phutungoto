@@ -20,6 +20,8 @@ interface MapFilterBarProps {
     onEndDateChange: (value: string) => void
     showMobileFilters: boolean
     toggleMobileFilters: () => void
+    zones?: any[]
+    grouped?: boolean
 }
 
 export function MapFilterBar({
@@ -36,7 +38,9 @@ export function MapFilterBar({
     endDate,
     onEndDateChange,
     showMobileFilters,
-    toggleMobileFilters
+    toggleMobileFilters,
+    zones,
+    grouped
 }: MapFilterBarProps) {
     // Local state for debounce
     const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm)
@@ -186,6 +190,8 @@ export function MapFilterBar({
                     showSearch={false}
                     compact={true}
                     variant="subtle"
+                    zones={zones}
+                    grouped={grouped}
                 />
             </div>
         </div>

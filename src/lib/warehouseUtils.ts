@@ -151,7 +151,19 @@ export function groupWarehouseData(zones: Zone[] = [], positions: PositionWithZo
             })
         })
 
-        return { zones: finalZones, positions: finalPositions }
+        // 4. Build Virtual to Real mapping for filtering support
+        const virtualToRealMap = new Map<string, string[]>()
+        zoneIdMap.forEach((vId, realId) => {
+            const list = virtualToRealMap.get(vId) || []
+            list.push(realId)
+            virtualToRealMap.set(vId, list)
+        })
+
+        return { 
+            zones: finalZones, 
+            positions: finalPositions, 
+            virtualToRealMap 
+        }
     } catch (error) {
         console.error('Error in groupWarehouseData:', error)
         // If it fails, at least return original data so it doesn't break the whole app

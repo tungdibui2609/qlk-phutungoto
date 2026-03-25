@@ -98,7 +98,7 @@ export function useWarehouseData() {
             tags: accumulatedTags,
             qc_name: l.qc_info?.name,
             supplier_name: l.suppliers?.name,
-            productions: l.productions
+            productions: Array.isArray(l.productions) ? l.productions[0] : l.productions
         }
 
         setLotInfo(prev => ({
@@ -230,7 +230,7 @@ export function useWarehouseData() {
                     tags: accumulatedTags,
                     qc_name: l.qc_info?.name,
                     supplier_name: l.suppliers?.name,
-                    productions: l.productions
+                    productions: Array.isArray(l.productions) ? l.productions[0] : l.productions
                 }
             })
 

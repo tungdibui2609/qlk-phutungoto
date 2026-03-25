@@ -78,7 +78,7 @@ function WarehouseMapContent() {
     const [isMobile, setIsMobile] = useState(false)
     const [showMobileFilters, setShowMobileFilters] = useState(false)
     const [isDesignMode, setIsDesignMode] = useState(false)
-    const [displayInternalCode, setDisplayInternalCode] = useState(false)
+    const [displayInternalCode, setDisplayInternalCode] = useState(true)
     const [assignLot, setAssignLot] = useState<{ id: string, code: string } | null>(null)
     const [configuringZone, setConfiguringZone] = useState<Zone | null>(null)
 
@@ -93,7 +93,7 @@ function WarehouseMapContent() {
     const [bulkPrintLotIds, setBulkPrintLotIds] = useState<string[] | null>(null)
     const [isMapControlsOpen, setIsMapControlsOpen] = useState(false)
     const [pageBreakZoneIds, setPageBreakZoneIds] = useState<Set<string>>(new Set())
-    const [isGrouped, setIsGrouped] = useState(false)
+    const [isGrouped, setIsGrouped] = useState(true)
     const [mergedZones, setMergedZones] = useState<Set<string>>(new Set())
 
     const toggleMergeZone = (zoneId: string) => {
@@ -157,8 +157,8 @@ function WarehouseMapContent() {
                 }))
 
                 // DB Updates
-                const updatePromises: any[] = updates.map(u =>
-                    (supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id) as any)
+                const updatePromises = (updates as any[]).map((u: any) =>
+                    ((supabase as any).from('positions').update({ lot_id: u.lot_id }).eq('id', u.id) as any)
                 )
 
                 Promise.all(updatePromises).then(results => {
@@ -186,8 +186,8 @@ function WarehouseMapContent() {
             ))
 
             // DB Update
-            const promises: any[] = targetIds.map(id =>
-                (supabase.from('positions').update({ lot_id: newLotId } as any).eq('id', id) as any)
+            const promises = (targetIds as any[]).map((id: any) =>
+                ((supabase as any).from('positions').update({ lot_id: newLotId }).eq('id', id) as any)
             )
 
             Promise.all(promises).then(results => {
@@ -252,9 +252,9 @@ function WarehouseMapContent() {
                 if (moduleId === 'qc_info' && viewingLot.qc_info) return true
                 if (moduleId === 'extra_info' && viewingLot.metadata?.extra_info) return true
             }
-            return allModules.has(moduleId)
+            return allModules.has(moduleId) || hasModule(moduleId)
         }
-    }, [currentSystem, viewingLot])
+    }, [currentSystem, viewingLot, hasModule])
 
     const { handlePositionMenu, PositionActionUI } = usePositionActionManager({
         currentSystemCode: currentSystem?.code,
@@ -270,6 +270,12 @@ function WarehouseMapContent() {
                 .eq('id', lotId)
                 .single()
             if (error) throw error
+            
+            // Ensure productions is an object, not an array of one
+            if (data && Array.isArray((data as any).productions)) {
+                (data as any).productions = (data as any).productions[0] || null
+            }
+            
             setViewingLot(data)
         } catch (error: any) {
             console.error('Error fetching lot details:', error)
@@ -339,10 +345,10 @@ function WarehouseMapContent() {
                 const chunk = lotIds.slice(i, i + chunkSize);
 
                 // 1. Clear lot_id in positions (Reference)
-                const { error: posError } = await (supabase
+                const { error: posError } = await ((supabase as any)
                     .from('positions')
-                    .update({ lot_id: null } as any)
-                    .in('lot_id', chunk) as any)
+                    .update({ lot_id: null })
+                    .in('lot_id', chunk as any[]) as any)
 
                 if (posError) throw posError
 
@@ -464,8 +470,8 @@ function WarehouseMapContent() {
         const lotsArr = Array.from(lotIdsToMove)
         const oldPosIdsToClear = selectedPositions.filter(p => p.lot_id).map(p => p.id)
         
-        const clearUpdates = oldPosIdsToClear.map(id => ({ id, lot_id: null }))
-        const assignUpdates = lotsArr.map((lotId, i) => ({ id: availablePositions[i].id, lot_id: lotId }))
+        const clearUpdates: any[] = oldPosIdsToClear.map(id => ({ id, lot_id: null }))
+        const assignUpdates: any[] = lotsArr.map((lotId, i) => ({ id: availablePositions[i].id, lot_id: lotId }))
 
         // Optimistic UI update
         setPositions(prev => prev.map(p => {
@@ -484,7 +490,7 @@ function WarehouseMapContent() {
             for (let i = 0; i < clearUpdates.length; i += chunkSize) {
                 const chunk = clearUpdates.slice(i, i + chunkSize);
                 const results = await Promise.all(
-                    chunk.map(u => (supabase.from('positions').update({ lot_id: null } as any).eq('id', u.id) as any))
+                    (chunk as any[]).map((u: any) => ((supabase as any).from('positions').update({ lot_id: null }).eq('id', u.id) as any))
                 )
                 const error = (results as any).find((r: any) => r.error)?.error
                 if (error) throw error
@@ -494,7 +500,7 @@ function WarehouseMapContent() {
             for (let i = 0; i < assignUpdates.length; i += chunkSize) {
                 const chunk = assignUpdates.slice(i, i + chunkSize);
                 const results = await Promise.all(
-                    chunk.map(u => (supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id) as any))
+                    (chunk as any[]).map((u: any) => ((supabase as any).from('positions').update({ lot_id: u.lot_id }).eq('id', u.id) as any))
                 )
                 const error = (results as any).find((r: any) => r.error)?.error
                 if (error) throw error
@@ -550,8 +556,8 @@ function WarehouseMapContent() {
         const lotsArr = Array.from(lotIdsToMove)
         const oldPosIdsToClear = selectedPositions.filter(p => p.lot_id).map(p => p.id)
 
-        const clearUpdates = oldPosIdsToClear.map(id => ({ id, lot_id: null }))
-        const assignUpdates = lotsArr.map((lotId, i) => ({ id: availablePositions[i].id, lot_id: lotId }))
+        const clearUpdates: any[] = oldPosIdsToClear.map(id => ({ id, lot_id: null }))
+        const assignUpdates: any[] = lotsArr.map((lotId, i) => ({ id: availablePositions[i].id, lot_id: lotId }))
 
         // Optimistic UI update
         setPositions(prev => prev.map(p => {
@@ -570,7 +576,7 @@ function WarehouseMapContent() {
             for (let i = 0; i < clearUpdates.length; i += chunkSize) {
                 const chunk = clearUpdates.slice(i, i + chunkSize);
                 const results = await Promise.all(
-                    chunk.map(u => (supabase.from('positions').update({ lot_id: null } as any).eq('id', u.id) as any))
+                    (chunk as any[]).map((u: any) => ((supabase as any).from('positions').update({ lot_id: null }).eq('id', u.id) as any))
                 )
                 const error = (results as any).find((r: any) => r.error)?.error
                 if (error) throw error
@@ -580,7 +586,7 @@ function WarehouseMapContent() {
             for (let i = 0; i < assignUpdates.length; i += chunkSize) {
                 const chunk = assignUpdates.slice(i, i + chunkSize);
                 const results = await Promise.all(
-                    chunk.map(u => (supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id) as any))
+                    (chunk as any[]).map((u: any) => ((supabase as any).from('positions').update({ lot_id: u.lot_id }).eq('id', u.id) as any))
                 )
                 const error = (results as any).find((r: any) => r.error)?.error
                 if (error) throw error
@@ -647,22 +653,34 @@ function WarehouseMapContent() {
                 assignLot={assignLot}
             />
 
-            <MapFilterBar
-                searchTerm={searchTerm}
-                onSearchChange={setSearchTerm}
-                searchMode={searchMode}
-                onSearchModeChange={setSearchMode}
-                selectedZoneId={selectedZoneId}
-                onZoneSelect={setSelectedZoneId}
-                dateFilterField={dateFilterField}
-                onDateFieldChange={setDateFilterField}
-                startDate={startDate}
-                onStartDateChange={setStartDate}
-                endDate={endDate}
-                onEndDateChange={setEndDate}
-                showMobileFilters={showMobileFilters}
-                toggleMobileFilters={() => setShowMobileFilters(!showMobileFilters)}
-            />
+            {/* Memoize grouped data for filters */}
+            {(() => {
+                const groupedData = isGrouped 
+                    ? groupWarehouseData(zones, positions) 
+                    : { zones, positions };
+                const groupedZones = (groupedData as any).zones;
+                
+                return (
+                    <MapFilterBar
+                        searchTerm={searchTerm}
+                        onSearchChange={setSearchTerm}
+                        searchMode={searchMode}
+                        onSearchModeChange={setSearchMode}
+                        selectedZoneId={selectedZoneId}
+                        onZoneSelect={setSelectedZoneId}
+                        dateFilterField={dateFilterField}
+                        onDateFieldChange={setDateFilterField}
+                        startDate={startDate}
+                        onStartDateChange={setStartDate}
+                        endDate={endDate}
+                        onEndDateChange={setEndDate}
+                        showMobileFilters={showMobileFilters}
+                        toggleMobileFilters={() => setShowMobileFilters(!showMobileFilters)}
+                        zones={groupedZones}
+                        grouped={isGrouped}
+                    />
+                );
+            })()}
 
             {(() => {
                 const { zones: displayZones, positions: displayPositions } = isGrouped

@@ -190,20 +190,30 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                         </div>
 
                         {/* Production Order Section */}
-                        {lot.productions?.name && (
-                            <div className="flex items-start gap-3 p-4 rounded-2xl border border-rose-100 dark:border-rose-800 bg-rose-50/30 dark:bg-rose-900/10">
-                                <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
-                                    <Factory size={20} />
+                        {(lot.productions || lot.production_code) && (() => {
+                            const prod = Array.isArray(lot.productions) ? lot.productions[0] : lot.productions;
+                            const hasProdInfo = prod?.name || prod?.code || lot.production_code;
+                            if (!hasProdInfo) return null;
+
+                            return (
+                                <div className="flex items-start gap-4 p-4 rounded-2xl border border-rose-100 dark:border-rose-800 bg-rose-50/30 dark:bg-rose-900/10">
+                                    <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                                        <Factory size={22} />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-[10px] font-bold text-rose-500 dark:text-rose-400 uppercase tracking-wider mb-1">Lệnh sản xuất</p>
+                                        <p className="text-base font-bold text-rose-900 dark:text-rose-100 truncate leading-tight">
+                                            {prod?.name || lot.production_code || 'Chưa có tên'}
+                                        </p>
+                                        {(prod?.code || (lot.production_code && !prod?.name)) && (
+                                            <p className="text-[11px] font-mono text-rose-500/80 dark:text-rose-400/60 truncate mt-0.5 mt-1">
+                                                Mã: {prod?.code || lot.production_code}
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="min-w-0">
-                                    <p className="text-[10px] font-bold text-rose-400 uppercase mb-0.5">Lệnh sản xuất</p>
-                                    <p className="text-sm font-bold text-rose-900 dark:text-rose-100 truncate">{lot.productions.name}</p>
-                                    {lot.productions.code && (
-                                        <p className="text-[10px] font-mono text-rose-500/70 dark:text-rose-400/50 truncate">Mã: {lot.productions.code}</p>
-                                    )}
-                                </div>
-                            </div>
-                        )}
+                            );
+                        })()}
 
                         {/* Main Info List */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

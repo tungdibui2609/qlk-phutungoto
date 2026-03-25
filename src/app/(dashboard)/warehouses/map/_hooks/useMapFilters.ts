@@ -3,6 +3,7 @@ import { matchDateRange } from '@/lib/dateUtils'
 import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { PositionWithZone } from './useWarehouseData'
 import { matchSearch, advancedMatchSearch } from '@/lib/searchUtils'
+import { groupWarehouseData } from '@/lib/warehouseUtils'
 
 interface UseMapFiltersProps {
     positions: PositionWithZone[]
@@ -111,7 +112,17 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
 
         // Filter by zone
         if (selectedZoneId) {
-            // Get all descendant zone IDs
+            const { virtualToRealMap } = groupWarehouseData(zones, positions)
+            
+            // Helper to resolve any ID (virtual or real) to a set of REAL zone IDs
+            const resolveRealIds = (id: string): string[] => {
+                const mapped = virtualToRealMap?.get(id)
+                return mapped ? mapped : [id]
+            }
+
+            const baseRealIds = resolveRealIds(selectedZoneId)
+            
+            // Get all descendant zone IDs for each resolved real ID
             const getDescendantIds = (parentId: string): string[] => {
                 const children = zones.filter(z => z.parent_id === parentId)
                 const descendantIds = children.map(c => c.id)
@@ -120,8 +131,14 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
                 })
                 return descendantIds
             }
-            const validZoneIds = new Set([selectedZoneId, ...getDescendantIds(selectedZoneId)])
-            result = result.filter(p => p.zone_id && validZoneIds.has(p.zone_id))
+
+            const allRealIds = new Set<string>()
+            baseRealIds.forEach(id => {
+                allRealIds.add(id)
+                getDescendantIds(id).forEach(dId => allRealIds.add(dId))
+            })
+
+            result = result.filter(p => p.zone_id && allRealIds.has(p.zone_id))
         }
 
         // FIFO Sorting: When active and searching, sort by inbound_date ascending (oldest first)
@@ -145,9 +162,11 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
         return result
     }, [positions, selectedZoneId, searchTerm, searchMode, zones, lotInfo, startDate, endDate, dateFilterField, isFifoActive])
 
-    // Filter zones to pass to grid based on selection
     const filteredZones = useMemo(() => {
         if (!selectedZoneId) return zones
+
+        const { virtualToRealMap } = groupWarehouseData(zones, positions)
+        const baseRealIds = virtualToRealMap?.get(selectedZoneId) || [selectedZoneId]
 
         // Helper to find all descendants
         const getDescendantIds = (parentId: string): Set<string> => {
@@ -163,11 +182,18 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
             return ids
         }
 
-        const allowedIds = getDescendantIds(selectedZoneId)
-        allowedIds.add(selectedZoneId)
+        const allowedIds = new Set<string>()
+        baseRealIds.forEach(rid => {
+            allowedIds.add(rid)
+            const descendants = getDescendantIds(rid)
+            descendants.forEach(d => allowedIds.add(d))
+        })
 
+        // IMPORTANT: In Map view, if we filtered by a virtual zone, 
+        // we might still need to include the "Path" to that zone so it's not orphaned.
+        // However, for pure filtering of content, this is enough.
         return zones.filter(z => allowedIds.has(z.id))
-    }, [zones, selectedZoneId])
+    }, [zones, positions, selectedZoneId])
 
     return {
         selectedZoneId, setSelectedZoneId,

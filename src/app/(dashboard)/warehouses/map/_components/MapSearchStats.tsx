@@ -99,7 +99,22 @@ const MemoizedPositionCard = React.memo(function PositionCard({
                 {pos.code}
             </div>
             {lot ? (
-                <div className="flex flex-col gap-1 flex-1 justify-center overflow-hidden">
+                <div className="flex flex-col gap-1 flex-1 justify-start overflow-hidden pt-1">
+                    {/* Production Order Tag */}
+                    {lot.productions?.name ? (
+                        <div className="mb-1 shrink-0">
+                            <div className="text-[9px] font-bold text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-900/50 px-2 py-0.5 rounded-full leading-tight line-clamp-1 text-center w-fit mx-auto border border-rose-200 dark:border-rose-800" title={`Lệnh sản xuất: ${lot.productions.name} (Mã: ${lot.productions.code || ''})`}>
+                                {lot.productions.name}
+                            </div>
+                        </div>
+                    ) : lot.production_code ? (
+                        <div className="mb-1 shrink-0">
+                            <div className="text-[9px] font-bold text-rose-500 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/20 px-1 rounded leading-tight line-clamp-1 text-center w-fit mx-auto border border-rose-100 dark:border-rose-900/30">
+                                {lot.production_code}
+                            </div>
+                        </div>
+                    ) : null}
+
                     {lot.items && lot.items.length > 0 ? (
                         <div className="flex flex-col gap-1.5 overflow-y-auto max-h-full py-0.5">
                             {lot.items.map((item: any, idx: number) => (

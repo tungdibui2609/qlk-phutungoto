@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { Search, Filter, ChevronDown, Check, X } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
+import { groupWarehouseData } from '@/lib/warehouseUtils'
 
 type Zone = Database['public']['Tables']['zones']['Row']
 
@@ -16,6 +17,7 @@ interface HorizontalZoneFilterProps {
     compact?: boolean
     variant?: 'default' | 'subtle'
     zones?: Zone[]
+    grouped?: boolean
 }
 
 export default function HorizontalZoneFilter({
@@ -26,12 +28,13 @@ export default function HorizontalZoneFilter({
     showSearch = true,
     compact = false,
     variant = 'default',
-    zones: externalZones
+    zones: externalZones,
+    grouped = false
 }: HorizontalZoneFilterProps) {
     const { systemType } = useSystem()
     const [internalZones, setInternalZones] = useState<Zone[]>([])
+    const [internalPositions, setInternalPositions] = useState<any[]>([])
 
-    const zones = externalZones || internalZones
     const [loading, setLoading] = useState(true)
     const [session, setSession] = useState<any>(null)
 
@@ -51,22 +54,53 @@ export default function HorizontalZoneFilter({
     useEffect(() => {
         if (accessToken && systemType) {
             setLoading(true)
-            supabase
-                .from('zones')
-                .select('*')
-                .eq('system_type', systemType)
-                .order('level')
-                .order('name')
-                .then(({ data, error }) => {
-                    if (!error && data) {
-                        setInternalZones(data)
-                    }
-                    setLoading(false)
-                })
+            
+            const promises: Promise<any>[] = [
+                supabase
+                    .from('zones')
+                    .select('*')
+                    .eq('system_type', systemType)
+                    .order('level')
+                    .order('name') as any
+            ]
+
+            if (grouped && !externalZones) {
+                promises.push(
+                    supabase
+                        .from('positions')
+                        .select('id, code, system_type, lot_id')
+                        .eq('system_type', systemType) as any
+                )
+            }
+
+            Promise.all(promises).then(([zonesRes, posRes]) => {
+                if (!zonesRes.error && zonesRes.data) {
+                    setInternalZones(zonesRes.data)
+                }
+                if (posRes && !posRes.error && posRes.data) {
+                    setInternalPositions(posRes.data)
+                }
+                setLoading(false)
+            }).catch(() => setLoading(false))
+
         } else {
-            setLoading(false) // Not loading if no accessToken or systemType
+            setLoading(false)
         }
-    }, [accessToken, systemType, externalZones])
+    }, [accessToken, systemType, externalZones, grouped])
+
+    // Final Zones calculation (with Grouping if enabled)
+    const zones = useMemo(() => {
+        const rawZones = externalZones || internalZones
+        if (grouped && rawZones.length > 0) {
+            // If externalZones is provided, we assumes it's already grouped (like in Inventory)
+            // Or if we have internalPositions, we group them locally.
+            if (!externalZones && internalPositions.length > 0) {
+                const { zones: gZones } = groupWarehouseData(rawZones, internalPositions)
+                return gZones
+            }
+        }
+        return rawZones
+    }, [externalZones, internalZones, internalPositions, grouped])
 
     // Helper: Build tree or map for easy lookup
     const zoneMap = useMemo(() => {

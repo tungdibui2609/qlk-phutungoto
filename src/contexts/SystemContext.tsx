@@ -31,6 +31,7 @@ interface System {
   is_active?: boolean
   sort_order?: number
   hidden_menus?: string[] | null
+  company_id?: string
 }
 
 interface SystemContextType {
