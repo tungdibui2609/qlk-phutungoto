@@ -95,7 +95,14 @@ export const LoanHistory = () => {
                                         )}
                                     </td>
                                     <td className="p-4">
-                                        <div className="font-bold text-sm text-stone-800 dark:text-gray-200">{item.products?.name}</div>
+                                        <div className="font-bold text-sm text-stone-800 dark:text-gray-200 flex items-center gap-2">
+                                            {item.products?.name}
+                                            {item.tag && (
+                                                <span className="px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400 text-[9px] font-bold font-mono border border-orange-200 dark:border-orange-800/50">
+                                                    {item.tag.replace('@', item.products?.sku || '')}
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="text-xs text-stone-500">{item.products?.sku}</div>
                                     </td>
                                     <td className="p-4 text-center">

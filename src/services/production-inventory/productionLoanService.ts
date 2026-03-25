@@ -73,6 +73,32 @@ export const productionLoanService = {
         return loan
     },
 
+    async issueLoanFIFO({ supabase, productId, workerName, totalQuantity, unit, systemCode, productionId, notes, tag }: {
+        supabase: SupabaseClient,
+        productId: string,
+        workerName: string,
+        totalQuantity: number,
+        unit: string,
+        systemCode: string,
+        productionId?: string,
+        notes?: string,
+        tag?: string
+    }) {
+        const { error } = await supabase.rpc('issue_production_loan_fifo', {
+            p_product_id: productId,
+            p_worker_name: workerName,
+            p_total_quantity: totalQuantity,
+            p_unit: unit,
+            p_system_code: systemCode,
+            p_production_id: productionId || null,
+            p_notes: notes || null,
+            p_tag: tag || null
+        })
+
+        if (error) throw error
+        return true
+    },
+
     async returnLoan({ supabase, loanId, returnDate, notes, status = 'returned' }: {
         supabase: SupabaseClient,
         loanId: string,

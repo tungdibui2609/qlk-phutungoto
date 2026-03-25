@@ -112,7 +112,14 @@ export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, set
                         <div key={loan.id} className="bg-white dark:bg-zinc-800 p-5 rounded-2xl border border-stone-200 dark:border-zinc-700 shadow-sm hover:shadow-md transition-all group">
                             <div className="flex justify-between items-start mb-3">
                                 <div>
-                                    <h4 className="font-bold text-stone-900 dark:text-gray-100 line-clamp-1">{loan.products?.name}</h4>
+                                    <h4 className="font-bold text-stone-900 dark:text-gray-100 line-clamp-1 flex items-center gap-2">
+                                        {loan.products?.name}
+                                        {loan.tag && (
+                                            <span className="px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400 text-[10px] font-bold font-mono">
+                                                {loan.tag.replace('@', loan.products?.sku || '')}
+                                            </span>
+                                        )}
+                                    </h4>
                                     <p className="text-xs text-stone-500">{loan.products?.sku}</p>
                                 </div>
                                 <span className="bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-bold px-2.5 py-1 rounded-lg border border-orange-100 dark:border-orange-800/50">

@@ -117,31 +117,55 @@ export const LoanIssueModal: React.FC<LoanIssueModalProps> = ({ isOpen, onClose,
 
     async function fetchInventory() {
         setLoading(true)
-        // Fetch lot_items directly to issue specific items
-        // Filter by products and lots system_code to ensure isolation
+        try {
+            // Fetch items join with lots and tags
+            const { data, error } = await supabase
+                .from('lot_items')
+                .select(`
+                    quantity, unit,
+                    products!inner (id, name, sku),
+                    lots!inner (system_code),
+                    lot_tags (tag)
+                `)
+                .eq('lots.system_code', systemType)
+                .gt('quantity', 0)
 
-        const { data, error } = await supabase
-            .from('lot_items')
-            .select(`
-                id, quantity, unit,
-                products!inner (id, name, sku, system_type),
-                lots!inner (id, code, warehouse_name, system_code)
-            `)
-            .eq('lots.system_code', systemType)
-            .gt('quantity', 0)
-            .limit(50)
-
-        if (error) {
-            console.error('Fetch Inventory Error:', JSON.stringify(error, null, 2))
-        } else {
-            setInventory(data || [])
+            if (error) {
+                console.error('Fetch Inventory Error:', JSON.stringify(error, null, 2))
+            } else {
+                // Group by Product + Unit + Tag
+                const grouped: Record<string, any> = {}
+                data?.forEach((item: any) => {
+                    const p = item.products as any
+                    // Use the first tag found, or null if no tags
+                    const tag = item.lot_tags && item.lot_tags.length > 0 ? item.lot_tags[0].tag : null
+                    const key = `${p.id}-${item.unit}-${tag || 'no-tag'}`
+                    
+                    if (!grouped[key]) {
+                        grouped[key] = {
+                            id: key, 
+                            productId: p.id,
+                            name: p.name,
+                            sku: p.sku,
+                            unit: item.unit,
+                            tag: tag,
+                            quantity: 0
+                        }
+                    }
+                    grouped[key].quantity += Number(item.quantity)
+                })
+                setInventory(Object.values(grouped))
+            }
+        } catch (err) {
+            console.error('Error fetching inventory:', err)
+        } finally {
+            setLoading(false)
         }
-        setLoading(false)
     }
 
     const filteredInventory = inventory.filter(item =>
-        item.products.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.products.sku.toLowerCase().includes(searchTerm.toLowerCase())
+        item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.sku.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
     const handleNext = () => {
@@ -158,46 +182,24 @@ export const LoanIssueModal: React.FC<LoanIssueModalProps> = ({ isOpen, onClose,
 
         setSubmitting(true)
         try {
-            // 1. Issue Loan Record and Decrement Stock
-            // Note: Currently we only insert loan record. 
-            // In a real implementation we MUST decrement the lot_item quantity.
-            // Using a RPC or transaction is best.
-            // For now, I'll do client-side: Update Lot Item -> Insert Loan.
-
-            // A. Decrement Lot Item
-            const newQty = selectedItem.quantity - quantity
-            const { error: updateError } = await (supabase.from('lot_items') as any)
-                .update({ quantity: newQty })
-                .eq('id', selectedItem.id)
-
-            if (updateError) throw updateError
-
-            // B. Create Loan
-            await productionLoanService.issueLoan({
+            // Use FIFO logic via RPC
+            await productionLoanService.issueLoanFIFO({
                 supabase,
-                lotItemId: selectedItem.id,
-                productId: selectedItem.products.id,
+                productId: selectedItem.productId,
                 workerName,
-                quantity,
+                totalQuantity: quantity,
                 unit: selectedItem.unit,
                 systemCode: systemType as string,
                 productionId: selectedProductionId || undefined,
-                notes
+                notes,
+                tag: selectedItem.tag || undefined
             })
 
-            // C. Sync LOT Status and Quantity
-            await lotService.syncLotStatus({
-                supabase,
-                lotId: selectedItem.lots.id,
-                isSiteIssuance: true
-            })
-
-            showToast('Đã ghi nhận cấp phát vật tư', 'success')
+            showToast('Đã ghi nhận cấp phát vật tư (FIFO)', 'success')
             onSuccess()
             onClose()
         } catch (e: any) {
             showToast(e.message, 'error')
-            // Revert logic would be needed here in production if step A succeeded but B failed
         } finally {
             setSubmitting(false)
         }
@@ -246,8 +248,15 @@ export const LoanIssueModal: React.FC<LoanIssueModalProps> = ({ isOpen, onClose,
                                                 }`}
                                         >
                                             <div>
-                                                <div className="font-bold text-stone-800 dark:text-gray-100">{item.products.name}</div>
-                                                <div className="text-xs text-stone-500">{item.products.sku} • {item.lots.code}</div>
+                                                <div className="font-bold text-stone-800 dark:text-gray-100 flex items-center gap-2">
+                                                    {item.name}
+                                                    {item.tag && (
+                                                        <span className="px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400 text-[10px] font-bold font-mono border border-orange-200 dark:border-orange-800">
+                                                            {item.tag.replace('@', item.sku)}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="text-xs text-stone-500">{item.sku}</div>
                                             </div>
                                             <div className="text-right">
                                                 <div className="font-mono font-bold text-sm">
@@ -264,8 +273,15 @@ export const LoanIssueModal: React.FC<LoanIssueModalProps> = ({ isOpen, onClose,
                             <div className="p-4 rounded-xl bg-stone-50 dark:bg-zinc-800 flex items-center gap-3">
                                 <Package className="text-orange-500" />
                                 <div>
-                                    <div className="font-bold">{selectedItem.products.name}</div>
-                                    <div className="text-xs text-stone-500 font-bold">Tồn kho hiện tại: <span className="text-orange-600">{formatQuantityFull(selectedItem.quantity)}</span> {selectedItem.unit}</div>
+                                    <div className="font-bold flex items-center gap-2">
+                                        {selectedItem.name}
+                                        {selectedItem.tag && (
+                                            <span className="px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400 text-[10px] font-bold font-mono">
+                                                {selectedItem.tag.replace('@', selectedItem.sku)}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="text-xs text-stone-500 font-bold">Tổng tồn kho: <span className="text-orange-600">{formatQuantityFull(selectedItem.quantity)}</span> {selectedItem.unit}</div>
                                 </div>
                             </div>
 
