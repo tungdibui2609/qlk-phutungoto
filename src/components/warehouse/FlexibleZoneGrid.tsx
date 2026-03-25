@@ -369,8 +369,9 @@ export default function FlexibleZoneGrid({
 
         return (
             <div
-                className={`w-full ${isEmptyMode ? 'grid' : 'flex flex-col'} flex-1 ${mergedZones?.has(zone.id) ? 'h-full min-h-0' : 'h-auto'} ${isEmptyMode ? 'gap-1' : 'gap-2'} print:gap-1.5 overflow-visible`}
+                className={`w-full flex-1 ${mergedZones?.has(zone.id) ? 'h-full min-h-0' : 'h-auto'} ${isEmptyMode ? 'grid gap-1' : 'flex flex-col gap-2'} print:gap-1.5 overflow-visible`}
                 style={{
+                    display: 'grid',
                     gridTemplateColumns: isEmptyMode 
                         ? (cellWidth > 0 ? `repeat(auto-fill, ${cellWidth}px)` : `repeat(3, minmax(0, 1fr))`)
                         : (!isEmptyMode && cellWidth > 0
