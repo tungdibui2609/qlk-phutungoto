@@ -3,14 +3,15 @@ import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
+import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { Product, Supplier, Unit, OrderItem } from '../types'
 import { generateOrderCode } from '@/lib/orderCodeUtils'
-import { normalizeUnit, convertUnit } from '@/lib/unitConversion'
 
 export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, onSuccess, onClose }: any) {
     const { showToast } = useToast()
-    const { currentSystem, hasModule } = useSystem()
+    const { hasModule } = useSystem()
     const { profile } = useUser()
+    const { convertUnit } = useUnitConversion()
 
     // Form State
     const [code, setCode] = useState('')
@@ -39,25 +40,6 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
     const [orderTypes, setOrderTypes] = useState<any[]>([])
     const [loadingData, setLoadingData] = useState(false)
     const [submitting, setSubmitting] = useState(false)
-
-    const unitNameMap = useMemo(() => {
-        const map = new Map<string, string>()
-        units.forEach(u => map.set(normalizeUnit(u.name), u.id))
-        return map
-    }, [units])
-
-    const conversionMap = useMemo(() => {
-        const map = new Map<string, Map<string, number>>()
-        products.forEach(p => {
-            if (!map.has(p.id)) map.set(p.id, new Map())
-            if (p.product_units) {
-                p.product_units.forEach((pu: any) => {
-                    map.get(p.id)?.set(pu.unit_id, pu.conversion_rate || 1)
-                })
-            }
-        })
-        return map
-    }, [products])
 
     useEffect(() => {
         if (isOpen) {
@@ -218,9 +200,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                     oldVal,
                     newVal,
                     item.quantity || 0,
-                    baseUnitName,
-                    unitNameMap,
-                    conversionMap
+                    baseUnitName
                 )
 
                 return { 
@@ -291,7 +271,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
             // Cleanup LOT metadata if this was a buffer sync
             if (initialData?.batchData) {
                 for (const p of initialData.batchData) {
-                    const { data: lot } = await supabase.from('lots').select('metadata').eq('id', p.lot_id).single() as any
+                    const { data: lot } = await supabase.from('lots').select('metadata').eq('id', p.batchDataId || p.lot_id).single() as any
                     if (lot) {
                         const metadata = { ...lot.metadata as any }
                         metadata.system_history.inbound = metadata.system_history.inbound.map((inb: any) => {
@@ -330,6 +310,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
         targetUnit, setTargetUnit,
         products, suppliers, branches, units, orderTypes,
         loadingData, submitting, handleSubmit,
-        hasModule
+        hasModule,
+        convertUnit
     }
 }

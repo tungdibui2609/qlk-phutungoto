@@ -30,7 +30,8 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
         targetUnit, setTargetUnit,
         products, suppliers, branches, units, orderTypes,
         loadingData, submitting, handleSubmit,
-        hasModule
+        hasModule,
+        convertUnit
     } = useInboundOrder(props)
 
     const [displayInternalCode, setDisplayInternalCode] = useState(hasModule('internal_products'))
@@ -133,6 +134,7 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
                 hasModule={hasModule}
                 compact={hasModule('inbound_ui_compact')}
                 displayInternalCode={displayInternalCode}
+                convertUnit={convertUnit}
             />
 
             <button

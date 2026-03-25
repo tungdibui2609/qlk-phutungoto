@@ -16,10 +16,11 @@ interface OutboundItemsTableProps {
     hasModule: (id: string) => boolean
     compact?: boolean
     displayInternalCode?: boolean
+    convertUnit: (productId: string | null, fromUnit: string | null, toUnit: string | null, qty: number, baseUnit: string | null) => number
 }
 
 export function OutboundItemsTable({
-    items, products, units, updateItem, removeItem, targetUnit, hasModule, compact, displayInternalCode
+    items, products, units, updateItem, removeItem, targetUnit, hasModule, compact, displayInternalCode, convertUnit
 }: OutboundItemsTableProps) {
     const [editingValue, setEditingValue] = useState<{ id: string, field: string, value: string } | null>(null)
 

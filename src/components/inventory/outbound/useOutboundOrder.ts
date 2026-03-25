@@ -491,6 +491,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         targetUnit, setTargetUnit,
         products, customers, branches, units, orderTypes,
         loadingData, submitting, handleSubmit,
-        hasModule, isUtilityEnabled, confirmDialog, setConfirmDialog, handleCustomerSelect
+        hasModule, isUtilityEnabled, confirmDialog, setConfirmDialog, handleCustomerSelect,
+        convertUnit
     }
 }
