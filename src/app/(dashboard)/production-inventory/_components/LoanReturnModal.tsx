@@ -18,38 +18,40 @@ export const LoanReturnModal: React.FC<LoanReturnModalProps> = ({ loan, onClose,
     const [notes, setNotes] = useState('')
     const [submitting, setSubmitting] = useState(false)
     const [status, setStatus] = useState<'returned' | 'lost'>('returned')
+    const [returnQuantity, setReturnQuantity] = useState<number>(loan.quantity || 0)
 
     const handleSubmit = async () => {
+        if (status === 'returned' && (returnQuantity < 0 || returnQuantity > loan.quantity)) {
+            showToast(`Số lượng trả không hợp lệ (0 - ${loan.quantity})`, 'error')
+            return
+        }
+
         setSubmitting(true)
         try {
-            // 1. Update Loan Status
+            // 1. Update Loan Status and Returned Quantity
             await productionLoanService.returnLoan({
                 supabase,
                 loanId: loan.id,
                 returnDate: new Date().toISOString(),
                 notes: notes ? (loan.notes ? `${loan.notes}\n[Trả]: ${notes}` : notes) : loan.notes,
-                status
+                status,
+                returnedQuantity: status === 'returned' ? returnQuantity : 0
             })
 
-            // 2. Increment Stock (Only if returned, if lost usually we don't increment, or increment to a "Lost" warehouse)
-            // For now, if returned, we increment the original lot_item quantity.
-            // If lost, we do NOT increment (item is gone).
-
-            if (status === 'returned') {
-                const { data: item, error: fetchError } = await supabase
-                    .from('lot_items')
+            // 2. Increment Stock (Only if returned)
+            if (status === 'returned' && returnQuantity > 0) {
+                const { data: item } = await (supabase
+                    .from('lot_items') as any)
                     .select('quantity')
                     .eq('id', loan.lot_item_id)
                     .single()
 
                 if (item) {
-                    const newQty = (item.quantity || 0) + loan.quantity
-                    await supabase.from('lot_items').update({ quantity: newQty }).eq('id', loan.lot_item_id)
+                    const newQty = (item.quantity || 0) + Number(returnQuantity)
+                    await (supabase.from('lot_items') as any).update({ quantity: newQty }).eq('id', loan.lot_item_id)
 
                     // 3. Sync LOT Status and Quantity
-                    // Find lot_id from lot_item_id or use loan metadata if available
-                    // The loan object doesn't have lot_id directly, but we can fetch it or it might be in loan.lot_item_id -> lots.id
-                    const { data: lotItem } = await supabase.from('lot_items').select('lot_id').eq('id', loan.lot_item_id).single()
+                    const { data: lotItem } = await (supabase.from('lot_items') as any).select('lot_id').eq('id', loan.lot_item_id).single()
                     if (lotItem) {
                         await lotService.syncLotStatus({
                             supabase,
@@ -108,6 +110,25 @@ export const LoanReturnModal: React.FC<LoanReturnModalProps> = ({ loan, onClose,
                             </button>
                         </div>
                     </div>
+
+                    {status === 'returned' && (
+                        <div className="space-y-2 animate-in slide-in-from-top duration-200">
+                            <label className="text-sm font-bold text-stone-500 flex justify-between">
+                                <span>Số lượng thu hồi ({loan.unit})</span>
+                                <span className="text-xs text-orange-600">Tối đa: {loan.quantity}</span>
+                            </label>
+                            <input
+                                type="number"
+                                value={returnQuantity}
+                                onChange={e => setReturnQuantity(Number(e.target.value))}
+                                max={loan.quantity}
+                                min={0}
+                                step="any"
+                                className="w-full p-3 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 outline-none focus:ring-2 focus:ring-orange-500 font-bold text-lg"
+                                placeholder="Nhập số lượng thực nhận..."
+                            />
+                        </div>
+                    )}
 
                     <div className="space-y-2">
                         <label className="text-sm font-bold text-stone-500">Ghi chú tình trạng</label>

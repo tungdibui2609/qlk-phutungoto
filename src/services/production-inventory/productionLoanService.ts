@@ -99,18 +99,41 @@ export const productionLoanService = {
         return true
     },
 
-    async returnLoan({ supabase, loanId, returnDate, notes, status = 'returned' }: {
+    async returnLoan({ supabase, loanId, returnDate, notes, status = 'returned', returnedQuantity }: {
         supabase: SupabaseClient,
         loanId: string,
         returnDate: string,
         notes?: string,
-        status?: 'returned' | 'lost'
+        status?: 'returned' | 'lost',
+        returnedQuantity?: number
     }) {
         const { error } = await (supabase.from('production_loans') as any)
             .update({
                 status: status,
                 return_date: returnDate,
-                notes: notes 
+                notes: notes,
+                returned_quantity: returnedQuantity
+            })
+            .eq('id', loanId)
+
+        if (error) throw error
+        return true
+    },
+
+    async updateLoan({ supabase, loanId, workerName, quantity, notes, productionId }: {
+        supabase: SupabaseClient,
+        loanId: string,
+        workerName: string,
+        quantity: number,
+        notes?: string,
+        productionId?: string
+    }) {
+        const { error } = await (supabase.from('production_loans') as any)
+            .update({
+                worker_name: workerName,
+                quantity: quantity,
+                notes: notes,
+                production_id: productionId || null
             })
             .eq('id', loanId)
 

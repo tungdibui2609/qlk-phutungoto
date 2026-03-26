@@ -1,12 +1,13 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Plus, Search, Hammer, AlertCircle, RefreshCw, CheckCircle2, Factory } from 'lucide-react'
+import { Plus, Search, Hammer, AlertCircle, RefreshCw, CheckCircle2, Factory, Edit2 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { productionLoanService } from '@/services/production-inventory/productionLoanService'
 import { useSystem } from '@/contexts/SystemContext'
 import { LoanIssueModal } from './LoanIssueModal'
 import { LoanReturnModal } from './LoanReturnModal'
+import { LoanEditModal } from './LoanEditModal'
 import { format } from 'date-fns'
 
 interface LoanDashboardProps {
@@ -20,6 +21,7 @@ export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, set
     const [loading, setLoading] = useState(true)
     const [isIssueModalOpen, setIsIssueModalOpen] = useState(false)
     const [selectedLoan, setSelectedLoan] = useState<any>(null) // For return modal
+    const [editingLoan, setEditingLoan] = useState<any>(null) // For edit modal
     const [searchTerm, setSearchTerm] = useState('')
 
     const [error, setError] = useState<any>(null)
@@ -122,9 +124,18 @@ export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, set
                                     </h4>
                                     <p className="text-xs text-stone-500">{loan.products?.sku}</p>
                                 </div>
-                                <span className="bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-bold px-2.5 py-1 rounded-lg border border-orange-100 dark:border-orange-800/50">
-                                    {loan.quantity} {loan.unit}
-                                </span>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setEditingLoan(loan)}
+                                        className="p-1 text-stone-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950/20 rounded-lg transition-colors"
+                                        title="Chỉnh sửa"
+                                    >
+                                        <Edit2 size={18} />
+                                    </button>
+                                    <span className="bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-bold px-2.5 py-1 rounded-lg border border-orange-100 dark:border-orange-800/50 h-fit">
+                                        {loan.quantity} {loan.unit}
+                                    </span>
+                                </div>
                             </div>
 
                             <div className="flex items-center gap-3 mb-4 p-3 bg-stone-50 dark:bg-zinc-900/50 rounded-xl">
@@ -165,6 +176,14 @@ export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, set
                 <LoanReturnModal
                     loan={selectedLoan}
                     onClose={() => setSelectedLoan(null)}
+                    onSuccess={() => fetchLoans()}
+                />
+            )}
+
+            {editingLoan && (
+                <LoanEditModal
+                    loan={editingLoan}
+                    onClose={() => setEditingLoan(null)}
                     onSuccess={() => fetchLoans()}
                 />
             )}

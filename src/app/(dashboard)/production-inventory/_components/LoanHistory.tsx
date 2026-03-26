@@ -106,7 +106,14 @@ export const LoanHistory = () => {
                                         <div className="text-xs text-stone-500">{item.products?.sku}</div>
                                     </td>
                                     <td className="p-4 text-center">
-                                        <span className="font-mono text-sm font-bold">{item.quantity} {item.unit}</span>
+                                        <div className="flex flex-col items-center">
+                                            <span className="font-mono text-sm font-bold">{item.quantity} {item.unit}</span>
+                                            {item.status === 'returned' && item.returned_quantity !== undefined && (
+                                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded mt-1">
+                                                    Đã trả: {item.returned_quantity}
+                                                </span>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="p-4">
                                         <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${item.status === 'returned'
