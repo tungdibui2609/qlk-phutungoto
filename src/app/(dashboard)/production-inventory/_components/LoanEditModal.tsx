@@ -17,6 +17,8 @@ export const LoanEditModal: React.FC<LoanEditModalProps> = ({ loan, onClose, onS
     const { showToast } = useToast()
     const [workerName, setWorkerName] = useState(loan.worker_name)
     const [quantity, setQuantity] = useState<number>(loan.quantity)
+    const [unit, setUnit] = useState(loan.unit)
+    const [availableUnits, setAvailableUnits] = useState<any[]>([])
     const [notes, setNotes] = useState(loan.notes || '')
     const [productionId, setProductionId] = useState(loan.production_id || '')
     const [productions, setProductions] = useState<any[]>([])
@@ -25,6 +27,7 @@ export const LoanEditModal: React.FC<LoanEditModalProps> = ({ loan, onClose, onS
 
     useEffect(() => {
         fetchProductions()
+        fetchUnits()
     }, [])
 
     const fetchProductions = async () => {
@@ -39,6 +42,15 @@ export const LoanEditModal: React.FC<LoanEditModalProps> = ({ loan, onClose, onS
         }
     }
 
+    const fetchUnits = async () => {
+        try {
+            const units = await productionLoanService.getProductUnits(supabase, loan.product_id)
+            setAvailableUnits(units)
+        } catch (error) {
+            console.error('Fetch units error:', error)
+        }
+    }
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!workerName || quantity <= 0) {
@@ -46,11 +58,21 @@ export const LoanEditModal: React.FC<LoanEditModalProps> = ({ loan, onClose, onS
             return
         }
 
-        const delta = quantity - loan.quantity
+        // Calculate delta in BASE unit (usually stored in lot_items)
+        // Note: We assuming lot_items is stored in the PRODUCT's base unit (rate = 1)
+        const oldUnitData = availableUnits.find(u => normalizeUnitUI(u.name) === normalizeUnitUI(loan.unit))
+        const newUnitData = availableUnits.find(u => normalizeUnitUI(u.name) === normalizeUnitUI(unit))
+        
+        const oldRate = oldUnitData?.rate || 1
+        const newRate = newUnitData?.rate || 1
+
+        const oldBaseQty = loan.quantity * oldRate
+        const newBaseQty = quantity * newRate
+        const delta = newBaseQty - oldBaseQty
 
         setSubmitting(true)
         try {
-            // 1. If quantity increased, check stock
+            // 1. If quantity increased, check stock (in base unit)
             if (delta > 0) {
                 const { data: item } = await (supabase.from('lot_items') as any).select('quantity').eq('id', loan.lot_item_id).single()
                 if (!item || (item.quantity || 0) < delta) {
@@ -60,11 +82,11 @@ export const LoanEditModal: React.FC<LoanEditModalProps> = ({ loan, onClose, onS
                 }
             }
 
-            // 2. Update Stock if quantity changed
-            if (delta !== 0) {
+            // 2. Update Stock if quantity changed (in base unit)
+            if (Math.abs(delta) > 0.000001) {
                 const { data: item } = await (supabase.from('lot_items') as any).select('quantity').eq('id', loan.lot_item_id).single()
                 if (item) {
-                    const newQty = (item.quantity || 0) - delta // positive delta means we take more, so minus
+                    const newQty = (item.quantity || 0) - delta
                     await (supabase.from('lot_items') as any).update({ quantity: newQty }).eq('id', loan.lot_item_id)
                     
                     // Sync LOT
@@ -81,6 +103,7 @@ export const LoanEditModal: React.FC<LoanEditModalProps> = ({ loan, onClose, onS
                 loanId: loan.id,
                 workerName,
                 quantity,
+                unit,
                 notes: notes || loan.notes,
                 productionId: productionId || undefined
             })
@@ -94,6 +117,11 @@ export const LoanEditModal: React.FC<LoanEditModalProps> = ({ loan, onClose, onS
             setSubmitting(false)
         }
     }
+
+    const normalizeUnitUI = (s: string | null | undefined): string => {
+        if (!s) return '';
+        return s.normalize('NFC').toLowerCase().trim();
+    };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -135,7 +163,7 @@ export const LoanEditModal: React.FC<LoanEditModalProps> = ({ loan, onClose, onS
 
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
-                            <label className="text-xs font-bold text-stone-500 uppercase tracking-wider ml-1">Số lượng ({loan.unit})</label>
+                            <label className="text-xs font-bold text-stone-500 uppercase tracking-wider ml-1">Số lượng</label>
                             <input
                                 type="number"
                                 value={quantity}
@@ -147,18 +175,38 @@ export const LoanEditModal: React.FC<LoanEditModalProps> = ({ loan, onClose, onS
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-xs font-bold text-stone-500 uppercase tracking-wider ml-1">Lệnh sản xuất</label>
-                            <select
-                                value={productionId}
-                                onChange={e => setProductionId(e.target.value)}
-                                className="w-full p-3 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 outline-none focus:ring-2 focus:ring-orange-500 font-bold"
-                            >
-                                <option value="">--- Không gắn lệnh ---</option>
-                                {productions.map(prod => (
-                                    <option key={prod.id} value={prod.id}>{prod.code} - {prod.name}</option>
-                                ))}
-                            </select>
+                            <label className="text-xs font-bold text-stone-500 uppercase tracking-wider ml-1">Đơn vị</label>
+                            {availableUnits.length > 1 ? (
+                                <select
+                                    value={unit}
+                                    onChange={e => setUnit(e.target.value)}
+                                    className="w-full p-3 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 outline-none focus:ring-2 focus:ring-orange-500 font-bold"
+                                >
+                                    {availableUnits.map(u => (
+                                        <option key={u.name} value={u.name}>{u.name}</option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <div className="p-3 bg-stone-50 dark:bg-zinc-800 rounded-xl font-bold text-stone-500 border border-stone-100 dark:border-zinc-800">
+                                    {unit}
+                                </div>
+                            )}
                         </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-stone-500 uppercase tracking-wider ml-1">Lệnh sản xuất</label>
+                        <select
+                            value={productionId}
+                            onChange={e => setProductionId(e.target.value)}
+                            className="w-full p-3 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 outline-none focus:ring-2 focus:ring-orange-500 font-bold"
+                        >
+                            <option value="">--- Không gắn lệnh ---</option>
+                            {productions.map(prod => (
+                                <option key={prod.id} value={prod.id}>{prod.code} - {prod.name}</option>
+                            ))}
+                        </select>
+                        {loadingProductions && <p className="text-[10px] text-stone-400 animate-pulse">Đang tải...</p>}
                     </div>
 
                     <div className="space-y-2">

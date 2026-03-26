@@ -1,10 +1,11 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Plus, Search, Hammer, AlertCircle, RefreshCw, CheckCircle2, Factory, Edit2 } from 'lucide-react'
+import { Plus, Search, Hammer, AlertCircle, RefreshCw, CheckCircle2, Factory, Edit2, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { productionLoanService } from '@/services/production-inventory/productionLoanService'
 import { useSystem } from '@/contexts/SystemContext'
+import { useToast } from '@/components/ui/ToastProvider'
 import { LoanIssueModal } from './LoanIssueModal'
 import { LoanReturnModal } from './LoanReturnModal'
 import { LoanEditModal } from './LoanEditModal'
@@ -17,6 +18,7 @@ interface LoanDashboardProps {
 
 export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, setIsInboundOpen }) => {
     const { systemType } = useSystem()
+    const { showToast } = useToast()
     const [loans, setLoans] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [isIssueModalOpen, setIsIssueModalOpen] = useState(false)
@@ -41,6 +43,20 @@ export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, set
             setError(error)
         } finally {
             setLoading(false)
+        }
+    }
+
+    const handleDelete = async (loan: any) => {
+        if (!window.confirm(`Bạn có chắc muốn XÓA cấp phát này?\n- Vật tư: ${loan.products?.name}\n- Người nhận: ${loan.worker_name}\n\nLưu ý: Hệ thống sẽ tự động HOÀN LẠI số lượng tồn kho tương ứng.`)) {
+            return
+        }
+
+        try {
+            await productionLoanService.deleteLoan(supabase, loan)
+            showToast('Đã xóa và hoàn lại tồn kho', 'success')
+            fetchLoans()
+        } catch (error: any) {
+            showToast(error.message, 'error')
         }
     }
 
@@ -124,15 +140,22 @@ export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, set
                                     </h4>
                                     <p className="text-xs text-stone-500">{loan.products?.sku}</p>
                                 </div>
-                                <div className="flex gap-2">
+                                <div className="flex gap-1.5">
                                     <button
                                         onClick={() => setEditingLoan(loan)}
-                                        className="p-1 text-stone-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950/20 rounded-lg transition-colors"
+                                        className="p-1.5 text-stone-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950/20 rounded-lg transition-colors"
                                         title="Chỉnh sửa"
                                     >
-                                        <Edit2 size={18} />
+                                        <Edit2 size={16} />
                                     </button>
-                                    <span className="bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-bold px-2.5 py-1 rounded-lg border border-orange-100 dark:border-orange-800/50 h-fit">
+                                    <button
+                                        onClick={() => handleDelete(loan)}
+                                        className="p-1.5 text-stone-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg transition-colors"
+                                        title="Xóa / Hủy cấp phát"
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
+                                    <span className="bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-orange-100 dark:border-orange-800/50 h-fit">
                                         {loan.quantity} {loan.unit}
                                     </span>
                                 </div>

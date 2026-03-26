@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js'
+import { lotService } from '../warehouse/lotService'
 
 export const productionLoanService = {
     async getActiveLoans(supabase: SupabaseClient, systemCode: string) {
@@ -120,11 +121,12 @@ export const productionLoanService = {
         return true
     },
 
-    async updateLoan({ supabase, loanId, workerName, quantity, notes, productionId }: {
+    async updateLoan({ supabase, loanId, workerName, quantity, unit, notes, productionId }: {
         supabase: SupabaseClient,
         loanId: string,
         workerName: string,
         quantity: number,
+        unit: string,
         notes?: string,
         productionId?: string
     }) {
@@ -132,6 +134,7 @@ export const productionLoanService = {
             .update({
                 worker_name: workerName,
                 quantity: quantity,
+                unit: unit,
                 notes: notes,
                 production_id: productionId || null
             })
@@ -272,5 +275,71 @@ export const productionLoanService = {
 
         if (error) throw error
         return data || []
+    },
+
+    async getProductUnits(supabase: SupabaseClient, productId: string) {
+        // 1. Get base unit from products
+        const { data: product } = await supabase.from('products').select('unit').eq('id', productId).single()
+        
+        // 2. Get conversions
+        const { data: conversions, error } = await (supabase.from('product_units') as any)
+            .select(`
+                conversion_rate,
+                units!inner (id, name)
+            `)
+            .eq('product_id', productId)
+
+        const units: any[] = []
+        if (product?.unit) {
+            units.push({ name: product.unit, rate: 1 })
+        }
+
+        if (conversions) {
+            conversions.forEach((c: any) => {
+                // Avoid duplicating base unit if it's also in conversions
+                if (normalizeUnit(c.units.name) !== normalizeUnit(product?.unit)) {
+                    units.push({ name: c.units.name, rate: c.conversion_rate })
+                }
+            })
+        }
+
+        return units
+    },
+
+    async deleteLoan(supabase: SupabaseClient, loan: any) {
+        // 1. Calculate how much to return (Original quantity - already returned)
+        const returnQty = Number(loan.quantity || 0) - Number(loan.returned_quantity || 0)
+        
+        if (returnQty > 0 && loan.status === 'active') {
+            // Find rate
+            const units = await this.getProductUnits(supabase, loan.product_id)
+            const unitData = units.find((u: any) => normalizeUnit(u.name) === normalizeUnit(loan.unit))
+            const rate = unitData?.rate || 1
+            const baseReturnQty = returnQty * rate
+
+            // Return to stock
+            const { data: item } = await (supabase.from('lot_items') as any).select('quantity').eq('id', loan.lot_item_id).single()
+            if (item) {
+                await (supabase.from('lot_items') as any).update({ 
+                    quantity: (item.quantity || 0) + baseReturnQty 
+                }).eq('id', loan.lot_item_id)
+                
+                // Sync LOT
+                const { data: lotItem } = await (supabase.from('lot_items') as any).select('lot_id').eq('id', loan.lot_item_id).single()
+                if (lotItem) {
+                    await lotService.syncLotStatus({ supabase, lotId: lotItem.lot_id, isSiteIssuance: true })
+                }
+            }
+        }
+
+        // 2. Delete the record
+        const { error } = await supabase.from('production_loans').delete().eq('id', loan.id)
+        if (error) throw error
+        return true
     }
 }
+
+const normalizeUnit = (s: string | null | undefined): string => {
+    if (!s) return '';
+    return s.normalize('NFC').toLowerCase().trim();
+};
