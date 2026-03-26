@@ -31,6 +31,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
     const [images, setImages] = useState<string[]>([])
     // Conversion State
     const [targetUnit, setTargetUnit] = useState<string>('')
+    const [createdAt, setCreatedAt] = useState<string>(new Date().toISOString())
 
     // Data State
     const [products, setProducts] = useState<Product[]>([])
@@ -63,6 +64,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
         setOrderTypeId('')
         setImages([])
         setTargetUnit('')
+        setCreatedAt(new Date().toISOString())
     }
 
     async function fetchData() {
@@ -114,6 +116,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                     setContainerNumber(meta.containerNumber || '')
                     setSealNumber(meta.sealNumber || '')
                     if (meta.targetUnit) setTargetUnit(meta.targetUnit)
+                    if (order.created_at) setCreatedAt(order.created_at)
 
                     const { data: itemsData } = await supabase.from('inbound_order_items').select('*').eq('order_id', editOrderId)
                     if (itemsData) setItems(itemsData.map((i: any) => ({
@@ -233,7 +236,8 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                 images,
                 updated_at: new Date().toISOString(),
                 metadata: { vehicleNumber, driverName, containerNumber, sealNumber, targetUnit },
-                company_id: profile?.company_id || null
+                company_id: profile?.company_id || null,
+                created_at: createdAt
             }
 
             if (editOrderId) {
@@ -308,6 +312,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
         orderTypeId, setOrderTypeId,
         images, setImages,
         targetUnit, setTargetUnit,
+        createdAt, setCreatedAt,
         products, suppliers, branches, units, orderTypes,
         loadingData, submitting, handleSubmit,
         hasModule,

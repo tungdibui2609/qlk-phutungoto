@@ -30,6 +30,8 @@ interface OrderGeneralInfoProps {
     units: Unit[]
     hasModule: (id: string) => boolean
     type: 'inbound' | 'outbound'
+    createdAt?: string
+    setCreatedAt?: (v: string) => void
 }
 
 export function OrderGeneralInfo({
@@ -37,7 +39,8 @@ export function OrderGeneralInfo({
     warehouseName, setWarehouseName, branches,
     orderTypeId, setOrderTypeId, orderTypes,
     targetUnit, setTargetUnit, units,
-    hasModule, type
+    hasModule, type,
+    createdAt, setCreatedAt
 }: OrderGeneralInfoProps) {
     const modulePrefix = type === 'inbound' ? 'inbound' : 'outbound'
 
@@ -51,6 +54,16 @@ export function OrderGeneralInfo({
                         value={code}
                         onChange={e => setCode(e.target.value)}
                         className="w-full px-4 py-2.5 bg-stone-100 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg font-mono font-bold text-stone-800 dark:text-white outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                </div>
+
+                <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-stone-500 dark:text-gray-400">Ngày phiếu</label>
+                    <input
+                        type="datetime-local"
+                        value={createdAt ? new Date(new Date(createdAt).getTime() - new Date(createdAt).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
+                        onChange={e => setCreatedAt?.(new Date(e.target.value).toISOString())}
+                        className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-stone-800 dark:text-white outline-none focus:ring-2 focus:ring-orange-500"
                     />
                 </div>
 

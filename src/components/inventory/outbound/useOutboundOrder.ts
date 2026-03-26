@@ -34,6 +34,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
     const [images, setImages] = useState<string[]>([])
     // Conversion State
     const [targetUnit, setTargetUnit] = useState<string>('')
+    const [createdAt, setCreatedAt] = useState<string>(new Date().toISOString())
 
     // Data State
     const [products, setProducts] = useState<Product[]>([])
@@ -98,6 +99,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                 const meta = order.metadata as any
                 setSealNumber(meta.sealNumber || '')
                 setTargetUnit(meta.targetUnit || '')
+                if (order.created_at) setCreatedAt(order.created_at)
             }
 
             if (order.items) {
@@ -145,6 +147,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         setOrderTypeId('')
         setImages([])
         setTargetUnit('')
+        setCreatedAt(new Date().toISOString())
     }
 
     async function fetchData() {
@@ -395,7 +398,8 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                         sealNumber,
                         targetUnit
                     },
-                    company_id: profile?.company_id || null
+                    company_id: profile?.company_id || null,
+                    created_at: createdAt
                 }).eq('id', editOrderId)
 
                 if (updateError) throw updateError
@@ -418,6 +422,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                     images,
                     system_code: systemCode,
                     system_type: systemCode,
+                    created_at: createdAt,
                     metadata: {
                         vehicleNumber,
                         driverName,
@@ -493,6 +498,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         orderTypeId, setOrderTypeId,
         images, setImages,
         targetUnit, setTargetUnit,
+        createdAt, setCreatedAt,
         products, customers, branches, units, orderTypes,
         loadingData, submitting, handleSubmit,
         hasModule, isUtilityEnabled, confirmDialog, setConfirmDialog, handleCustomerSelect,

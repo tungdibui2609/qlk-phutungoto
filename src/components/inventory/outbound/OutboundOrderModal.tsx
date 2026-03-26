@@ -29,10 +29,11 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
         orderTypeId, setOrderTypeId,
         images, setImages,
         targetUnit, setTargetUnit,
+        createdAt, setCreatedAt,
         products, customers, branches, units, orderTypes,
         loadingData, submitting, handleSubmit,
-        hasModule, confirmDialog, setConfirmDialog, handleCustomerSelect,
-        isUtilityEnabled, convertUnit
+        hasModule, isUtilityEnabled, confirmDialog, setConfirmDialog, handleCustomerSelect,
+        convertUnit
     } = useOutboundOrder({ ...props, editOrderId: props.editOrderId })
 
     const [displayInternalCode, setDisplayInternalCode] = useState(hasModule('internal_products'))
@@ -95,6 +96,8 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
                             targetUnit={targetUnit} setTargetUnit={setTargetUnit}
                             units={units}
                             hasModule={hasModule}
+                            createdAt={createdAt}
+                            setCreatedAt={setCreatedAt}
                         />
                     )}
 

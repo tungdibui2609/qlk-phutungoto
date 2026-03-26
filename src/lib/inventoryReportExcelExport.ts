@@ -133,24 +133,56 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
 
     // 5. Body Data
     if (data.type === 'accounting') {
-        data.items.forEach((item, idx) => {
-            const row = worksheet.addRow([
-                idx + 1,
-                item.productName,
-                item.productCode,
-                item.unit,
-                cleanNum(item.opening),
-                cleanNum(item.qtyIn),
-                cleanNum(item.qtyOut),
-                cleanNum(item.balance)
-            ]);
-            row.eachCell(cell => {
-                cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-            });
-            // Align quantity columns
-            [5, 6, 7, 8].forEach(col => {
-                row.getCell(col).alignment = { horizontal: 'right' };
-                row.getCell(col).numFmt = '#,##0';
+        const groups = new Map<string, any[]>();
+        data.items.forEach(item => {
+            const cat = item.categoryName || 'Chưa phân loại';
+            if (!groups.has(cat)) groups.set(cat, []);
+            groups.get(cat)!.push(item);
+        });
+
+        const sortedGroups = Array.from(groups.entries()).sort((a, b) => {
+            if (a[0] === 'Chưa phân loại') return 1;
+            if (b[0] === 'Chưa phân loại') return -1;
+            return a[0].localeCompare(b[0]);
+        });
+
+        let stt = 1;
+        sortedGroups.forEach(([categoryName, items]) => {
+            // Add Category Header Row
+            const catRow = worksheet.addRow([`DANH MỤC: ${categoryName.toUpperCase()}`]);
+            worksheet.mergeCells(`A${catRow.number}:H${catRow.number}`);
+            catRow.font = { bold: true, italic: true, size: 10, color: { argb: '7F6000' } };
+            catRow.getCell(1).fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFF2CC' } // Light orange/yellow
+            };
+            catRow.getCell(1).border = { 
+                top: { style: 'thin' }, 
+                left: { style: 'thin' }, 
+                bottom: { style: 'thin' }, 
+                right: { style: 'thin' } 
+            };
+
+            items.forEach((item) => {
+                const row = worksheet.addRow([
+                    stt++,
+                    item.productName,
+                    item.productCode,
+                    item.unit,
+                    cleanNum(item.opening),
+                    cleanNum(item.qtyIn),
+                    cleanNum(item.qtyOut),
+                    cleanNum(item.balance)
+                ]);
+                row.eachCell(cell => {
+                    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                });
+                // Align quantity columns
+                [5, 6, 7, 8].forEach(col => {
+                    row.getCell(col).alignment = { horizontal: 'right' };
+                    row.getCell(col).numFmt = '#,##0';
+                });
             });
         });
     } else if (data.type === 'lot' || data.type === 'category' || data.type === 'tags') {
@@ -289,5 +321,6 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
 
     // Save
     const buffer = await workbook.xlsx.writeBuffer();
-    saveAs(new Blob([buffer]), `Bao_cao_ton_kho_${data.type}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    const fileName = `Ton_kho_${new Date().toISOString().split('T')[0]}.xlsx`;
+    saveAs(new Blob([buffer]), fileName);
 }

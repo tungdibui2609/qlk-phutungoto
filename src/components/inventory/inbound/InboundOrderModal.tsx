@@ -28,6 +28,7 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
         orderTypeId, setOrderTypeId,
         images, setImages,
         targetUnit, setTargetUnit,
+        createdAt, setCreatedAt,
         products, suppliers, branches, units, orderTypes,
         loadingData, submitting, handleSubmit,
         hasModule,
@@ -91,6 +92,8 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
                         targetUnit={targetUnit} setTargetUnit={setTargetUnit}
                         units={units}
                         hasModule={hasModule}
+                        createdAt={createdAt}
+                        setCreatedAt={setCreatedAt}
                     />
                 )}
 
