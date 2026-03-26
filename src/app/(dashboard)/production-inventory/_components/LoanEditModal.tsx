@@ -33,7 +33,12 @@ export const LoanEditModal: React.FC<LoanEditModalProps> = ({ loan, onClose, onS
     const fetchProductions = async () => {
         setLoadingProductions(true)
         try {
-            const data = await productionLoanService.getInProgressProductions(supabase, (loan.products as any).company_id || '')
+            const product = Array.isArray(loan.products) ? loan.products[0] : loan.products
+            const data = await productionLoanService.getInProgressProductions(
+                supabase, 
+                product?.company_id || '',
+                loan.production_id
+            )
             setProductions(data || [])
         } catch (error) {
             console.error(error)
@@ -125,15 +130,15 @@ export const LoanEditModal: React.FC<LoanEditModalProps> = ({ loan, onClose, onS
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-md w-full shadow-2xl overflow-hidden">
-                <div className="p-6 border-b border-stone-100 dark:border-zinc-800 flex justify-between items-center bg-orange-50/50 dark:bg-orange-950/10">
+            <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-md w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="p-6 border-b border-stone-100 dark:border-zinc-800 flex justify-between items-center bg-orange-50/50 dark:bg-orange-950/10 shrink-0">
                     <h3 className="text-xl font-bold flex items-center gap-2 text-orange-700 dark:text-orange-400">
                         Chỉnh sửa Cấp phát
                     </h3>
                     <button onClick={onClose}><X className="text-stone-400 hover:text-stone-600 transition-colors" /></button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 space-y-5">
+                <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1">
                     <div className="bg-stone-50 dark:bg-zinc-800/50 p-3 rounded-xl border border-stone-100 dark:border-zinc-800 flex items-center gap-3">
                          <div className="bg-orange-100 dark:bg-orange-900/30 p-2 rounded-lg text-orange-600 dark:text-orange-400">
                             <AlertTriangle size={18} />

@@ -61,11 +61,15 @@ export const AllocationStats = () => {
         return acc
     }, []).slice(0, 10) // Top 10 productions
 
-    const totalStats = stats.reduce((acc, curr) => ({
-        issued: acc.issued + Number(curr.total_issued),
-        returned: acc.returned + Number(curr.total_returned),
-        lost: acc.lost + Number(curr.total_lost)
-    }), { issued: 0, returned: 0, lost: 0 })
+    const totalStats = stats.reduce((acc, curr) => {
+        const issued = Number(curr.total_issued) || 0
+        const returned = Number(curr.total_returned) || 0
+        return {
+            issued: acc.issued + issued,
+            returned: acc.returned + returned,
+            lost: acc.lost + (issued - returned)
+        }
+    }, { issued: 0, returned: 0, lost: 0 })
 
     const COLORS = ['#f97316', '#10b981', '#ef4444']
 
@@ -110,8 +114,8 @@ export const AllocationStats = () => {
                             <AlertTriangle size={28} />
                         </div>
                         <div>
-                            <div className="text-stone-500 text-xs font-black uppercase tracking-widest mb-1">Thất thoát / Hỏng</div>
-                            <div className="text-3xl font-black text-stone-900 dark:text-white leading-none">
+                            <div className="text-stone-500 text-xs font-black uppercase tracking-widest mb-1">Tiêu hao thực tế</div>
+                            <div className="text-3xl font-black text-stone-900 dark:text-white leading-none text-red-600">
                                 {formatQuantityFull(totalStats.lost)}
                             </div>
                         </div>
@@ -236,7 +240,7 @@ export const AllocationStats = () => {
                                 <th className="px-6 py-5">Mã lệnh</th>
                                 <th className="px-6 py-5 text-right">Tổng cấp phát</th>
                                 <th className="px-6 py-5 text-right">Tổng đã trả</th>
-                                <th className="px-6 py-5 text-right">Thất thoát</th>
+                                <th className="px-6 py-5 text-right">Tiêu hao</th>
                                 <th className="px-6 py-5 text-center">ĐVT</th>
                             </tr>
                         </thead>
@@ -266,7 +270,7 @@ export const AllocationStats = () => {
                                             {formatQuantityFull(item.total_returned)}
                                         </td>
                                         <td className="px-6 py-5 text-right font-black text-red-500">
-                                            {formatQuantityFull(item.total_lost)}
+                                            {formatQuantityFull((Number(item.total_issued) || 0) - (Number(item.total_returned) || 0))}
                                         </td>
                                         <td className="px-6 py-5 text-center">
                                             <span className="px-2 py-0.5 rounded bg-stone-50 dark:bg-zinc-900 text-[10px] font-bold text-stone-500">

@@ -151,7 +151,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                     unit: aln.unit 
                 };
             }
-            materialStats[pid].total += aln.quantity || 0;
+            // Tiêu hao = Đã cấp - Đã hoàn trả
+            const consumed = (aln.quantity || 0) - (aln.returned_quantity || 0);
+            materialStats[pid].total += consumed;
         });
 
         // 2. Consumption per Ton
@@ -865,7 +867,8 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                 <thead>
                                                     <tr className="bg-stone-50/50 dark:bg-zinc-800/50 border-b border-stone-100 dark:border-zinc-800">
                                                         <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-stone-400">Vật tư / Nguyên liệu</th>
-                                                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-stone-400">Số lượng nhận</th>
+                                                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-stone-400">Đã cấp</th>
+                                                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-emerald-500">Đã dùng (Tiêu hao)</th>
                                                         <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-stone-400">Người nhận</th>
                                                         <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-stone-400 text-right">Ngày cấp</th>
                                                     </tr>
@@ -882,6 +885,15 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                                     {formatQuantityFull(aln.quantity)}
                                                                     <span className="text-[10px] font-bold text-stone-400 uppercase">{aln.unit}</span>
                                                                 </div>
+                                                                {Number(aln.returned_quantity) > 0 && (
+                                                                    <div className="text-[9px] text-emerald-500 font-bold mt-0.5">Đã trả: {formatQuantityFull(aln.returned_quantity)}</div>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <div className="font-black text-orange-600 dark:text-orange-400 flex items-baseline gap-1">
+                                                                    {formatQuantityFull((aln.quantity || 0) - (aln.returned_quantity || 0))}
+                                                                    <span className="text-[10px] font-bold text-stone-400 uppercase">{aln.unit}</span>
+                                                                </div>
                                                             </td>
                                                             <td className="px-6 py-4">
                                                                 <div className="text-sm font-medium text-stone-600 dark:text-stone-400 flex items-center gap-2">
@@ -891,10 +903,10 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                             </td>
                                                             <td className="px-6 py-4 text-right">
                                                                 <div className="text-xs font-bold text-stone-500">
-                                                                    {new Date(aln.created_at).toLocaleDateString('vi-VN')}
+                                                                    {new Date(aln.loan_date || aln.created_at).toLocaleDateString('vi-VN')}
                                                                 </div>
                                                                 <div className="text-[9px] text-stone-400 italic">
-                                                                    {new Date(aln.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                                                    {new Date(aln.loan_date || aln.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                                                                 </div>
                                                             </td>
                                                         </tr>

@@ -8,7 +8,7 @@ export const productionLoanService = {
             .select(`
                 *,
                 products (
-                   id, name, sku, system_type
+                   id, name, sku, system_type, company_id
                 ),
                 productions (
                    id, code, name
@@ -28,7 +28,7 @@ export const productionLoanService = {
             .select(`
                 *,
                 products (
-                   id, name, sku, system_type
+                   id, name, sku, system_type, company_id
                 ),
                 productions (
                    id, code, name
@@ -73,7 +73,7 @@ export const productionLoanService = {
         return loan
     },
 
-    async issueLoanFIFO({ supabase, productId, workerName, totalQuantity, unit, systemCode, productionId, notes, tag }: {
+    async issueLoanFIFO({ supabase, productId, workerName, totalQuantity, unit, systemCode, productionId, notes, tag, batchId }: {
         supabase: SupabaseClient,
         productId: string,
         workerName: string,
@@ -82,7 +82,8 @@ export const productionLoanService = {
         systemCode: string,
         productionId?: string,
         notes?: string,
-        tag?: string
+        tag?: string,
+        batchId?: string
     }) {
         const { error } = await supabase.rpc('issue_production_loan_fifo', {
             p_product_id: productId,
@@ -92,7 +93,8 @@ export const productionLoanService = {
             p_system_code: systemCode,
             p_production_id: productionId || null,
             p_notes: notes || null,
-            p_tag: tag || null
+            p_tag: tag || null,
+            p_batch_id: batchId || null
         })
 
         if (error) throw error
@@ -115,26 +117,27 @@ export const productionLoanService = {
 
         if (fetchError) throw fetchError
 
-        const newTotalReturned = (Number(loan.returned_quantity) || 0) + Number(returnedQuantity)
+        const qty = Number(loan.quantity)
+        const currentReturned = Number(loan.returned_quantity) || 0
+        const addingReturned = Number(returnedQuantity) || 0
+        const newTotalReturned = currentReturned + addingReturned
         
-        // Determine new status:
-        // If user marked as 'lost', status is 'lost'.
-        // If 'consumed', force status to 'returned' (to close it) without necessarily returning all.
-        // If 'returned' but total < original quantity, stay 'active'.
-        let newStatus = status
-        if (status === 'returned') {
-            newStatus = (newTotalReturned >= Number(loan.quantity)) ? 'returned' : 'active'
-        } else if (status === 'consumed') {
-            newStatus = 'returned'
+        // Cập nhật trạng thái chỉ để đồng bộ metadata (đã xong hay chưa)
+        let newStatus = status === 'lost' ? 'lost' : (newTotalReturned >= qty - 0.0001 ? 'returned' : 'active')
+
+        const updateData: any = {
+            status: newStatus,
+            notes: notes,
+            returned_quantity: newTotalReturned
+        }
+
+        // Ngày thu hồi chỉ set khi thực sự thu hồi (dù ít hay nhiều)
+        if (addingReturned > 0 || newStatus === 'returned') {
+            updateData.return_date = returnDate
         }
 
         const { error } = await (supabase.from('production_loans') as any)
-            .update({
-                status: newStatus,
-                return_date: returnDate,
-                notes: notes,
-                returned_quantity: newTotalReturned
-            })
+            .update(updateData)
             .eq('id', loanId)
 
         if (error) throw error
@@ -150,12 +153,25 @@ export const productionLoanService = {
         notes?: string,
         productionId?: string
     }) {
+        // 1. Lấy số lượng đã trả hiện tại để tính lại trạng thái
+        const { data: loan } = await (supabase.from('production_loans') as any)
+            .select('returned_quantity, status')
+            .eq('id', loanId)
+            .single()
+
+        const currentReturned = Number(loan?.returned_quantity) || 0
+        const newTotalQty = Number(quantity)
+        
+        // 2. Tính lại trạng thái: Nếu Cấp > Trả thì là 'active', ngược lại là 'returned'
+        let newStatus = loan?.status === 'lost' ? 'lost' : (currentReturned >= newTotalQty - 0.0001 ? 'returned' : 'active')
+
         const { error } = await (supabase.from('production_loans') as any)
             .update({
                 worker_name: workerName,
-                quantity: quantity,
+                quantity: newTotalQty,
                 unit: unit,
                 notes: notes,
+                status: newStatus,
                 production_id: productionId || null
             })
             .eq('id', loanId)
@@ -275,26 +291,73 @@ export const productionLoanService = {
         return data
     },
 
-    async getInProgressProductions(supabase: SupabaseClient, companyId: string) {
-        const { data, error } = await supabase
+    async getInProgressProductions(supabase: SupabaseClient, companyId: string, includeId?: string) {
+        let query = supabase
             .from('productions')
             .select('id, code, name')
             .eq('company_id', companyId)
-            .eq('status', 'IN_PROGRESS')
-            .order('code', { ascending: false })
+        
+        if (includeId) {
+            query = query.or(`status.eq.IN_PROGRESS,id.eq.${includeId}`)
+        } else {
+            query = query.eq('status', 'IN_PROGRESS')
+        }
+
+        const { data, error } = await query.order('code', { ascending: false })
 
         if (error) throw error
         return data || []
     },
 
     async getAllocationStatsByProduction(supabase: SupabaseClient, systemCode: string) {
+        // Query directly from production_loans to ensure accuracy with returned_quantity
         const { data, error } = await supabase
-            .from('production_allocation_statistics')
-            .select('*')
-            .order('production_code', { ascending: false })
+            .from('production_loans')
+            .select(`
+                *,
+                products (id, name, sku),
+                productions (id, code, name)
+            `)
+            .eq('system_code', systemCode)
 
         if (error) throw error
-        return data || []
+        if (!data) return []
+
+        // Group and Aggregate in JS
+        const statsMap: Record<string, any> = {}
+
+        data.forEach((loan: any) => {
+            const prod = loan.productions
+            const product = loan.products
+            if (!prod || !product) return
+
+            const key = `${prod.id}-${product.id}-${loan.unit}`
+            
+            if (!statsMap[key]) {
+                statsMap[key] = {
+                    production_id: prod.id,
+                    production_code: prod.code,
+                    production_name: prod.name,
+                    product_id: product.id,
+                    product_name: product.name,
+                    product_sku: product.sku,
+                    total_issued: 0,
+                    total_returned: 0,
+                    total_lost: 0,
+                    unit: loan.unit,
+                    system_code: systemCode
+                }
+            }
+
+            const stats = statsMap[key]
+            stats.total_issued += Number(loan.quantity) || 0
+            stats.total_returned += Number(loan.returned_quantity) || 0
+            if (loan.status === 'lost') {
+                stats.total_lost += (Number(loan.quantity) - (Number(loan.returned_quantity) || 0))
+            }
+        })
+
+        return Object.values(statsMap).sort((a: any, b: any) => b.total_issued - a.total_issued)
     },
 
     async getProductUnits(supabase: SupabaseClient, productId: string) {
