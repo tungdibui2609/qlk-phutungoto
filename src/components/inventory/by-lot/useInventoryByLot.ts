@@ -354,28 +354,31 @@ export function useInventoryByLot(
 
         const { virtualToRealMap } = groupWarehouseData(rawZones, rawPositions)
 
+        // Optimization: Pre-calculate all allowed real IDs for the selected zone
+        const allAllowedRealIds = new Set<string>()
+        if (selectedZoneId) {
+            const resolveRealIds = (id: string): string[] => {
+                const mapped = virtualToRealMap?.get(id)
+                return mapped ? mapped : [id]
+            }
+
+            const baseRealIds = resolveRealIds(selectedZoneId)
+            
+            baseRealIds.forEach(rid => {
+                allAllowedRealIds.add(rid)
+                const descendants = (parentId: string) => {
+                    const children = rawZones.filter((z: any) => z.parent_id === parentId)
+                    children.forEach((c: any) => {
+                        allAllowedRealIds.add(c.id)
+                        descendants(c.id)
+                    })
+                }
+                descendants(rid)
+            })
+        }
+
         const filteredLots = lots.filter(lot => {
             if (selectedZoneId) {
-                const resolveRealIds = (id: string): string[] => {
-                    const mapped = virtualToRealMap?.get(id)
-                    return mapped ? mapped : [id]
-                }
-
-                const baseRealIds = resolveRealIds(selectedZoneId)
-                const allAllowedRealIds = new Set<string>()
-                
-                baseRealIds.forEach(rid => {
-                    allAllowedRealIds.add(rid)
-                    const descendants = (parentId: string) => {
-                        const children = rawZones.filter((z: any) => z.parent_id === parentId)
-                        children.forEach((c: any) => {
-                            allAllowedRealIds.add(c.id)
-                            descendants(c.id)
-                        })
-                    }
-                    descendants(rid)
-                })
-
                 const matchesZone = lot.positions?.some((p: any) => {
                     const zId = posToZoneMap[p.id]
                     return zId && allAllowedRealIds.has(zId)

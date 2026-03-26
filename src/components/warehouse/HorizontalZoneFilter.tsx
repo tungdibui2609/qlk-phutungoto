@@ -52,6 +52,12 @@ export default function HorizontalZoneFilter({
     const accessToken = session?.access_token
 
     useEffect(() => {
+        // Optimization: Don't fetch if external zones are already provided
+        if (externalZones && externalZones.length > 0) {
+            setLoading(false)
+            return
+        }
+
         if (accessToken && systemType) {
             setLoading(true)
             
