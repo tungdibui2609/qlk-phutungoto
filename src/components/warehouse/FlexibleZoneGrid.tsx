@@ -54,6 +54,8 @@ interface FlexibleZoneGridProps {
     isCapturing?: boolean
     isPrintPage?: boolean
     isEmptyMode?: boolean
+    checkedZoneIds?: Set<string>
+    onToggleCheckedZone?: (zoneId: string, isChecked: boolean) => void
 }
 
 export default function FlexibleZoneGrid({
@@ -84,7 +86,9 @@ export default function FlexibleZoneGrid({
     onToggleMergeZone,
     isCapturing = false,
     isPrintPage = false,
-    isEmptyMode = false
+    isEmptyMode = false,
+    checkedZoneIds = new Set(),
+    onToggleCheckedZone
 }: FlexibleZoneGridProps) {
     const [isMobile, setIsMobile] = React.useState(false)
     const [localNotes, setLocalNotes] = React.useState<Record<string, string>>({})
@@ -554,7 +558,7 @@ export default function FlexibleZoneGrid({
                 return (
                     <div
                         key={zone.id}
-                        className={`flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1 min-h-0' : 'h-auto'} rounded-xl border border-gray-200 dark:border-gray-700 print:border-none overflow-hidden print:overflow-visible bg-white dark:bg-gray-800 print:break-inside-avoid ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
+                        className={`flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1 min-h-0' : 'h-auto'} rounded-xl border border-gray-200 dark:border-gray-700 print:rounded-none print:border-stone-300 overflow-hidden print:overflow-visible bg-white dark:bg-gray-800 print:break-inside-avoid ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
                     >
                         {pageBreakIds.has(zone.id) && (
                             <div className="hidden print:block text-center border-b border-dashed border-gray-300 mb-4 pb-2 text-[10px] text-gray-400 italic">
@@ -570,38 +574,35 @@ export default function FlexibleZoneGrid({
                             onClick={() => collapsible && onToggleCollapse(zone.id)}
                         >
                             <div className="flex items-center gap-3">
+                                {isEmptyMode && onToggleCheckedZone && (
+                                    <div className="flex items-center justify-center shrink-0 mr-1 print:hidden" onClick={e => e.stopPropagation()}>
+                                        <input
+                                            type="checkbox"
+                                            className="w-5 h-5 rounded border-blue-400 text-blue-600 focus:ring-blue-500 cursor-pointer shadow-sm transition-all"
+                                            checked={checkedZoneIds.has(zone.id)}
+                                            onChange={(e) => onToggleCheckedZone(zone.id, e.target.checked)}
+                                            title="Chọn vùng này để in"
+                                        />
+                                    </div>
+                                )}
                                 {collapsible && (
                                     isCollapsed
-                                        ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
-                                        : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
+                                        ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={`print:hidden ${headerColor || headerTextColor ? '' : 'text-emerald-500'}`} />
+                                        : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={`print:hidden ${headerColor || headerTextColor ? '' : 'text-emerald-500'}`} />
                                 )}
                                 <div
-                                    className={`rounded-full shrink-0 ${isLevelUnderBin ? 'w-0.5 h-3' : isBigBin ? 'w-1 h-5' : 'w-1 h-8'}`}
+                                    className={`rounded-full shrink-0 print:hidden ${isLevelUnderBin ? 'w-0.5 h-3' : isBigBin ? 'w-1 h-5' : 'w-1 h-8'}`}
                                     style={{ backgroundColor: headerTextColor || (headerColor ? 'rgba(255,255,255,0.8)' : '#22c55e') }}
                                 />
                                 <div>
                                     <div className="flex items-center gap-2 print-break-after-avoid">
-                                        {!isAssignmentMode && totalSelectableCount > 0 && onBulkSelect && (
-                                            <div className="flex items-center justify-center shrink-0" onClick={e => e.stopPropagation()}>
-                                                <input
-                                                    type="checkbox"
-                                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                                    checked={isAllSelected}
-                                                    ref={el => {
-                                                        if (el) el.indeterminate = isIndeterminate
-                                                    }}
-                                                    onChange={handleZoneCheckboxChange}
-                                                    title={`Chọn tất cả ${totalSelectableCount} vị trí có hàng`}
-                                                />
-                                            </div>
-                                        )}
                                         <h2
-                                            className={`font-bold tracking-tight whitespace-nowrap shrink-0 ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-sm' : 'text-lg'}`}
-                                            style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
+                                            className={`font-bold tracking-tight whitespace-nowrap shrink-0 ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-sm' : 'text-lg'} ${isEmptyMode ? 'print:text-[10px] print:font-medium print:text-gray-500' : ''}`}
+                                            style={{ color: (isEmptyMode && isPrintPage) ? 'inherit' : (headerTextColor || (headerColor ? 'white' : undefined)) }}
                                         >
-                                            {isLevelUnderBin
-                                                ? (isGrouped ? (zone.name.includes('|') ? zone.name : `${zone.name} | ${totalPositions} vị trí`) : `${currentBreadcrumb.join(' • ')} | ${totalPositions} vị trí`)
-                                                : (isMobile || isGrouped ? zone.name : currentBreadcrumb.join(' • '))
+                                            {isLevelUnderBin || isPrintPage
+                                                ? (isGrouped ? (zone.name.includes('|') ? zone.name.split('|')[0].trim() : currentBreadcrumb.join(' - ')) : currentBreadcrumb.join(' - '))
+                                                : (isMobile || isGrouped ? zone.name : currentBreadcrumb.join(' - '))
                                             }
                                         </h2>
                                         {isPrintPage && (
@@ -618,7 +619,7 @@ export default function FlexibleZoneGrid({
                                     </div>
                                     {!isLevelUnderBin && totalPositions > 0 && (
                                         <p
-                                            className="text-xs whitespace-nowrap shrink-0"
+                                            className="text-xs whitespace-nowrap shrink-0 print:hidden"
                                             style={{ color: headerTextColor ? `${headerTextColor}cc` : (headerColor ? 'rgba(255,255,255,0.8)' : undefined) }}
                                         >
                                             {totalPositions} ô / <span className="font-semibold text-blue-600 dark:text-blue-400">{totalSelectableCount} có hàng</span>
@@ -802,19 +803,46 @@ export default function FlexibleZoneGrid({
                             onClick={() => collapsible && onToggleCollapse(zone.id)}
                         >
                             <div className="flex items-center gap-3">
+                                {isEmptyMode && onToggleCheckedZone && (
+                                    <div className="flex items-center justify-center shrink-0 mr-1" onClick={e => e.stopPropagation()}>
+                                        <input
+                                            type="checkbox"
+                                            className="w-5 h-5 rounded border-blue-400 text-blue-600 focus:ring-blue-500 cursor-pointer shadow-sm transition-all"
+                                            checked={checkedZoneIds.has(zone.id)}
+                                            onChange={(e) => onToggleCheckedZone(zone.id, e.target.checked)}
+                                            title="Chọn vùng này để in"
+                                        />
+                                    </div>
+                                )}
                                 {collapsible && (
                                     isCollapsed
                                         ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
                                         : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
                                 )}
+                                {isEmptyMode && onToggleCheckedZone && (
+                                    <div className="flex items-center justify-center shrink-0 mr-1 print:hidden" onClick={e => e.stopPropagation()}>
+                                        <input
+                                            type="checkbox"
+                                            className="w-5 h-5 rounded border-blue-400 text-blue-600 focus:ring-blue-500 cursor-pointer shadow-sm transition-all"
+                                            checked={checkedZoneIds.has(zone.id)}
+                                            onChange={(e) => onToggleCheckedZone(zone.id, e.target.checked)}
+                                            title="Chọn vùng này để in"
+                                        />
+                                    </div>
+                                )}
+                                {collapsible && (
+                                    isCollapsed
+                                        ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={`print:hidden ${headerColor || headerTextColor ? '' : 'text-emerald-500'}`} />
+                                        : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={`print:hidden ${headerColor || headerTextColor ? '' : 'text-emerald-500'}`} />
+                                )}
                                 <div
-                                    className={`rounded-full shrink-0 ${isLevelUnderBin ? 'w-0.5 h-3' : isBigBin ? 'w-1 h-5' : 'w-1 h-8'}`}
+                                    className={`rounded-full shrink-0 print:hidden ${isLevelUnderBin ? 'w-0.5 h-3' : isBigBin ? 'w-1 h-5' : 'w-1 h-8'}`}
                                     style={{ backgroundColor: headerTextColor || (headerColor ? 'rgba(255,255,255,0.8)' : '#22c55e') }}
                                 />
                                 <div>
                                     <div className="flex items-center gap-2">
-                                        {!isAssignmentMode && totalSelectableCount > 0 && onBulkSelect && (
-                                            <div className="flex items-center justify-center shrink-0" onClick={e => e.stopPropagation()}>
+                                        {!isAssignmentMode && !isEmptyMode && totalSelectableCount > 0 && onBulkSelect && (
+                                            <div className="flex items-center justify-center shrink-0 print:hidden" onClick={e => e.stopPropagation()}>
                                                 <input
                                                     type="checkbox"
                                                     className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
@@ -828,12 +856,12 @@ export default function FlexibleZoneGrid({
                                             </div>
                                         )}
                                         <h2
-                                            className={`font-bold tracking-tight whitespace-nowrap shrink-0 ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-sm' : 'text-lg'}`}
-                                            style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
+                                            className={`font-bold tracking-tight whitespace-nowrap shrink-0 ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-sm' : 'text-lg'} ${isEmptyMode ? 'print:text-[10px] print:font-medium print:text-gray-500' : ''}`}
+                                            style={{ color: (isEmptyMode && isPrintPage) ? 'inherit' : (headerTextColor || (headerColor ? 'white' : undefined)) }}
                                         >
-                                            {isLevelUnderBin
-                                                ? `${currentBreadcrumb.join(' • ')} | ${totalPositions} vị trí`
-                                                : (isMobile || isGrouped ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' • '))
+                                            {isLevelUnderBin || isPrintPage
+                                                ? currentBreadcrumb.join(' - ')
+                                                : (isMobile || isGrouped ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' - '))
                                             }
                                         </h2>
                                         {isPrintPage && (
@@ -850,7 +878,7 @@ export default function FlexibleZoneGrid({
                                     </div>
                                     {!isLevelUnderBin && totalPositions > 0 && (
                                         <p
-                                            className="text-xs whitespace-nowrap shrink-0"
+                                            className="text-xs whitespace-nowrap shrink-0 print:hidden"
                                             style={{ color: headerTextColor ? `${headerTextColor}cc` : (headerColor ? 'rgba(255,255,255,0.8)' : undefined) }}
                                         >
                                             {totalPositions} ô / <span className="font-semibold text-blue-600 dark:text-blue-400">{totalSelectableCount} có hàng</span>
@@ -1076,13 +1104,24 @@ export default function FlexibleZoneGrid({
                             onClick={() => collapsible && onToggleCollapse(zone.id)}
                         >
                             <div className="flex items-center gap-2">
+                                {isEmptyMode && onToggleCheckedZone && (
+                                    <div className="flex items-center justify-center shrink-0 mr-1 print:hidden" onClick={e => e.stopPropagation()}>
+                                        <input
+                                            type="checkbox"
+                                            className="w-5 h-5 rounded border-blue-400 text-blue-600 focus:ring-blue-500 cursor-pointer shadow-sm transition-all"
+                                            checked={checkedZoneIds.has(zone.id)}
+                                            onChange={(e) => onToggleCheckedZone(zone.id, e.target.checked)}
+                                            title="Chọn vùng này để in"
+                                        />
+                                    </div>
+                                )}
                                 {collapsible && (hasChildren || hasPositions) && (
                                     isCollapsed
-                                        ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-gray-400'} />
-                                        : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-gray-400'} />
+                                        ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={`print:hidden ${headerColor || headerTextColor ? '' : 'text-gray-400'}`} />
+                                        : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={`print:hidden ${headerColor || headerTextColor ? '' : 'text-gray-400'}`} />
                                 )}
-                                {!isAssignmentMode && totalSelectableCount > 0 && onBulkSelect && (
-                                    <div className="flex items-center justify-center shrink-0 mr-1" onClick={e => e.stopPropagation()}>
+                                {!isAssignmentMode && !isEmptyMode && totalSelectableCount > 0 && onBulkSelect && (
+                                    <div className="flex items-center justify-center shrink-0 mr-1 print:hidden" onClick={e => e.stopPropagation()}>
                                         <input
                                             type="checkbox"
                                             className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
@@ -1096,12 +1135,12 @@ export default function FlexibleZoneGrid({
                                     </div>
                                 )}
                                 <span
-                                    className={`font-bold tracking-tight whitespace-nowrap shrink-0 ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-base' : depth === 0 ? 'text-base' : 'text-sm'}`}
-                                    style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }}
+                                    className={`font-bold tracking-tight whitespace-nowrap shrink-0 ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-base' : depth === 0 ? 'text-base' : 'text-sm'} ${isEmptyMode ? 'print:text-[10px] print:font-medium print:text-gray-500' : ''}`}
+                                    style={{ color: (isEmptyMode && isPrintPage) ? 'inherit' : (headerTextColor || (headerColor ? 'white' : undefined)) }}
                                 >
-                                    {isLevelUnderBin
-                                        ? (isGrouped ? (zone.name.includes('|') ? zone.name : `${zone.name} | ${totalPositions} vị trí`) : `${currentBreadcrumb.join(' • ')} | ${totalPositions} vị trí`)
-                                        : (isMobile || isGrouped ? zone.name : currentBreadcrumb.join(' • '))
+                                    {isLevelUnderBin || isPrintPage
+                                        ? (isGrouped ? (zone.name.includes('|') ? zone.name.split('|')[0].trim() : currentBreadcrumb.join(' - ')) : currentBreadcrumb.join(' - '))
+                                        : (isMobile || isGrouped ? zone.name : currentBreadcrumb.join(' - '))
                                     }
                                 </span>
                                 {isPrintPage && (
@@ -1117,7 +1156,7 @@ export default function FlexibleZoneGrid({
                                 )}
                                 {!isLevelUnderBin && totalPositions > 0 && (
                                     <span
-                                        className={`px-1.5 py-0.5 rounded-full whitespace-nowrap shrink-0 ${isLevelUnderBin ? 'text-[10px]' : 'text-xs'} ${headerColor || headerTextColor ? '' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300'}`}
+                                        className={`px-1.5 py-0.5 rounded-full whitespace-nowrap shrink-0 print:hidden ${isLevelUnderBin ? 'text-[10px]' : 'text-xs'} ${headerColor || headerTextColor ? '' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300'}`}
                                         style={{
                                             backgroundColor: headerTextColor ? `${headerTextColor}33` : (headerColor ? 'rgba(255,255,255,0.2)' : undefined),
                                             color: headerTextColor || (headerColor ? 'white' : undefined)

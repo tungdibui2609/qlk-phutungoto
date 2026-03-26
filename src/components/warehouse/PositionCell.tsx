@@ -77,7 +77,7 @@ const PositionCell = React.memo<{
                 ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.02] hover:z-10' : ''}
                 ${isHighlightBlinking ? 'animate-highlight-blink' : ''}
                 ${isPrintPage && !isEmptyMode ? `min-h-${isSanh ? '0' : '[125px]'} h-${isSanh ? 'auto' : '[125px]'} print:overflow-visible` : ''}
-                ${isEmptyMode ? 'items-start justify-start !p-0.5 rounded-md border-[1.5px]' : ''}
+                ${isEmptyMode ? 'items-start justify-start !p-0.5 rounded-md border-[1.5px] print:rounded-none print:border-stone-300' : ''}
             `}
             onClick={() => isAssignmentMode && onPositionSelect?.(ids)}
         >
