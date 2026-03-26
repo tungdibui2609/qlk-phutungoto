@@ -1,11 +1,12 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { BarChart3, Factory, Package, ArrowUpRight, ArrowDownLeft, AlertTriangle, RefreshCw, Layers } from 'lucide-react'
+import { BarChart3, Factory, Package, ArrowUpRight, ArrowDownLeft, AlertTriangle, RefreshCw, Layers, History } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { productionLoanService } from '@/services/production-inventory/productionLoanService'
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
+import { LoanHistory } from './LoanHistory'
 import { 
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell,
     PieChart, Pie
@@ -278,6 +279,15 @@ export const AllocationStats = () => {
                         </tbody>
                     </table>
                 </div>
+            </div>
+
+            {/* Detailed Journal */}
+            <div className="space-y-4">
+                <h3 className="text-xl font-black text-stone-900 dark:text-white flex items-center gap-2">
+                    <BarChart3 className="text-orange-500" size={24} />
+                    Nhật ký Cấp phát Chi tiết
+                </h3>
+                <LoanHistory />
             </div>
         </div>
     )

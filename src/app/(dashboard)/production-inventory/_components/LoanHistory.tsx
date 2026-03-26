@@ -65,7 +65,7 @@ export const LoanHistory = () => {
                                 <th className="p-4">Người nhận</th>
                                 <th className="p-4">Lệnh sản xuất</th>
                                 <th className="p-4">Sản phẩm</th>
-                                <th className="p-4 text-center">Số lượng</th>
+                                <th className="p-4">Chi tiết Số lượng</th>
                                 <th className="p-4">Trạng thái</th>
                                 <th className="p-4">Ghi chú</th>
                             </tr>
@@ -105,22 +105,35 @@ export const LoanHistory = () => {
                                         </div>
                                         <div className="text-xs text-stone-500">{item.products?.sku}</div>
                                     </td>
-                                    <td className="p-4 text-center">
-                                        <div className="flex flex-col items-center">
-                                            <span className="font-mono text-sm font-bold">{item.quantity} {item.unit}</span>
-                                            {item.status === 'returned' && item.returned_quantity !== undefined && (
-                                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded mt-1">
-                                                    Đã trả: {item.returned_quantity}
+                                    <td className="p-4">
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex justify-between items-center text-[11px]">
+                                                <span className="text-stone-500">Cấp phát:</span>
+                                                <span className="font-bold text-orange-600">{item.quantity} {item.unit}</span>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center text-[11px]">
+                                                <span className="text-stone-500">Thu hồi:</span>
+                                                <span className="font-bold text-emerald-600">{item.returned_quantity || 0} {item.unit}</span>
+                                            </div>
+
+                                            <div className="flex justify-between items-center text-[11px] border-t border-stone-100 dark:border-zinc-800 pt-1 mt-1">
+                                                <span className="text-stone-500">{item.status === 'active' ? 'Đang tiêu dùng:' : 'Tiêu hao cuối:'}</span>
+                                                <span className="font-bold text-red-600">
+                                                    {(Number(item.quantity) - (Number(item.returned_quantity) || 0)).toFixed(2).replace(/\.00$/, '')} {item.unit}
                                                 </span>
-                                            )}
+                                            </div>
                                         </div>
                                     </td>
                                     <td className="p-4">
-                                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${item.status === 'returned'
+                                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+                                                item.status === 'active' 
+                                                ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400'
+                                                : item.status === 'returned'
                                                 ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400'
                                                 : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400'
                                             }`}>
-                                            {item.status === 'returned' ? 'Hoàn tất' : 'Mất / Hỏng'}
+                                            {item.status === 'active' ? 'Đang cấp phát' : item.status === 'returned' ? 'Hoàn tất' : 'Mất / Hỏng'}
                                         </span>
                                     </td>
                                     <td className="p-4 text-sm text-stone-500 max-w-xs truncate" title={item.notes}>

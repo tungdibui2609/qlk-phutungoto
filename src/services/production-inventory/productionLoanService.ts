@@ -35,9 +35,8 @@ export const productionLoanService = {
                 )
             `)
             .eq('system_code', systemCode)
-            .neq('status', 'active')
             .order('created_at', { ascending: false })
-            .limit(100)
+            .limit(200)
 
         if (error) throw error
         return data || []
@@ -105,15 +104,36 @@ export const productionLoanService = {
         loanId: string,
         returnDate: string,
         notes?: string,
-        status?: 'returned' | 'lost',
-        returnedQuantity?: number
+        status?: 'returned' | 'lost' | 'active' | 'consumed',
+        returnedQuantity: number // This is the quantity returned in THIS specific session
     }) {
+        // 1. Fetch current loan data to calculate total returned
+        const { data: loan, error: fetchError } = await (supabase.from('production_loans') as any)
+            .select('quantity, returned_quantity, status')
+            .eq('id', loanId)
+            .single()
+
+        if (fetchError) throw fetchError
+
+        const newTotalReturned = (Number(loan.returned_quantity) || 0) + Number(returnedQuantity)
+        
+        // Determine new status:
+        // If user marked as 'lost', status is 'lost'.
+        // If 'consumed', force status to 'returned' (to close it) without necessarily returning all.
+        // If 'returned' but total < original quantity, stay 'active'.
+        let newStatus = status
+        if (status === 'returned') {
+            newStatus = (newTotalReturned >= Number(loan.quantity)) ? 'returned' : 'active'
+        } else if (status === 'consumed') {
+            newStatus = 'returned'
+        }
+
         const { error } = await (supabase.from('production_loans') as any)
             .update({
-                status: status,
+                status: newStatus,
                 return_date: returnDate,
                 notes: notes,
-                returned_quantity: returnedQuantity
+                returned_quantity: newTotalReturned
             })
             .eq('id', loanId)
 

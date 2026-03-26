@@ -25,6 +25,7 @@ export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, set
     const [selectedLoan, setSelectedLoan] = useState<any>(null) // For return modal
     const [editingLoan, setEditingLoan] = useState<any>(null) // For edit modal
     const [searchTerm, setSearchTerm] = useState('')
+    const [selectedProductionId, setSelectedProductionId] = useState<string>('all')
 
     const [error, setError] = useState<any>(null)
 
@@ -60,10 +61,20 @@ export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, set
         }
     }
 
-    const filteredLoans = loans.filter(loan =>
-        loan.worker_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        loan.products?.name.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    // Get unique productions from current loans to build the filter
+    const uniqueProductions = Array.from(new Set(
+        loans.filter(l => l.productions).map(l => JSON.stringify({ id: l.productions.id, code: l.productions.code }))
+    )).map(s => JSON.parse(s))
+
+    const filteredLoans = loans.filter(loan => {
+        const matchesSearch = loan.worker_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                              loan.products?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                              loan.products?.sku.toLowerCase().includes(searchTerm.toLowerCase())
+        
+        const matchesProduction = selectedProductionId === 'all' || loan.production_id === selectedProductionId
+
+        return matchesSearch && matchesProduction
+    })
 
     if (error) {
         return (
@@ -98,6 +109,19 @@ export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, set
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                     />
+                </div>
+                <div className="relative w-full md:w-64">
+                    <Factory className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
+                    <select
+                        value={selectedProductionId}
+                        onChange={e => setSelectedProductionId(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 bg-stone-50 dark:bg-zinc-900 border-none rounded-xl font-medium outline-none focus:ring-2 focus:ring-orange-500/20 appearance-none text-sm"
+                    >
+                        <option value="all">Tất cả Lệnh sản xuất</option>
+                        {uniqueProductions.map((p: any) => (
+                            <option key={p.id} value={p.id}>Lệnh: {p.code}</option>
+                        ))}
+                    </select>
                 </div>
                 <div className="flex gap-2 w-full md:w-auto">
                     <button
@@ -155,8 +179,13 @@ export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, set
                                     >
                                         <Trash2 size={16} />
                                     </button>
-                                    <span className="bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-orange-100 dark:border-orange-800/50 h-fit">
-                                        {loan.quantity} {loan.unit}
+                                    <span className="bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-orange-100 dark:border-orange-800/50 h-fit flex flex-col items-center">
+                                        <span>{loan.quantity} {loan.unit}</span>
+                                        {Number(loan.returned_quantity) > 0 && (
+                                            <span className="text-[9px] text-green-600 dark:text-green-400 border-t border-orange-200 dark:border-orange-800 mt-1 pt-1 w-full text-center">
+                                                Đã trả: {loan.returned_quantity}
+                                            </span>
+                                        )}
                                     </span>
                                 </div>
                             </div>
