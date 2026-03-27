@@ -1,4 +1,4 @@
-import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown } from 'lucide-react'
+import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown, Leaf } from 'lucide-react'
 
 export type ModuleCategory = 'core' | 'automation' | 'specialized' | 'info'
 
@@ -101,6 +101,14 @@ export const UTILITY_MODULES: UtilityModule[] = [
         description: 'Ưu tiên hiển thị vị trí/LOT có ngày nhập kho sớm nhất khi tìm kiếm trên Sơ đồ kho và Quản lý LOT.',
         icon: ArrowUpDown,
         category: 'automation',
+        default_enabled: false
+    },
+    {
+        id: 'fresh_material_manager',
+        name: 'Nguyên liệu tươi',
+        description: 'Theo dõi vòng đời nguyên liệu tươi từ bốc xe, phân loại, cấp đông đến thành phẩm.',
+        icon: Leaf,
+        category: 'specialized',
         default_enabled: false
     }
 ]

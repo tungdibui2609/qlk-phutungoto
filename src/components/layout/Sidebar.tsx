@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory } from 'lucide-react'
+import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -93,6 +93,14 @@ const menuItems: MenuItem[] = [
         icon: Factory,
         children: [
             { id: 'production_inventory', name: 'Sổ cấp phát', href: '/production-inventory', icon: ClipboardCheck, requiredPermission: 'site_inventory.view' },
+        ]
+    },
+    {
+        id: 'fresh_materials_cat',
+        name: 'Nguyên liệu tươi',
+        icon: Leaf,
+        children: [
+            { id: 'fresh_batches', name: 'Quản lý lô NLT', href: '/fresh-materials', icon: Leaf, requiredPermission: 'warehouse.manage' },
         ]
     },
     {
@@ -209,6 +217,9 @@ export default function Sidebar() {
                 return null
             }
             if (item.id === 'production_cat' && !isUtilityEnabled('production_inventory_manager')) {
+                return null
+            }
+            if (item.id === 'fresh_materials_cat' && !isUtilityEnabled('fresh_material_manager')) {
                 return null
             }
             // Check Item Permission
