@@ -167,10 +167,18 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
             {/* Header - Colored */}
             <div className={`px-4 pt-5 pb-4 bg-orange-50/50 dark:bg-orange-900/10 border-b border-orange-100/50 dark:border-orange-900/20 transition-all duration-300 ${isHighlighting ? 'animate-highlight-blink' : ''}`}>
                 <div className="flex items-center justify-between">
-                    <div className="flex flex-wrap gap-2">
-                        <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap shadow-sm border border-black/5 dark:border-white/5">
-                            LOT: {lot.code}
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight">
+                            {lot.code}
                         </span>
+                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm border ${(lot as any).daily_seq ? 'bg-orange-600 text-white border-orange-700' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'}`}>
+                            STT: {(lot as any).daily_seq || '--'}
+                        </span>
+                        {(lot.productions?.code || lot.production_code) && (
+                            <span className="px-2 py-0.5 rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 text-[10px] font-bold border border-orange-100 dark:border-orange-800/50">
+                                {lot.productions?.code || lot.production_code}
+                            </span>
+                        )}
                     </div>
                     {lot.positions && lot.positions.length > 0 ? (
                         <button

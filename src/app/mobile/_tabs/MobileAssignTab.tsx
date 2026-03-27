@@ -1,20 +1,34 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useUser } from '@/contexts/UserContext'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
-import { QrCode, Loader2, Camera, Keyboard, RotateCcw, CheckCircle2, Package, MapPin, X, Upload, Settings2 } from 'lucide-react'
-import { Scanner } from '@yudiel/react-qr-scanner'
+import { Loader2, Camera, Keyboard, RotateCcw, CheckCircle2, Package, MapPin, X, Download, Send, PlayCircle, Hash, Search } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 
-interface ScannedItem {
+interface LocalLot {
     id: string
     code: string
-    position: string
-    positionId: string | null
-    synced: boolean
+    daily_seq: number | null
+    product_names: string[]
+}
+
+interface LocalPosition {
+    id: string
+    code: string
+    lot_id: string | null
+    zone_ids: string[] // Added for offline zone filtering
+}
+
+interface PendingAssignment {
+    lotId: string
+    lotCode: string
+    productNames: string[]
+    positionId: string
+    positionCode: string
+    stt: string
     timestamp: number
 }
 
@@ -25,324 +39,436 @@ export default function MobileAssignTab() {
     const { currentSystem } = useSystem()
     const { showToast } = useToast()
 
-    const [useCamera, setUseCamera] = useState(true)
-    const [manualCode, setManualCode] = useState('')
     const [loading, setLoading] = useState(false)
-    const [paused, setPaused] = useState(false)
-    const [items, setItems] = useState<ScannedItem[]>([])
-    const [step, setStep] = useState<'scan' | 'confirm'>('scan')
-
-    // Zone selection
-    const [zones, setZones] = useState<Zone[]>([])
-    const [selectedWarehouse, setSelectedWarehouse] = useState<string | null>(null)
-    const [selectedZone, setSelectedZone] = useState<string | null>(null)
-    const [showSettings, setShowSettings] = useState(false)
+    const [isDownloading, setIsDownloading] = useState(false)
     const [isSyncing, setIsSyncing] = useState(false)
 
-    // Pending lot + position
-    const [pendingLot, setPendingLot] = useState<any>(null)
-    const [pendingPosition, setPendingPosition] = useState<{ id: string; code: string } | null>(null)
+    // Mode: 'scan' (legacy) or 'suggest' (new)
+    const [mode, setMode] = useState<'scan' | 'suggest'>('suggest')
+    const [step, setStep] = useState<'setup' | 'working'>('setup')
 
-    const inputRef = useRef<HTMLInputElement>(null)
+    // Master Data
+    const [zones, setZones] = useState<Zone[]>([])
+    const [localPositions, setLocalPositions] = useState<LocalPosition[]>([])
+    const [localLots, setLocalLots] = useState<LocalLot[]>([])
 
-    useEffect(() => { loadZones() }, [])
+    // Selection
+    const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>(null)
+    const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
+
+    // Working States
+    const [suggestedPos, setSuggestedPos] = useState<LocalPosition | null>(null)
+    const [currentStt, setCurrentStt] = useState('')
+    const [assignments, setAssignments] = useState<PendingAssignment[]>([])
+
+    useEffect(() => { 
+        loadZones() 
+        // Load assignments from localStorage if any
+        const saved = localStorage.getItem('MOBILE_PENDING_ASSIGNMENTS')
+        if (saved) {
+            try { setAssignments(JSON.parse(saved)) } catch(e) {}
+        }
+    }, [])
+
     useEffect(() => {
-        if (!useCamera && step === 'scan' && inputRef.current) inputRef.current.focus()
-    }, [useCamera, step])
+        localStorage.setItem('MOBILE_PENDING_ASSIGNMENTS', JSON.stringify(assignments))
+    }, [assignments])
 
     async function loadZones() {
-        const { data } = await supabase.from('zones').select('*')
+        const { data } = await supabase.from('zones').select('*').order('level', { ascending: true })
         if (data) setZones(data)
     }
 
-    // Get warehouse zones (top-level)
-    const warehouses = useMemo(() => zones.filter(z => !z.parent_id), [zones])
-
-    // Get child zones for selected warehouse
-    const childZones = useMemo(() => {
-        if (!selectedWarehouse) return []
-        const getAllChildren = (parentId: string): Zone[] => {
-            const children = zones.filter(z => z.parent_id === parentId)
-            return children.reduce<Zone[]>((acc, child) => [...acc, child, ...getAllChildren(child.id)], [])
-        }
-        return getAllChildren(selectedWarehouse)
-    }, [selectedWarehouse, zones])
-
-    // Get leaf zones with positions
-    const leafZones = useMemo(() => {
-        return childZones.filter(z => !zones.some(other => other.parent_id === z.id))
-    }, [childZones, zones])
-
-    async function handleScanResult(rawCode: string, isManual = false) {
-        if (loading || (!isManual && paused) || !rawCode) return
-        let code = rawCode.trim()
-        try { if (code.startsWith('http')) { const url = new URL(code); const parts = url.pathname.split('/'); code = parts[parts.length - 1] || code } } catch { }
-        code = code.toUpperCase()
-        setPaused(true); setManualCode('')
-        await processLotScan(code)
-    }
-
-    async function processLotScan(code: string) {
-        if (!profile?.company_id) return
-        setLoading(true)
+    async function downloadData() {
+        if (!currentSystem?.code || !profile?.company_id) return
+        setIsDownloading(true)
         try {
-            const { data: lot, error } = await supabase.from('lots')
-                .select('*, lot_items(id, quantity, unit, product_id, products(name, sku)), positions!positions_lot_id_fkey(id, code)')
-                .or(`code.eq.${code},production_code.eq.${code}`)
-                .maybeSingle()
+            // 1. Fetch Today's LOTs
+            const today = new Date().toISOString().split('T')[0]
+            const { data: lots } = await supabase.from('lots')
+                .select(`
+                    id, 
+                    code, 
+                    daily_seq, 
+                    lot_items(
+                        products(name)
+                    )
+                `)
+                .eq('system_code', currentSystem.code)
+                .eq('inbound_date', today)
 
-            if (error || !lot) { showToast(`Không tìm thấy LOT "${code}"`, 'error'); setPaused(false); setLoading(false); return }
+            const formattedLots: LocalLot[] = (lots || []).map((l: any) => ({
+                id: l.id,
+                code: l.code,
+                daily_seq: l.daily_seq,
+                product_names: l.lot_items?.map((li: any) => li.products?.name).filter(Boolean) || []
+            }))
 
-            // Find an available position
-            if (!selectedZone) {
-                showToast('Vui lòng chọn vị trí làm việc trước', 'warning')
-                setShowSettings(true); setPaused(false); setLoading(false); return
-            }
+            // 2. Fetch All Empty Positions & Zone Mappings
+            // We need zone_positions to filter positions by zone offline
+            const { data: posData } = await supabase.from('positions')
+                .select(`
+                    id, 
+                    code, 
+                    lot_id,
+                    zone_positions(zone_id)
+                `)
+                .eq('system_type', currentSystem.code)
+                .is('lot_id', null)
 
-            // Get all descendant zone IDs of selectedZone
-            const targetZoneIds = new Set<string>([selectedZone])
-            let added = true
-            while (added) { added = false; for (const z of zones) { if (z.parent_id && targetZoneIds.has(z.parent_id) && !targetZoneIds.has(z.id)) { targetZoneIds.add(z.id); added = true } } }
+            const formattedPositions: LocalPosition[] = (posData || []).map((p: any) => ({
+                id: p.id,
+                code: p.code,
+                lot_id: p.lot_id,
+                zone_ids: p.zone_positions?.map((zp: any) => zp.zone_id) || []
+            }))
 
-            const occupiedByItems = new Set(items.filter(i => i.positionId).map(i => i.positionId))
-
-            const { data: availablePositions } = await (supabase.from('zone_positions')
-                .select('position_id, positions!inner(id, code, lot_id)')
-                .is('positions.lot_id', null)
-                .in('zone_id', Array.from(targetZoneIds))
-                .order('position_id')
-                .limit(20) as any)
-
-            const filtered = (availablePositions || []).filter((p: any) => !occupiedByItems.has(p.position_id))
-
-            if (!filtered.length) {
-                showToast('Không còn vị trí trống trong khu vực này!', 'error')
-                setPaused(false); setLoading(false); return
-            }
-
-            const targetPos = filtered[0]
-            setPendingLot(lot)
-            setPendingPosition({ id: targetPos.position_id, code: targetPos.positions.code })
-
-            // Auto-assign
-            await doAssign(lot, targetPos.position_id, targetPos.positions.code, code)
-
-        } catch (e: any) { showToast('Lỗi: ' + e.message, 'error'); setPaused(false) }
-        finally { setLoading(false) }
-    }
-
-    async function doAssign(lot: any, positionId: string, positionCode: string, lotCode: string) {
-        try {
-            // Clear old position
-            if (lot.positions?.length > 0) {
-                const oldPosId = lot.positions[0].id
-                await supabase.from('positions').update({ lot_id: null } as any).eq('id', oldPosId)
-            }
-
-            // Assign to new position
-            const { error } = await supabase.from('positions').update({ lot_id: lot.id } as any).eq('id', positionId)
-            if (error) throw error
-
-            const newItem: ScannedItem = {
-                id: lot.id, code: lotCode, position: positionCode,
-                positionId: positionId, synced: true, timestamp: Date.now()
-            }
-            setItems(prev => [newItem, ...prev.filter(i => i.id !== lot.id)])
-            showToast(`✓ Đã gán ${lotCode} → ${positionCode}`, 'success')
+            setLocalLots(formattedLots)
+            setLocalPositions(formattedPositions)
+            showToast(`Đã tải: ${formattedLots.length} LOT & ${formattedPositions.length} vị trí trống`, 'success')
         } catch (e: any) {
-            showToast('Lỗi gán vị trí: ' + e.message, 'error')
+            showToast('Lỗi tải dữ liệu: ' + e.message, 'error')
+        } finally {
+            setIsDownloading(false)
         }
-        setPaused(false)
     }
 
-    const pendingCount = items.filter(i => !i.synced).length
-    const syncedCount = items.filter(i => i.synced).length
+    // Get descendant zone IDs
+    const getDescendantZoneIds = (zoneId: string) => {
+        const ids = new Set<string>([zoneId])
+        let added = true
+        while (added) {
+            added = false
+            for (const z of zones) {
+                if (z.parent_id && ids.has(z.parent_id) && !ids.has(z.id)) {
+                    ids.add(z.id)
+                    added = true
+                }
+            }
+        }
+        return Array.from(ids)
+    }
+
+    function suggestNextPosition() {
+        if (!selectedZoneId) {
+            showToast('Vui lòng chọn khu vực trước', 'warning')
+            setStep('setup')
+            return
+        }
+
+        // WORK OFFLINE! Use localPositions and assignments
+        const descendantIds = getDescendantZoneIds(selectedZoneId)
+        const assignedPosIds = new Set(assignments.map(a => a.positionId))
+
+        // Find the first empty position that is in one of the descendant zones 
+        // and hasn't been assigned in the current local session
+        const nextPos = localPositions
+            .filter(p => !assignedPosIds.has(p.id) && p.zone_ids.some(zId => descendantIds.includes(zId)))
+            .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))[0]
+
+        if (nextPos) {
+            setSuggestedPos(nextPos)
+            setStep('working')
+            setCurrentStt('')
+        } else {
+            showToast('Không còn vị trí trống trong khu vực này!', 'error')
+            setStep('setup')
+        }
+    }
+
+    async function handleConfirmStt() {
+        if (!suggestedPos || !currentStt) return
+
+        const sttNum = parseInt(currentStt)
+        const targetLot = localLots.find(l => l.daily_seq === sttNum)
+
+        if (!targetLot) {
+            showToast(`Không tìm thấy LOT hôm nay có STT là ${currentStt}`, 'error')
+            return
+        }
+
+        // Check if lot already assigned in this session or DB
+        const alreadyAssigned = assignments.find(a => a.lotId === targetLot.id)
+        if (alreadyAssigned) {
+            showToast(`LOT này đã được gán vào ${alreadyAssigned.positionCode}`, 'warning')
+            return
+        }
+
+        // Add to local assignments
+        const newAssignment: PendingAssignment = {
+            lotId: targetLot.id,
+            lotCode: targetLot.code,
+            productNames: targetLot.product_names,
+            positionId: suggestedPos.id,
+            positionCode: suggestedPos.code,
+            stt: currentStt,
+            timestamp: Date.now()
+        }
+
+        setAssignments(prev => [newAssignment, ...prev])
+        showToast(`Đã ghi nhận: STT ${currentStt} → ${suggestedPos.code}`, 'success')
+
+        // Automatically suggest next position
+        suggestNextPosition()
+    }
+
+    async function syncAssignments() {
+        if (assignments.length === 0) return
+        setIsSyncing(true)
+        try {
+            for (const ass of assignments) {
+                // 1. Assign position to lot
+                const { error: posErr } = await (supabase.from('positions') as any)
+                    .update({ lot_id: ass.lotId } as any)
+                    .eq('id', ass.positionId)
+                    .eq('system_type', currentSystem?.code)
+                
+                if (posErr) throw posErr
+            }
+            showToast(`Đã đồng bộ ${assignments.length} vị trí thành công!`, 'success')
+            setAssignments([])
+            setStep('setup')
+            setSuggestedPos(null)
+        } catch (e: any) {
+            showToast('Lỗi đồng bộ: ' + e.message, 'error')
+        } finally {
+            setIsSyncing(false)
+        }
+    }
+
+    // Zone filters
+    const warehouses = zones.filter(z => !z.parent_id)
+    const leafZones = selectedWarehouseId ? zones.filter(z => {
+        let isUnder = false
+        let cur: Zone | undefined = z
+        while (cur) {
+            if (cur.id === selectedWarehouseId) { isUnder = true; break }
+            cur = zones.find(p => p.id === cur!.parent_id)
+        }
+        const isLeaf = !zones.some(other => other.parent_id === z.id)
+        return isUnder && isLeaf
+    }) : []
 
     return (
-        <div className="mobile-animate-fade-in">
+        <div className="mobile-animate-fade-in pb-20">
+            {/* Header */}
             <div className="mobile-header">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div className="flex justify-between items-start">
                     <div>
                         <div className="mobile-header-brand">Sarita Workspace</div>
                         <div className="mobile-header-title">Gán Vị Trí</div>
-                        <div className="mobile-header-subtitle">{currentSystem?.name || ''}</div>
-                        {items.length > 0 && (
-                            <div style={{ fontSize: 10, color: '#a1a1aa', fontWeight: 600, marginTop: 2 }}>
-                                {syncedCount} đã gán • {items.length} tổng
-                            </div>
-                        )}
+                        <div className="mobile-header-subtitle">Quy trình Gợi ý & STT</div>
                     </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                        <button className="mobile-btn mobile-btn--ghost" onClick={() => setShowSettings(true)}>
-                            <Settings2 size={16} />
+                    <div className="flex gap-2">
+                        <button 
+                            className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all ${isDownloading ? 'bg-zinc-100' : 'bg-blue-50 text-blue-600 active:scale-95 border border-blue-100'}`}
+                            onClick={downloadData}
+                            disabled={isDownloading}
+                        >
+                            {isDownloading ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
                         </button>
-                        <button className="mobile-btn mobile-btn--ghost" onClick={() => setUseCamera(!useCamera)}>
-                            {useCamera ? <Keyboard size={16} /> : <Camera size={16} />}
-                        </button>
-                        <button className="mobile-btn mobile-btn--ghost" onClick={() => { setPaused(false); setManualCode('') }}>
-                            <RotateCcw size={16} />
+                        <button 
+                            className="w-10 h-10 flex items-center justify-center bg-zinc-100 text-zinc-600 rounded-xl active:scale-95"
+                            onClick={() => {
+                                if (assignments.length > 0) {
+                                    if (confirm('Bạn có chắc muốn làm mới? Các dữ liệu chưa đồng bộ sẽ bị mất.')) {
+                                        setAssignments([])
+                                        setStep('setup')
+                                        setSuggestedPos(null)
+                                    }
+                                } else {
+                                    setStep('setup')
+                                    setSuggestedPos(null)
+                                }
+                            }}
+                        >
+                            <RotateCcw size={18} />
                         </button>
                     </div>
                 </div>
 
-                {/* Location Badge */}
-                {selectedZone && (
-                    <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <MapPin size={12} color="#059669" />
-                        <span style={{ fontSize: 11, fontWeight: 800, color: '#059669' }}>
-                            {(() => {
-                                const zone = zones.find(z => z.id === selectedZone)
-                                const warehouse = zones.find(z => z.id === selectedWarehouse)
-                                return `${warehouse?.name || ''} › ${zone?.name || ''}`
-                            })()}
-                        </span>
+                {/* Badge Status */}
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <div className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${localLots.length > 0 ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-zinc-100 text-zinc-500 border border-zinc-200'}`}>
+                        <div className={`w-1.5 h-1.5 rounded-full ${localLots.length > 0 ? 'bg-emerald-500' : 'bg-zinc-300'}`} />
+                        {localLots.length} LOT sẵn sàng
                     </div>
-                )}
+                    {assignments.length > 0 && (
+                        <div className="px-2.5 py-1 rounded-full bg-orange-100 text-orange-700 border border-orange-200 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5">
+                            <CheckCircle2 size={11} />
+                            {assignments.length} Đã gán local
+                        </div>
+                    )}
+                </div>
             </div>
 
-            <div style={{ padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                {/* Camera */}
-                {useCamera && (
-                    <div className="mobile-scanner" style={{ marginBottom: 20 }}>
-                        <Scanner
-                            onScan={(result) => { if (result?.length > 0) handleScanResult(result[0].rawValue) }}
-                            styles={{ container: { width: '100%', height: '100%' }, video: { objectFit: 'cover' as any } }}
-                            components={{ finder: false }}
-                            constraints={{ facingMode: 'environment' }}
-                        />
-                        <div className="mobile-scanner-corner mobile-scanner-corner--tl" style={{ borderColor: '#059669' }} />
-                        <div className="mobile-scanner-corner mobile-scanner-corner--tr" style={{ borderColor: '#059669' }} />
-                        <div className="mobile-scanner-corner mobile-scanner-corner--bl" style={{ borderColor: '#059669' }} />
-                        <div className="mobile-scanner-corner mobile-scanner-corner--br" style={{ borderColor: '#059669' }} />
-                        {loading && (
-                            <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 16 }}>
-                                <Loader2 size={36} className="animate-spin" style={{ color: '#059669' }} />
+            <div className="p-4 sm:p-6 space-y-6">
+                {step === 'setup' ? (
+                    <div className="mobile-card-premium p-6 space-y-6 animate-in slide-in-from-bottom duration-500">
+                        <div className="text-center mb-2">
+                            <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-3xl flex items-center justify-center mx-auto mb-3 shadow-sm border border-emerald-100">
+                                <MapPin size={32} />
                             </div>
-                        )}
-                    </div>
-                )}
-
-                {/* Instruction / Manual Input */}
-                {!useCamera && (
-                    <div style={{ width: '100%', maxWidth: 380, marginBottom: 20 }} className="mobile-animate-slide-up">
-                        <div className="mobile-card" style={{ padding: 24, textAlign: 'center' }}>
-                            <div style={{ width: 56, height: 56, borderRadius: 18, background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px', color: '#059669' }}>
-                                <QrCode size={28} />
-                            </div>
-                            <div style={{ fontSize: 18, fontWeight: 900, color: '#18181b', marginBottom: 14 }}>Nhập mã LOT</div>
-                            <form onSubmit={e => { e.preventDefault(); handleScanResult(manualCode, true) }}>
-                                <input ref={inputRef} type="text" value={manualCode} onChange={e => setManualCode(e.target.value)}
-                                    className="mobile-input" style={{ textAlign: 'center', fontSize: 20, fontWeight: 900, textTransform: 'uppercase', marginBottom: 12 }}
-                                    placeholder="VÍ DỤ: LOT23..." />
-                                <button type="submit" disabled={loading || !manualCode} className="mobile-btn mobile-btn--success mobile-btn--lg">
-                                    {loading ? <Loader2 size={22} className="animate-spin" /> : 'Xác nhận'}
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-                )}
-
-                {useCamera && !loading && (
-                    <div style={{ textAlign: 'center', marginBottom: 20 }}>
-                        <p style={{ fontSize: 14, fontWeight: 700, color: '#18181b' }}>Quét mã sản phẩm</p>
-                        <p style={{ fontSize: 12, color: '#a1a1aa', marginTop: 4 }}>LOT sẽ được tự động gán vào vị trí trống</p>
-                    </div>
-                )}
-
-                {/* Items History */}
-                {items.length > 0 && (
-                    <div style={{ width: '100%' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, padding: '0 4px' }}>
-                            <div className="mobile-section-label" style={{ marginBottom: 0 }}>Đã gán ({items.length})</div>
-                            {items.length > 0 && (
-                                <button className="mobile-btn mobile-btn--ghost" style={{ fontSize: 10, padding: '4px 10px' }}
-                                    onClick={() => setItems([])}>
-                                    <X size={12} /> Xóa tất cả
-                                </button>
-                            )}
-                        </div>
-                        {items.map(item => (
-                            <div key={item.timestamp} className="mobile-lot-item mobile-lot-item--scanned">
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
-                                    <div style={{ width: 36, height: 36, borderRadius: 10, background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a' }}>
-                                        <CheckCircle2 size={18} />
-                                    </div>
-                                    <div>
-                                        <div style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 900, color: '#059669' }}>{item.code}</div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                                            <MapPin size={10} color="#a1a1aa" />
-                                            <span style={{ fontSize: 11, color: '#71717a', fontWeight: 600 }}>{item.position}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <span style={{ fontSize: 10, color: '#a1a1aa' }}>{new Date(item.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {items.length === 0 && useCamera && (
-                    <div className="mobile-empty" style={{ padding: '30px 20px' }}>
-                        <div className="mobile-empty-icon" style={{ width: 64, height: 64, marginBottom: 14 }}>
-                            <Package size={28} />
-                        </div>
-                        <p style={{ color: '#71717a', fontWeight: 700, fontSize: 14 }}>Chưa gán mã nào</p>
-                        <p style={{ color: '#a1a1aa', fontSize: 12, marginTop: 4 }}>Quét mã QR để bắt đầu gán vị trí</p>
-                    </div>
-                )}
-            </div>
-
-            {/* Settings Modal */}
-            {showSettings && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
-                    onClick={() => setShowSettings(false)}>
-                    <div className="mobile-card-premium mobile-animate-slide-up" style={{ padding: 28, maxWidth: 360, width: '100%' }}
-                        onClick={e => e.stopPropagation()}>
-                        <div style={{ textAlign: 'center', marginBottom: 20 }}>
-                            <div style={{ width: 52, height: 52, borderRadius: 18, background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px', color: '#059669' }}>
-                                <MapPin size={26} />
-                            </div>
-                            <div style={{ fontSize: 20, fontWeight: 900, color: '#18181b' }}>Vị trí làm việc</div>
+                            <h3 className="text-xl font-black text-zinc-900 dark:text-white">Thiết lập khu vực</h3>
+                            <p className="text-xs text-zinc-500 mt-1 uppercase font-bold tracking-wider">Hệ thống sẽ gợi ý vị trí trống</p>
                         </div>
 
-                        {/* Warehouse */}
-                        <div style={{ marginBottom: 16 }}>
-                            <label style={{ fontSize: 10, fontWeight: 800, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: 2, display: 'block', marginBottom: 6 }}>Kho</label>
-                            <div className="mobile-pill-group">
+                        {/* Store/Warehouse */}
+                        <div className="space-y-3">
+                            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">1. Chọn Kho hàng</label>
+                            <div className="grid grid-cols-2 gap-2">
                                 {warehouses.map(w => (
-                                    <button key={w.id} onClick={() => { setSelectedWarehouse(w.id); setSelectedZone(null) }}
-                                        className={`mobile-pill ${selectedWarehouse === w.id ? 'mobile-pill--active' : ''}`}>
+                                    <button
+                                        key={w.id}
+                                        onClick={() => setSelectedWarehouseId(w.id)}
+                                        className={`px-4 py-3 rounded-2xl text-xs font-black transition-all border-2 uppercase tracking-tight ${selectedWarehouseId === w.id ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-500/30' : 'bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-400'}`}
+                                    >
                                         {w.name}
                                     </button>
                                 ))}
                             </div>
                         </div>
 
-                        {/* Zone */}
-                        {selectedWarehouse && leafZones.length > 0 && (
-                            <div style={{ marginBottom: 16 }}>
-                                <label style={{ fontSize: 10, fontWeight: 800, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: 2, display: 'block', marginBottom: 6 }}>Khu vực</label>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {/* Zones */}
+                        {selectedWarehouseId && (
+                            <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                                <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">2. Chọn Khu vực / Ô gộp</label>
+                                <div className="grid grid-cols-1 gap-2 max-h-[250px] overflow-y-auto pr-1">
                                     {leafZones.map(z => {
-                                        // Build zone path
-                                        const path: string[] = []
-                                        let cur: Zone | undefined = z
-                                        while (cur && cur.id !== selectedWarehouse) { path.unshift(cur.name); cur = zones.find(p => p.id === cur!.parent_id) }
-                                        return (
-                                            <button key={z.id} onClick={() => setSelectedZone(z.id)}
-                                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 14, border: selectedZone === z.id ? '2px solid #059669' : '1px solid #e4e4e7', background: selectedZone === z.id ? '#ecfdf5' : '#fff', cursor: 'pointer', textAlign: 'left' }}>
-                                                <span style={{ fontSize: 12, fontWeight: 700, color: selectedZone === z.id ? '#059669' : '#52525b' }}>{path.join(' › ')}</span>
-                                                {selectedZone === z.id && <CheckCircle2 size={16} color="#059669" />}
+                                         const path: string[] = []
+                                         let cur: Zone | undefined = z
+                                         while (cur && cur.id !== selectedWarehouseId) {
+                                             path.unshift(cur.name)
+                                             cur = zones.find(p => p.id === cur!.parent_id)
+                                         }
+                                         return (
+                                            <button
+                                                key={z.id}
+                                                onClick={() => setSelectedZoneId(z.id)}
+                                                className={`flex items-center justify-between p-4 rounded-2xl text-[13px] font-bold transition-all border-2 ${selectedZoneId === z.id ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-500'}`}
+                                            >
+                                                <span>{path.join(' › ')}</span>
+                                                {selectedZoneId === z.id && <CheckCircle2 size={16} />}
                                             </button>
-                                        )
+                                         )
                                     })}
                                 </div>
                             </div>
                         )}
 
-                        <button onClick={() => setShowSettings(false)} className="mobile-btn mobile-btn--lg" style={{ background: '#18181b', color: '#fff', marginTop: 8 }}>
-                            Đóng
+                        <button
+                            onClick={suggestNextPosition}
+                            disabled={!selectedZoneId || loading || isDownloading}
+                            className={`w-full py-4 rounded-2xl flex items-center justify-center gap-3 text-sm font-black transition-all transform active:scale-95 ${!selectedZoneId || loading || isDownloading ? 'bg-zinc-100 text-zinc-300' : 'bg-zinc-900 text-white shadow-xl'}`}
+                        >
+                            {loading ? <Loader2 size={20} className="animate-spin" /> : <PlayCircle size={20} />}
+                            {loading ? 'ĐANG TÌM VỊ TRÍ...' : 'BẮT ĐẦU GÁN VỊ TRÍ'}
                         </button>
+                    </div>
+                ) : (
+                    <div className="space-y-6">
+                        {/* Suggestion Card */}
+                        <div className="mobile-card-premium p-6 border-emerald-500 shadow-emerald-500/10 animate-in zoom-in duration-300">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-black uppercase tracking-wider">
+                                    VỊ TRÍ TIẾP THEO
+                                </div>
+                                <button onClick={() => setStep('setup')} className="p-1 text-zinc-400 hover:text-zinc-600">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            <div className="text-center py-6">
+                                <div className="mx-auto w-24 h-24 bg-emerald-50 text-emerald-600 rounded-[32px] flex items-center justify-center mb-4 shadow-inner border border-emerald-100">
+                                    <MapPin size={48} />
+                                </div>
+                                <div className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-1">HÃY ĐẶT HÀNG VÀO</div>
+                                <div className="text-5xl font-black text-zinc-900 dark:text-white tracking-tighter">
+                                    {suggestedPos?.code}
+                                </div>
+                            </div>
+
+                            <div className="h-px bg-zinc-100 dark:bg-zinc-800 my-6" />
+
+                            <div className="space-y-4">
+                                <label className="text-[11px] font-black text-zinc-400 uppercase tracking-widest text-center block">NHẬP STT CỦA LÔ HÀNG</label>
+                                <div className="relative">
+                                    <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={24} />
+                                    <input
+                                        type="number"
+                                        pattern="[0-9]*"
+                                        inputMode="numeric"
+                                        value={currentStt}
+                                        onChange={(e) => setCurrentStt(e.target.value)}
+                                        placeholder="STT..."
+                                        className="w-full bg-zinc-50 dark:bg-zinc-900 border-2 border-zinc-100 dark:border-zinc-800 focus:border-emerald-500 rounded-2xl py-5 pl-14 pr-6 text-2xl font-black outline-none transition-all placeholder:text-zinc-200"
+                                        autoFocus
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleConfirmStt}
+                                    disabled={!currentStt || loading}
+                                    className={`w-full py-5 rounded-2xl flex items-center justify-center gap-2 text-lg font-black transition-all ${!currentStt || loading ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed' : 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30 active:scale-95'}`}
+                                >
+                                    {loading ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
+                                    XÁC NHẬN
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Recent Assignments */}
+                        {assignments.length > 0 && (
+                            <div className="space-y-3 animate-in fade-in duration-500">
+                                <div className="flex items-center justify-between px-2">
+                                    <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">ĐÃ GHÉP TRONG PHIÊN ({assignments.length})</h4>
+                                    <button 
+                                        onClick={syncAssignments}
+                                        disabled={isSyncing}
+                                        className="flex items-center gap-1.5 text-[10px] font-black text-orange-600 uppercase tracking-widest active:scale-95 disabled:opacity-50"
+                                    >
+                                        {isSyncing ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                                        ĐỒNG BỘ {assignments.length} MỤC
+                                    </button>
+                                </div>
+                                <div className="space-y-2">
+                                    {assignments.map((ass, i) => (
+                                        <div key={i} className="flex items-center justify-between p-4 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl shadow-sm">
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <div className="w-10 h-10 bg-zinc-50 dark:bg-zinc-800 rounded-xl flex items-center justify-center text-zinc-900 dark:text-zinc-100 font-black shrink-0 border border-zinc-100">
+                                                    #{ass.stt}
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <div className="text-xs font-black text-zinc-900 dark:text-white leading-none mb-1 truncate">{ass.lotCode}</div>
+                                                    <div className="text-[9px] text-zinc-500 font-medium truncate mb-1">
+                                                        {ass.productNames.join(', ')}
+                                                    </div>
+                                                    <div className="flex items-center gap-1 text-[10px] text-zinc-400 font-bold uppercase">
+                                                        <MapPin size={10} />
+                                                        {ass.positionCode}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="text-[10px] font-bold text-zinc-300">
+                                                {new Date(ass.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Empty State when no lots or positions */}
+            {(localLots.length === 0 || localPositions.length === 0) && !isDownloading && (
+                <div className="px-6 py-4">
+                    <div className="p-8 border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-[32px] text-center bg-zinc-50/50">
+                        <div className="w-12 h-12 bg-white dark:bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4 text-zinc-300 dark:text-zinc-600 shadow-sm">
+                            <Download size={24} />
+                        </div>
+                        <h4 className="text-zinc-900 dark:text-white font-black text-sm uppercase tracking-tight">Dữ liệu chưa sẵn sàng</h4>
+                        <p className="text-[10px] text-zinc-400 mt-2 leading-relaxed font-medium">Bấm <Download size={10} className="inline mx-0.5" /> ở trên để tải danh sách LOT & vị trí trống về máy.</p>
                     </div>
                 </div>
             )}

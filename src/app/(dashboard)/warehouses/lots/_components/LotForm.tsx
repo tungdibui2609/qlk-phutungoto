@@ -85,6 +85,7 @@ export function LotForm({
     const [isPersistent, setIsPersistent] = useState(false)
     const [isInfoExpanded, setIsInfoExpanded] = useState(true)
     const [selectedProductionId, setSelectedProductionId] = useState('')
+    const [dailySeq, setDailySeq] = useState<number | string>('')
     const [isSubmitting, setIsSubmitting] = useState(false)
 
     // Product filtering based on selected production - Multi-item support
@@ -153,6 +154,7 @@ export function LotForm({
             if (editingLot) {
                 // Edit Mode
                 setNewLotCode(editingLot.code)
+                setDailySeq((editingLot as any).daily_seq || '')
                 setNewLotNotes(editingLot.notes || '')
                 setProductionCode((editingLot as any).production_code || '')
                 setSelectedProductionId((editingLot as any).production_id || '')
@@ -245,6 +247,7 @@ export function LotForm({
                             if (parsed.extraInfo) setExtraInfo(parsed.extraInfo.toUpperCase())
                             if (parsed.inboundDate) setInboundDate(parsed.inboundDate)
                             if (parsed.lotItems) setLotItems(parsed.lotItems)
+                            if (parsed.dailySeq) setDailySeq(parsed.dailySeq)
                         } else {
                             resetForm()
                             setInboundDate(new Date().toISOString().split('T')[0])
@@ -315,6 +318,7 @@ export function LotForm({
                 inboundDate: isPersistent ? inboundDate : '',
                 rawMaterialDate: isPersistent ? rawMaterialDate : '',
                 lotItems: isPersistent ? lotItems : [],
+                dailySeq: isPersistent ? dailySeq : '',
                 isInfoExpanded: isInfoExpanded
             }
             localStorage.setItem('LOT_FORM_STICKY_DATA', JSON.stringify(stickyData))
@@ -356,6 +360,7 @@ export function LotForm({
         setImages([])
         setExtraInfo('')
         setLotItems([{ productId: '', quantity: 0, unit: '' }])
+        setDailySeq('')
     }
 
     async function generateLotCode() {
@@ -402,6 +407,7 @@ export function LotForm({
         }
 
         setNewLotCode(`${prefix}${String(sequence).padStart(3, '0')}`)
+        setDailySeq(sequence)
     }
 
     async function handleSubmit() {
@@ -610,6 +616,7 @@ export function LotForm({
             batch_code: batchCode || null,
             production_code: productionCode || null,
             production_id: selectedProductionId || null,
+            daily_seq: dailySeq ? parseInt(String(dailySeq)) : null,
             quantity: totalQuantity,
             status: 'active',
             system_code: currentSystem?.code,
@@ -783,16 +790,39 @@ export function LotForm({
     return (
         <div ref={formRef} className={`transition-all duration-500 ease-in-out overflow-hidden ${isVisible ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl p-6 md:p-8">
-                <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <Boxes className="text-orange-600" size={24} />
-                        {editingLot ? 'Cập nhật thông tin LOT' : 'Thông tin LOT mới'}
-                    </h3>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 rounded-2xl shadow-sm border border-orange-200 dark:border-orange-800/30">
+                            <Boxes size={24} />
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-black text-slate-900 dark:text-white leading-none mb-1">
+                                {editingLot ? 'Cập nhật thông tin LOT' : 'Thông tin LOT mới'}
+                            </h3>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Mã LOT: {newLotCode || '---'}</span>
+                            </div>
+                        </div>
+
+                        {/* STT Badge/Input in Header */}
+                        <div className="ml-4 flex items-center gap-2 px-3 py-1.5 bg-orange-600 text-white rounded-xl shadow-lg shadow-orange-500/20 border border-orange-700">
+                            <Hash size={14} className="opacity-70" />
+                            <span className="text-[10px] font-black uppercase tracking-wider">STT:</span>
+                            <input
+                                type="number"
+                                value={dailySeq}
+                                onChange={(e) => setDailySeq(e.target.value)}
+                                className="w-12 bg-transparent text-sm font-black outline-none border-b border-white/30 focus:border-white transition-all text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                placeholder="..."
+                            />
+                        </div>
+                    </div>
+                    
                     <button
                         onClick={() => setIsInfoExpanded(!isInfoExpanded)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 transition-all border border-slate-200 dark:border-slate-700"
+                        className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
                     >
-                        {isInfoExpanded ? 'Thu gọn' : 'Hiện thông tin'}
+                        {isInfoExpanded ? 'Thu gọn chi tiết' : 'Hiện thêm thông tin'}
                         <ChevronDown className={`transition-transform duration-300 ${isInfoExpanded ? 'rotate-180' : ''}`} size={16} />
                     </button>
                 </div>
@@ -815,6 +845,7 @@ export function LotForm({
                                 />
                             </div>
                         </div>
+
 
                         {/* Kho nhập hàng */}
                         {hasModule('warehouse_name') && (

@@ -106,7 +106,12 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                             <Boxes size={20} />
                         </div>
                         <div>
-                            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 leading-none">Chi tiết Lô hàng</h3>
+                            <div className="flex items-center gap-2">
+                                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 leading-none">Chi tiết Lô hàng</h3>
+                                <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm border ${(lot as any).daily_seq ? 'bg-orange-600 text-white border-orange-700' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'}`}>
+                                    STT: {(lot as any).daily_seq || '--'}
+                                </span>
+                            </div>
                             <p className="text-xs text-orange-600 dark:text-orange-400 font-mono mt-1 font-bold">{lot.code}</p>
                         </div>
                     </div>

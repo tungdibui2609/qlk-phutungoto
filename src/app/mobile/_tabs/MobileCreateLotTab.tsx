@@ -105,7 +105,7 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
                             .eq('company_id', profile.company_id)
                             .order('level', { ascending: true })
 
-                        if (allLevels) {
+                        if (allLevels && allLevels.length > 0) {
                             // Greedily match prefixes from the suffix string
                             let remaining = currentLevelsPrefix
                             const names: string[] = []
@@ -113,10 +113,10 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
                             while (remaining.length > 0) {
                                 let matched = false
                                 // Sort by prefix length descending to match longest first (e.g. 'LK' before 'L')
-                                const sortedLevels = [...allLevels].sort((a, b) => b.prefix.length - a.prefix.length)
+                                const sortedLevels = [...(allLevels as any[])].sort((a, b) => (b.prefix?.length || 0) - (a.prefix?.length || 0))
                                 
                                 for (const lv of sortedLevels) {
-                                    if (remaining.startsWith(lv.prefix)) {
+                                    if (lv.prefix && remaining.startsWith(lv.prefix)) {
                                         names.push(lv.description)
                                         remaining = remaining.substring(lv.prefix.length)
                                         matched = true
@@ -306,8 +306,11 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
 
                                     <div className="flex justify-between items-start mb-3">
                                         <div>
-                                            <h3 className="font-bold text-zinc-900 dark:text-white text-base leading-none mb-1.5 flex items-center gap-2">
+                                            <h3 className="font-bold text-zinc-900 dark:text-white text-base leading-none mb-2 flex flex-wrap items-center gap-2">
                                                 {lot.code}
+                                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${lot.daily_seq ? 'bg-orange-600 text-white border-orange-700' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700'}`}>
+                                                    STT: {lot.daily_seq || '--'}
+                                                </span>
                                                 {lot.production_code && (
                                                     <span className="px-1.5 py-0.5 bg-orange-500/10 border border-orange-500/20 rounded text-[10px] font-black uppercase tracking-wider text-orange-600 dark:text-orange-400">
                                                         {lot.production_code}
@@ -346,7 +349,7 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
                                     </div>
 
                                     <div className="space-y-2 mt-4">
-                                        {lot.lot_items?.map((item: any, idx) => (
+                                        {lot.lot_items?.map((item: any, idx: number) => (
                                             <div key={idx} className="flex flex-col gap-1 py-3 px-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg">
                                                 <div className="flex justify-between items-center">
                                                     <div className="flex items-center gap-2 min-w-0 flex-1">
