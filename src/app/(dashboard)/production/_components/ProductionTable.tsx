@@ -1,6 +1,6 @@
 'use client'
 
-import { Hash, Trash2, Edit3, Eye, Tag, Users, Calendar, Target, CheckCircle2 } from 'lucide-react'
+import { Hash, Trash2, Edit3, Eye, Tag, Users, Calendar, Target, CheckCircle2, Scale, TrendingUp } from 'lucide-react'
 import Protected from '@/components/auth/Protected'
 
 interface Production {
@@ -16,6 +16,9 @@ interface Production {
     target_system_code?: string
     products?: { name: string, sku: string }
     customers?: { name: string }
+    input_products?: { name: string }
+    input_quantity?: number
+    input_unit?: string
     production_lots?: Array<{
         id: string
         lot_code: string
@@ -85,6 +88,23 @@ export default function ProductionTable({ data, onEdit, onDelete, onStatusToggle
                                                 <div className="flex items-center gap-2 text-xs font-semibold text-zinc-400">
                                                     <Users size={14} className="text-zinc-300" />
                                                     <span className="text-zinc-600 dark:text-zinc-300">{item.customers.name}</span>
+                                                </div>
+                                            )}
+                                            {(item.input_products || (item.input_quantity && item.input_quantity > 0)) && (
+                                                <div className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/50 w-fit group-hover:bg-emerald-100/50 transition-colors">
+                                                    <Scale size={14} className="text-emerald-500" />
+                                                    <div className="flex items-baseline gap-1">
+                                                        <span className="text-xs font-black text-emerald-700 dark:text-emerald-400">
+                                                            {Number(item.input_quantity).toLocaleString('vi-VN')}
+                                                        </span>
+                                                        <span className="text-[10px] font-bold text-emerald-600/70 lowercase">
+                                                            {item.input_unit || 'kg'}
+                                                        </span>
+                                                        <span className="text-[10px] text-emerald-300 mx-1">•</span>
+                                                        <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 truncate max-w-[120px]">
+                                                            {item.input_products?.name || 'Nguyên liệu'}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>

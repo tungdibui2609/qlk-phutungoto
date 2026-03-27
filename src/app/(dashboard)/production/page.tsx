@@ -27,7 +27,7 @@ export default function ProductionPage() {
     } = useListingData<any>('productions', {
         orderBy: { column: 'code', ascending: false },
         includeSystemCode: false,
-        select: '*, customers(name), production_lots(*, products(name, sku, unit))'
+        select: '*, customers(name), input_products:input_product_id(name), production_lots(*, products(name, sku, unit))'
     })
 
     const enhancedRefresh = () => {

@@ -113,6 +113,14 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const [loadingAllocations, setLoadingAllocations] = useState(false)
     const [activeTab, setActiveTab] = useState<'products' | 'allocations' | 'analysis'>('products')
 
+    // Raw Material Input
+    const [inputProductId, setInputProductId] = useState<string | null>(null)
+    const [inputQuantity, setInputQuantity] = useState<number>(0)
+    const [inputUnit, setInputUnit] = useState<string>('')
+    const [inputProductName, setInputProductName] = useState<string>('')
+    const [isInputSearchOpen, setIsInputSearchOpen] = useState(false)
+    const [inputSearchTerm, setInputSearchTerm] = useState('')
+
     // Data lists for selection
     const [products, setProducts] = useState<any[]>([])
     const [customers, setCustomers] = useState<any[]>([])
@@ -189,6 +197,13 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             setTargetSystemCode(editItem.target_system_code || '')
             setCustomerId(editItem.customer_id || '')
             
+            // Raw Material
+            setInputProductId(editItem.input_product_id || null)
+            setInputQuantity(editItem.input_quantity || 0)
+            setInputUnit(editItem.input_unit || '')
+            setInputProductName(editItem.input_products?.name || '')
+            setInputSearchTerm(editItem.input_products?.name || '')
+            
             // Fetch production lots if editing (now includes product details)
             fetchProductionLots(editItem.id)
             if (readOnly) {
@@ -207,6 +222,11 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             setAllocations([])
             setActiveTab('products')
             setRowSearchTerms({})
+            setInputProductId(null)
+            setInputQuantity(0)
+            setInputUnit('')
+            setInputProductName('')
+            setInputSearchTerm('')
         }
     }, [editItem, isOpen, readOnly])
 
@@ -442,6 +462,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                 company_id: profile.company_id,
                 customer_id: customerId || null,
                 target_system_code: targetSystemCode || null,
+                input_product_id: inputProductId || null,
+                input_quantity: inputQuantity || 0,
+                input_unit: inputUnit || null,
                 updated_at: new Date().toISOString()
             }
 
@@ -523,6 +546,42 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-stone-50/30 dark:bg-zinc-900">
+                    {/* Raw Material Info Summary Bar (If filled) */}
+                    {(inputProductId || inputQuantity > 0) && (
+                        <div className="flex items-center gap-6 p-6 bg-emerald-500/5 dark:bg-emerald-500/10 rounded-[28px] border border-emerald-200/50 dark:border-emerald-900/20 animate-in slide-in-from-top-4">
+                            <div className="p-3 bg-emerald-600 text-white rounded-2xl shadow-lg shadow-emerald-600/20">
+                                <Scale size={20} />
+                            </div>
+                            <div className="flex-1 flex flex-col md:flex-row md:items-center gap-4 md:gap-12">
+                                <div>
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-1 block">Nguyên liệu tổng</label>
+                                    <div className="text-lg font-black text-stone-900 dark:text-white flex items-baseline gap-2">
+                                        {Number(inputQuantity).toLocaleString('vi-VN')}
+                                        <span className="text-xs font-bold text-stone-400 uppercase">{inputUnit || 'Đơn vị'}</span>
+                                    </div>
+                                </div>
+                                <div className="h-10 w-px bg-emerald-100 dark:bg-emerald-900/50 hidden md:block" />
+                                <div>
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-1 block">Tên nguyên liệu</label>
+                                    <div className="text-sm font-bold text-stone-600 dark:text-stone-300">
+                                        {inputProductName || '---'}
+                                    </div>
+                                </div>
+                                {summary.actual > 0 && inputQuantity > 0 && (
+                                    <>
+                                        <div className="h-10 w-px bg-emerald-100 dark:bg-emerald-900/50 hidden md:block" />
+                                        <div>
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-1 block">Tỉ lệ thành phẩm/nguyên liệu</label>
+                                            <div className="text-sm font-black text-orange-600 flex items-center gap-1">
+                                                {((summary.actual / (inputQuantity * (extractWeight(inputProductName) || 1))) * 100).toFixed(1)}%
+                                                <TrendingUp size={14} />
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    )}
                     <form id="prod-form" onSubmit={handleSubmit} className="space-y-8">
                         {readOnly && (
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -617,6 +676,75 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* Raw Material Selection - NEW SECTION */}
+                                {!readOnly && (
+                                    <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm space-y-6">
+                                        <div className="flex items-center gap-2 text-stone-400 font-black text-[10px] uppercase tracking-widest">
+                                            <Scale size={14} className="text-emerald-500" /> Định mức nguyên liệu đầu vào
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                            <div className="md:col-span-2 space-y-2 relative">
+                                                <label className="text-xs font-bold text-stone-500">Loại nguyên liệu (Xoài tươi, Chanh dây...)</label>
+                                                <div className="relative">
+                                                    <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" />
+                                                    <input
+                                                        type="text"
+                                                        value={inputSearchTerm}
+                                                        onChange={(e) => {
+                                                            setInputSearchTerm(e.target.value)
+                                                            setIsInputSearchOpen(true)
+                                                        }}
+                                                        onFocus={() => setIsInputSearchOpen(true)}
+                                                        placeholder="Tìm sản phẩm nguyên liệu..."
+                                                        className="w-full pl-12 pr-4 py-3 rounded-2xl bg-stone-50 dark:bg-zinc-800 border border-stone-100 dark:border-zinc-700 font-bold focus:ring-4 focus:ring-emerald-100 outline-none transition-all"
+                                                    />
+                                                </div>
+                                                
+                                                {isInputSearchOpen && inputSearchTerm && (
+                                                    <div className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-zinc-800 rounded-2xl shadow-xl border border-stone-100 dark:border-zinc-700 z-[110] max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+                                                        {products
+                                                            .filter(p => p.name.toLowerCase().includes(inputSearchTerm.toLowerCase()) || p.sku?.toLowerCase().includes(inputSearchTerm.toLowerCase()))
+                                                            .map(p => (
+                                                                <button
+                                                                    key={p.id}
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setInputProductId(p.id)
+                                                                        setInputProductName(p.name)
+                                                                        setInputSearchTerm(p.name)
+                                                                        setInputUnit(p.unit || 'Kg')
+                                                                        setIsInputSearchOpen(false)
+                                                                    }}
+                                                                    className="w-full text-left px-5 py-3 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 flex flex-col"
+                                                                >
+                                                                    <span className="font-bold text-sm text-stone-800 dark:text-white">{p.name}</span>
+                                                                    <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">{p.sku} • {p.unit}</span>
+                                                                </button>
+                                                            ))}
+                                                        {products.length === 0 && (
+                                                            <div className="px-5 py-4 text-center text-xs text-stone-400 font-medium italic">
+                                                                Không tìm thấy sản phẩm nào. Vui lòng chọn kho đích trước.
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-bold text-stone-500">Số lượng ({inputUnit || '---'})</label>
+                                                <input
+                                                    type="number"
+                                                    value={inputQuantity || ''}
+                                                    onChange={e => setInputQuantity(parseFloat(e.target.value) || 0)}
+                                                    className="w-full px-4 py-3 rounded-2xl bg-stone-50 dark:bg-zinc-800 border border-stone-100 dark:border-zinc-700 font-black text-lg focus:ring-4 focus:ring-emerald-100 outline-none transition-all"
+                                                    placeholder="VD: 10000"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="space-y-6">
