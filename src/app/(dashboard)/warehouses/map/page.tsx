@@ -875,6 +875,8 @@ function WarehouseMapContent() {
                     </div>
                 )}
             </div>
+            {/* Spacer to prevent MultiSelectActionBar from covering the last items */}
+            {selectedPositionIds.size > 0 && <div className="h-48 md:h-64 print:hidden" />}
 
             <MultiSelectActionBar
                 selectedPositionIds={selectedPositionIds}
