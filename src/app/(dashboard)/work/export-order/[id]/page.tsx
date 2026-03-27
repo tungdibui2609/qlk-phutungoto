@@ -161,8 +161,8 @@ function ExportOrderDetailContent() {
     async function fetchTaskDetails(silent = false) {
         if (!silent) setLoading(true)
         try {
-            const { data, error } = await supabase
-                .from('export_tasks')
+            const { data, error } = await (supabase
+                .from('export_tasks') as any)
                 .select(`
                     *,
                     items:export_task_items(
@@ -317,8 +317,8 @@ function ExportOrderDetailContent() {
 
         setLoading(true)
         try {
-            const { error } = await supabase
-                .from('export_tasks')
+            const { error } = await (supabase
+                .from('export_tasks') as any)
                 .update({ status: 'Completed', updated_at: new Date().toISOString() })
                 .eq('id', taskId)
 
@@ -339,8 +339,8 @@ function ExportOrderDetailContent() {
 
         setLoading(true)
         try {
-            const { error } = await supabase
-                .from('export_tasks')
+            const { error } = await (supabase
+                .from('export_tasks') as any)
                 .update({ status: 'Pending', updated_at: new Date().toISOString() })
                 .eq('id', taskId)
 
@@ -384,11 +384,11 @@ function ExportOrderDetailContent() {
 
             // Tìm các vị trí trống
             const { data: availablePositions, error: availError } = await (supabase
-                .from('zone_positions')
+                .from('zone_positions') as any)
                 .select('position_id, zone_id, positions!inner(id, lot_id)')
                 .is('positions.lot_id', null)
                 .in('zone_id', Array.from(targetZoneIds))
-                .limit(lotIdsToMove.size) as any)
+                .limit(lotIdsToMove.size)
 
             if (availError || !availablePositions || availablePositions.length < lotIdsToMove.size) {
                 showToast(`Không đủ vị trí trống trong Sảnh này. Cần ${lotIdsToMove.size}, nhưng chỉ còn ${availablePositions?.length || 0} vị trí.`, 'error')
@@ -408,7 +408,7 @@ function ExportOrderDetailContent() {
             }
 
             const updatePromises = updates.map(u =>
-                supabase.from('positions').update({ lot_id: u.lot_id } as any).eq('id', u.id)
+                (supabase.from('positions') as any).update({ lot_id: u.lot_id }).eq('id', u.id)
             )
             const results = await Promise.all(updatePromises)
             const hasError = results.some(r => r.error)
@@ -455,8 +455,8 @@ function ExportOrderDetailContent() {
         })
 
         try {
-            const { error } = await supabase
-                .from('export_task_items')
+            const { error } = await (supabase
+                .from('export_task_items') as any)
                 .update({ status: newStatus })
                 .eq('id', itemId)
 
@@ -626,6 +626,18 @@ function ExportOrderDetailContent() {
                     <table className="w-full text-left">
                         <thead>
                             <tr className="bg-stone-50 dark:bg-zinc-800 text-stone-500 text-xs font-bold border-b border-stone-100 dark:border-zinc-700">
+                                <th className="px-6 py-4 w-10 text-center">
+                                    <input 
+                                        type="checkbox" 
+                                        className="rounded border-stone-300 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                        checked={(task.items?.length || 0) > 0 && task.items!.every((item) => item.id && selectedPositionIds.has(item.id))}
+                                        onChange={(e) => {
+                                            const ids = task.items?.map(i => i.id).filter(Boolean) as string[]
+                                            handleBulkSelect(ids, e.target.checked)
+                                        }}
+                                        disabled={task.status === 'Completed' || task.status === 'Cancelled'}
+                                    />
+                                </th>
                                 <th className="px-6 py-4 w-10 text-center">#</th>
                                 <th className="px-6 py-4">Mã LOT</th>
                                 <th className="px-6 py-4">Vị trí</th>
@@ -637,6 +649,15 @@ function ExportOrderDetailContent() {
                         <tbody className="divide-y divide-stone-100 dark:divide-zinc-700">
                             {task.items?.map((item, idx) => (
                                 <tr key={item.id} className="hover:bg-blue-50/20 transition-colors group">
+                                    <td className="px-6 py-4 text-center">
+                                        <input 
+                                            type="checkbox" 
+                                            className="rounded border-stone-300 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                            checked={item.id ? selectedPositionIds.has(item.id) : false}
+                                            onChange={() => item.id && handlePositionSelect(item.id)}
+                                            disabled={task.status === 'Completed' || task.status === 'Cancelled'}
+                                        />
+                                    </td>
                                     <td className="px-6 py-4 text-center text-stone-400 font-mono text-xs">{idx + 1}</td>
                                     <td className="px-6 py-4">
                                         <span className="font-mono text-blue-600 font-medium text-sm">{item.lot_code}</span>
@@ -908,7 +929,7 @@ function ExportOrderDetailContent() {
                         // Wait for completion, then mark task items as Exported
                         const idsToUpdate = Array.from(selectedPositionIds).filter(id => task?.items?.find(i => i.id === id)?.status !== 'Exported')
                         if (idsToUpdate.length > 0) {
-                            await supabase.from('export_task_items').update({ status: 'Exported' }).in('id', idsToUpdate)
+                            await (supabase.from('export_task_items') as any).update({ status: 'Exported' }).in('id', idsToUpdate)
                         }
                         setSelectedPositionIds(new Set())
                         fetchTaskDetails()

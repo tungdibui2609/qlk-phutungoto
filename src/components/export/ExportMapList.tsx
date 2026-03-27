@@ -164,12 +164,33 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
 
                                 {isExpanded && (
                                     <div className="p-4 md:p-6 space-y-10">
-                                        {Object.values(aisle.bins).map((bin: any) => (
+                                        {Object.values(aisle.bins).map((bin: any) => {
+                                            const allBinItems = Object.values(bin.floors).flatMap((f: any) => f.items)
+                                            const binSelected = allBinItems.length > 0 && allBinItems.every((i: any) => selectedIds.has(i.id!))
+                                            
+                                            return (
                                             <div key={bin.name} className="relative">
                                                 <div className="flex items-center gap-3 mb-6 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm p-2 rounded-xl z-20">
                                                     <span className="bg-emerald-600 text-white px-3 py-1 rounded-full text-xs font-black uppercase shadow-sm">
                                                         {bin.name}
                                                     </span>
+                                                    {!readOnly && onBulkSelect && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation()
+                                                                const ids = allBinItems.map((i: any) => i.id!).filter(Boolean)
+                                                                onBulkSelect(ids, !binSelected)
+                                                            }}
+                                                            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-black transition-all border uppercase ${
+                                                                binSelected 
+                                                                ? 'bg-blue-600 text-white border-blue-600' 
+                                                                : 'bg-white text-slate-600 border-slate-200 hover:border-blue-500 hover:text-blue-600 dark:bg-zinc-900 dark:border-zinc-700'
+                                                            }`}
+                                                        >
+                                                            <CheckSquare size={12} />
+                                                            {binSelected ? 'Đã chọn Ô' : 'Chọn cả Ô'}
+                                                        </button>
+                                                    )}
                                                     <div className="h-px flex-1 bg-slate-100 dark:bg-zinc-700" />
                                                 </div>
 
@@ -221,12 +242,35 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
                                                                             >
                                                                                 {/* Header: Position Code */}
                                                                                 <div className="flex items-center justify-between mb-2">
-                                                                                    <span className="text-[10px] font-black text-slate-700 dark:text-zinc-200 font-mono bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md border border-slate-200 dark:border-zinc-750">
-                                                                                        {posName}
-                                                                                    </span>
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        {!readOnly && onBulkSelect && (
+                                                                                            <input 
+                                                                                                type="checkbox"
+                                                                                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer w-3.5 h-3.5"
+                                                                                                checked={allSelected}
+                                                                                                onChange={(e) => {
+                                                                                                    e.stopPropagation()
+                                                                                                    const ids = posItems.map(i => i.id!).filter(Boolean)
+                                                                                                    onBulkSelect(ids, e.target.checked)
+                                                                                                }}
+                                                                                            />
+                                                                                        )}
+                                                                                        <span className="text-[10px] font-black text-slate-700 dark:text-zinc-200 font-mono bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md border border-slate-200 dark:border-zinc-750 cursor-pointer" onClick={(e) => {
+                                                                                            if (!readOnly && onBulkSelect) {
+                                                                                                e.stopPropagation()
+                                                                                                const ids = posItems.map(i => i.id!).filter(Boolean)
+                                                                                                onBulkSelect(ids, !allSelected)
+                                                                                            }
+                                                                                        }}>
+                                                                                            {posName}
+                                                                                        </span>
+                                                                                    </div>
                                                                                     {onViewLotDetails && firstItem.lot_code && (
                                                                                         <button
-                                                                                            onClick={() => onViewLotDetails(firstItem.lot_code)}
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation()
+                                                                                                onViewLotDetails(firstItem.lot_code)
+                                                                                            }}
                                                                                             className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded-lg hover:bg-slate-50 dark:hover:bg-zinc-800"
                                                                                             title="Xem chi tiết LOT"
                                                                                         >
@@ -292,7 +336,8 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
                                                     })}
                                                 </div>
                                             </div>
-                                        ))}
+                                            )
+                                        })}
                                     </div>
                                 )}
                             </div>
