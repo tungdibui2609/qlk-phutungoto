@@ -227,7 +227,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
         try {
             let orderId = editOrderId
             const payload = {
-                supplier_id: supplierId,
+                supplier_id: supplierId || null,
                 supplier_address: supplierAddress,
                 supplier_phone: supplierPhone,
                 warehouse_name: warehouseName,

@@ -12,6 +12,7 @@ import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { PrintHeader, PrintLegalHeader } from '@/components/print/PrintHeader'
 import { EditableText, numberToVietnameseText } from '@/components/print/PrintHelpers'
 import { PrintActionMenu } from '@/components/print/PrintActionMenu'
+import { useUnitConversion } from '@/hooks/useUnitConversion'
 
 interface OrderItem {
     id: string
@@ -21,7 +22,7 @@ interface OrderItem {
     document_quantity: number
     price: number
     note: string | null
-    products: { sku: string, internal_code?: string | null, internal_name?: string | null } | null
+    products: { id: string, sku: string, internal_code?: string | null, internal_name?: string | null, unit: string } | null
 }
 
 interface OutboundOrder {
@@ -79,6 +80,7 @@ function OutboundPrintContent() {
     const [systemConfig, setSystemConfig] = useState<any>(null)
     const [unitsMap, setUnitsMap] = useState<Record<string, string>>({})
     const [displayInternalCode, setDisplayInternalCode] = useState(false)
+    const { convertUnit } = useUnitConversion()
 
     // Use shared hook for company info
     const { companyInfo, logoSrc } = usePrintCompanyInfo({
@@ -380,40 +382,14 @@ function OutboundPrintContent() {
             let convertedQtyValue: any = '-'
             if (hasModule('outbound_conversion') && targetUnit && item.products) {
                 const product = item.products as any
-                const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
-                const normItemUnit = normalize(item.unit)
-                const normBaseUnit = normalize(product.unit)
-                const normTarget = normalize(targetUnit)
-
-                let baseQty = 0
-                if (normItemUnit === normBaseUnit) baseQty = item.quantity
-                else {
-                    const uConfig = product.product_units?.find((pu: any) => {
-                        if (!pu.unit_id) return false
-                        const uName = unitsMap[pu.unit_id]
-                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                        const labelStr = isBase
-                            ? uName
-                            : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
-                        return normalize(labelStr) === normItemUnit || normalize(uName) === normItemUnit
-                    })
-                    if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
-                }
-
-                if (normTarget === normBaseUnit) {
-                    if (baseQty > 0) convertedQtyValue = baseQty
-                } else {
-                    const targetConfig = product.product_units?.find((pu: any) => {
-                        if (!pu.unit_id) return false
-                        const uName = unitsMap[pu.unit_id]
-                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                        const labelStr = isBase
-                            ? uName
-                            : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
-                        return normalize(labelStr) === normTarget || normalize(uName) === normTarget
-                    })
-                    if (targetConfig) convertedQtyValue = baseQty / targetConfig.conversion_rate
-                }
+                const result = convertUnit(
+                    item.products?.id || (item as any).product_id || null,
+                    item.unit || '',
+                    targetUnit,
+                    item.quantity,
+                    product.unit || null
+                )
+                if (result !== null) convertedQtyValue = result
             }
 
             return {
@@ -752,45 +728,16 @@ function OutboundPrintContent() {
                             let convertedQty: string | number = '-'
                             if (hasModule('outbound_conversion') && targetUnit && item.products) {
                                 const product = item.products as any
-                                const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
-                                const normItemUnit = normalize(item.unit)
-                                const normBaseUnit = normalize(product.unit)
-                                const normTarget = normalize(targetUnit)
-
-                                let baseQty = 0
-                                if (normItemUnit === normBaseUnit) {
-                                    baseQty = item.quantity
-                                } else {
-                                    const uConfig = product.product_units?.find((pu: any) => {
-                                        if (!pu.unit_id) return false
-                                        const uName = unitsMap[pu.unit_id]
-                                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                                        const labelStr = isBase
-                                            ? uName
-                                            : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
-                                        return normalize(labelStr) === normItemUnit || normalize(uName) === normItemUnit
-                                    })
-                                    if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
+                                const result = convertUnit(
+                                    item.products?.id || (item as any).product_id || null,
+                                    item.unit || '',
+                                    targetUnit,
+                                    item.quantity,
+                                    product.unit || null
+                                )
+                                if (result !== null) {
+                                    convertedQty = formatQuantityFull(result)
                                 }
-
-                                if (normTarget === normBaseUnit) {
-                                    if (baseQty > 0) convertedQty = baseQty
-                                } else {
-                                    const targetConfig = product.product_units?.find((pu: any) => {
-                                        if (!pu.unit_id) return false
-                                        const uName = unitsMap[pu.unit_id]
-                                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                                        const labelStr = isBase
-                                            ? uName
-                                            : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
-                                        return normalize(labelStr) === normTarget || normalize(uName) === normTarget
-                                    })
-                                    if (targetConfig) convertedQty = baseQty / targetConfig.conversion_rate
-                                }
-                            }
-
-                            if (typeof convertedQty === 'number') {
-                                convertedQty = formatQuantityFull(convertedQty)
                             }
 
                             // Calculate names and skus based on toggle
@@ -888,46 +835,16 @@ function OutboundPrintContent() {
                             {/* Converted Total - Placeholder */}
                             {hasModule('outbound_conversion') && targetUnit && (
                                 <td className="border border-gray-400 px-2 py-1.5 text-center text-orange-600">
-                                    {formatQuantityFull(items.reduce((sum, item) => {
+                                    {formatQuantityFull(items.reduce((sum: number, item) => {
                                         if (!item.products) return sum
-                                        const product = item.products as any
-                                        let baseQty = 0
-                                        const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
-                                        const itemUnit = normalize(item.unit)
-                                        const prodUnit = normalize(product.unit)
-                                        const tgtUnit = normalize(targetUnit)
-
-                                        if (itemUnit === prodUnit) {
-                                            baseQty = item.quantity
-                                        } else {
-                                            const uConfig = product.product_units?.find((pu: any) => {
-                                                if (!pu.unit_id) return false
-                                                const uName = unitsMap[pu.unit_id]
-                                                const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                                                const labelStr = isBase
-                                                    ? uName
-                                                    : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
-                                                return normalize(labelStr) === itemUnit || normalize(uName) === itemUnit
-                                            })
-                                            if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
-                                        }
-
-                                        let converted = 0
-                                        if (tgtUnit === prodUnit) {
-                                            if (baseQty > 0) converted = baseQty
-                                        } else {
-                                            const targetConfig = product.product_units?.find((pu: any) => {
-                                                if (!pu.unit_id) return false
-                                                const uName = unitsMap[pu.unit_id]
-                                                const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                                                const labelStr = isBase
-                                                    ? uName
-                                                    : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
-                                                return normalize(labelStr) === tgtUnit || normalize(uName) === tgtUnit
-                                            })
-                                            if (targetConfig) converted = baseQty / targetConfig.conversion_rate
-                                        }
-                                        return sum + converted
+                                        const result = convertUnit(
+                                            item.products?.id || (item as any).product_id || null,
+                                            item.unit || '',
+                                            targetUnit,
+                                            item.quantity,
+                                            item.products?.unit || null
+                                        )
+                                        return sum + (result || 0)
                                     }, 0))}
                                 </td>
                             )}

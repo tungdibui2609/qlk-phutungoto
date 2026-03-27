@@ -185,58 +185,8 @@ export function OutboundItemsTable({
                                         <td className="px-4 py-3 text-center font-medium text-orange-600">
                                             {(() => {
                                                 if (!item.quantity || !item.unit || !product) return '-'
-
-                                                const normalize = (s: string | undefined | null) =>
-                                                    s ? s.normalize('NFC').toLowerCase().trim() : ''
-
-                                                const getRate = (unitName: string) => {
-                                                    if (!product) return 1
-                                                    const normInput = normalize(unitName)
-                                                    const normBase = normalize(product.unit)
-
-                                                    if (normBase && normInput === normBase) return 1
-
-                                                    if (product.product_units) {
-                                                        for (const pu of product.product_units) {
-                                                            const u = units.find(unit => unit.id === pu.unit_id)
-                                                            if (u) {
-                                                                const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                                                                const labelStr = isBase
-                                                                    ? u.name
-                                                                    : `${u.name} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
-
-                                                                if (normalize(labelStr) === normInput) {
-                                                                    return pu.conversion_rate || 1
-                                                                }
-                                                            }
-                                                        }
-                                                        // Fallback for simple unit name match
-                                                        for (const pu of product.product_units) {
-                                                            const u = units.find(unit => unit.id === pu.unit_id)
-                                                            if (u && normalize(u.name) === normInput) {
-                                                                return pu.conversion_rate || 1
-                                                            }
-                                                        }
-                                                    }
-                                                    return 1
-                                                }
-
-                                                const normTarget = normalize(targetUnit)
-                                                const normItemUnit = normalize(item.unit)
-                                                const normBaseUnit = normalize(product.unit)
-
-                                                const sourceRate = getRate(item.unit)
-                                                const targetRate = getRate(targetUnit)
-
-                                                if (sourceRate === 1 && targetRate === 1
-                                                    && normItemUnit !== normBaseUnit
-                                                    && normTarget !== normBaseUnit
-                                                    && normItemUnit !== normTarget) {
-                                                    return '-'
-                                                }
-
-                                                const val = (item.quantity * sourceRate) / targetRate
-                                                return formatQuantityFull(val)
+                                                const result = convertUnit(item.productId, item.unit, targetUnit, item.quantity, product.unit || null)
+                                                return formatQuantityFull(result)
                                             })()}
                                         </td>
                                     )}
@@ -411,57 +361,8 @@ export function OutboundItemsTable({
                                     <span className="font-bold">
                                         {(() => {
                                             if (!item.quantity || !item.unit || !product) return '-'
-
-                                            const normalize = (s: string | undefined | null) =>
-                                                s ? s.normalize('NFC').toLowerCase().trim() : ''
-
-                                            const getRate = (unitName: string) => {
-                                                if (!product) return 1
-                                                const normInput = normalize(unitName)
-                                                const normBase = normalize(product.unit)
-
-                                                if (normBase && normInput === normBase) return 1
-
-                                                if (product.product_units) {
-                                                    for (const pu of product.product_units) {
-                                                        const u = units.find(unit => unit.id === pu.unit_id)
-                                                        if (u) {
-                                                            const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                                                            const labelStr = isBase
-                                                                ? u.name
-                                                                : `${u.name} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
-
-                                                            if (normalize(labelStr) === normInput) {
-                                                                return pu.conversion_rate || 1
-                                                            }
-                                                        }
-                                                    }
-                                                    for (const pu of product.product_units) {
-                                                        const u = units.find(unit => unit.id === pu.unit_id)
-                                                        if (u && normalize(u.name) === normInput) {
-                                                            return pu.conversion_rate || 1
-                                                        }
-                                                    }
-                                                }
-                                                return 1
-                                            }
-
-                                            const normTarget = normalize(targetUnit)
-                                            const normItemUnit = normalize(item.unit)
-                                            const normBaseUnit = normalize(product.unit)
-
-                                            const sourceRate = getRate(item.unit)
-                                            const targetRate = getRate(targetUnit)
-
-                                            if (sourceRate === 1 && targetRate === 1
-                                                && normItemUnit !== normBaseUnit
-                                                && normTarget !== normBaseUnit
-                                                && normItemUnit !== normTarget) {
-                                                return '-'
-                                            }
-
-                                            const val = (item.quantity * sourceRate) / targetRate
-                                            return formatQuantityFull(val)
+                                            const result = convertUnit(item.productId, item.unit, targetUnit, item.quantity, product.unit || null)
+                                            return formatQuantityFull(result)
                                         })()}
                                     </span>
                                 </div>

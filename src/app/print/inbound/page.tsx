@@ -12,6 +12,7 @@ import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { PrintHeader, PrintLegalHeader } from '@/components/print/PrintHeader'
 import { EditableText, AutoResizeInput, numberToVietnameseText } from '@/components/print/PrintHelpers'
 import { PrintActionMenu } from '@/components/print/PrintActionMenu'
+import { useUnitConversion } from '@/hooks/useUnitConversion'
 
 interface OrderItem {
     id: string
@@ -21,7 +22,7 @@ interface OrderItem {
     document_quantity: number
     price: number
     note: string | null
-    products: { sku: string, internal_code?: string | null, internal_name?: string | null } | null
+    products: { id: string, sku: string, internal_code?: string | null, internal_name?: string | null, unit: string } | null
 }
 
 interface InboundOrder {
@@ -79,6 +80,7 @@ function InboundPrintContent() {
     const [systemConfig, setSystemConfig] = useState<any>(null)
     const [unitsMap, setUnitsMap] = useState<Record<string, string>>({})
     const [displayInternalCode, setDisplayInternalCode] = useState(false)
+    const { convertUnit } = useUnitConversion()
 
     // Use shared hook for company info
     const { companyInfo, logoSrc } = usePrintCompanyInfo({
@@ -387,40 +389,14 @@ function InboundPrintContent() {
             let convertedQtyValue: any = '-'
             if (hasModule('inbound_conversion') && targetUnit && item.products) {
                 const product = item.products as any
-                const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
-                const normItemUnit = normalize(item.unit)
-                const normBaseUnit = normalize(product.unit)
-                const normTarget = normalize(targetUnit)
-
-                let baseQty = 0
-                if (normItemUnit === normBaseUnit) baseQty = item.quantity
-                else {
-                    const uConfig = product.product_units?.find((pu: any) => {
-                        if (!pu.unit_id) return false
-                        const uName = unitsMap[pu.unit_id]
-                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                        const labelStr = isBase
-                            ? uName
-                            : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
-                        return normalize(labelStr) === normItemUnit || normalize(uName) === normItemUnit
-                    })
-                    if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
-                }
-
-                if (normTarget === normBaseUnit) {
-                    if (baseQty > 0) convertedQtyValue = baseQty
-                } else {
-                    const targetConfig = product.product_units?.find((pu: any) => {
-                        if (!pu.unit_id) return false
-                        const uName = unitsMap[pu.unit_id]
-                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                        const labelStr = isBase
-                            ? uName
-                            : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
-                        return normalize(labelStr) === normTarget || normalize(uName) === normTarget
-                    })
-                    if (targetConfig) convertedQtyValue = baseQty / targetConfig.conversion_rate
-                }
+                const result = convertUnit(
+                    item.products?.id || (item as any).product_id || null,
+                    item.unit || '',
+                    targetUnit,
+                    item.quantity,
+                    product.unit || null
+                )
+                if (result !== null) convertedQtyValue = result
             }
 
             return {
@@ -892,18 +868,28 @@ function InboundPrintContent() {
                                         {formatQuantityFull(item.quantity)}
                                     </td>
                                     {hasModule('inbound_conversion') && targetUnit && (
-                                        <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center text-stone-800`}>
-                                            {typeof convertedQty === 'number' ? formatQuantityFull(convertedQty) : convertedQty}
+                                        <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center font-medium text-orange-600`}>
+                                            {(() => {
+                                                if (!item.products) return '-'
+                                                const result = convertUnit(
+                                                    item.products?.id || (item as any).product_id || null,
+                                                    item.unit || '',
+                                                    targetUnit,
+                                                    item.quantity,
+                                                    item.products.unit || null
+                                                )
+                                                return result !== null ? formatQuantityFull(result) : '-'
+                                            })()}
                                         </td>
                                     )}
                                     {!isInternal && hasModule('inbound_financials') && (
                                         <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-right`}>
-                                            {unitPrice > 0 ? unitPrice.toLocaleString('vi-VN') : '-'}
+                                            {item.price > 0 ? item.price.toLocaleString('vi-VN') : '-'}
                                         </td>
                                     )}
                                     {!isInternal && hasModule('inbound_financials') && (
                                         <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-right uppercase`}>
-                                            {totalPrice > 0 ? totalPrice.toLocaleString('vi-VN') : '-'}
+                                            {(item.price * item.quantity) > 0 ? (item.price * item.quantity).toLocaleString('vi-VN') : '-'}
                                         </td>
                                     )}
                                 </tr>
@@ -926,38 +912,16 @@ function InboundPrintContent() {
                             <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
                             {hasModule('inbound_conversion') && targetUnit && (
                                 <td className="border border-gray-400 px-2 py-1.5 text-center text-orange-600">
-                                    {formatQuantityFull(items.reduce((sum, item) => {
+                                    {formatQuantityFull(items.reduce((sum: number, item) => {
                                         if (!item.products) return sum
-                                        const product = item.products as any
-                                        let baseQty = 0
-                                        const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
-                                        const itemUnit = normalize(item.unit)
-                                        const prodUnit = normalize(product.unit)
-                                        const tgtUnit = normalize(targetUnit)
-
-                                        if (itemUnit === prodUnit) {
-                                            baseQty = item.quantity
-                                        } else {
-                                            const uConfig = product.product_units?.find((pu: any) => {
-                                                if (!pu.unit_id) return false
-                                                const mapVal = normalize(unitsMap[pu.unit_id])
-                                                return mapVal === itemUnit
-                                            })
-                                            if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
-                                        }
-
-                                        let converted = 0
-                                        if (tgtUnit === prodUnit) {
-                                            if (baseQty > 0) converted = baseQty
-                                        } else {
-                                            const targetConfig = product.product_units?.find((pu: any) => {
-                                                if (!pu.unit_id) return false
-                                                const mapVal = normalize(unitsMap[pu.unit_id])
-                                                return mapVal === tgtUnit
-                                            })
-                                            if (targetConfig) converted = baseQty / targetConfig.conversion_rate
-                                        }
-                                        return sum + converted
+                                        const result = convertUnit(
+                                            item.products?.id || (item as any).product_id || null,
+                                            item.unit || '',
+                                            targetUnit,
+                                            item.quantity,
+                                            item.products.unit || null
+                                        )
+                                        return sum + (result || 0)
                                     }, 0))}
                                 </td>
                             )}

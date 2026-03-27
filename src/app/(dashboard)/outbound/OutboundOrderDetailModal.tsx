@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Database } from '@/lib/database.types'
 import { X, Calendar, Package, User, FileText, CheckCircle, Printer, ChevronDown, Eye } from 'lucide-react'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/ToastProvider'
@@ -11,6 +10,7 @@ import { useSystem } from '@/contexts/SystemContext'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/Dialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { formatQuantityFull } from '@/lib/numberUtils'
+import { useUnitConversion } from '@/hooks/useUnitConversion'
 
 interface OutboundOrder {
     id: string
@@ -33,10 +33,10 @@ interface OutboundOrder {
     order_types?: { name: string } | null
 }
 
-type Unit = Database['public']['Tables']['units']['Row']
 
 interface OrderItem {
     id: string
+    product_id: string | null
     product_name: string | null
     unit: string | null
     quantity: number
@@ -48,10 +48,6 @@ interface OrderItem {
         unit?: string
         internal_code?: string | null
         internal_name?: string | null
-        product_units?: {
-            unit_id: string
-            conversion_rate: number
-        }[]
     } | null
 }
 
@@ -65,9 +61,9 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
     const { showToast, showConfirm } = useToast()
     const { currentSystem, hasModule } = useSystem()
     const { hasPermission } = useUser()
+    const { convertUnit } = useUnitConversion()
 
     const [items, setItems] = useState<OrderItem[]>([])
-    const [units, setUnits] = useState<Unit[]>([])
     const [loading, setLoading] = useState(false)
     const [showPrintMenu, setShowPrintMenu] = useState(false)
     const [imageUrl, setImageUrl] = useState<string | null>(null)
@@ -99,14 +95,10 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
         if (!order) return
         setLoading(true)
 
-        // Fetch Units
-        const { data: unitsData } = await supabase.from('units').select('*')
-        if (unitsData) setUnits(unitsData)
-
-        // Fetch Items with Product Units
+        // Fetch Items
         const { data, error } = await supabase
             .from('outbound_order_items')
-            .select('*, products(sku, unit, internal_code, internal_name, product_units(unit_id, conversion_rate))')
+            .select('*, products(sku, unit, internal_code, internal_name)')
             .eq('order_id', order.id)
 
         if (data) {
@@ -437,56 +429,8 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                                                         <td className="px-4 py-3 text-center font-medium text-orange-600">
                                                             {(() => {
                                                                 if (!item.quantity || !item.unit || !item.products) return '-'
-
-                                                                const normalize = (s: string | undefined | null) =>
-                                                                    s ? s.normalize('NFC').toLowerCase().trim() : ''
-
-                                                                const normItemUnit = normalize(item.unit)
-                                                                const normBaseUnit = normalize(item.products.unit)
-                                                                const normTarget = normalize(targetUnit)
-
-                                                                // 1. Convert to base
-                                                                let baseQty = 0
-                                                                if (normItemUnit === normBaseUnit) {
-                                                                    baseQty = item.quantity
-                                                                } else {
-                                                                    const uConfig = item.products.product_units?.find(pu => {
-                                                                        const u = units.find(unit => unit.id === pu.unit_id)
-                                                                        if (!u) return false
-                                                                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                                                                        const labelStr = isBase
-                                                                            ? u.name
-                                                                            : `${u.name} (${pu.conversion_rate} ${item.products?.unit || 'Cơ bản'})`
-                                                                        return normalize(labelStr) === normItemUnit || normalize(u.name) === normItemUnit
-                                                                    })
-                                                                    if (uConfig) {
-                                                                        baseQty = item.quantity * uConfig.conversion_rate
-                                                                    } else {
-                                                                        return '-'
-                                                                    }
-                                                                }
-
-                                                                // 2. Convert to target
-                                                                if (normTarget === normBaseUnit) {
-                                                                    return formatQuantityFull(baseQty)
-                                                                }
-
-                                                                const targetConfig = item.products.product_units?.find(pu => {
-                                                                    const u = units.find(unit => unit.id === pu.unit_id)
-                                                                    if (!u) return false
-                                                                    const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                                                                    const labelStr = isBase
-                                                                        ? u.name
-                                                                        : `${u.name} (${pu.conversion_rate} ${item.products?.unit || 'Cơ bản'})`
-                                                                    return normalize(labelStr) === normTarget || normalize(u.name) === normTarget
-                                                                })
-
-                                                                if (targetConfig) {
-                                                                    const result = baseQty / targetConfig.conversion_rate
-                                                                    return formatQuantityFull(result)
-                                                                }
-
-                                                                return '-'
+                                                                const result = convertUnit(item.product_id, item.unit, targetUnit, item.quantity, item.products.unit || null)
+                                                                return formatQuantityFull(result)
                                                             })()}
                                                         </td>
                                                     )}
@@ -559,45 +503,8 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                                                         <td className="px-4 py-3 text-center text-orange-600">
                                                             {formatQuantityFull(items.reduce((sum, item) => {
                                                                 if (!item.quantity || !item.unit || !item.products) return sum
-
-                                                                const normalize = (s: string | undefined | null) =>
-                                                                    s ? s.normalize('NFC').toLowerCase().trim() : ''
-
-                                                                const normItemUnit = normalize(item.unit)
-                                                                const normBaseUnit = normalize(item.products.unit)
-                                                                const normTarget = normalize(targetUnit)
-
-                                                                let baseQty = 0
-                                                                if (normItemUnit === normBaseUnit) {
-                                                                    baseQty = item.quantity
-                                                                } else {
-                                                                    const uConfig = item.products.product_units?.find(pu => {
-                                                                        const u = units.find(unit => unit.id === pu.unit_id)
-                                                                        if (!u) return false
-                                                                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                                                                        const labelStr = isBase
-                                                                            ? u.name
-                                                                            : `${u.name} (${pu.conversion_rate} ${item.products?.unit || 'Cơ bản'})`
-                                                                        return normalize(labelStr) === normItemUnit || normalize(u.name) === normItemUnit
-                                                                    })
-                                                                    if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
-                                                                    else return sum
-                                                                }
-
-                                                                if (normTarget === normBaseUnit) return sum + baseQty
-
-                                                                const targetConfig = item.products.product_units?.find(pu => {
-                                                                    const u = units.find(unit => unit.id === pu.unit_id)
-                                                                    if (!u) return false
-                                                                    const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                                                                    const labelStr = isBase
-                                                                        ? u.name
-                                                                        : `${u.name} (${pu.conversion_rate} ${item.products?.unit || 'Cơ bản'})`
-                                                                    return normalize(labelStr) === normTarget || normalize(u.name) === normTarget
-                                                                })
-
-                                                                if (targetConfig) return sum + (baseQty / targetConfig.conversion_rate)
-                                                                return sum
+                                                                const converted = convertUnit(item.product_id, item.unit, targetUnit, item.quantity, item.products.unit || null)
+                                                                return sum + converted
                                                             }, 0))}
                                                         </td>
                                                     )}
