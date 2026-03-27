@@ -98,8 +98,13 @@ export default function MobileAssignTab() {
         if (!currentSystem?.code || !profile?.company_id) return
         setIsDownloading(true)
         try {
-            // 1. Fetch Today's LOTs
-            const today = new Date().toISOString().split('T')[0]
+            // 1. Fetch Today's LOTs (using Local Date)
+            const now = new Date()
+            const year = now.getFullYear()
+            const month = String(now.getMonth() + 1).padStart(2, '0')
+            const day = String(now.getDate()).padStart(2, '0')
+            const localToday = `${year}-${month}-${day}` // YYYY-MM-DD in local time
+
             const { data: lots } = await supabase.from('lots')
                 .select(`
                     id, 
@@ -110,7 +115,8 @@ export default function MobileAssignTab() {
                     )
                 `)
                 .eq('system_code', currentSystem.code)
-                .eq('inbound_date', today)
+                .eq('inbound_date', localToday)
+                .limit(1000)
 
             const formattedLots: LocalLot[] = (lots || []).map((l: any) => ({
                 id: l.id,
@@ -130,6 +136,7 @@ export default function MobileAssignTab() {
                 `)
                 .eq('system_type', currentSystem.code)
                 .is('lot_id', null)
+                .limit(10000) // Support up to 10k empty positions for large warehouses
 
             const formattedPositions: LocalPosition[] = (posData || []).map((p: any) => {
                 const zp = p.zone_positions
@@ -149,7 +156,10 @@ export default function MobileAssignTab() {
             setLocalPositions(formattedPositions)
 
             // 3. Fetch all zones correctly
-            const { data: zonesData } = await (supabase.from('zones') as any).select('*').eq('system_type', currentSystem.code)
+            const { data: zonesData } = await (supabase.from('zones') as any)
+                .select('*')
+                .eq('system_type', currentSystem.code)
+                .limit(5000) // Large warehouses can have many zones
 
             // Calculate Grouped Data (Gom ô)
             const { zones: gZones, virtualToRealMap: vMap } = groupWarehouseData(zonesData || [], formattedPositions as any)
