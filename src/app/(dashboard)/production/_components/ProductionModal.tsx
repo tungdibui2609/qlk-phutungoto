@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Plus, Save, FileText, Calendar, Info, Activity, Factory, Package, Users, Weight, Hash, Trash2, Wand2, Search, Loader2, Warehouse, ChevronDown, CheckCircle2, X, Scale, Truck, TrendingUp, PieChart, ArrowRight } from 'lucide-react'
+import { Plus, Save, FileText, Calendar, Info, Activity, Factory, Package, Users, Weight, Hash, Trash2, Wand2, Search, Loader2, Warehouse, ChevronDown, CheckCircle2, X, Scale, Truck, TrendingUp, PieChart, ArrowRight, Leaf } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
@@ -114,6 +114,12 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const [activeTab, setActiveTab] = useState<'products' | 'allocations' | 'analysis'>('products')
 
     // Raw Material Input
+    const [inputSource, setInputSource] = useState<'MANUAL' | 'FRESH_MATERIAL'>('MANUAL')
+    const [fmBatchId, setFmBatchId] = useState<string | null>(null)
+    const [fmStageId, setFmStageId] = useState<string | null>(null)
+    const [fmBatches, setFmBatches] = useState<any[]>([])
+    const [fmStages, setFmStages] = useState<any[]>([])
+
     const [inputProductId, setInputProductId] = useState<string | null>(null)
     const [inputQuantity, setInputQuantity] = useState<number>(0)
     const [inputUnit, setInputUnit] = useState<string>('')
@@ -198,6 +204,10 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             setCustomerId(editItem.customer_id || '')
             
             // Raw Material
+            setInputSource(editItem.fresh_material_batch_id ? 'FRESH_MATERIAL' : 'MANUAL')
+            setFmBatchId(editItem.fresh_material_batch_id || null)
+            setFmStageId(editItem.fresh_material_stage_id || null)
+
             setInputProductId(editItem.input_product_id || null)
             setInputQuantity(editItem.input_quantity || 0)
             setInputUnit(editItem.input_unit || '')
@@ -222,6 +232,11 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             setAllocations([])
             setActiveTab('products')
             setRowSearchTerms({})
+            
+            setInputSource('MANUAL')
+            setFmBatchId(null)
+            setFmStageId(null)
+
             setInputProductId(null)
             setInputQuantity(0)
             setInputUnit('')
@@ -236,8 +251,73 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             fetchUnits()
             // Fetch product units for conversion logic
             fetchProductUnits()
+            fetchFmBatches()
         }
     }, [isOpen])
+
+    const fetchFmBatches = async () => {
+        const { data, error } = await supabase
+            .from('fresh_material_batches')
+            .select('id, batch_code, products(name)')
+            .neq('status', 'CANCELLED')
+            .order('created_at', { ascending: false })
+            
+        if (error) {
+            console.error('Fetch FM Batches error:', error)
+        }
+        if (data) setFmBatches(data)
+    }
+
+    useEffect(() => {
+        if (fmBatchId) {
+            const fetchStages = async () => {
+                const { data } = await supabase
+                    .from('fresh_material_stages')
+                    .select('id, stage_name, fresh_material_stage_outputs(*)')
+                    .eq('batch_id', fmBatchId)
+                    .order('stage_order', { ascending: true })
+                if (data) setFmStages(data)
+            }
+            fetchStages()
+        } else {
+            setFmStages([])
+        }
+    }, [fmBatchId])
+
+    const handleStageSelect = async (stageId: string) => {
+        setFmStageId(stageId)
+        if (!stageId) {
+            setInputProductId(null)
+            setInputQuantity(0)
+            setInputUnit('')
+            setInputProductName('')
+            setInputSearchTerm('')
+            return
+        }
+        
+        const stage = fmStages.find(s => s.id === stageId)
+        if (!stage) return
+        
+        const productOutput = stage.fresh_material_stage_outputs?.find((o: any) => o.output_type === 'PRODUCT')
+        if (productOutput) {
+            setInputProductId(productOutput.product_id)
+            setInputQuantity(productOutput.quantity || 0)
+            setInputUnit(productOutput.unit || '')
+            
+            const { data } = await (supabase as any).from('products').select('name').eq('id', productOutput.product_id).single()
+            if (data) {
+                setInputProductName(data.name)
+                setInputSearchTerm(data.name)
+            }
+        } else {
+            setInputProductId(null)
+            setInputQuantity(0)
+            setInputUnit('')
+            setInputProductName('')
+            setInputSearchTerm('')
+            showToast('Giai đoạn này chưa có dữ liệu báo cáo "Sản phẩm đầu ra" chính.', 'warning')
+        }
+    }
 
     const [productUnits, setProductUnits] = useState<any[]>([])
 
@@ -462,6 +542,8 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                 company_id: profile.company_id,
                 customer_id: customerId || null,
                 target_system_code: targetSystemCode || null,
+                fresh_material_batch_id: inputSource === 'FRESH_MATERIAL' ? fmBatchId : null,
+                fresh_material_stage_id: inputSource === 'FRESH_MATERIAL' ? fmStageId : null,
                 input_product_id: inputProductId || null,
                 input_quantity: inputQuantity || 0,
                 input_unit: inputUnit || null,
@@ -680,13 +762,68 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                 {/* Raw Material Selection - NEW SECTION */}
                                 {!readOnly && (
                                     <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm space-y-6">
-                                        <div className="flex items-center gap-2 text-stone-400 font-black text-[10px] uppercase tracking-widest">
-                                            <Scale size={14} className="text-emerald-500" /> Định mức nguyên liệu đầu vào
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2 text-stone-400 font-black text-[10px] uppercase tracking-widest">
+                                                <Scale size={14} className="text-emerald-500" /> Định mức nguyên liệu đầu vào
+                                            </div>
+                                            
+                                            <div className="flex bg-stone-100 dark:bg-zinc-800 p-1 rounded-xl">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setInputSource('MANUAL')}
+                                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${inputSource === 'MANUAL' ? 'bg-white dark:bg-zinc-700 text-stone-900 dark:text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                                                >
+                                                    Tự do
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setInputSource('FRESH_MATERIAL')}
+                                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${inputSource === 'FRESH_MATERIAL' ? 'bg-emerald-500 text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                                                >
+                                                    <Leaf size={12} /> Từ lô NLT
+                                                </button>
+                                            </div>
                                         </div>
                                         
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                            <div className="md:col-span-2 space-y-2 relative">
-                                                <label className="text-xs font-bold text-stone-500">Loại nguyên liệu (Xoài tươi, Chanh dây...)</label>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                            {inputSource === 'FRESH_MATERIAL' && (
+                                                <>
+                                                    <div className="space-y-2 relative md:col-span-1 lg:col-span-1">
+                                                        <label className="text-xs font-bold text-stone-500">Chỉ định Lô NLT</label>
+                                                        <select
+                                                            value={fmBatchId || ''}
+                                                            onChange={e => { setFmBatchId(e.target.value || null); setFmStageId(null); }}
+                                                            className="w-full px-4 py-3 rounded-2xl bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/30 font-bold focus:ring-4 focus:ring-emerald-100 outline-none transition-all appearance-none text-emerald-800 dark:text-emerald-400"
+                                                        >
+                                                            <option value="">
+                                                                {fmBatches.length > 0 ? '-- Chọn lô --' : '-- Không có lô nào đang mở --'}
+                                                            </option>
+                                                            {fmBatches.map(b => (
+                                                                <option key={b.id} value={b.id}>{b.batch_code} ({b.products?.name})</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    
+                                                    <div className="space-y-2 relative md:col-span-1 lg:col-span-1">
+                                                        <label className="text-xs font-bold text-stone-500">Chọn Giai đoạn lấy kết quả</label>
+                                                        <select
+                                                            value={fmStageId || ''}
+                                                            onChange={e => handleStageSelect(e.target.value)}
+                                                            disabled={!fmBatchId}
+                                                            className="w-full px-4 py-3 rounded-2xl bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/30 font-bold focus:ring-4 focus:ring-emerald-100 outline-none transition-all appearance-none text-emerald-800 dark:text-emerald-400 disabled:opacity-50"
+                                                        >
+                                                            <option value="">-- Chọn giai đoạn --</option>
+                                                            {fmStages.map(s => (
+                                                                <option key={s.id} value={s.id}>{s.stage_name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                </>
+                                            )}
+                                            
+                                            <div className={`${inputSource === 'FRESH_MATERIAL' ? 'md:col-span-2 lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-stone-100 dark:border-zinc-800' : 'md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6'} relative`}>
+                                                <div className="md:col-span-2 space-y-2 relative">
+                                                    <label className="text-xs font-bold text-stone-500">Loại nguyên liệu tiêu hao</label>
                                                 <div className="relative">
                                                     <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" />
                                                     <input
@@ -743,6 +880,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                 />
                                             </div>
                                         </div>
+                                    </div>
                                     </div>
                                 )}
                             </div>
