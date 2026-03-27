@@ -162,7 +162,7 @@ export function useLotManagement() {
             fetchAllPaginated('units'),
             fetchAllPaginated('product_units'),
             fetchAllPaginated('lot_tags', q => q.eq('lots.system_code', currentSystem!.code).order('tag'), 'tag, lots!inner(system_code)'),
-            fetchAllPaginated('productions', q => q.select('*, products(*), production_lots(products(*))').order('code', { ascending: false }))
+            fetchAllPaginated('productions', q => q.order('code', { ascending: false }), '*, products:product_id(*), production_lots(*, products(*))')
         ])
 
         setProducts(prodData)
