@@ -49,6 +49,37 @@ export default function MobileSettingsTab() {
                     </div>
                 </div>
 
+                {/* System Selection Section */}
+                <div className="mobile-section-label">Chọn Phân Hệ Kho</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {useSystem().systems.map(sys => (
+                        <button
+                            key={sys.id}
+                            onClick={() => useSystem().setSystemType(sys.code)}
+                            className="mobile-card"
+                            style={{ 
+                                padding: '14px 20px', 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'space-between',
+                                border: currentSystem?.code === sys.code ? '2px solid #2563eb' : '1px solid #f4f4f5',
+                                background: currentSystem?.code === sys.code ? '#eff6ff' : '#fff'
+                            }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <div style={{ 
+                                    width: 12, height: 12, borderRadius: 999, 
+                                    background: sys.code === 'KHO_DONG_LANH' ? '#2563eb' : sys.code === 'DRY' ? '#71717a' : '#059669'
+                                }} />
+                                <span style={{ fontSize: 14, fontWeight: currentSystem?.code === sys.code ? 900 : 600, color: '#18181b' }}>
+                                    {sys.name}
+                                </span>
+                            </div>
+                            {currentSystem?.code === sys.code && <Shield size={16} color="#2563eb" />}
+                        </button>
+                    ))}
+                </div>
+
                 {/* Navigation */}
                 <div className="mobile-section-label">Điều hướng nhanh</div>
 

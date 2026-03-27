@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useUser } from '@/contexts/UserContext'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
-import { Loader2, Camera, Keyboard, RotateCcw, CheckCircle2, Package, MapPin, X, Download, Send, PlayCircle, Hash, Search } from 'lucide-react'
+import { CheckCircle2, MapPin, Hash, PlayCircle, X, Loader2, Download, RotateCcw, Send, Camera, Keyboard, Package, Search } from 'lucide-react'
+import { getProductionCodeSTT } from '@/lib/productionCodeUtils'
+import { groupWarehouseData } from '@/lib/warehouseUtils'
 import { Database } from '@/lib/database.types'
 
 interface LocalLot {
@@ -51,12 +53,21 @@ export default function MobileAssignTab() {
     const [zones, setZones] = useState<Zone[]>([])
     const [localPositions, setLocalPositions] = useState<LocalPosition[]>([])
     const [localLots, setLocalLots] = useState<LocalLot[]>([])
+    
+    // Grouped Data for "Gom ô"
+    const [groupedZones, setGroupedZones] = useState<Zone[]>([])
+    const [virtualToRealMap, setVirtualToRealMap] = useState<Map<string, string[]>>(new Map())
 
-    // Selection
     const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>(null)
-    const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
+    const [selectedAisleId, setSelectedAisleId] = useState<string | null>(null)
+    const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null)
+    const [selectedTierId, setSelectedTierId] = useState<string | null>(null)
 
-    // Working States
+    // Current Selection Step: 'warehouse' | 'aisle' | 'slot' | 'tier'
+    const [selectionStep, setSelectionStep] = useState<'warehouse' | 'aisle' | 'slot' | 'tier'>('warehouse')
+
+    // Determine effective target zone
+    const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [suggestedPos, setSuggestedPos] = useState<LocalPosition | null>(null)
     const [currentStt, setCurrentStt] = useState('')
     const [assignments, setAssignments] = useState<PendingAssignment[]>([])
@@ -75,7 +86,11 @@ export default function MobileAssignTab() {
     }, [assignments])
 
     async function loadZones() {
-        const { data } = await supabase.from('zones').select('*').order('level', { ascending: true })
+        if (!currentSystem?.code) return
+        const { data } = await supabase.from('zones')
+            .select('*')
+            .eq('system_type', currentSystem.code)
+            .order('level', { ascending: true })
         if (data) setZones(data)
     }
 
@@ -132,6 +147,15 @@ export default function MobileAssignTab() {
 
             setLocalLots(formattedLots)
             setLocalPositions(formattedPositions)
+
+            // 3. Fetch all zones correctly
+            const { data: zonesData } = await (supabase.from('zones') as any).select('*').eq('system_type', currentSystem.code)
+
+            // Calculate Grouped Data (Gom ô)
+            const { zones: gZones, virtualToRealMap: vMap } = groupWarehouseData(zonesData || [], formattedPositions as any)
+            setGroupedZones(gZones)
+            if (vMap) setVirtualToRealMap(vMap)
+
             showToast(`Đã tải: ${formattedLots.length} LOT & ${formattedPositions.length} vị trí trống`, 'success')
         } catch (e: any) {
             showToast('Lỗi tải dữ liệu: ' + e.message, 'error')
@@ -140,15 +164,25 @@ export default function MobileAssignTab() {
         }
     }
 
-    // Get descendant zone IDs
+    // Get descendant zone IDs (Handles virtual zones)
     const getDescendantZoneIds = (zoneId: string) => {
-        const ids = new Set<string>([zoneId])
+        // 1. Resolve virtual ID to real IDs if needed
+        const startIds = virtualToRealMap.get(zoneId) || [zoneId]
+        const ids = new Set<string>(startIds)
+        
         let added = true
         while (added) {
             added = false
-            for (const z of zones) {
+            // Use groupedZones to find children (could be virtual or real)
+            for (const z of groupedZones) {
                 if (z.parent_id && ids.has(z.parent_id) && !ids.has(z.id)) {
-                    ids.add(z.id)
+                    // If z is virtual, add its real members
+                    const realMembers = virtualToRealMap.get(z.id)
+                    if (realMembers) {
+                        realMembers.forEach(rid => ids.add(rid))
+                    } else {
+                        ids.add(z.id)
+                    }
                     added = true
                 }
             }
@@ -157,14 +191,14 @@ export default function MobileAssignTab() {
     }
 
     function suggestNextPosition() {
-        if (!selectedZoneId) {
+        if (!effectiveZoneId) {
             showToast('Vui lòng chọn khu vực trước', 'warning')
-            setStep('setup')
             return
         }
 
+        setLoading(true)
         // WORK OFFLINE! Use localPositions and assignments
-        const descendantIds = getDescendantZoneIds(selectedZoneId)
+        const descendantIds = getDescendantZoneIds(effectiveZoneId)
         const assignedPosIds = new Set(assignments.map(a => a.positionId))
 
         // Find the first empty position that is in one of the descendant zones 
@@ -243,18 +277,27 @@ export default function MobileAssignTab() {
         }
     }
 
-    // Zone filters
-    const warehouses = zones.filter(z => !z.parent_id)
-    const leafZones = selectedWarehouseId ? zones.filter(z => {
-        let isUnder = false
-        let cur: Zone | undefined = z
-        while (cur) {
-            if (cur.id === selectedWarehouseId) { isUnder = true; break }
-            cur = zones.find(p => p.id === cur!.parent_id)
-        }
-        const isLeaf = !zones.some(other => other.parent_id === z.id)
-        return isUnder && isLeaf
-    }) : []
+    // Zone filters (Use groupedZones for "Gom ô" support)
+    const activeZones = groupedZones.length > 0 ? groupedZones : zones
+    const warehouses = activeZones.filter(z => !z.parent_id)
+    
+    // Cascading lists
+    const aisles = selectedWarehouseId ? activeZones.filter(z => z.parent_id === selectedWarehouseId) : []
+    const slots = selectedAisleId ? activeZones.filter(z => z.parent_id === selectedAisleId) : []
+    const tiers = selectedSlotId ? activeZones.filter(z => z.parent_id === selectedSlotId) : []
+
+    // Helper for Breadcrumbs
+    const getZoneName = (id: string | null) => activeZones.find(z => z.id === id)?.name || ''
+    
+    const breadcrumbs = [
+        { label: 'Kho', id: selectedWarehouseId, setStep: () => { setSelectionStep('warehouse'); setSelectedAisleId(null); setSelectedSlotId(null); setSelectedTierId(null); setSelectedZoneId(selectedWarehouseId) } },
+        { label: 'Dãy', id: selectedAisleId, setStep: () => { setSelectionStep('aisle'); setSelectedSlotId(null); setSelectedTierId(null); setSelectedZoneId(selectedAisleId) } },
+        { label: 'Ô', id: selectedSlotId, setStep: () => { setSelectionStep('slot'); setSelectedTierId(null); setSelectedZoneId(selectedSlotId) } },
+        { label: 'Tầng', id: selectedTierId, setStep: () => { setSelectionStep('tier'); setSelectedZoneId(selectedTierId) } }
+    ].filter(b => b.id)
+
+    // Determine effective target zone
+    const effectiveZoneId = selectedTierId || selectedSlotId || selectedAisleId || selectedWarehouseId
 
     return (
         <div className="mobile-animate-fade-in pb-20">
@@ -320,57 +363,175 @@ export default function MobileAssignTab() {
                             <p className="text-xs text-zinc-500 mt-1 uppercase font-bold tracking-wider">Hệ thống sẽ gợi ý vị trí trống</p>
                         </div>
 
-                        {/* Store/Warehouse */}
-                        <div className="space-y-3">
-                            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">1. Chọn Kho hàng</label>
-                            <div className="grid grid-cols-2 gap-2">
-                                {warehouses.map(w => (
-                                    <button
-                                        key={w.id}
-                                        onClick={() => setSelectedWarehouseId(w.id)}
-                                        className={`px-4 py-3 rounded-2xl text-xs font-black transition-all border-2 uppercase tracking-tight ${selectedWarehouseId === w.id ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-500/30' : 'bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-400'}`}
-                                    >
-                                        {w.name}
-                                    </button>
+                        {/* Breadcrumbs Navigation */}
+                        {breadcrumbs.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-2 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800 animate-in fade-in duration-300">
+                                {breadcrumbs.map((b, i) => (
+                                    <React.Fragment key={i}>
+                                        <button 
+                                            onClick={b.setStep}
+                                            className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-tight bg-white dark:bg-zinc-900 px-2 py-1 rounded-lg border border-emerald-100 dark:border-emerald-900/50 shadow-sm active:scale-95 transition-all"
+                                        >
+                                            {b.label}: {getZoneName(b.id)}
+                                        </button>
+                                        {i < breadcrumbs.length - 1 && <span className="text-zinc-300 dark:text-zinc-700 font-bold">/</span>}
+                                    </React.Fragment>
                                 ))}
-                            </div>
-                        </div>
-
-                        {/* Zones */}
-                        {selectedWarehouseId && (
-                            <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                                <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">2. Chọn Khu vực / Ô gộp</label>
-                                <div className="grid grid-cols-1 gap-2 max-h-[250px] overflow-y-auto pr-1">
-                                    {leafZones.map(z => {
-                                         const path: string[] = []
-                                         let cur: Zone | undefined = z
-                                         while (cur && cur.id !== selectedWarehouseId) {
-                                             path.unshift(cur.name)
-                                             cur = zones.find(p => p.id === cur!.parent_id)
-                                         }
-                                         return (
-                                            <button
-                                                key={z.id}
-                                                onClick={() => setSelectedZoneId(z.id)}
-                                                className={`flex items-center justify-between p-4 rounded-2xl text-[13px] font-bold transition-all border-2 ${selectedZoneId === z.id ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-500'}`}
-                                            >
-                                                <span>{path.join(' › ')}</span>
-                                                {selectedZoneId === z.id && <CheckCircle2 size={16} />}
-                                            </button>
-                                         )
-                                    })}
-                                </div>
                             </div>
                         )}
 
-                        <button
-                            onClick={suggestNextPosition}
-                            disabled={!selectedZoneId || loading || isDownloading}
-                            className={`w-full py-4 rounded-2xl flex items-center justify-center gap-3 text-sm font-black transition-all transform active:scale-95 ${!selectedZoneId || loading || isDownloading ? 'bg-zinc-100 text-zinc-300' : 'bg-zinc-900 text-white shadow-xl'}`}
-                        >
-                            {loading ? <Loader2 size={20} className="animate-spin" /> : <PlayCircle size={20} />}
-                            {loading ? 'ĐANG TÌM VỊ TRÍ...' : 'BẮT ĐẦU GÁN VỊ TRÍ'}
-                        </button>
+                        {/* Step-by-Step Selection */}
+                        <div className="animate-in slide-in-from-right duration-300">
+                            {selectionStep === 'warehouse' && (
+                                <div className="space-y-4">
+                                    <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest ml-1 flex items-center gap-2">
+                                        <div className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[8px]">1</div>
+                                        Chọn Kho hàng
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {warehouses.map(w => (
+                                            <button
+                                                key={w.id}
+                                                onClick={() => {
+                                                    setSelectedWarehouseId(w.id)
+                                                    setSelectedAisleId(null)
+                                                    setSelectedSlotId(null)
+                                                    setSelectedTierId(null)
+                                                    setSelectedZoneId(w.id)
+                                                    setSelectionStep('aisle')
+                                                }}
+                                                className={`px-4 py-4 rounded-2xl text-xs font-black transition-all border-2 uppercase tracking-tight text-center ${selectedWarehouseId === w.id ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-500/30' : 'bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-400'}`}
+                                            >
+                                                {w.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {selectionStep === 'aisle' && (
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest ml-1 flex items-center gap-2">
+                                            <div className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[8px]">2</div>
+                                            Chọn Dãy / Sảnh
+                                        </label>
+                                        <button onClick={() => setSelectionStep('warehouse')} className="text-[9px] font-bold text-zinc-400 uppercase tracking-tighter decoration-emerald-500/30 underline underline-offset-4">&larr; Kho khác</button>
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto pr-1">
+                                        {aisles.length > 0 ? aisles.map(z => (
+                                            <button
+                                                key={z.id}
+                                                onClick={() => {
+                                                    setSelectedAisleId(z.id)
+                                                    setSelectedSlotId(null)
+                                                    setSelectedTierId(null)
+                                                    setSelectedZoneId(z.id)
+                                                    setSelectionStep('slot')
+                                                }}
+                                                className={`flex items-center justify-between p-4 rounded-2xl text-[13px] font-bold transition-all border-2 ${selectedAisleId === z.id ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-500'}`}
+                                            >
+                                                <span>{z.name}</span>
+                                                <CheckCircle2 size={16} className={selectedAisleId === z.id ? "text-emerald-500" : "text-zinc-100 dark:text-zinc-800"} />
+                                            </button>
+                                        )) : (
+                                            <div className="p-8 text-center bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border-2 border-dashed border-zinc-200 dark:border-zinc-700">
+                                                <p className="text-xs text-zinc-400 font-bold uppercase tracking-wider">Không có dữ liệu dãy</p>
+                                                <button onClick={() => setSelectionStep('warehouse')} className="mt-2 text-[10px] text-emerald-600 font-black decoration-none">QUAY LẠI CHỌN KHO &rarr;</button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {selectionStep === 'slot' && (
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest ml-1 flex items-center gap-2">
+                                            <div className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[8px]">3</div>
+                                            Chọn Ô (Ô gộp)
+                                        </label>
+                                        <button onClick={() => setSelectionStep('aisle')} className="text-[9px] font-bold text-zinc-400 uppercase tracking-tighter decoration-emerald-500/30 underline underline-offset-4">&larr; Dãy khác</button>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-1">
+                                        {slots.length > 0 ? slots.map(z => {
+                                            const displayName = z.name.match(/^\d+$/) ? `Ô ${z.name}` : z.name
+                                            return (
+                                                <button
+                                                    key={z.id}
+                                                    onClick={() => {
+                                                        setSelectedSlotId(z.id)
+                                                        setSelectedTierId(null)
+                                                        setSelectedZoneId(z.id)
+                                                        if (activeZones.some(az => az.parent_id === z.id)) {
+                                                            setSelectionStep('tier')
+                                                        }
+                                                    }}
+                                                    className={`flex items-center justify-between p-4 rounded-2xl text-[13px] font-bold transition-all border-2 ${selectedSlotId === z.id ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm shadow-emerald-200' : 'bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-500'}`}
+                                                >
+                                                    <span className="truncate">{displayName}</span>
+                                                    <CheckCircle2 size={16} className={selectedSlotId === z.id ? "text-emerald-500" : "text-zinc-100 dark:text-zinc-800"} />
+                                                </button>
+                                            )
+                                        }) : (
+                                            <div className="col-span-2 p-8 text-center bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border-2 border-dashed border-zinc-200 dark:border-zinc-700">
+                                                <p className="text-xs text-zinc-400 font-bold uppercase tracking-wider">Không có dữ liệu ô</p>
+                                                <button onClick={() => setSelectionStep('aisle')} className="mt-2 text-[10px] text-emerald-600 font-black decoration-none">QUAY LẠI CHỌN DÃY &rarr;</button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {selectionStep === 'tier' && (
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest ml-1 flex items-center gap-2">
+                                            <div className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[8px]">4</div>
+                                            Chọn Tầng (Tier)
+                                        </label>
+                                        <button onClick={() => setSelectionStep('slot')} className="text-[9px] font-bold text-zinc-400 uppercase tracking-tighter decoration-emerald-500/30 underline underline-offset-4">&larr; Ô khác</button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 max-h-[200px] overflow-y-auto pr-1">
+                                        {tiers.length > 0 ? tiers.map(z => {
+                                            const displayName = z.name.match(/^\d+$/) ? `Tầng ${z.name}` : z.name
+                                            return (
+                                                <button
+                                                    key={z.id}
+                                                    onClick={() => {
+                                                        setSelectedTierId(z.id)
+                                                        setSelectedZoneId(z.id)
+                                                    }}
+                                                    className={`px-6 py-4 rounded-2xl text-[13px] font-black transition-all border-2 flex items-center gap-3 ${selectedTierId === z.id ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-500/30 font-black' : 'bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-500'}`}
+                                                >
+                                                    {displayName}
+                                                    {selectedTierId === z.id && <CheckCircle2 size={16} />}
+                                                </button>
+                                            )
+                                        }) : (
+                                            <div className="w-full p-8 text-center bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border-2 border-dashed border-zinc-200 dark:border-zinc-700">
+                                                <p className="text-xs text-zinc-400 font-bold uppercase tracking-wider">Ô này không có phân tầng</p>
+                                                <button onClick={() => setSelectionStep('slot')} className="mt-2 text-[10px] text-emerald-600 font-black decoration-none">QUAY LẠI CHỌN Ô &rarr;</button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="pt-2">
+                            <button
+                                onClick={suggestNextPosition}
+                                disabled={!selectedZoneId || loading || isDownloading}
+                                className={`w-full py-5 rounded-3xl flex items-center justify-center gap-3 text-sm font-black transition-all transform active:scale-95 shadow-xl ${!selectedZoneId || loading || isDownloading ? 'bg-zinc-100 text-zinc-300 border-zinc-200' : 'bg-zinc-900 border-zinc-800 text-white hover:bg-zinc-800'}`}
+                            >
+                                <PlayCircle size={20} className={!selectedZoneId || loading ? 'text-zinc-300' : 'text-emerald-400'} />
+                                <span>BẮT ĐẦU GÁN VỊ TRÍ</span>
+                            </button>
+                            {!selectedZoneId && (
+                                <p className="text-[9px] text-zinc-400 italic text-center mt-3 font-medium uppercase tracking-tight italic">Vui lòng chọn khu vực để bắt đầu</p>
+                            )}
+                        </div>
                     </div>
                 ) : (
                     <div className="space-y-6">

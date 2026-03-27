@@ -66,28 +66,31 @@ export default function MobileWorkTab() {
     }, [useCamera, step])
 
     async function fetchZones() {
-        const { data } = await supabase.from('zones').select('*')
+        if (!currentSystem?.code) return
+        const { data } = await supabase.from('zones').select('*').eq('system_type', currentSystem.code)
         if (data) setZones(data)
     }
 
     async function fetchTasks() {
+        if (!currentSystem?.code) return
         setLoading(true)
         try {
             const { data: tasksData, error } = await supabase
                 .from('export_tasks')
                 .select('*, export_task_items(count)')
+                .eq('system_code', currentSystem.code)
                 .in('status', ['Pending', 'In Progress'])
-                .order('created_at', { ascending: false })
+                .order('created_at', { ascending: false }) as any
             if (error) throw error
 
-            const userIds = Array.from(new Set((tasksData || []).map(t => t.created_by).filter(Boolean)))
+            const userIds = Array.from(new Set((tasksData || []).map((t: any) => t.created_by).filter(Boolean)))
             let userMap: Record<string, string> = {}
             if (userIds.length > 0) {
-                const { data: usersData } = await supabase.from('user_profiles').select('id, full_name').in('id', userIds as string[])
+                const { data: usersData } = await (supabase.from('user_profiles') as any).select('id, full_name').in('id', userIds as string[])
                 if (usersData) usersData.forEach((u: any) => { userMap[u.id] = u.full_name })
             }
 
-            setTasks((tasksData || []).map(t => ({
+            setTasks((tasksData || []).map((t: any) => ({
                 id: t.id, code: t.code, status: t.status, created_at: t.created_at, notes: t.notes,
                 created_by_name: t.created_by ? (userMap[t.created_by] || 'Unknown') : 'Unknown',
                 items_count: t.export_task_items?.[0]?.count || 0
@@ -110,7 +113,7 @@ export default function MobileWorkTab() {
 
             let currentZones = zones
             if (currentZones.length === 0) {
-                const { data: zData } = await supabase.from('zones').select('*')
+                const { data: zData } = await supabase.from('zones').select('*').eq('system_type', currentSystem?.code) as any
                 if (zData) { currentZones = zData; setZones(zData) }
             }
 
@@ -208,10 +211,10 @@ export default function MobileWorkTab() {
             if (availError || !availablePositions?.length) { showToast('Không còn vị trí trống trong Sảnh!', 'error'); setLoading(false); setPaused(false); return }
 
             const targetPositionId = availablePositions[0].position_id as string
-            if (pendingPositionId) { await supabase.from('positions').update({ lot_id: null } as any).eq('id', pendingPositionId) }
-            else { await supabase.from('positions').update({ lot_id: null } as any).eq('lot_id', pendingLotId) }
+            if (pendingPositionId) { await (supabase.from('positions') as any).update({ lot_id: null }).eq('id', pendingPositionId) }
+            else { await (supabase.from('positions') as any).update({ lot_id: null }).eq('lot_id', pendingLotId) }
 
-            const { error: updateError } = await supabase.from('positions').update({ lot_id: pendingLotId } as any).eq('id', targetPositionId)
+            const { error: updateError } = await (supabase.from('positions') as any).update({ lot_id: pendingLotId }).eq('id', targetPositionId)
             if (updateError) throw updateError
 
             const matchingItem = taskItems.find(i => i.id === pendingItemId)

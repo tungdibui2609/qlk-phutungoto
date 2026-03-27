@@ -27,16 +27,17 @@ export default function MobileWarehouseTab() {
     const loadData = useCallback(async () => {
         setLoading(true)
         try {
+            const systemFilter = currentSystem?.code || 'KHO_DONG_LANH'
             const [zonesRes, posRes] = await Promise.all([
-                supabase.from('zones').select('*'),
-                supabase.from('zone_positions').select('zone_id, positions!inner(id, lot_id)')
+                supabase.from('zones').select('*').eq('system_type', systemFilter) as any,
+                supabase.from('zone_positions').select('zone_id, positions!inner(id, lot_id, system_type)').eq('positions.system_type', systemFilter) as any
             ])
             if (zonesRes.data) setZones(zonesRes.data)
             if (posRes.data) setPositions(posRes.data)
 
             // Auto-select first warehouse
             if (zonesRes.data && !selectedWarehouse) {
-                const topLevel = zonesRes.data.filter(z => !z.parent_id)
+                const topLevel = (zonesRes.data as any[]).filter(z => !z.parent_id)
                 if (topLevel.length > 0) setSelectedWarehouse(topLevel[0].id)
             }
         } catch (e: any) {
