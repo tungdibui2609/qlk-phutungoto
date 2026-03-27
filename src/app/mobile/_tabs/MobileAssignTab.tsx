@@ -116,12 +116,19 @@ export default function MobileAssignTab() {
                 .eq('system_type', currentSystem.code)
                 .is('lot_id', null)
 
-            const formattedPositions: LocalPosition[] = (posData || []).map((p: any) => ({
-                id: p.id,
-                code: p.code,
-                lot_id: p.lot_id,
-                zone_ids: p.zone_positions?.map((zp: any) => zp.zone_id) || []
-            }))
+            const formattedPositions: LocalPosition[] = (posData || []).map((p: any) => {
+                const zp = p.zone_positions
+                const zoneIds = Array.isArray(zp) 
+                    ? zp.map((z: any) => z.zone_id) 
+                    : (zp && typeof zp === 'object' && 'zone_id' in zp ? [(zp as any).zone_id] : [])
+                    
+                return {
+                    id: p.id,
+                    code: p.code,
+                    lot_id: p.lot_id,
+                    zone_ids: zoneIds
+                }
+            })
 
             setLocalLots(formattedLots)
             setLocalPositions(formattedPositions)
