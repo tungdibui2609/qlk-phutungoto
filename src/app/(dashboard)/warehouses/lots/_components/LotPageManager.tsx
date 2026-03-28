@@ -16,6 +16,7 @@ import { LotBulkAssignTagModal } from '@/components/warehouse/lots/LotBulkAssign
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
 import Protected from '@/components/auth/Protected'
+import { useUser } from '@/contexts/UserContext'
 
 // Modular Components
 import { useLotManagement, Lot } from '../_hooks/useLotManagement'
@@ -25,6 +26,7 @@ import { LotList } from './LotList'
 import { QrCodeModal } from './QrCodeModal'
 
 export function LotPageManager() {
+    const { hasPermission } = useUser()
     // Logic & Data Hook
     const {
         lots,
@@ -162,7 +164,7 @@ export function LotPageManager() {
                         Sơ đồ vị trí
                     </Link>
 
-                    <Protected permission="warehouse_lot.manage">
+                    {(hasPermission('warehouse_lot.manage') || hasPermission('warehouse_lot.create')) && (
                         <div className="flex items-center gap-2">
                             {positionFilter === 'unassigned' && (
                                 <>
@@ -193,7 +195,7 @@ export function LotPageManager() {
                                 {showCreateForm ? 'Đóng form' : 'Tạo LOT mới'}
                             </button>
                         </div>
-                    </Protected>
+                    )}
                 </div>
             </div>
 
@@ -212,7 +214,7 @@ export function LotPageManager() {
                 branches={branches}
                 existingTags={existingTags}
                 productions={productions}
-                managePermission="warehouse_lot.manage"
+                managePermission={hasPermission('warehouse_lot.manage') || hasPermission('warehouse_lot.create') ? 'warehouse_lot.manage' : undefined}
             />
 
             {/* Filter Bar */}

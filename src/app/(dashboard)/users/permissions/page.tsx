@@ -450,6 +450,7 @@ export default function UserPermissionsPage() {
                                                     <tr className="bg-stone-50 border-b border-stone-200 text-stone-500 text-xs uppercase tracking-wider">
                                                         <th className="px-4 py-3 font-semibold">Chức năng</th>
                                                         <th className="px-4 py-3 font-semibold text-center w-24">Xem</th>
+                                                        <th className="px-4 py-3 font-semibold text-center w-24">Tạo</th>
                                                         <th className="px-4 py-3 font-semibold text-center w-24">Quản lý</th>
                                                         <th className="px-4 py-3 font-semibold text-center w-24">Xét duyệt</th>
                                                     </tr>
@@ -457,7 +458,7 @@ export default function UserPermissionsPage() {
                                                 <tbody className="divide-y divide-stone-100">
                                                     {(() => {
                                                         // Group permissions by feature (e.g., product.view + product.manage -> "Sản phẩm")
-                                                        const featureMap: Record<string, { view?: Permission; manage?: Permission; approve?: Permission; other: Permission[] }> = {}
+                                                        const featureMap: Record<string, { view?: Permission; create?: Permission; manage?: Permission; approve?: Permission; other: Permission[] }> = {}
 
                                                         // HARDCODED TEST ROW
                                                         featureMap['TEST_SYSTEM'] = {
@@ -515,6 +516,8 @@ export default function UserPermissionsPage() {
 
                                                             if (action === 'view') {
                                                                 featureMap[feature].view = perm
+                                                            } else if (action === 'create') {
+                                                                featureMap[feature].create = perm
                                                             } else if (action === 'manage') {
                                                                 featureMap[feature].manage = perm
                                                             } else if (action === 'approve') {
@@ -550,9 +553,10 @@ export default function UserPermissionsPage() {
                                                             outbound: 'Xuất kho (Kế toán)',
                                                         }
 
-                                                        return Object.entries(featureMap).map(([feature, { view, manage, approve, other }]) => {
+                                                        return Object.entries(featureMap).map(([feature, { view, create, manage, approve, other }]) => {
                                                             const displayName = featureNames[feature] || feature
                                                             const viewChecked = view && selectedPermissions.includes(view.code)
+                                                            const createChecked = create && selectedPermissions.includes(create.code)
                                                             const manageChecked = manage && selectedPermissions.includes(manage.code)
                                                             const approveChecked = approve && selectedPermissions.includes(approve.code)
 
@@ -596,6 +600,19 @@ export default function UserPermissionsPage() {
                                                                                 onChange={() => togglePermission(view.code)}
                                                                                 className="w-5 h-5 rounded border-stone-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
                                                                                 title={view.description || view.name}
+                                                                            />
+                                                                        ) : (
+                                                                            <span className="text-stone-300">—</span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-center">
+                                                                        {create ? (
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={createChecked}
+                                                                                onChange={() => togglePermission(create.code)}
+                                                                                className="w-5 h-5 rounded border-stone-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
+                                                                                title={create.description || create.name}
                                                                             />
                                                                         ) : (
                                                                             <span className="text-stone-300">—</span>
