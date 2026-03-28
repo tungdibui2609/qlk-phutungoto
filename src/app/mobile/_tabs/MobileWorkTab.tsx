@@ -112,8 +112,8 @@ export default function MobileWorkTab() {
             if (error) throw error
 
             let currentZones = zones
-            if (currentZones.length === 0) {
-                const { data: zData } = await supabase.from('zones').select('*').eq('system_type', currentSystem?.code) as any
+            if (currentZones.length === 0 && currentSystem?.code) {
+                const { data: zData } = await (supabase.from('zones').select('*').eq('system_type', currentSystem.code) as any)
                 if (zData) { currentZones = zData; setZones(zData) }
             }
 

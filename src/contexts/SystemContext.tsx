@@ -268,7 +268,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
 
   const currentSystem = systems.find(s => s.code === systemType)
 
-  const hasModule = (moduleId: string) => {
+  const hasModule = React.useCallback((moduleId: string) => {
     // 1. Core System Modules: Always Enabled, Hidden from Admin
     const CORE_MODULES = ['inbound_basic', 'inbound_supplier', 'outbound_basic', 'outbound_customer', 'images', 'warehouse_name', 'production_code']
     if (CORE_MODULES.includes(moduleId)) {
@@ -276,19 +276,8 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     }
 
     // 2. Basic Modules (Default):
-    // These are visible in Admin and can be toggled.
-    // They generally should be enabled, but we respect the DB / System Config.
-    // [UPDATED] Use dynamic basicModuleIds instead of change
     const isBasic = basicModuleIds.includes(moduleId)
     if (isBasic) {
-      // Basic modules are implicitly "unlocked" for everyone, 
-      // UNLESS we want to enforce license even for basic (which usually we don't).
-      // The previous check: if (unlockedModules.length > 0 && !unlockedModules.includes(moduleId)) return false;
-      // prevented basic modules from working if the company had ANY unlocked modules but not this specific basic one.
-
-      // If allowed globally (basic), check if this SPECIFIC system has it enabled.
-      // If the system has module configuration (not null/empty), we respect it.
-      // If the system is new (no config), we default to TRUE for basic modules.
       if (currentSystem && currentSystem.modules) {
         // Re-use logic below for checking system modules
       } else {
@@ -297,11 +286,9 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     }
 
     // 2. Advanced modules check: Must be configured for current system
-    // We trust that if it's in the system config, it's allowed.
     if (!currentSystem) return false
 
     // Look in all possible module buckets
-    // Handle both Array and NULL cases
     const getArr = (val: any) => Array.isArray(val) ? val : []
 
     const rawModules = currentSystem.modules
@@ -316,14 +303,11 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     const dashboardModules = getArr(currentSystem.dashboard_modules)
     const lotModules = getArr(currentSystem.lot_modules)
 
-    // Utility modules check (legacy and new structure)
     const legacyModules = currentSystem.modules && !Array.isArray(currentSystem.modules) ? currentSystem.modules as any : {}
     const utilityModules = Array.isArray(legacyModules?.utility_modules) ? legacyModules.utility_modules : []
 
     // 3. Strict check for new column types
     if (moduleId.startsWith('inbound_') && moduleId !== 'inbound_date') {
-      // Enforce Company License Check (unless it's a Core Module, which is handled above)
-      // [FIX] Allow basic modules to bypass license check
       if (!isBasic && !unlockedModules.includes(moduleId)) return false
       return inboundModules.includes(moduleId)
     }
@@ -332,8 +316,6 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       return outboundModules.includes(moduleId)
     }
 
-    // Enforce License Check for other modules (Product, Dashboard, Lot, Utility etc.)
-    // If not unlocked by Admin, it should not be active even if enabled in System Config.
     if (!isBasic && !unlockedModules.includes(moduleId)) return false
 
     return productModules.includes(moduleId) ||
@@ -341,9 +323,9 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       lotModules.includes(moduleId) ||
       utilityModules.includes(moduleId) ||
       !!legacyModules?.[moduleId]
-  }
+  }, [currentSystem, unlockedModules, basicModuleIds])
 
-  const value = {
+  const value = React.useMemo(() => ({
     systemType,
     setSystemType,
     systems,
@@ -351,7 +333,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     unlockedModules,
     hasModule,
     refreshSystems: fetchSystems
-  }
+  }), [systemType, systems, currentSystem, unlockedModules, hasModule])
 
   return (
     <SystemContext.Provider value={value}>
