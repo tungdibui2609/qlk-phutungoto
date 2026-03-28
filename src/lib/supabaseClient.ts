@@ -680,6 +680,7 @@ type ProductionsTable = {
         end_date: string | null
         customer_id: string | null
         target_system_code: string | null
+        production_type: 'NEW' | 'RE_SORT' | null
         created_at: string
         updated_at: string
     }
@@ -694,6 +695,7 @@ type ProductionsTable = {
         end_date?: string | null
         customer_id?: string | null
         target_system_code?: string | null
+        production_type?: 'NEW' | 'RE_SORT' | null
         created_at?: string
         updated_at?: string
     }
@@ -708,8 +710,49 @@ type ProductionsTable = {
         end_date?: string | null
         customer_id?: string | null
         target_system_code?: string | null
+        production_type?: 'NEW' | 'RE_SORT' | null
         created_at?: string
         updated_at?: string
+    }
+    Relationships: []
+}
+
+type ProductionInputsTable = {
+    Row: {
+        id: string
+        production_id: string
+        lot_id: string | null
+        lot_item_id: string | null
+        product_id: string
+        quantity: number
+        unit: string | null
+        weight_kg: number | null
+        system_code: string | null
+        created_at: string
+    }
+    Insert: {
+        id?: string
+        production_id: string
+        lot_id?: string | null
+        lot_item_id?: string | null
+        product_id: string
+        quantity: number
+        unit?: string | null
+        weight_kg?: number | null
+        system_code?: string | null
+        created_at?: string
+    }
+    Update: {
+        id?: string
+        production_id?: string
+        lot_id?: string | null
+        lot_item_id?: string | null
+        product_id?: string
+        quantity?: number
+        unit?: string | null
+        weight_kg?: number | null
+        system_code?: string | null
+        created_at?: string
     }
     Relationships: []
 }
@@ -858,6 +901,7 @@ type TypedTables = Database['public']['Tables'] & {
     production_code_levels: ProductionCodeLevelsTable
     productions: ProductionsTable
     production_lots: ProductionLotsTable
+    production_inputs: ProductionInputsTable
 }
 
 // Manually extend the Database type

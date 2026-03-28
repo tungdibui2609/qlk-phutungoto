@@ -33,7 +33,7 @@ interface ProductionModalProps {
 export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, readOnly = false }: ProductionModalProps) {
     const { showToast, showConfirm } = useToast()
     const { profile } = useUser()
-    const { systems } = useSystem()
+    const { systems, currentSystem } = useSystem()
     const [isSaving, setIsSaving] = useState(false)
 
     // Helper to extract weight from name pattern like "(10 Kg)"
@@ -102,6 +102,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const [status, setStatus] = useState('IN_PROGRESS')
     const [startDate, setStartDate] = useState('')
     const [endDate, setEndDate] = useState('')
+    const [productionType, setProductionType] = useState<'NEW' | 'RE_SORT'>('NEW')
     
     // Global Filter for products (Warehouse focus)
     const [targetSystemCode, setTargetSystemCode] = useState('')
@@ -110,6 +111,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     // Dynamic Product & Lot Lines
     const [lots, setLots] = useState<ProductionLot[]>([])
     const [allocations, setAllocations] = useState<any[]>([])
+    const [productionInputs, setProductionInputs] = useState<any[]>([])
     const [loadingAllocations, setLoadingAllocations] = useState(false)
     const [activeTab, setActiveTab] = useState<'products' | 'allocations' | 'analysis'>('products')
 
@@ -146,14 +148,25 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             planned += (l.planned_quantity || 0) * (l.weight_per_unit || 1)
             actual += l.actual_quantity || 0
         })
+        
+        let totalInputWeight = 0
+        if (productionType === 'NEW') {
+            totalInputWeight = inputQuantity * (extractWeight(inputProductName) || 1)
+        } else {
+            totalInputWeight = productionInputs.reduce((sum, inp) => sum + (inp.weight_kg || 0), 0)
+        }
+
         const rate = planned > 0 ? (actual / planned) * 100 : 0
-        return { planned, actual, rate }
-    }, [lots])
+        const lossWeight = totalInputWeight > 0 ? Math.max(0, totalInputWeight - actual) : 0
+        const lossRate = totalInputWeight > 0 ? (lossWeight / totalInputWeight) * 100 : 0
+
+        return { planned, actual, rate, totalInputWeight, lossWeight, lossRate }
+    }, [lots, productionType, inputQuantity, inputProductName, productionInputs])
 
     const analysisSummary = useMemo(() => {
         if (!readOnly || !editItem) return null;
         
-        // 1. Material aggregation
+        // 1. Material aggregation (Production Loans)
         const materialStats: Record<string, { name: string, sku: string, total: number, unit: string }> = {};
         allocations.forEach(aln => {
             const pid = aln.product_id;
@@ -170,14 +183,35 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             materialStats[pid].total += consumed;
         });
 
-        // 2. Consumption per Ton
+        // 2. Input Material aggregation for RE_SORT (Production Inputs)
+        const inputStats: any[] = [];
+        if (productionType === 'RE_SORT') {
+            const agg: Record<string, any> = {};
+            productionInputs.forEach(inp => {
+                const pid = inp.product_id;
+                if (!agg[pid]) {
+                    agg[pid] = {
+                        name: inp.products?.name || 'Sản phẩm đầu vào',
+                        sku: inp.products?.sku || '---',
+                        totalWeight: 0,
+                        unit: 'Kg',
+                        lotCount: 0
+                    };
+                }
+                agg[pid].totalWeight += inp.weight_kg || 0;
+                agg[pid].lotCount += 1;
+            });
+            inputStats.push(...Object.values(agg));
+        }
+
+        // 3. Consumption per Ton
         const actualTons = summary.actual / 1000;
         const materials = Object.values(materialStats).map(m => ({
             ...m,
             perTon: actualTons > 0 ? (m.total / actualTons) : 0
         }));
 
-        // 3. Time Progress
+        // 4. Time Progress
         let timeProgress = 0;
         if (startDate && endDate) {
             const start = new Date(startDate).getTime();
@@ -188,8 +222,8 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             }
         }
 
-        return { materials, timeProgress, actualTons };
-    }, [allocations, summary.actual, startDate, endDate, readOnly, editItem])
+        return { materials, timeProgress, actualTons, inputStats };
+    }, [readOnly, editItem, allocations, summary.actual, startDate, endDate, productionType, productionInputs])
 
     useEffect(() => {
         if (editItem) {
@@ -202,6 +236,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             
             setTargetSystemCode(editItem.target_system_code || '')
             setCustomerId(editItem.customer_id || '')
+            setProductionType(editItem.production_type || 'NEW')
             
             // Raw Material
             setInputSource(editItem.fresh_material_batch_id ? 'FRESH_MATERIAL' : 'MANUAL')
@@ -216,6 +251,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             
             // Fetch production lots if editing (now includes product details)
             fetchProductionLots(editItem.id)
+            if (editItem.production_type === 'RE_SORT' || editItem.id) {
+                fetchProductionInputs(editItem.id)
+            }
             if (readOnly) {
                 fetchAllocations(editItem.id)
             }
@@ -226,10 +264,12 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             setStatus('IN_PROGRESS')
             setStartDate('')
             setEndDate('')
-            setTargetSystemCode('')
+            setTargetSystemCode(currentSystem?.code || '')
             setCustomerId('')
+            setProductionType('NEW')
             setLots([])
             setAllocations([])
+            setProductionInputs([])
             setActiveTab('products')
             setRowSearchTerms({})
             
@@ -463,6 +503,21 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
         }
     }
 
+    const fetchProductionInputs = async (prodId: string) => {
+        try {
+            const { data, error } = await supabase
+                .from('production_inputs')
+                .select('*, products(name, sku, unit)')
+                .eq('production_id', prodId)
+            
+            if (error) throw error
+            setProductionInputs(data || [])
+        } catch (err: any) {
+            console.error('Fetch production inputs error:', err)
+        }
+    }
+
+
     const generateAutoCode = () => {
         const now = new Date()
         const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '')
@@ -498,10 +553,13 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             ? [{ factor: defaultWeight, unit_name: `Thùng (${defaultWeight}kg)`, ref_unit_name: defaultUnit }] 
             : []
 
+        const suggestedLotCode = newLots[index].lot_code || (code ? `${code}-L${index + 1}` : `LOT-${Date.now().toString().slice(-4)}-${index + 1}`)
+
         newLots[index] = { 
             ...newLots[index], 
             product_id: product.id, 
             product_name: product.name,
+            lot_code: suggestedLotCode, // Auto-fill lot code
             unit: defaultUnit,
             weight_per_unit: defaultWeight,
             conversion_rules: initialRules
@@ -516,6 +574,13 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!profile?.company_id) return
+
+        // Check if any product is selected but LOT code is missing
+        const incompleteLots = lots.filter(l => l.product_id && !l.lot_code.trim())
+        if (incompleteLots.length > 0) {
+            showToast(`Sản phẩm "${incompleteLots[0].product_name}" chưa có mã LOT. Vui lòng nhập để lưu.`, 'error')
+            return
+        }
 
         if (!lots.length) {
             showToast('Lệnh sản xuất phải có ít nhất một sản phẩm và mã lot', 'error')
@@ -547,6 +612,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                 input_product_id: inputProductId || null,
                 input_quantity: inputQuantity || 0,
                 input_unit: inputUnit || null,
+                production_type: productionType,
                 updated_at: new Date().toISOString()
             }
 
@@ -629,7 +695,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-stone-50/30 dark:bg-zinc-900">
                     {/* Raw Material Info Summary Bar (If filled) */}
-                    {(inputProductId || inputQuantity > 0) && (
+                    {(productionType === 'NEW' ? (inputProductId || inputQuantity > 0) : summary.totalInputWeight > 0) && (
                         <div className="flex items-center gap-6 p-6 bg-emerald-500/5 dark:bg-emerald-500/10 rounded-[28px] border border-emerald-200/50 dark:border-emerald-900/20 animate-in slide-in-from-top-4">
                             <div className="p-3 bg-emerald-600 text-white rounded-2xl shadow-lg shadow-emerald-600/20">
                                 <Scale size={20} />
@@ -638,24 +704,27 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                 <div>
                                     <label className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-1 block">Nguyên liệu tổng</label>
                                     <div className="text-lg font-black text-stone-900 dark:text-white flex items-baseline gap-2">
-                                        {Number(inputQuantity).toLocaleString('vi-VN')}
-                                        <span className="text-xs font-bold text-stone-400 uppercase">{inputUnit || 'Đơn vị'}</span>
+                                        {formatQuantityFull(summary.totalInputWeight)}
+                                        <span className="text-xs font-bold text-stone-400 uppercase">Kg</span>
                                     </div>
                                 </div>
                                 <div className="h-10 w-px bg-emerald-100 dark:bg-emerald-900/50 hidden md:block" />
                                 <div>
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-1 block">Tên nguyên liệu</label>
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-1 block">
+                                        {productionType === 'NEW' ? 'Tên nguyên liệu' : 'Số mã LOT đầu vào'}
+                                    </label>
                                     <div className="text-sm font-bold text-stone-600 dark:text-stone-300">
-                                        {inputProductName || '---'}
+                                        {productionType === 'NEW' ? (inputProductName || '---') : `${productionInputs.length} mã LOT`}
                                     </div>
                                 </div>
-                                {summary.actual > 0 && inputQuantity > 0 && (
+                                {summary.actual > 0 && summary.totalInputWeight > 0 && (
                                     <>
                                         <div className="h-10 w-px bg-emerald-100 dark:bg-emerald-900/50 hidden md:block" />
                                         <div>
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-1 block">Tỉ lệ thành phẩm/nguyên liệu</label>
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-1 block">Hao hụt sản xuất</label>
                                             <div className="text-sm font-black text-orange-600 flex items-center gap-1">
-                                                {((summary.actual / (inputQuantity * (extractWeight(inputProductName) || 1))) * 100).toFixed(1)}%
+                                                {formatQuantityFull(summary.lossWeight)} Kg
+                                                <span className="text-[10px] opacity-60">({summary.lossRate.toFixed(1)}%)</span>
                                                 <TrendingUp size={14} />
                                             </div>
                                         </div>
@@ -698,8 +767,28 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                             <div className="lg:col-span-2 space-y-6">
                                 <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm space-y-6">
-                                    <div className="flex items-center gap-2 text-stone-400 font-black text-[10px] uppercase tracking-widest">
-                                        <Info size={14} className="text-orange-500" /> Thông tin cơ bản
+                                    <div className="flex items-center justify-between text-stone-400 font-black text-[10px] uppercase tracking-widest">
+                                        <div className="flex items-center gap-2">
+                                            <Info size={14} className="text-orange-500" /> Thông tin cơ bản
+                                        </div>
+                                        {!readOnly && (
+                                            <div className="flex bg-stone-100 dark:bg-zinc-800 p-1 rounded-xl">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setProductionType('NEW')}
+                                                    className={`px-4 py-1.5 rounded-lg text-[10px] font-bold transition-all ${productionType === 'NEW' ? 'bg-white dark:bg-zinc-700 text-stone-900 dark:text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                                                >
+                                                    Sản xuất mới
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setProductionType('RE_SORT')}
+                                                    className={`px-4 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 ${productionType === 'RE_SORT' ? 'bg-orange-500 text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                                                >
+                                                    Phân loại / Lựa lại
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                     
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1067,21 +1156,21 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                         </div>
                                     </div>
 
-                                    {/* Material Analysis */}
+                                    {/* Material Analysis (Production Loans) */}
                                     <div className="p-8 bg-black/5 dark:bg-white/5 rounded-[32px] border border-stone-200 dark:border-zinc-800">
                                         <div className="flex items-center gap-3 mb-6">
                                             <div className="p-3 bg-white dark:bg-zinc-800 rounded-2xl shadow-sm text-emerald-600">
                                                 <TrendingUp size={24} />
                                             </div>
                                             <div>
-                                                <h3 className="font-black text-stone-900 dark:text-white uppercase tracking-widest text-sm">Phân tích tỉ lệ tiêu hao</h3>
-                                                <p className="text-xs text-stone-500 font-bold italic">Dựa trên {analysisSummary.actualTons.toFixed(2)} tấn thành phẩm thực tế</p>
+                                                <h3 className="font-black text-stone-900 dark:text-white uppercase tracking-widest text-sm">Phân tích tỉ lệ tiêu hao Vật tư</h3>
+                                                <p className="text-xs text-stone-500 font-bold italic">Dựa trên {analysisSummary?.actualTons.toFixed(2)} tấn thành phẩm thực tế</p>
                                             </div>
                                         </div>
 
-                                        {analysisSummary.materials.length === 0 ? (
+                                        {!analysisSummary || analysisSummary.materials.length === 0 ? (
                                             <div className="p-12 text-center text-stone-400 font-bold bg-white/50 dark:bg-zinc-900/50 rounded-2xl border border-dashed border-stone-300 dark:border-zinc-700">
-                                                Chưa có dữ liệu cấp phát để phân tích.
+                                                Chưa có dữ liệu cấp phát vật tư để phân tích.
                                             </div>
                                         ) : (
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1114,6 +1203,60 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                             </div>
                                         )}
                                     </div>
+
+                                    {/* Raw Material Input Analysis (Only for RE_SORT) */}
+                                    {productionType === 'RE_SORT' && analysisSummary && (
+                                        <div className="p-8 bg-orange-500/5 dark:bg-orange-500/10 rounded-[32px] border border-orange-200 dark:border-orange-900/20">
+                                            <div className="flex items-center gap-3 mb-6">
+                                                <div className="p-3 bg-white dark:bg-zinc-800 rounded-2xl shadow-sm text-orange-600">
+                                                    <Warehouse size={24} />
+                                                </div>
+                                                <div>
+                                                    <h3 className="font-black text-stone-900 dark:text-white uppercase tracking-widest text-sm">Phân tích nguyên liệu đầu vào (Từ Kho)</h3>
+                                                    <p className="text-xs text-stone-500 font-bold italic">Tổng cộng {formatQuantityFull(summary.totalInputWeight)} Kg nguyên liệu</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                {(analysisSummary.inputStats || []).map((s: any, idx: number) => (
+                                                    <div key={idx} className="bg-white dark:bg-zinc-800 p-6 rounded-2xl border border-stone-100 dark:border-zinc-700 shadow-sm flex flex-col gap-3 relative overflow-hidden group">
+                                                        <div className="flex flex-col">
+                                                            <span className="text-[10px] font-black text-stone-400 uppercase tracking-tighter truncate">{s.name}</span>
+                                                            <div className="flex items-center justify-between mt-1">
+                                                                <span className="text-[14px] font-black text-stone-800 dark:text-gray-100">
+                                                                    {formatQuantityFull(s.totalWeight)} Kg
+                                                                </span>
+                                                                <span className="text-[10px] bg-orange-100/50 dark:bg-orange-950/30 text-orange-600 px-2 py-0.5 rounded-lg font-bold">
+                                                                    {s.lotCount} LOT
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        <div className="h-px bg-stone-50 dark:bg-zinc-800 w-full" />
+                                                        
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-[10px] font-black text-stone-400 uppercase">Tỉ lệ so với thành phẩm</span>
+                                                            <span className="text-sm font-black text-stone-800 dark:text-white">
+                                                                {summary.actual > 0 ? ((s.totalWeight / summary.actual) * 100).toFixed(1) : 0}%
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+
+                                                {/* Summary Card for RE_SORT */}
+                                                <div className="bg-gradient-to-br from-orange-600 to-orange-700 p-6 rounded-2xl shadow-lg text-white flex flex-col justify-between relative overflow-hidden">
+                                                    <div className="absolute -right-4 -bottom-4 opacity-10">
+                                                        <Scale size={86} />
+                                                    </div>
+                                                    <span className="text-[10px] font-black uppercase tracking-widest opacity-80">Hao hụt sản xuất</span>
+                                                    <div className="mt-2">
+                                                        <div className="text-2xl font-black">{formatQuantityFull(summary.lossWeight)} Kg</div>
+                                                        <div className="text-xs font-bold opacity-80">Tương đương {summary.lossRate.toFixed(1)}%</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             ) : readOnly && activeTab === 'allocations' ? (
                                 <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-300">

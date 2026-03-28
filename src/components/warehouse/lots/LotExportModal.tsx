@@ -35,6 +35,10 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
     const [description, setDescription] = useState('')
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [productionOrders, setProductionOrders] = useState<any[]>([])
+    const [selectedProductionId, setSelectedProductionId] = useState<string | null>(null)
+    const [productionSearch, setProductionSearch] = useState('')
+    const [showProductionSuggestions, setShowProductionSuggestions] = useState(false)
     const [exportAll, setExportAll] = useState<Record<string, boolean>>({})
     const [autoExportAll, setAutoExportAll] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -87,9 +91,20 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
             setExportAll(allExportAll)
             setExportQuantities(maxQuantities)
         }
-
         fetchCustomers()
+        fetchProductions()
     }, [lot, systemType, units, productUnits])
+
+    async function fetchProductions() {
+        if (!currentSystem) return
+        const { data } = await supabase
+            .from('productions')
+            .select('id, code, name')
+            .eq('target_system_code', currentSystem?.code)
+            .in('status', ['IN_PROGRESS', 'PLANNED'])
+            .order('created_at', { ascending: false })
+        if (data) setProductionOrders(data)
+    }
 
     async function fetchCustomers() {
         if (!systemType) return
@@ -181,11 +196,6 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
             setError('Vui lòng nhập số lượng muốn xuất cho ít nhất 1 sản phẩm')
             return
         }
-        // Customer name is optional now
-        /* if (!customerName.trim()) {
-            setError('Vui lòng nhập tên khách hàng')
-            return
-        } */
 
         setLoading(true)
         setError(null)
@@ -193,13 +203,17 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
         try {
             // Process Items & Update LOT
             const exportItemsData: Record<string, any> = {}
+            const productionInputs: any[] = []
 
             for (const item of lot.lot_items || []) {
                 const selectedQty = exportQuantities[item.id] || 0
                 const selectedUnit = exportUnits[item.id] || item.unit || item.products?.unit || ''
 
                 const consumedQty = getConsumedOriginalQty(item.id, selectedQty, selectedUnit)
-                // const remainingQty = (item.quantity || 0) - consumedQty // Not used locally
+                
+                // Calculate Weight in KG for production analysis
+                const baseUnit = item.products?.unit || ''
+                const weightKg = toBaseAmount(item.product_id, selectedUnit, selectedQty, baseUnit)
 
                 if (selectedQty > 0) {
                     // 1. Track for history buffer
@@ -209,10 +223,25 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                         product_name: item.products?.name,
                         exported_quantity: selectedQty,
                         unit: selectedUnit,
-                        cost_price: item.products?.cost_price || 0
+                        cost_price: item.products?.cost_price || 0,
+                        production_id: selectedProductionId
                     }
 
-                    // 2. Process Auto-Split logic via lotService
+                    // 2. Prepare Production Inputs if linked
+                    if (selectedProductionId) {
+                        productionInputs.push({
+                            production_id: selectedProductionId,
+                            lot_id: lot.id,
+                            lot_item_id: item.id,
+                            product_id: item.product_id,
+                            quantity: selectedQty,
+                            unit: selectedUnit,
+                            weight_kg: weightKg,
+                            system_code: currentSystem
+                        })
+                    }
+
+                    // 3. Process Auto-Split logic via lotService
                     await lotService.processItemAutoSplit({
                         supabase,
                         lotId: lot.id,
@@ -223,6 +252,12 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                         preferredUnit: selectedUnit // Pass the unit user selected
                     })
                 }
+            }
+
+            // Save Production Inputs
+            if (productionInputs.length > 0) {
+                const { error: piError } = await (supabase as any).from('production_inputs').insert(productionInputs)
+                if (piError) throw piError
             }
 
             // 3. Calculate Final Total Remaining Qty from DB to be 100% accurate
@@ -510,45 +545,103 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
 
                     {/* Customer & Info - Moved below product selection */}
                     <div className="mt-6 space-y-4">
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-slate-400 uppercase ml-1 flex items-center gap-1.5">
-                                <User size={12} />
-                                Khách hàng / Nơi nhận
-                            </label>
-                            <div className="relative">
-                                <input
-                                    type="text"
-                                    value={customerName}
-                                    onChange={(e) => handleCustomerChange(e.target.value)}
-                                    onClick={handleCustomerFocus}
-                                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                                    onFocus={handleCustomerFocus}
-                                    className="w-full p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium"
-                                    placeholder="Nhập tên khách hàng hoặc bộ phận nhận..."
-                                />
-
-                                {showSuggestions && suggestions.length > 0 && (
-                                    <div className="absolute z-50 left-0 right-0 top-full mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-                                        <div className="p-2">
-                                            {suggestions.map((customer) => (
-                                                <button
-                                                    key={customer.id}
-                                                    type="button"
-                                                    onClick={() => selectCustomer(customer)}
-                                                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors group"
-                                                >
-                                                    <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                                                        <User size={16} />
-                                                    </div>
-                                                    <div>
-                                                        <div className="font-bold text-slate-900 dark:text-slate-100">{customer.name}</div>
-                                                        {customer.phone && <div className="text-[10px] text-slate-500">{customer.phone}</div>}
-                                                    </div>
-                                                </button>
-                                            ))}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-400 uppercase ml-1 flex items-center gap-1.5">
+                                    <ArrowUpRight size={12} className="text-orange-500" />
+                                    Lệnh sản xuất liên kết
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        value={productionSearch}
+                                        onChange={(e) => {
+                                            setProductionSearch(e.target.value)
+                                            setShowProductionSuggestions(true)
+                                            if (!e.target.value) setSelectedProductionId(null)
+                                        }}
+                                        onFocus={() => setShowProductionSuggestions(true)}
+                                        onBlur={() => setTimeout(() => setShowProductionSuggestions(false), 200)}
+                                        className="w-full p-3 rounded-2xl bg-orange-50/50 dark:bg-orange-900/10 border border-orange-200/50 dark:border-orange-800/30 focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all font-medium text-sm placeholder:text-orange-900/30 dark:placeholder:text-orange-400/30"
+                                        placeholder="Chọn lệnh sản xuất (nếu có)..."
+                                    />
+                                    {showProductionSuggestions && (
+                                        <div className="absolute z-50 left-0 right-0 top-full mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl max-h-60 overflow-y-auto w-[120%] -left-[10%] backdrop-blur-xl">
+                                            <div className="p-2">
+                                                {productionOrders.filter(p => 
+                                                    p.code.toLowerCase().includes(productionSearch.toLowerCase()) || 
+                                                    p.name.toLowerCase().includes(productionSearch.toLowerCase())
+                                                ).map((p) => (
+                                                    <button
+                                                        key={p.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelectedProductionId(p.id)
+                                                            setProductionSearch(`${p.code} - ${p.name}`)
+                                                            setShowProductionSuggestions(false)
+                                                            // Optional: Set description to "Xuất sản xuất"
+                                                            if (!description) setDescription('Xuất sản xuất')
+                                                        }}
+                                                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-colors group ${selectedProductionId === p.id ? 'bg-orange-500 text-white' : 'hover:bg-orange-50 dark:hover:bg-orange-900/20'}`}
+                                                    >
+                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${selectedProductionId === p.id ? 'bg-white/20' : 'bg-orange-100 dark:bg-orange-900/30 text-orange-600'}`}>
+                                                            <FileText size={16} />
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className={`font-bold truncate ${selectedProductionId === p.id ? 'text-white' : 'text-slate-900 dark:text-slate-100'}`}>{p.code}</div>
+                                                            <div className={`text-[10px] truncate ${selectedProductionId === p.id ? 'text-orange-100' : 'text-slate-500'}`}>{p.name}</div>
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                                {productionOrders.length === 0 && (
+                                                    <div className="p-4 text-center text-xs text-slate-400">Không có lệnh sản xuất nào đang chạy</div>
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
-                                )}
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-400 uppercase ml-1 flex items-center gap-1.5">
+                                    <User size={12} />
+                                    Khách hàng / Nơi nhận
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        value={customerName}
+                                        onChange={(e) => handleCustomerChange(e.target.value)}
+                                        onClick={handleCustomerFocus}
+                                        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                                        onFocus={handleCustomerFocus}
+                                        className="w-full p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium text-sm"
+                                        placeholder="Nhập tên khách hàng..."
+                                    />
+
+                                    {showSuggestions && suggestions.length > 0 && (
+                                        <div className="absolute z-50 left-0 right-0 top-full mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl max-h-60 overflow-y-auto backdrop-blur-xl">
+                                            <div className="p-2">
+                                                {suggestions.map((customer) => (
+                                                    <button
+                                                        key={customer.id}
+                                                        type="button"
+                                                        onClick={() => selectCustomer(customer)}
+                                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors group"
+                                                    >
+                                                        <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                                                            <User size={16} />
+                                                        </div>
+                                                        <div>
+                                                            <div className="font-bold text-slate-900 dark:text-slate-100">{customer.name}</div>
+                                                            {customer.phone && <div className="text-[10px] text-slate-500">{customer.phone}</div>}
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                         <div className="space-y-1.5">
