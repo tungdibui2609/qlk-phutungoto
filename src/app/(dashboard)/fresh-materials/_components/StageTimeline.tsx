@@ -187,6 +187,8 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
     const handleUploadDocument = async (stageId: string, companyName: string, warehouseName: string) => {
         const input = document.createElement('input')
         input.type = 'file'
+        input.accept = "image/*,application/pdf"
+        input.setAttribute('capture', 'environment')
         input.multiple = true
         input.onchange = async (e: any) => {
             const files = e.target.files
@@ -207,7 +209,8 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
 
                     const res = await fetch('/api/google-drive-upload', {
                         method: 'POST',
-                        body: formData
+                        body: formData,
+                        keepalive: true
                     })
                     const data = await res.json()
 
@@ -263,6 +266,8 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
     const handleUploadBatchDocument = async (batchId: string, companyName: string, warehouseName: string) => {
         const input = document.createElement('input')
         input.type = 'file'
+        input.accept = "image/*,application/pdf"
+        input.setAttribute('capture', 'environment')
         input.multiple = true
         input.onchange = async (e: any) => {
             const files = e.target.files
@@ -282,7 +287,8 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
 
                     const res = await fetch('/api/google-drive-upload', {
                         method: 'POST',
-                        body: formData
+                        body: formData,
+                        keepalive: true
                     })
                     const data = await res.json()
 
@@ -583,7 +589,7 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
                                                             disabled={!!isUploading}
                                                             onClick={(e) => { 
                                                                 e.stopPropagation(); 
-                                                                handleUploadDocument(stage.id, batch.companies?.name || 'Công ty', batch.system_code) 
+                                                                handleUploadDocument(stage.id, (profile as any)?.companies?.name || 'Công ty', batch.system_code) 
                                                             }}
                                                             className="p-1 px-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 text-[9px] font-bold hover:bg-blue-100 transition-all flex items-center gap-1"
                                                         >
