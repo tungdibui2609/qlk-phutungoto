@@ -25,6 +25,7 @@ export default function StageModal({ isOpen, onClose, onSuccess, batchId, editIt
     const [inputQuantity, setInputQuantity] = useState(0)
     const [inputUnit, setInputUnit] = useState('Kg')
     const [notes, setNotes] = useState('')
+    const [isProductionLink, setIsProductionLink] = useState(false)
 
     useEffect(() => {
         if (editItem) {
@@ -33,12 +34,14 @@ export default function StageModal({ isOpen, onClose, onSuccess, batchId, editIt
             setInputQuantity(editItem.input_quantity || 0)
             setInputUnit(editItem.input_unit || defaultUnit)
             setNotes(editItem.notes || '')
+            setIsProductionLink(editItem.is_production_link || false)
         } else {
             setStageName('')
             setStageOrder(nextOrder)
             setInputQuantity(previousStageOutput)
             setInputUnit(defaultUnit)
             setNotes('')
+            setIsProductionLink(false)
         }
     }, [editItem, isOpen, nextOrder, previousStageOutput, defaultUnit])
 
@@ -59,6 +62,7 @@ export default function StageModal({ isOpen, onClose, onSuccess, batchId, editIt
                 stage_name: stageName.trim(),
                 input_quantity: inputQuantity || 0,
                 input_unit: inputUnit,
+                is_production_link: isProductionLink,
                 notes: notes || null,
                 updated_at: new Date().toISOString()
             }
@@ -139,6 +143,23 @@ export default function StageModal({ isOpen, onClose, onSuccess, batchId, editIt
                                 </button>
                             ))}
                         </div>
+                    </div>
+
+                    {/* Production Link Toggle */}
+                    <div className="p-4 bg-emerald-50 dark:bg-emerald-900/10 rounded-2xl border border-emerald-100 dark:border-emerald-800/30 flex items-center justify-between">
+                        <div>
+                            <div className="text-[11px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-widest mb-0.5">Kết nối từ Lệnh sản xuất</div>
+                            <div className="text-[10px] text-stone-400 font-bold uppercase italic">Dữ liệu thành phẩm lấy tự động</div>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                className="sr-only peer"
+                                checked={isProductionLink}
+                                onChange={(e) => setIsProductionLink(e.target.checked)}
+                            />
+                            <div className="w-11 h-6 bg-stone-200 peer-focus:outline-none rounded-full peer dark:bg-zinc-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-emerald-600 shadow-sm" />
+                        </label>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">

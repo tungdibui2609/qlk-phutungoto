@@ -11,6 +11,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import BatchTable from './_components/BatchTable'
 import BatchModal from './_components/BatchModal'
 import StageTimeline from './_components/StageTimeline'
+import BatchAnalyticsModal from './_components/BatchAnalyticsModal'
 
 export interface FreshBatch {
     id: string
@@ -47,6 +48,8 @@ export default function FreshMaterialsPage() {
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [editingBatch, setEditingBatch] = useState<FreshBatch | null>(null)
     const [selectedBatch, setSelectedBatch] = useState<FreshBatch | null>(null)
+    const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false)
+    const [selectedAnalyticsBatch, setSelectedAnalyticsBatch] = useState<FreshBatch | null>(null)
 
     const fetchBatches = useCallback(async () => {
         setLoading(true)
@@ -58,7 +61,7 @@ export default function FreshMaterialsPage() {
                     products (name, sku, unit),
                     suppliers (name),
                     fresh_material_receivings (id, receiving_order, vehicle_plate, quantity, unit, received_at),
-                    fresh_material_stages (id, stage_order, stage_name, status, input_quantity, input_unit, started_at, completed_at,
+                    fresh_material_stages (id, stage_order, stage_name, status, input_quantity, input_unit, started_at, completed_at, is_production_link,
                         fresh_material_stage_outputs (id, product_id, output_type, quantity, unit, grade, notes,
                             products (name)
                         )
@@ -144,39 +147,56 @@ export default function FreshMaterialsPage() {
 
     return (
         <div className="space-y-6">
-            <PageHeader
-                title="Nguyên liệu tươi"
-                subtitle="Fresh Material Lifecycle"
-                description="Theo dõi vòng đời nguyên liệu từ bốc xe → phân loại → cấp đông → thành phẩm"
-                icon={Leaf}
-                actionText="Tạo lô mới"
-                onActionClick={handleAdd}
-                permission="warehouse.manage"
-            />
+            <div className="hidden md:block">
+                <PageHeader
+                    title="Nguyên liệu tươi"
+                    subtitle="Fresh Material Lifecycle"
+                    description="Theo dõi vòng đời nguyên liệu từ bốc xe → phân loại → cấp đông → thành phẩm"
+                    icon={Leaf}
+                    actionText="Tạo lô mới"
+                    onActionClick={handleAdd}
+                    permission="warehouse.manage"
+                />
+            </div>
+
+            <div className="md:hidden flex items-center justify-between px-1">
+                <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600">
+                        <Leaf size={20} />
+                    </div>
+                    <h1 className="text-lg font-black text-stone-800 dark:text-white">Nguyên liệu tươi</h1>
+                </div>
+                <button
+                    onClick={handleAdd}
+                    className="p-2.5 rounded-xl bg-emerald-600 text-white shadow-lg shadow-emerald-600/20 active:scale-95 transition-all"
+                >
+                    <Plus size={20} />
+                </button>
+            </div>
 
             {/* FILTERS */}
-            <div className="bg-white dark:bg-zinc-900 rounded-[24px] p-5 border border-stone-200 dark:border-zinc-800 flex flex-col md:flex-row flex-wrap gap-4 md:items-center shadow-sm">
+            <div className="bg-white dark:bg-zinc-900 rounded-[24px] p-4 md:p-5 border border-stone-200 dark:border-zinc-800 flex flex-col md:flex-row flex-wrap gap-3 md:items-center shadow-sm">
                 <div className="relative flex-1 w-full md:min-w-[300px]">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={20} />
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
                     <input
                         type="text"
-                        placeholder="Tìm theo mã lô, nguyên liệu, NCC..."
+                        placeholder="Tìm kiếm..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-12 pr-4 py-3 rounded-2xl bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-stone-800 dark:text-gray-200 placeholder:text-stone-400 focus:outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 transition-all font-medium"
+                        className="w-full pl-11 pr-4 py-2.5 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-100 dark:border-zinc-700 text-sm text-stone-800 dark:text-gray-200 focus:outline-none focus:border-emerald-400 transition-all"
                     />
                 </div>
 
                 {/* Status Filter Pills */}
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1 overflow-x-auto pb-1 md:pb-0 no-scrollbar">
                     {statusOptions.map(opt => (
                         <button
                             key={opt.value}
                             onClick={() => setStatusFilter(opt.value)}
-                            className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                            className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider whitespace-nowrap transition-all ${
                                 statusFilter === opt.value
-                                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20'
-                                    : 'bg-stone-100 dark:bg-zinc-800 text-stone-400 hover:text-stone-600'
+                                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/10'
+                                    : 'bg-stone-50 dark:bg-zinc-800 text-stone-400'
                             }`}
                         >
                             {opt.label}
@@ -184,7 +204,7 @@ export default function FreshMaterialsPage() {
                     ))}
                 </div>
 
-                <div className="flex items-center gap-2 px-4 py-2 bg-stone-100 dark:bg-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest text-stone-400">
+                <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-stone-100 dark:bg-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest text-stone-400">
                     {filteredBatches.length} / {batches.length} Lô
                 </div>
             </div>
@@ -207,6 +227,10 @@ export default function FreshMaterialsPage() {
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                     onSelect={handleSelectBatch}
+                    onViewAnalytics={(batch) => {
+                        setSelectedAnalyticsBatch(batch)
+                        setIsAnalyticsOpen(true)
+                    }}
                     selectedId={selectedBatch?.id}
                 />
             )}
@@ -225,6 +249,15 @@ export default function FreshMaterialsPage() {
                 onClose={() => setIsModalOpen(false)}
                 onSuccess={fetchBatches}
                 editItem={editingBatch}
+            />
+
+            <BatchAnalyticsModal 
+                isOpen={isAnalyticsOpen}
+                onClose={() => {
+                    setIsAnalyticsOpen(false)
+                    setSelectedAnalyticsBatch(null)
+                }}
+                batch={selectedAnalyticsBatch}
             />
         </div>
     )

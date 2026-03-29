@@ -1,12 +1,13 @@
 'use client'
 
-import { Leaf, Truck, Package, Edit2, Trash2, ChevronRight, Snowflake } from 'lucide-react'
+import { Leaf, Truck, Package, Edit2, Trash2, ChevronRight, Snowflake, Eye } from 'lucide-react'
 
 interface BatchTableProps {
     data: any[]
     onEdit: (batch: any) => void
     onDelete: (id: string) => void
     onSelect: (batch: any) => void
+    onViewAnalytics?: (batch: any) => void
     selectedId?: string
 }
 
@@ -17,7 +18,7 @@ const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> =
     CANCELLED: { label: 'Đã hủy', color: 'text-red-600', bg: 'bg-red-100 dark:bg-red-900/30' },
 }
 
-export default function BatchTable({ data, onEdit, onDelete, onSelect, selectedId }: BatchTableProps) {
+export default function BatchTable({ data, onEdit, onDelete, onSelect, onViewAnalytics, selectedId }: BatchTableProps) {
     return (
         <div className="bg-white dark:bg-zinc-900 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm overflow-hidden">
             {/* Desktop Table */}
@@ -104,7 +105,7 @@ export default function BatchTable({ data, onEdit, onDelete, onSelect, selectedI
                                         )}
                                     </td>
                                     <td className="px-4 py-4 text-center">
-                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${status.bg} ${status.color}`}>
+                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${status.bg} ${status.color}`}>
                                             {status.label}
                                         </span>
                                     </td>
@@ -115,6 +116,13 @@ export default function BatchTable({ data, onEdit, onDelete, onSelect, selectedI
                                     </td>
                                     <td className="px-4 py-4">
                                         <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); onViewAnalytics?.(batch) }}
+                                                className="p-2 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-900/20 text-stone-400 hover:text-emerald-600 transition-colors"
+                                                title="Phân tích chi tiết"
+                                            >
+                                                <Eye size={14} />
+                                            </button>
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); onEdit(batch) }}
                                                 className="p-2 rounded-xl hover:bg-stone-100 dark:hover:bg-zinc-800 text-stone-400 hover:text-orange-600 transition-colors"
