@@ -201,12 +201,7 @@ export default function BatchModal({ isOpen, onClose, onSuccess, editItem }: Bat
 
                     const res = await robustFetch(`${window.location.origin}/api/google-drive-upload`, {
                         method: 'POST',
-                        body: formData,
-                        keepalive: true,
-                        headers: {
-                            'Cache-Control': 'no-cache',
-                            'Pragma': 'no-cache'
-                        }
+                        body: formData
                     })
                     const data = await res.json()
 
