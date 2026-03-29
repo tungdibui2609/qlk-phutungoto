@@ -154,10 +154,10 @@ export function LotForm({
             if (editingLot) {
                 // Edit Mode
                 setNewLotCode(editingLot.code)
-                setDailySeq((editingLot as any).daily_seq || '')
+                setDailySeq(editingLot.daily_seq || '')
                 setNewLotNotes(editingLot.notes || '')
-                setProductionCode((editingLot as any).production_code || '')
-                setSelectedProductionId((editingLot as any).production_id || '')
+                setProductionCode(editingLot.production_code || '')
+                setSelectedProductionId(editingLot.production_id || '')
 
                 // Populate items
                 if (editingLot.lot_items && editingLot.lot_items.length > 0) {
@@ -175,12 +175,12 @@ export function LotForm({
                 setSelectedSupplierId(editingLot.supplier_id || '')
                 setSelectedQCId(editingLot.qc_id || '')
                 setInboundDate(editingLot.inbound_date ? new Date(editingLot.inbound_date).toISOString().split('T')[0] : '')
-                setRawMaterialDate((editingLot as any).raw_material_date ? new Date((editingLot as any).raw_material_date).toISOString().split('T')[0] : '')
+                setRawMaterialDate(editingLot.raw_material_date ? new Date(editingLot.raw_material_date).toISOString().split('T')[0] : '')
                 setPeelingDate(editingLot.peeling_date ? new Date(editingLot.peeling_date).toISOString().split('T')[0] : '')
                 setPackagingDate(editingLot.packaging_date ? new Date(editingLot.packaging_date).toISOString().split('T')[0] : '')
                 setWarehouseName(editingLot.warehouse_name || '')
                 setBatchCode(editingLot.batch_code || '')
-                setProductionCode((editingLot as any).production_code || '')
+                setProductionCode(editingLot.production_code || '')
 
                 // Handle images
                 let imgs: string[] = []
@@ -345,6 +345,20 @@ export function LotForm({
         currentSystem
     ])
 
+    // Update newLotCode when dailySeq changes manually
+    useEffect(() => {
+        if (!editingLot && isInitialized && dailySeq && newLotCode) {
+            const parts = newLotCode.split('-')
+            if (parts.length > 0) {
+                parts[parts.length - 1] = String(dailySeq).padStart(3, '0')
+                const updatedCode = parts.join('-')
+                if (updatedCode !== newLotCode) {
+                    setNewLotCode(updatedCode)
+                }
+            }
+        }
+    }, [dailySeq, isInitialized, editingLot])
+
     function resetForm() {
         setNewLotCode('')
         setNewLotNotes('')
@@ -390,19 +404,18 @@ export function LotForm({
 
         const prefix = warehousePrefix ? `${warehousePrefix}-LOT-${dateStr}-` : `LOT-${dateStr}-`
 
-        const { data } = await supabase
+        const { data: lastLots } = await supabase
             .from('lots')
-            .select('code')
-            .ilike('code', `${prefix}%`)
-            .order('code', { ascending: false })
+            .select('daily_seq')
+            .eq('system_code', currentSystem.code)
+            .order('created_at', { ascending: false })
             .limit(1)
 
         let sequence = 1
-        if (data && data.length > 0) {
-            const lastCode = (data as any)[0].code
-            const lastSequence = parseInt(lastCode.split('-').pop() || '0')
-            if (!isNaN(lastSequence)) {
-                sequence = lastSequence + 1
+        if (lastLots && lastLots.length > 0) {
+            const lastSeq = (lastLots as any)[0].daily_seq
+            if (lastSeq !== null && !isNaN(Number(lastSeq))) {
+                sequence = Number(lastSeq) + 1
             }
         }
 

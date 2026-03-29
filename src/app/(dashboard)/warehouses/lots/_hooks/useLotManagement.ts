@@ -29,13 +29,22 @@ export type Lot = Database['public']['Tables']['lots']['Row'] & {
     products?: { name: string; unit: string | null; product_code?: string; sku?: string; weight_kg?: number | null; cost_price?: number | null; internal_code?: string | null; internal_name?: string | null } | null
     images?: any
     metadata?: any
+    // Added for type safety in forms/filters
+    qc_id?: string | null
+    packaging_date?: string | null
+    warehouse_name?: string | null
+    raw_material_date?: string | null
+    production_code?: string | null
+    production_id?: string | null
+    daily_seq?: number | null
+    batch_code?: string | null
 }
 
 export type Product = Database['public']['Tables']['products']['Row']
-export type Supplier = Database['public']['Tables']['suppliers']['Row']
-export type QCInfo = Database['public']['Tables']['qc_info']['Row']
-export type Unit = Database['public']['Tables']['units']['Row']
-export type ProductUnit = Database['public']['Tables']['product_units']['Row']
+export type Supplier = any
+export type QCInfo = any
+export type Unit = any
+export type ProductUnit = any
 
 export function useLotManagement() {
     const { currentSystem, hasModule } = useSystem()

@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { X, Copy, AlertCircle, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
+import { useSystem } from '@/contexts/SystemContext'
 
 interface LotBulkCloneModalProps {
     lot: Lot
@@ -10,11 +11,17 @@ interface LotBulkCloneModalProps {
 }
 
 export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModalProps) {
+    const { currentSystem } = useSystem()
     const [cloneCount, setCloneCount] = useState<number>(1)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
     const handleClone = async () => {
+        if (!currentSystem) {
+            setError('Không tìm thấy thông tin hệ thống')
+            return
+        }
+
         if (cloneCount < 1 || cloneCount > 50) {
             setError('Số lượng nhân bản phải từ 1 đến 50')
             return
@@ -25,7 +32,7 @@ export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModal
 
         try {
             // Fetch the lot details to ensure we have all items and tags
-            const { data: fullLot, error: fetchError } = await supabase
+            const { data: fullData, error: fetchError } = await supabase
                 .from('lots')
                 .select('*, lot_items(*), lot_tags(*)')
                 .eq('id', lot.id)
@@ -33,37 +40,71 @@ export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModal
 
             if (fetchError) throw fetchError
 
+            const fullLot = fullData as any
             if (!fullLot) {
                 throw new Error("Không tìm thấy thông tin Lot")
             }
 
             const { lot_items, lot_tags, id: originalId, code: originalCode, created_at, ...lotDataWithoutIds } = fullLot
 
-            // Generate new codes
-            const timestamp = new Date().getTime().toString().slice(-6);
+            // Get current system sequence (STT)
+            const { data: lastLots } = await supabase
+                .from('lots')
+                .select('daily_seq')
+                .eq('system_code', currentSystem.code)
+                .order('created_at', { ascending: false })
+                .limit(1)
+
+            let lastSequence = 0
+            if (lastLots && lastLots.length > 0) {
+                lastSequence = (lastLots[0] as any).daily_seq || 0
+            }
+
+            // Generate metadata and codes based on sequence
+            const today = new Date()
+            const day = String(today.getDate()).padStart(2, '0')
+            const month = String(today.getMonth() + 1).padStart(2, '0')
+            const year = String(today.getFullYear()).slice(-2)
+            const dateStr = `${day}${month}${year}`
+
+            let warehousePrefix = ''
+            const cleanName = (currentSystem.name || '').replace(/^Kho\s+/i, '').trim()
+            const initials = cleanName.split(/\s+/).map((word: string) => word[0]).join('')
+            const normalized = initials
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/đ/g, "d")
+                .replace(/Đ/g, "D")
+            warehousePrefix = normalized.toUpperCase().replace(/[^A-Z0-9]/g, '')
+
+            const prefix = warehousePrefix ? `${warehousePrefix}-LOT-${dateStr}-` : `LOT-${dateStr}-`
+
             const commonMetadata = {
                 ...(typeof lotDataWithoutIds.metadata === 'object' && lotDataWithoutIds.metadata !== null ? lotDataWithoutIds.metadata : {}),
                 system_history: {
+                    ...(lotDataWithoutIds.metadata as any)?.system_history || {},
                     cloned_from: originalCode,
                     clone_date: new Date().toISOString()
                 }
             };
 
             const newLots = Array.from({ length: cloneCount }).map((_, i) => {
-                const randomSuffix = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-                const newCode = `LOT-${timestamp}-${randomSuffix}-${i + 1}`;
+                const currentSeq = lastSequence + (i + 1)
+                const newCode = `${prefix}${currentSeq}`;
 
                 return {
                     ...lotDataWithoutIds,
                     code: newCode,
+                    daily_seq: currentSeq,
                     metadata: commonMetadata,
                     quantity: lotDataWithoutIds.quantity || 0,
+                    system_code: currentSystem.code,
                 }
             })
 
             // 1. Insert New Lots
-            const { data: insertedLots, error: insertLotsError } = await supabase
-                .from('lots')
+            const { data: insertedLots, error: insertLotsError } = await (supabase
+                .from('lots') as any)
                 .insert(newLots)
                 .select('id')
 
@@ -71,14 +112,14 @@ export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModal
 
             // 2. Prepare Batch Inserts for Items and Tags
             if (insertedLots && insertedLots.length > 0) {
-                const newLotItems = []
-                const newLotTags = []
+                const newLotItems: any[] = []
+                const newLotTags: any[] = []
 
                 for (const newLot of insertedLots) {
                     // Clone Items
                     if (lot_items && lot_items.length > 0) {
                         for (const item of lot_items) {
-                            const { id: ignoreId, lot_id: ignoreLotId, created_at: ignoreCreatedAt, ...itemDataWithoutIds } = item
+                            const { id: ignoreId, lot_id: ignoreLotId, created_at: ignoreCreatedAt, ...itemDataWithoutIds } = item as any
                             newLotItems.push({
                                 ...itemDataWithoutIds,
                                 lot_id: newLot.id
@@ -89,7 +130,7 @@ export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModal
                     // Clone Tags
                     if (lot_tags && lot_tags.length > 0) {
                         for (const tag of lot_tags) {
-                            const { id: ignoreId, lot_id: ignoreLotId, added_at: ignoreAddedAt, ...tagDataWithoutIds } = tag
+                            const { id: ignoreId, lot_id: ignoreLotId, added_at: ignoreAddedAt, ...tagDataWithoutIds } = tag as any
                             newLotTags.push({
                                 ...tagDataWithoutIds,
                                 lot_id: newLot.id,
@@ -101,13 +142,13 @@ export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModal
 
                 // Batch Insert Items
                 if (newLotItems.length > 0) {
-                    const { error: insertItemsError } = await supabase.from('lot_items').insert(newLotItems)
+                    const { error: insertItemsError } = await (supabase.from('lot_items') as any).insert(newLotItems)
                     if (insertItemsError) throw insertItemsError
                 }
 
                 // Batch Insert Tags
                 if (newLotTags.length > 0) {
-                    const { error: insertTagsError } = await supabase.from('lot_tags').insert(newLotTags)
+                    const { error: insertTagsError } = await (supabase.from('lot_tags') as any).insert(newLotTags)
                     if (insertTagsError) throw insertTagsError
                 }
             }
