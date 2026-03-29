@@ -382,6 +382,27 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
             onRefresh()
         }
     }
+
+    const removeReceivingDocument = async (receivingId: string, fileId: string) => {
+        if (!await showConfirm('Xóa hóa đơn xe này?')) return
+
+        const targetReceiving = receivings.find((r: any) => r.id === receivingId)
+        if (!targetReceiving) return
+
+        const newDocs = (targetReceiving.document_urls || []).filter((d: any) => d.fileId !== fileId)
+
+        const { error } = await (supabase as any)
+            .from('fresh_material_receivings')
+            .update({ document_urls: newDocs })
+            .eq('id', receivingId)
+
+        if (error) {
+            showToast('Lỗi: ' + error.message, 'error')
+        } else {
+            showToast('Đã xóa hóa đơn xe', 'success')
+            onRefresh()
+        }
+    }
     
     const handleDeleteOutput = async (outputId: string) => {
         if (!await showConfirm('Xóa kết quả này?')) return
@@ -489,6 +510,33 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
                                             </button>
                                         </div>
                                     ))}
+                                    
+                                    {/* Receivings Documents */}
+                                    {receivings.map((rec: any) => 
+                                        (rec.document_urls || []).map((doc: any) => (
+                                            <div key={doc.fileId} className="relative flex items-center justify-between gap-1.5 px-2 py-1.5 bg-white dark:bg-zinc-900 border border-stone-100 dark:border-zinc-700 rounded-lg shadow-sm">
+                                                <div className="flex items-center gap-1.5 overflow-hidden w-full">
+                                                    <div className="px-1.5 py-0.5 roundedbg-blue-100 dark:bg-blue-900/30 text-[7px] font-black text-blue-600 uppercase shrink-0 border border-blue-200 dark:border-blue-800/50">
+                                                        {rec.vehicle_plate || 'Xe'}
+                                                    </div>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={(e) => { e.stopPropagation(); setViewDocUrl({ url: doc.link, title: doc.name }) }}
+                                                        className="text-[8px] font-bold text-stone-600 dark:text-stone-300 hover:text-blue-600 truncate text-left"
+                                                        title={doc.name}
+                                                    >
+                                                        {doc.name}
+                                                    </button>
+                                                </div>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); removeReceivingDocument(rec.id, doc.fileId) }}
+                                                    className="p-1 min-w-[20px] shrink-0 text-red-400 hover:bg-red-50 hover:text-red-500 rounded transition-all ml-auto flex items-center justify-center"
+                                                >
+                                                    <X size={10} />
+                                                </button>
+                                            </div>
+                                        ))
+                                    )}
                                 </div>
                             </div>
                         </div>
