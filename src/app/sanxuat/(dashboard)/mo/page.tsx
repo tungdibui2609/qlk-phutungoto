@@ -10,6 +10,7 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import Link from 'next/link'
 import { getProductDisplayImage } from '@/lib/utils'
+import { useUser } from '@/contexts/UserContext'
 
 const STATUS_COLORS: Record<string, string> = {
     'DRAFT': 'bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700',
@@ -28,6 +29,8 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 export default function ManufacturingOrdersPage() {
+    const { profile, hasPermission } = useUser()
+    const canManage = hasPermission('production.manage')
     const { showToast } = useToast()
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
@@ -65,9 +68,9 @@ export default function ManufacturingOrdersPage() {
                 subtitle="Manufacturing Orders"
                 description="Quản lý các lệnh thực hiện sản xuất, theo dõi tiến độ và đối chiếu với Định mức (BOM)."
                 icon={Settings}
-                actionLink="/sanxuat/mo/new"
-                actionText="Tạo Lệnh (MO)"
-                permission="sanxuat.manage"
+                actionLink={canManage ? "/sanxuat/mo/new" : undefined}
+                actionText={canManage ? "Tạo Lệnh (MO)" : undefined}
+                permission="production.view"
             />
 
             {/* FILTERS & SEARCH */}
@@ -191,20 +194,24 @@ export default function ManufacturingOrdersPage() {
                                                 >
                                                     <Eye size={18} />
                                                 </Link>
-                                                <Link
-                                                    href={`/sanxuat/mo/${item.id}`}
-                                                    className="p-2.5 rounded-xl bg-white dark:bg-zinc-800 text-zinc-400 hover:text-emerald-600 hover:shadow-sm border border-zinc-100 dark:border-zinc-700 transition-all font-bold"
-                                                    title="Sửa"
-                                                >
-                                                    <Edit2 size={18} />
-                                                </Link>
-                                                <button
-                                                    onClick={() => handleDelete(item.id)}
-                                                    className="p-2.5 rounded-xl bg-white dark:bg-zinc-800 text-zinc-400 hover:text-rose-600 hover:shadow-sm border border-zinc-100 dark:border-zinc-700 transition-all font-bold"
-                                                    title="Xóa"
-                                                >
-                                                    <Trash2 size={18} />
-                                                </button>
+                                                {canManage && (
+                                                    <>
+                                                        <Link
+                                                            href={`/sanxuat/mo/${item.id}`}
+                                                            className="p-2.5 rounded-xl bg-white dark:bg-zinc-800 text-zinc-400 hover:text-emerald-600 hover:shadow-sm border border-zinc-100 dark:border-zinc-700 transition-all font-bold"
+                                                            title="Sửa"
+                                                        >
+                                                            <Edit2 size={18} />
+                                                        </Link>
+                                                        <button
+                                                            onClick={() => handleDelete(item.id)}
+                                                            className="p-2.5 rounded-xl bg-white dark:bg-zinc-800 text-zinc-400 hover:text-rose-600 hover:shadow-sm border border-zinc-100 dark:border-zinc-700 transition-all font-bold"
+                                                            title="Xóa"
+                                                        >
+                                                            <Trash2 size={18} />
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

@@ -39,7 +39,9 @@ export interface FreshBatch {
 export default function FreshMaterialsPage() {
     const { showToast, showConfirm } = useToast()
     const { systemType } = useSystem()
-    const { profile } = useUser()
+    const { profile, hasPermission } = useUser()
+
+    const canManage = hasPermission('fresh_material.manage')
 
     const [batches, setBatches] = useState<FreshBatch[]>([])
     const [loading, setLoading] = useState(true)
@@ -154,9 +156,9 @@ export default function FreshMaterialsPage() {
                     subtitle="Fresh Material Lifecycle"
                     description="Theo dõi vòng đời nguyên liệu từ bốc xe → phân loại → cấp đông → thành phẩm"
                     icon={Leaf}
-                    actionText="Tạo lô mới"
-                    onActionClick={handleAdd}
-                    permission="warehouse.manage"
+                    actionText={canManage ? "Tạo lô mới" : undefined}
+                    onActionClick={canManage ? handleAdd : undefined}
+                    permission="fresh_material.view"
                 />
             </div>
 
@@ -167,12 +169,14 @@ export default function FreshMaterialsPage() {
                     </div>
                     <h1 className="text-lg font-black text-stone-800 dark:text-white">Nguyên liệu tươi</h1>
                 </div>
-                <button
-                    onClick={handleAdd}
-                    className="p-2.5 rounded-xl bg-emerald-600 text-white shadow-lg shadow-emerald-600/20 active:scale-95 transition-all"
-                >
-                    <Plus size={20} />
-                </button>
+                {canManage && (
+                    <button
+                        onClick={handleAdd}
+                        className="p-2.5 rounded-xl bg-emerald-600 text-white shadow-lg shadow-emerald-600/20 active:scale-95 transition-all"
+                    >
+                        <Plus size={20} />
+                    </button>
+                )}
             </div>
 
             {/* FILTERS */}
@@ -233,6 +237,7 @@ export default function FreshMaterialsPage() {
                         setIsAnalyticsOpen(true)
                     }}
                     selectedId={selectedBatch?.id}
+                    canManage={canManage}
                 />
             )}
 

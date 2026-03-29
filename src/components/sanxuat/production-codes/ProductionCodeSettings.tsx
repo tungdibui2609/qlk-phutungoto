@@ -18,7 +18,8 @@ type ProductionCodeLevel = {
 
 export default function ProductionCodeSettings() {
     const { systemType } = useSystem()
-    const { profile } = useUser()
+    const { profile, hasPermission } = useUser()
+    const canManage = hasPermission('production.manage')
     const { showToast } = useToast()
     const [rules, setRules] = useState<ProductionCodeLevel[]>([])
     const [loading, setLoading] = useState(true)
@@ -142,13 +143,15 @@ export default function ProductionCodeSettings() {
                         <h3 className="text-base font-black text-stone-800 uppercase tracking-tight">{title}</h3>
                         <p className="text-[10px] text-stone-500 font-bold uppercase tracking-wider">{subtitle}</p>
                     </div>
-                    <button
-                        onClick={() => handleAddRule(level)}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-stone-200 text-stone-700 font-black hover:bg-stone-50 transition-all text-[10px] uppercase tracking-widest shadow-sm"
-                    >
-                        <Plus size={14} />
-                        Thêm
-                    </button>
+                    {canManage && (
+                        <button
+                            onClick={() => handleAddRule(level)}
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-stone-200 text-stone-700 font-black hover:bg-stone-50 transition-all text-[10px] uppercase tracking-widest shadow-sm"
+                        >
+                            <Plus size={14} />
+                            Thêm
+                        </button>
+                    )}
                 </div>
                 <div className="flex-1 overflow-y-auto max-h-[400px]">
                     <table className="w-full text-left border-collapse">
@@ -192,12 +195,14 @@ export default function ProductionCodeSettings() {
                                             />
                                         </td>
                                         <td className="p-2 text-right">
-                                            <button
-                                                onClick={() => handleDeleteRule(rule.id)}
-                                                className="p-2 text-stone-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
+                                            {canManage && (
+                                                <button
+                                                    onClick={() => handleDeleteRule(rule.id)}
+                                                    className="p-2 text-stone-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))
@@ -223,14 +228,16 @@ export default function ProductionCodeSettings() {
                         </p>
                     </div>
                 </div>
-                <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="flex items-center gap-2 px-8 py-3 rounded-2xl bg-emerald-600 text-white font-black uppercase tracking-widest hover:bg-emerald-700 transition-all text-xs shadow-lg shadow-emerald-200 disabled:opacity-50 w-full md:w-auto justify-center"
-                >
-                    {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={18} />}
-                    Lưu cấu hình
-                </button>
+                {canManage && (
+                    <button
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="flex items-center gap-2 px-8 py-3 rounded-2xl bg-emerald-600 text-white font-black uppercase tracking-widest hover:bg-emerald-700 transition-all text-xs shadow-lg shadow-emerald-200 disabled:opacity-50 w-full md:w-auto justify-center"
+                    >
+                        {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={18} />}
+                        Lưu cấu hình
+                    </button>
+                )}
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">

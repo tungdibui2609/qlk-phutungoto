@@ -11,8 +11,11 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import Link from 'next/link'
 import { useSystem } from '@/contexts/SystemContext'
 import { getProductDisplayImage } from '@/lib/utils'
+import { useUser } from '@/contexts/UserContext'
 
 export default function BomsPage() {
+    const { profile, hasPermission } = useUser()
+    const canManage = hasPermission('production.manage')
     const { showToast } = useToast()
     const { systemType } = useSystem()
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
@@ -51,9 +54,9 @@ export default function BomsPage() {
                 subtitle="Bill of Materials"
                 description="Quản lý công thức/định mức nguyên liệu để sản xuất ra thành phẩm."
                 icon={FileText}
-                actionLink="/sanxuat/boms/new"
-                actionText="Thêm Định mức"
-                permission="sanxuat.manage" // Assuming a generic permission for now
+                actionLink={canManage ? "/sanxuat/boms/new" : undefined}
+                actionText={canManage ? "Thêm Định mức" : undefined}
+                permission="production.view" 
             />
 
             {/* FILTERS & SEARCH */}
@@ -151,18 +154,22 @@ export default function BomsPage() {
                                         </td>
                                         <td className="p-5 text-right">
                                             <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <Link
-                                                    href={`/sanxuat/boms/${item.id}`}
-                                                    className="p-2.5 rounded-xl bg-white dark:bg-zinc-800 text-zinc-400 hover:text-emerald-600 hover:shadow-sm border border-zinc-100 dark:border-zinc-700 transition-all font-bold"
-                                                >
-                                                    <Edit2 size={18} />
-                                                </Link>
-                                                <button
-                                                    onClick={() => handleDelete(item.id)}
-                                                    className="p-2.5 rounded-xl bg-white dark:bg-zinc-800 text-zinc-400 hover:text-red-600 hover:shadow-sm border border-zinc-100 dark:border-zinc-700 transition-all font-bold"
-                                                >
-                                                    <Trash2 size={18} />
-                                                </button>
+                                                {canManage && (
+                                                    <>
+                                                        <Link
+                                                            href={`/sanxuat/boms/${item.id}`}
+                                                            className="p-2.5 rounded-xl bg-white dark:bg-zinc-800 text-zinc-400 hover:text-emerald-600 hover:shadow-sm border border-zinc-100 dark:border-zinc-700 transition-all font-bold"
+                                                        >
+                                                            <Edit2 size={18} />
+                                                        </Link>
+                                                        <button
+                                                            onClick={() => handleDelete(item.id)}
+                                                            className="p-2.5 rounded-xl bg-white dark:bg-zinc-800 text-zinc-400 hover:text-red-600 hover:shadow-sm border border-zinc-100 dark:border-zinc-700 transition-all font-bold"
+                                                        >
+                                                            <Trash2 size={18} />
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

@@ -11,8 +11,12 @@ import { SiteStockReport } from './_components/SiteStockReport'
 import { SiteInboundHistory } from './_components/SiteInboundHistory'
 import { AllocationStats } from './_components/AllocationStats'
 
+import { useUser } from '@/contexts/UserContext'
+
 export default function ProductionInventoryPage() {
     const { currentSystem } = useSystem()
+    const { hasPermission } = useUser()
+    const canManage = hasPermission('production_issue.manage')
     const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'inbound' | 'summary' | 'allocation-stats'>('dashboard')
     const [isInboundOpen, setIsInboundOpen] = useState(false)
 
@@ -57,15 +61,17 @@ export default function ProductionInventoryPage() {
                     </p>
                 </div>
 
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => setIsInboundOpen(true)}
-                        className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
-                    >
-                        <Plus size={20} />
-                        Nhập hàng trực tiếp
-                    </button>
-                </div>
+                {canManage && (
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => setIsInboundOpen(true)}
+                            className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                        >
+                            <Plus size={20} />
+                            Nhập hàng trực tiếp
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Tabs */}

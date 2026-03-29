@@ -5,6 +5,7 @@ import { Plus, Search, Hammer, AlertCircle, RefreshCw, CheckCircle2, Factory, Ed
 import { supabase } from '@/lib/supabaseClient'
 import { productionLoanService } from '@/services/production-inventory/productionLoanService'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUser } from '@/contexts/UserContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import { LoanIssueModal } from './LoanIssueModal'
 import { LoanReturnModal } from './LoanReturnModal'
@@ -28,6 +29,8 @@ interface BatchGroup {
 export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, setIsInboundOpen }) => {
     const { systemType } = useSystem()
     const { showToast } = useToast()
+    const { hasPermission } = useUser()
+    const canManage = hasPermission('production_issue.manage')
     const [loans, setLoans] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [isIssueModalOpen, setIsIssueModalOpen] = useState(false)
@@ -220,22 +223,24 @@ export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, set
                         ))}
                     </select>
                 </div>
-                <div className="flex gap-2 w-full md:w-auto">
-                    <button
-                        onClick={() => setIsInboundOpen(true)}
-                        className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
-                    >
-                        <Plus size={20} />
-                        Nhập hàng
-                    </button>
-                    <button
-                        onClick={() => setIsIssueModalOpen(true)}
-                        className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-orange-500/20 transition-all active:scale-95"
-                    >
-                        <Plus size={20} />
-                        Cấp phát
-                    </button>
-                </div>
+                {canManage && (
+                    <div className="flex gap-2 w-full md:w-auto">
+                        <button
+                            onClick={() => setIsInboundOpen(true)}
+                            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                        >
+                            <Plus size={20} />
+                            Nhập hàng
+                        </button>
+                        <button
+                            onClick={() => setIsIssueModalOpen(true)}
+                            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-orange-500/20 transition-all active:scale-95"
+                        >
+                            <Plus size={20} />
+                            Cấp phát
+                        </button>
+                    </div>
+                )}
             </div>
 
             {loading ? (
@@ -291,30 +296,32 @@ export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, set
                                                 <span className="text-[9px] font-bold uppercase opacity-80 leading-none mb-0.5">Đang cấp</span>
                                                 <span>{formatQty(totalRemaining)}</span>
                                             </div>
-                                            <div className="relative" ref={openMenuId === batch.batchId ? menuRef : undefined}>
-                                                <button 
-                                                    onClick={() => setOpenMenuId(openMenuId === batch.batchId ? null : batch.batchId)}
-                                                    className="p-2 hover:bg-stone-100 dark:hover:bg-zinc-700 rounded-xl transition-colors text-stone-400"
-                                                >
-                                                    <MoreVertical size={18} />
-                                                </button>
-                                                {openMenuId === batch.batchId && (
-                                                    <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-zinc-800 rounded-2xl shadow-xl border border-stone-100 dark:border-zinc-700 py-2 z-20 animate-in fade-in slide-in-from-top-2 duration-200">
-                                                        <button 
-                                                            onClick={() => { setOpenMenuId(null); setEditingBatch(batch) }}
-                                                            className="w-full px-4 py-2.5 text-left text-xs font-bold text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-zinc-700 flex items-center gap-2"
-                                                        >
-                                                            <Edit2 size={14} className="text-orange-500" /> Sửa thông tin lệnh
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => { setOpenMenuId(null); handleDeleteBatch(batch) }}
-                                                            className="w-full px-4 py-2.5 text-left text-xs font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
-                                                        >
-                                                            <Trash2 size={14} /> Xóa toàn bộ lệnh
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
+                                            {canManage && (
+                                                <div className="relative" ref={openMenuId === batch.batchId ? menuRef : undefined}>
+                                                    <button 
+                                                        onClick={() => setOpenMenuId(openMenuId === batch.batchId ? null : batch.batchId)}
+                                                        className="p-2 hover:bg-stone-100 dark:hover:bg-zinc-700 rounded-xl transition-colors text-stone-400"
+                                                    >
+                                                        <MoreVertical size={18} />
+                                                    </button>
+                                                    {openMenuId === batch.batchId && (
+                                                        <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-zinc-800 rounded-2xl shadow-xl border border-stone-100 dark:border-zinc-700 py-2 z-20 animate-in fade-in slide-in-from-top-2 duration-200">
+                                                            <button 
+                                                                onClick={() => { setOpenMenuId(null); setEditingBatch(batch) }}
+                                                                className="w-full px-4 py-2.5 text-left text-xs font-bold text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-zinc-700 flex items-center gap-2"
+                                                            >
+                                                                <Edit2 size={14} className="text-orange-500" /> Sửa thông tin lệnh
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => { setOpenMenuId(null); handleDeleteBatch(batch) }}
+                                                                className="w-full px-4 py-2.5 text-left text-xs font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+                                                            >
+                                                                <Trash2 size={14} /> Xóa toàn bộ lệnh
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                         {isMulti && (
                                             <span className="text-[9px] font-black text-stone-400 uppercase">{totalItems} sản phẩm</span>
@@ -377,23 +384,24 @@ export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, set
                                     )}
                                 </div>
 
-                                {/* Action Footer */}
-                                <div className="border-t border-stone-100 dark:border-zinc-700 p-3 flex gap-2">
-                                    <button
-                                        onClick={() => setAppendingBatch(batch)}
-                                        className="flex-1 py-2 rounded-xl border border-blue-200 dark:border-blue-800 bg-white dark:bg-zinc-900 font-bold text-xs text-blue-600 dark:text-blue-400 hover:bg-blue-50 hover:border-blue-300 transition-colors flex items-center justify-center gap-1.5"
-                                    >
-                                        <Plus size={14} />
-                                        Thêm vật tư
-                                    </button>
-                                    <button
-                                        onClick={() => setSelectedBatch(batch.loans)}
-                                        className="flex-1 py-2 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-bold text-xs text-stone-600 dark:text-stone-400 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 transition-colors flex items-center justify-center gap-1.5"
-                                    >
-                                        <CheckCircle2 size={14} />
-                                        Hoàn trả / Trả dư
-                                    </button>
-                                </div>
+                                {canManage && (
+                                    <div className="border-t border-stone-100 dark:border-zinc-700 p-3 flex gap-2">
+                                        <button
+                                            onClick={() => setAppendingBatch(batch)}
+                                            className="flex-1 py-2 rounded-xl border border-blue-200 dark:border-blue-800 bg-white dark:bg-zinc-900 font-bold text-xs text-blue-600 dark:text-blue-400 hover:bg-blue-50 hover:border-blue-300 transition-colors flex items-center justify-center gap-1.5"
+                                        >
+                                            <Plus size={14} />
+                                            Thêm vật tư
+                                        </button>
+                                        <button
+                                            onClick={() => setSelectedBatch(batch.loans)}
+                                            className="flex-1 py-2 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-bold text-xs text-stone-600 dark:text-stone-400 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 transition-colors flex items-center justify-center gap-1.5"
+                                        >
+                                            <CheckCircle2 size={14} />
+                                            Hoàn trả / Trả dư
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )
                     })}
@@ -549,36 +557,38 @@ export const LoanDashboard: React.FC<LoanDashboardProps> = ({ isInboundOpen, set
                                                         <div className="text-sm font-black text-orange-600">{formatQty(remaining)} {loan.unit}</div>
                                                         <div className="text-[10px] font-bold text-stone-400">Đã cấp: {formatQty(loan.quantity)}</div>
                                                     </div>
-                                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button 
-                                                            onClick={() => { setViewingBatch(null); setEditingLoan(loan) }}
-                                                            className="p-2 hover:bg-orange-50 dark:hover:bg-orange-900/20 text-orange-500 rounded-lg transition-colors"
-                                                            title="Sửa"
-                                                        >
-                                                            <Edit2 size={16} />
-                                                        </button>
-                                                        <button 
-                                                            onClick={async () => {
-                                                                if(confirm('Bạn có chắc muốn xóa dòng này?')) {
-                                                                    setLoading(true)
-                                                                    try {
-                                                                        await productionLoanService.deleteLoan(supabase, loan)
-                                                                        showToast('Đã xóa thành công', 'success')
-                                                                        fetchLoans()
-                                                                        setViewingBatch(null)
-                                                                    } catch (e: any) {
-                                                                        showToast(e.message, 'error')
-                                                                    } finally {
-                                                                        setLoading(false)
+                                                    {canManage && (
+                                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <button 
+                                                                onClick={() => { setViewingBatch(null); setEditingLoan(loan) }}
+                                                                className="p-2 hover:bg-orange-50 dark:hover:bg-orange-900/20 text-orange-500 rounded-lg transition-colors"
+                                                                title="Sửa"
+                                                            >
+                                                                <Edit2 size={16} />
+                                                            </button>
+                                                            <button 
+                                                                onClick={async () => {
+                                                                    if(confirm('Bạn có chắc muốn xóa dòng này?')) {
+                                                                        setLoading(true)
+                                                                        try {
+                                                                            await productionLoanService.deleteLoan(supabase, loan)
+                                                                            showToast('Đã xóa thành công', 'success')
+                                                                            fetchLoans()
+                                                                            setViewingBatch(null)
+                                                                        } catch (e: any) {
+                                                                            showToast(e.message, 'error')
+                                                                        } finally {
+                                                                            setLoading(false)
+                                                                        }
                                                                     }
-                                                                }
-                                                            }}
-                                                            className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 rounded-lg transition-colors"
-                                                            title="Xóa"
-                                                        >
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </div>
+                                                                }}
+                                                                className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 rounded-lg transition-colors"
+                                                                title="Xóa"
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                          )

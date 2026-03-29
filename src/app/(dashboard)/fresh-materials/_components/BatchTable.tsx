@@ -9,6 +9,7 @@ interface BatchTableProps {
     onSelect: (batch: any) => void
     onViewAnalytics?: (batch: any) => void
     selectedId?: string
+    canManage?: boolean
 }
 
 const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
@@ -18,7 +19,7 @@ const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> =
     CANCELLED: { label: 'Đã hủy', color: 'text-red-600', bg: 'bg-red-100 dark:bg-red-900/30' },
 }
 
-export default function BatchTable({ data, onEdit, onDelete, onSelect, onViewAnalytics, selectedId }: BatchTableProps) {
+export default function BatchTable({ data, onEdit, onDelete, onSelect, onViewAnalytics, selectedId, canManage = false }: BatchTableProps) {
     return (
         <div className="bg-white dark:bg-zinc-900 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm overflow-hidden">
             {/* Desktop Table */}
@@ -123,20 +124,24 @@ export default function BatchTable({ data, onEdit, onDelete, onSelect, onViewAna
                                             >
                                                 <Eye size={14} />
                                             </button>
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); onEdit(batch) }}
-                                                className="p-2 rounded-xl hover:bg-stone-100 dark:hover:bg-zinc-800 text-stone-400 hover:text-orange-600 transition-colors"
-                                                title="Chỉnh sửa"
-                                            >
-                                                <Edit2 size={14} />
-                                            </button>
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); onDelete(batch.id) }}
-                                                className="p-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-stone-400 hover:text-red-600 transition-colors"
-                                                title="Xóa"
-                                            >
-                                                <Trash2 size={14} />
-                                            </button>
+                                            {canManage && (
+                                                <>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); onEdit(batch) }}
+                                                        className="p-2 rounded-xl hover:bg-stone-100 dark:hover:bg-zinc-800 text-stone-400 hover:text-orange-600 transition-colors"
+                                                        title="Chỉnh sửa"
+                                                    >
+                                                        <Edit2 size={14} />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); onDelete(batch.id) }}
+                                                        className="p-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-stone-400 hover:text-red-600 transition-colors"
+                                                        title="Xóa"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </>
+                                            )}
                                             <ChevronRight size={16} className={`text-stone-300 transition-transform ${isSelected ? 'rotate-90 text-emerald-500' : ''}`} />
                                         </div>
                                     </td>
@@ -198,20 +203,22 @@ export default function BatchTable({ data, onEdit, onDelete, onSelect, onViewAna
 
                             <div className="flex items-center justify-between mt-3">
                                 <span className="text-xs text-stone-400">{batch.suppliers?.name || '---'}</span>
-                                <div className="flex items-center gap-1">
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); onEdit(batch) }}
-                                        className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400"
-                                    >
-                                        <Edit2 size={14} />
-                                    </button>
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); onDelete(batch.id) }}
-                                        className="p-1.5 rounded-lg hover:bg-red-50 text-stone-400 hover:text-red-600"
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
-                                </div>
+                                {canManage && (
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); onEdit(batch) }}
+                                            className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400"
+                                        >
+                                            <Edit2 size={14} />
+                                        </button>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); onDelete(batch.id) }}
+                                            className="p-1.5 rounded-lg hover:bg-red-50 text-stone-400 hover:text-red-600"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )
