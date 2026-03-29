@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, MapPin, X, ArrowUpDown, Layers, Tag } from 'lucide-react'
+import { Plus, MapPin, X, ArrowUpDown, Layers, Tag, FileText } from 'lucide-react'
 import Link from 'next/link'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { LotTagModal } from '@/components/lots/LotTagModal'
@@ -13,6 +13,7 @@ import { LotBulkCloneModal } from '@/components/warehouse/lots/LotBulkCloneModal
 import { LotAssignPositionModal } from '@/components/warehouse/lots/LotAssignPositionModal'
 import { LotBulkAssignModal } from '@/components/warehouse/lots/LotBulkAssignModal'
 import { LotBulkAssignTagModal } from '@/components/warehouse/lots/LotBulkAssignTagModal'
+import { LotReportModal } from '@/components/warehouse/lots/LotReportModal'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
 import Protected from '@/components/auth/Protected'
@@ -89,6 +90,7 @@ export function LotPageManager() {
     const [exportingLot, setExportingLot] = useState<Lot | null>(null)
     const [bulkCloningLot, setBulkCloningLot] = useState<Lot | null>(null)
     const [assigningLot, setAssigningLot] = useState<Lot | null>(null)
+    const [showReportModal, setShowReportModal] = useState(false)
 
     useEffect(() => {
         if (currentSystem?.code) {
@@ -163,6 +165,14 @@ export function LotPageManager() {
                         <MapPin size={18} />
                         Sơ đồ vị trí
                     </Link>
+
+                    <button
+                        onClick={() => setShowReportModal(true)}
+                        className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm flex items-center gap-2"
+                    >
+                        <FileText size={18} className="text-orange-500" />
+                        Báo cáo
+                    </button>
 
                     {(hasPermission('warehouse_lot.manage') || hasPermission('warehouse_lot.create')) && (
                         <div className="flex items-center gap-2">
@@ -433,6 +443,12 @@ export function LotPageManager() {
                         setAssigningLot(null);
                         fetchLots();
                     }}
+                />
+            )}
+
+            {showReportModal && (
+                <LotReportModal
+                    onClose={() => setShowReportModal(false)}
                 />
             )}
 
