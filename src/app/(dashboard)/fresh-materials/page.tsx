@@ -31,6 +31,7 @@ export interface FreshBatch {
     // Joined
     products?: { name: string; sku: string; unit: string } | null
     suppliers?: { name: string } | null
+    document_urls?: any[]
     fresh_material_receivings?: any[]
     fresh_material_stages?: any[]
 }
@@ -60,8 +61,8 @@ export default function FreshMaterialsPage() {
                     *,
                     products (name, sku, unit),
                     suppliers (name),
-                    fresh_material_receivings (id, receiving_order, vehicle_plate, quantity, unit, received_at),
-                    fresh_material_stages (id, stage_order, stage_name, status, input_quantity, input_unit, started_at, completed_at, is_production_link,
+                    fresh_material_receivings (id, receiving_order, vehicle_plate, quantity, unit, received_at, document_urls),
+                    fresh_material_stages (id, stage_order, stage_name, status, input_quantity, input_unit, started_at, completed_at, is_production_link, document_urls,
                         fresh_material_stage_outputs (id, product_id, output_type, quantity, unit, grade, notes,
                             products (name)
                         )
