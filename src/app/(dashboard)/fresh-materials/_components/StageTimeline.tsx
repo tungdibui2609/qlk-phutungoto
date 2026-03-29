@@ -244,7 +244,15 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
                 showToast(`Đã tải lên ${files.length} tài liệu`, 'success')
                 onRefresh()
             } catch (err: any) {
-                showToast('Lỗi upload: ' + err.message, 'error')
+                // Tăng cường debug cho Mobile: Lấy nội dung chi tiết lỗi từ API
+                let errorMessage = err.message
+                if (err instanceof Response) {
+                    try {
+                        const errorData = await err.json()
+                        errorMessage = errorData.error || errorData.details || errorMessage
+                    } catch (e) {}
+                }
+                showToast('Lỗi upload: ' + errorMessage, 'error')
             } finally {
                 setIsUploading(null)
             }
@@ -330,7 +338,8 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
                 showToast(`Đã tải lên ${files.length} hóa đơn bốc xe`, 'success')
                 onRefresh()
             } catch (err: any) {
-                showToast('Lỗi upload: ' + err.message, 'error')
+                let errorMessage = err.message
+                showToast('Lỗi upload: ' + errorMessage, 'error')
             } finally {
                 setIsUploading(null)
             }

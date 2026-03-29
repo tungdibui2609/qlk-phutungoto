@@ -212,7 +212,14 @@ export default function BatchModal({ isOpen, onClose, onSuccess, editItem }: Bat
                 updateReceiving(index, 'document_urls', newDocs)
                 showToast(`Đã tải lên ${files.length} hóa đơn xe`, 'success')
             } catch (err: any) {
-                showToast('Lỗi upload: ' + err.message, 'error')
+                let errorMessage = err.message
+                if (err instanceof Response) {
+                    try {
+                        const errorData = await err.json()
+                        errorMessage = errorData.error || errorData.details || errorMessage
+                    } catch (e) {}
+                }
+                showToast('Lỗi upload: ' + errorMessage, 'error')
             } finally {
                 setIsUploading(null)
             }
