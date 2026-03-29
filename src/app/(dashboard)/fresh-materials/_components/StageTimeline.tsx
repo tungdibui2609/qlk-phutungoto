@@ -202,7 +202,11 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
 
                 for (const file of files) {
                     const formData = new FormData()
-                    formData.append('file', file)
+                    // Chuẩn hóa file cho Mobile (Tránh lỗi định dạng lạ)
+                    const fileBlob = new Blob([await file.arrayBuffer()], { type: file.type })
+                    const safeFileName = file.name.replace(/[^a-zA-Z0-9.]/g, '_')
+                    
+                    formData.append('file', fileBlob, safeFileName)
                     formData.append('companyName', companyName)
                     formData.append('warehouseName', warehouseName)
                     formData.append('category', 'HoaDon_NguyenLieu')
@@ -210,7 +214,11 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
                     const res = await fetch('/api/google-drive-upload', {
                         method: 'POST',
                         body: formData,
-                        keepalive: true
+                        keepalive: true,
+                        headers: {
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
+                        }
                     })
                     const data = await res.json()
 
@@ -280,7 +288,11 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
 
                 for (const file of files) {
                     const formData = new FormData()
-                    formData.append('file', file)
+                    // Chuẩn hóa file cho Mobile
+                    const fileBlob = new Blob([await file.arrayBuffer()], { type: file.type })
+                    const safeFileName = file.name.replace(/[^a-zA-Z0-9.]/g, '_')
+                    
+                    formData.append('file', fileBlob, safeFileName)
                     formData.append('companyName', companyName)
                     formData.append('warehouseName', warehouseName)
                     formData.append('category', 'HoaDon_Tong_NguyenLieu')
@@ -288,7 +300,11 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
                     const res = await fetch('/api/google-drive-upload', {
                         method: 'POST',
                         body: formData,
-                        keepalive: true
+                        keepalive: true,
+                        headers: {
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
+                        }
                     })
                     const data = await res.json()
 
