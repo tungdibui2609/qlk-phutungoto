@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Plus, ChevronRight, CheckCircle2, Clock, AlertCircle, ArrowRight, Trash2, TrendingDown, Leaf, Truck, Package, FileText, Printer, Link as LinkIcon, Target, Scale, Folder, Upload, File, ExternalLink, Loader2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
+import { useUser } from '@/contexts/UserContext'
 import StageModal from './StageModal'
 import StageOutputModal from './StageOutputModal'
 import BatchReportModal from './BatchReportModal'
@@ -21,6 +22,7 @@ const STAGE_STATUS_ICON = {
 
 export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) {
     const { showToast, showConfirm } = useToast()
+    const { profile } = useUser()
     const [isStageModalOpen, setIsStageModalOpen] = useState(false)
     const [editingStage, setEditingStage] = useState<any>(null)
     const [expandedStageId, setExpandedStageId] = useState<string | null>(null)
@@ -409,7 +411,7 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
                                     disabled={!!isUploading}
                                     onClick={(e) => { 
                                         e.stopPropagation(); 
-                                        handleUploadBatchDocument(batch.id, batch.companies?.name || 'Công ty', batch.system_code) 
+                                        handleUploadBatchDocument(batch.id, (profile as any)?.companies?.name || 'Công ty', batch.system_code) 
                                     }}
                                     className="w-full py-1.5 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 text-[9px] font-bold hover:bg-blue-100 transition-all flex items-center justify-center gap-1"
                                 >
