@@ -29,12 +29,15 @@ async function getOrCreateFolder(drive: drive_v3.Drive, folderName: string, pare
 }
 
 export async function POST(req: NextRequest) {
+    console.log("--- Google Drive Upload Started ---");
     try {
         const formData = await req.formData();
         const file = formData.get("file") as File;
-        const companyName = formData.get("companyName") as string;
-        const warehouseName = formData.get("warehouseName") as string;
-        const category = formData.get("category") as string; // [NEW] VD: Sản phẩm, Hóa đơn...
+        const companyName = formData.get("companyName") as string || "Công ty";
+        const warehouseName = formData.get("warehouseName") as string || "Chung";
+        const category = formData.get("category") as string || "Khác";
+
+        console.log(`Uploading: ${file?.name} (${file?.size} bytes) to ${companyName}/${warehouseName}/${category}`);
 
         // Cấu hình từ env
         const rootFolderId = process.env.FOLDER_ID || process.env.GOOGLE_DRIVE_FOLDER_ID;
@@ -43,10 +46,12 @@ export async function POST(req: NextRequest) {
         const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
 
         if (!file) {
+            console.error("Error: No file in formData");
             return NextResponse.json({ error: "No file provided" }, { status: 400 });
         }
 
         if (!clientId || !clientSecret || !refreshToken || !rootFolderId) {
+            console.error("Error: Missing ENV keys for Google Drive");
             return NextResponse.json({ error: "Missing Google Drive configuration" }, { status: 500 });
         }
 
@@ -57,24 +62,28 @@ export async function POST(req: NextRequest) {
 
         // 2. Xác định thư mục upload theo cây: Root > Company > Warehouse > Category
         let finalFolderId = rootFolderId;
+        console.log(`Root Folder: ${finalFolderId}`);
 
-        if (companyName) {
+        try {
             finalFolderId = await getOrCreateFolder(drive, companyName, finalFolderId);
-            if (warehouseName) {
-                finalFolderId = await getOrCreateFolder(drive, warehouseName, finalFolderId);
-                if (category) {
-                    finalFolderId = await getOrCreateFolder(drive, category, finalFolderId);
-                }
-            }
+            finalFolderId = await getOrCreateFolder(drive, warehouseName, finalFolderId);
+            finalFolderId = await getOrCreateFolder(drive, category, finalFolderId);
+            console.log(`Target Folder ID: ${finalFolderId}`);
+        } catch (folderErr) {
+            console.warn("Folder navigation error, falling back to root:", folderErr);
         }
 
-        // 3. Chuyển File thành Stream
-        const buffer = Buffer.from(await file.arrayBuffer());
+        // 3. Chuyển File thành Buffer (Ổn định hơn Stream cũ trên Serverless)
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        
+        // Tạo stream từ buffer theo đúng chuẩn NodeJS Readable
         const stream = new Readable();
         stream.push(buffer);
         stream.push(null);
 
         // 4. Upload File
+        console.log("Starting drive.files.create...");
         const response = await drive.files.create({
             requestBody: {
                 name: file.name,
@@ -85,20 +94,25 @@ export async function POST(req: NextRequest) {
                 body: stream,
             },
             fields: 'id, name, webViewLink',
-            supportsAllDrives: true,
         });
 
         const fileId = response.data.id;
+        console.log(`Upload Success! File ID: ${fileId}`);
 
-        // 5. Set Public Permission
+        // 5. Set Public Permission (Reader cho mọi người có link)
         if (fileId) {
-            await drive.permissions.create({
-                fileId: fileId,
-                requestBody: {
-                    role: 'reader',
-                    type: 'anyone',
-                },
-            });
+            try {
+                await drive.permissions.create({
+                    fileId: fileId,
+                    requestBody: {
+                        role: 'reader',
+                        type: 'anyone',
+                    },
+                });
+                console.log("Permissions set to public reader");
+            } catch (permErr) {
+                console.error("Permission error (non-critical):", permErr);
+            }
         }
 
         return NextResponse.json({
@@ -110,10 +124,13 @@ export async function POST(req: NextRequest) {
         });
 
     } catch (error: any) {
-        console.error("Organized Upload Error:", error);
+        console.error("--- Google Drive Upload FAILED ---");
+        console.error("Error Message:", error.message);
+        console.error("Error Stack:", error.stack);
+        
         return NextResponse.json({
             error: error.message || "Upload failed",
-            details: error.response?.data
+            details: error.response?.data || error.toString()
         }, { status: 500 });
     }
-}
+}
