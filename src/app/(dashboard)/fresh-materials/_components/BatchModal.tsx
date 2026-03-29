@@ -186,7 +186,20 @@ export default function BatchModal({ isOpen, onClose, onSuccess, editItem }: Bat
                     formData.append('warehouseName', systemType)
                     formData.append('category', 'HoaDon_Xe_NguyenLieu')
 
-                    const res = await fetch('/api/google-drive-upload', {
+                    const robustFetch = async (url: string, options: any, retries = 3): Promise<Response> => {
+                        try {
+                            const res = await fetch(url, options)
+                            return res
+                        } catch (err) {
+                            if (retries > 0 && err instanceof TypeError) {
+                                await new Promise(r => setTimeout(r, 1500))
+                                return robustFetch(url, options, retries - 1)
+                            }
+                            throw err
+                        }
+                    }
+
+                    const res = await robustFetch(`${window.location.origin}/api/google-drive-upload`, {
                         method: 'POST',
                         body: formData,
                         keepalive: true,
