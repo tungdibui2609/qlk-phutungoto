@@ -46,7 +46,7 @@ const menuItems: MenuItem[] = [
             { id: 'order_types', name: 'Loại phiếu', href: '/order-types', icon: FileText, requiredPermission: 'warehouse.manage' },
             { id: 'qc', name: 'QC', href: '/qc', icon: ShieldCheck, requiredPermission: 'qc.view' },
             { id: 'work_areas', name: 'Khu vực', href: '/work-areas', icon: MapPin, requiredPermission: 'warehouse.manage' },
-            { id: 'production', name: 'Sản xuất', href: '/production', icon: Factory, requiredPermission: 'warehouse.manage' },
+            { id: 'production', name: 'Sản xuất', href: '/production', icon: Factory, requiredPermission: 'production.view' },
             { id: 'members_teams', name: 'Thành viên & Đội', href: '/members-teams', icon: Users, requiredModule: 'member_team_manager' },
         ]
     },
@@ -93,7 +93,7 @@ const menuItems: MenuItem[] = [
         name: 'Cấp phát sản xuất',
         icon: Factory,
         children: [
-            { id: 'production_inventory', name: 'Sổ cấp phát', href: '/production-inventory', icon: ClipboardCheck, requiredPermission: 'site_inventory.view' },
+            { id: 'production_inventory', name: 'Sổ cấp phát', href: '/production-inventory', icon: ClipboardCheck, requiredPermission: 'production_issue.view' },
         ]
     },
     {
@@ -101,7 +101,7 @@ const menuItems: MenuItem[] = [
         name: 'Nguyên liệu tươi',
         icon: Leaf,
         children: [
-            { id: 'fresh_batches', name: 'Quản lý lô NLT', href: '/fresh-materials', icon: Leaf, requiredPermission: 'warehouse.manage' },
+            { id: 'fresh_batches', name: 'Quản lý lô NLT', href: '/fresh-materials', icon: Leaf, requiredPermission: 'fresh_material.view' },
         ]
     },
     {
