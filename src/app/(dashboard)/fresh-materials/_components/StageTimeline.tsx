@@ -1,11 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, ChevronRight, CheckCircle2, Clock, AlertCircle, ArrowRight, Trash2, TrendingDown, Leaf, Truck, Package } from 'lucide-react'
+import { Plus, ChevronRight, CheckCircle2, Clock, AlertCircle, ArrowRight, Trash2, TrendingDown, Leaf, Truck, Package, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import StageModal from './StageModal'
-import StageOutputForm from './StageOutputForm'
+import StageOutputModal from './StageOutputModal'
 
 interface StageTimelineProps {
     batch: any
@@ -23,6 +23,9 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
     const [isStageModalOpen, setIsStageModalOpen] = useState(false)
     const [editingStage, setEditingStage] = useState<any>(null)
     const [expandedStageId, setExpandedStageId] = useState<string | null>(null)
+    const [isOutputModalOpen, setIsOutputModalOpen] = useState(false)
+    const [selectedStageForOutput, setSelectedStageForOutput] = useState<any>(null)
+    const [editingOutput, setEditingOutput] = useState<any>(null)
 
     const stages = (batch.fresh_material_stages || []).sort((a: any, b: any) => a.stage_order - b.stage_order)
     const receivings = batch.fresh_material_receivings || []
@@ -99,6 +102,22 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
         if (error) {
             showToast('Lỗi: ' + error.message, 'error')
         } else {
+            onRefresh()
+        }
+    }
+    
+    const handleDeleteOutput = async (outputId: string) => {
+        if (!await showConfirm('Xóa kết quả này?')) return
+
+        const { error } = await (supabase as any)
+            .from('fresh_material_stage_outputs')
+            .delete()
+            .eq('id', outputId)
+
+        if (error) {
+            showToast('Lỗi: ' + error.message, 'error')
+        } else {
+            showToast('Đã xóa kết quả', 'success')
             onRefresh()
         }
     }
@@ -228,7 +247,7 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
                                                     {lossRate > 0 && (
                                                         <div className="flex items-center gap-1 text-[10px] text-orange-500 font-bold">
                                                             <TrendingDown size={10} />
-                                                            Tỉ lệ giảm: {lossRate.toFixed(1)}%
+                                                            Giảm: {(stage.input_quantity - outputTotal).toLocaleString('vi-VN')} {stage.input_unit} ({lossRate.toFixed(1)}%)
                                                         </div>
                                                     )}
                                                 </>
@@ -242,18 +261,47 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
                                                 {outputs.length > 0 ? (
                                                     <div className="space-y-1.5">
                                                         {outputs.map((o: any) => (
-                                                            <div key={o.id} className={`flex items-center justify-between text-[10px] p-2 rounded-lg ${
+                                                            <div key={o.id} className={`group flex items-center justify-between text-[10px] p-2 rounded-lg transition-all ${
                                                                 o.output_type === 'WASTE'
                                                                     ? 'bg-red-50 dark:bg-red-900/10'
                                                                     : 'bg-emerald-50 dark:bg-emerald-900/10'
                                                             }`}>
-                                                                <div className="flex items-center gap-1.5">
-                                                                    <span className={`w-1.5 h-1.5 rounded-full ${o.output_type === 'WASTE' ? 'bg-red-400' : 'bg-emerald-400'}`} />
-                                                                    <span className="font-bold text-stone-700 dark:text-stone-300 truncate max-w-[80px]">
-                                                                        {o.products?.name || o.grade || o.output_type}
-                                                                    </span>
+                                                                <div className="flex flex-col gap-1 w-full relative">
+                                                                    <div className="flex items-center gap-1.5 overflow-hidden">
+                                                                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${o.output_type === 'WASTE' ? 'bg-red-400' : 'bg-emerald-400'}`} />
+                                                                        <span className="font-black text-stone-800 dark:text-white truncate text-[11px] uppercase tracking-tight">
+                                                                            {o.products?.name || o.grade || (o.output_type === 'WASTE' ? 'Phế phẩm' : 'Sản phẩm')}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="flex items-center justify-between pl-3 mt-0.5">
+                                                                        <span className="font-black text-emerald-600 dark:text-emerald-400 text-sm">
+                                                                            {o.quantity.toLocaleString('vi-VN')} {o.unit}
+                                                                        </span>
+                                                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={(e) => { 
+                                                                                    e.stopPropagation(); 
+                                                                                    setSelectedStageForOutput(stage);
+                                                                                    setEditingOutput(o);
+                                                                                    setIsOutputModalOpen(true);
+                                                                                }}
+                                                                                className="p-1 px-1.5 hover:bg-stone-200 dark:hover:bg-zinc-700 rounded text-blue-500 transition-colors bg-white/50 dark:bg-zinc-800/50"
+                                                                                title="Sửa"
+                                                                            >
+                                                                                <FileText size={10} />
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={(e) => { e.stopPropagation(); handleDeleteOutput(o.id) }}
+                                                                                className="p-1 px-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-red-500 transition-colors bg-white/50 dark:bg-zinc-800/50"
+                                                                                title="Xóa"
+                                                                            >
+                                                                                <Trash2 size={10} />
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
-                                                                <span className="font-black">{o.quantity.toLocaleString('vi-VN')} {o.unit}</span>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -261,14 +309,20 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
                                                     <p className="text-[10px] text-stone-400 text-center italic">Chưa có output</p>
                                                 )}
 
-                                                {/* Output Form */}
-                                                <StageOutputForm
-                                                    stageId={stage.id}
-                                                    batchId={batch.id}
-                                                    systemCode={batch.system_code}
-                                                    defaultUnit={stage.input_unit || batch.initial_unit}
-                                                    onSuccess={onRefresh}
-                                                />
+                                                {/* Add Output Trigger */}
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => { 
+                                                        e.stopPropagation(); 
+                                                        setSelectedStageForOutput(stage);
+                                                        setEditingOutput(null);
+                                                        setIsOutputModalOpen(true);
+                                                    }}
+                                                    className="group w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-800/30 text-[10px] font-black uppercase tracking-widest text-emerald-600 hover:bg-emerald-600 hover:text-white hover:shadow-lg hover:shadow-emerald-600/20 transition-all duration-300"
+                                                >
+                                                    <Plus size={14} className="group-hover:rotate-90 transition-transform duration-300" />
+                                                    Thêm kết quả
+                                                </button>
 
                                                 {/* Stage Actions */}
                                                 <div className="flex items-center gap-1 pt-2 border-t border-stone-100 dark:border-zinc-700">
@@ -311,6 +365,23 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
                 nextOrder={stages.length + 1}
                 previousStageOutput={stages.length > 0 ? getStageProducts(stages[stages.length - 1]) : totalReceived}
                 defaultUnit={batch.initial_unit || 'Kg'}
+            />
+
+            {/* Stage Output Modal */}
+            <StageOutputModal
+                isOpen={isOutputModalOpen}
+                onClose={() => {
+                    setIsOutputModalOpen(false)
+                    setSelectedStageForOutput(null)
+                    setEditingOutput(null)
+                }}
+                onSuccess={onRefresh}
+                stageId={selectedStageForOutput?.id}
+                batchId={batch.id}
+                systemCode={batch.system_code}
+                defaultUnit={selectedStageForOutput?.input_unit || batch.initial_unit}
+                stageName={selectedStageForOutput?.stage_name || ''}
+                editItem={editingOutput}
             />
         </div>
     )

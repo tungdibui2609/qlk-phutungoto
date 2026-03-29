@@ -268,7 +268,7 @@ export default function BatchModal({ isOpen, onClose, onSuccess, editItem }: Bat
                 </div>
 
                 {/* Body */}
-                <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-6 bg-stone-50/30 dark:bg-zinc-900">
+                <form id="batch-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-6 bg-stone-50/30 dark:bg-zinc-900">
                     {/* Section: Basic Info */}
                     <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm space-y-6">
                         <div className="flex items-center gap-2 text-stone-400 font-black text-[10px] uppercase tracking-widest">

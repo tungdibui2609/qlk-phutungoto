@@ -81,6 +81,16 @@ export default function FreshMaterialsPage() {
         fetchBatches()
     }, [fetchBatches])
 
+    // Sync selectedBatch with new data from batches
+    useEffect(() => {
+        if (selectedBatch) {
+            const updated = batches.find(b => b.id === selectedBatch.id)
+            if (updated) {
+                setSelectedBatch(updated)
+            }
+        }
+    }, [batches])
+
     // Filtered batches
     const filteredBatches = batches.filter(b => {
         const searchLower = searchTerm.toLowerCase()
