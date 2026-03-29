@@ -16,6 +16,7 @@ interface ReceivingRow {
     unit: string
     received_at: string
     notes: string
+    document_urls?: any[]
 }
 
 interface BatchModalProps {
@@ -80,7 +81,8 @@ export default function BatchModal({ isOpen, onClose, onSuccess, editItem }: Bat
                     quantity: r.quantity || 0,
                     unit: r.unit || 'Kg',
                     received_at: r.received_at ? new Date(r.received_at).toISOString().slice(0, 16) : '',
-                    notes: r.notes || ''
+                    notes: r.notes || '',
+                    document_urls: r.document_urls || []
                 }))
             setReceivings(existingReceivings.length > 0 ? existingReceivings : [createEmptyReceiving(1)])
         } else {
@@ -108,7 +110,8 @@ export default function BatchModal({ isOpen, onClose, onSuccess, editItem }: Bat
         quantity: 0,
         unit: 'Kg',
         received_at: new Date().toISOString().slice(0, 16),
-        notes: ''
+        notes: '',
+        document_urls: []
     })
 
     const fetchProducts = async () => {
@@ -153,6 +156,74 @@ export default function BatchModal({ isOpen, onClose, onSuccess, editItem }: Bat
         const updated = [...receivings]
         updated[index] = { ...updated[index], [field]: value }
         setReceivings(updated)
+    }
+
+    const [isUploading, setIsUploading] = useState<string | null>(null)
+
+    const handleUploadReceivingDocument = async (index: number) => {
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.accept = "image/*,application/pdf"
+        input.setAttribute('capture', 'environment')
+        input.multiple = true
+        input.onchange = async (e: any) => {
+            const files = e.target.files
+            if (!files || files.length === 0) return
+
+            const uploadId = `rec-${index}`
+            setIsUploading(uploadId)
+            try {
+                const currentDocs = receivings[index].document_urls || []
+                const newDocs = [...currentDocs]
+
+                for (const file of files) {
+                    const formData = new FormData()
+                    const fileBlob = new Blob([await file.arrayBuffer()], { type: file.type })
+                    const safeFileName = file.name.replace(/[^a-zA-Z0-9.]/g, '_')
+                    
+                    formData.append('file', fileBlob, safeFileName)
+                    formData.append('companyName', (profile as any)?.companies?.name || 'Công ty')
+                    formData.append('warehouseName', systemType)
+                    formData.append('category', 'HoaDon_Xe_NguyenLieu')
+
+                    const res = await fetch('/api/google-drive-upload', {
+                        method: 'POST',
+                        body: formData,
+                        keepalive: true,
+                        headers: {
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
+                        }
+                    })
+                    const data = await res.json()
+
+                    if (data.success) {
+                        newDocs.push({
+                            name: data.name,
+                            link: data.viewLink,
+                            fileId: data.fileId,
+                            uploadedAt: new Date().toISOString()
+                        })
+                    } else {
+                        throw new Error(data.error || 'Upload failed')
+                    }
+                }
+
+                updateReceiving(index, 'document_urls', newDocs)
+                showToast(`Đã tải lên ${files.length} hóa đơn xe`, 'success')
+            } catch (err: any) {
+                showToast('Lỗi upload: ' + err.message, 'error')
+            } finally {
+                setIsUploading(null)
+            }
+        }
+        input.click()
+    }
+
+    const removeReceivingDocument = (recIndex: number, fileId: string) => {
+        const currentDocs = receivings[recIndex].document_urls || []
+        const newDocs = currentDocs.filter((d: any) => d.fileId !== fileId)
+        updateReceiving(recIndex, 'document_urls', newDocs)
     }
 
     // Total quantity from all receivings
@@ -218,7 +289,8 @@ export default function BatchModal({ isOpen, onClose, onSuccess, editItem }: Bat
                         quantity: r.quantity,
                         unit: r.unit || 'Kg',
                         received_at: r.received_at ? new Date(r.received_at).toISOString() : new Date().toISOString(),
-                        notes: r.notes || null
+                        notes: r.notes || null,
+                        document_urls: r.document_urls || []
                     }))
 
                 if (validReceivings.length > 0) {
@@ -434,6 +506,40 @@ export default function BatchModal({ isOpen, onClose, onSuccess, editItem }: Bat
                                                     onChange={e => updateReceiving(idx, 'received_at', e.target.value)}
                                                     className="w-full px-3 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-stone-100 dark:border-zinc-700 text-[10px] font-bold outline-none"
                                                 />
+                                            </div>
+
+                                            {/* Receiving Documents */}
+                                            <div className="col-span-2 md:col-span-1 space-y-1">
+                                                <label className="text-[10px] font-bold text-stone-400 uppercase">Hóa đơn xe</label>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <button
+                                                        type="button"
+                                                        disabled={!!isUploading}
+                                                        onClick={() => handleUploadReceivingDocument(idx)}
+                                                        className="w-10 h-10 rounded-xl bg-white dark:bg-zinc-900 border border-dashed border-stone-200 dark:border-zinc-700 flex items-center justify-center text-stone-400 hover:text-emerald-600 hover:border-emerald-300 transition-all"
+                                                    >
+                                                        {isUploading === `rec-${idx}` ? (
+                                                            <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                                                        ) : (
+                                                            <Plus size={18} />
+                                                        )}
+                                                    </button>
+                                                    
+                                                    {(rec.document_urls || []).map((doc: any) => (
+                                                        <div key={doc.fileId} className="relative group/doc w-10 h-10 rounded-xl bg-white dark:bg-zinc-900 border border-stone-100 dark:border-zinc-700 flex items-center justify-center">
+                                                            <a href={doc.link} target="_blank" rel="noopener noreferrer">
+                                                                <FileText size={16} className="text-blue-500" />
+                                                            </a>
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => removeReceivingDocument(idx, doc.fileId)}
+                                                                className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover/doc:opacity-100 transition-opacity"
+                                                            >
+                                                                <X size={10} />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
