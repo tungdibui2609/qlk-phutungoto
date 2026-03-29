@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
 import { useSystem } from '@/contexts/SystemContext'
+import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 
 interface ReceivingRow {
     id?: string
@@ -50,6 +51,7 @@ export default function BatchModal({ isOpen, onClose, onSuccess, editItem }: Bat
     const [suppliers, setSuppliers] = useState<any[]>([])
     const [productSearch, setProductSearch] = useState('')
     const [isProductSearchOpen, setIsProductSearchOpen] = useState(false)
+    const [viewDocUrl, setViewDocUrl] = useState<{url: string, title?: string} | null>(null)
 
     useEffect(() => {
         if (isOpen) {
@@ -541,16 +543,20 @@ export default function BatchModal({ isOpen, onClose, onSuccess, editItem }: Bat
                                                     </button>
                                                     
                                                     {(rec.document_urls || []).map((doc: any) => (
-                                                        <div key={doc.fileId} className="relative group/doc w-10 h-10 rounded-xl bg-white dark:bg-zinc-900 border border-stone-100 dark:border-zinc-700 flex items-center justify-center">
-                                                            <a href={doc.link} target="_blank" rel="noopener noreferrer">
-                                                                <FileText size={16} className="text-blue-500" />
-                                                            </a>
+                                                        <div key={doc.fileId} className="relative w-12 h-12 rounded-xl bg-white dark:bg-zinc-900 border border-stone-100 dark:border-zinc-700 flex items-center justify-center">
+                                                            <button 
+                                                                type="button" 
+                                                                onClick={() => setViewDocUrl({ url: doc.link, title: doc.name })}
+                                                                className="text-blue-500 w-full h-full flex items-center justify-center hover:bg-stone-50 transition-colors rounded-xl"
+                                                            >
+                                                                <FileText size={18} />
+                                                            </button>
                                                             <button 
                                                                 type="button"
                                                                 onClick={() => removeReceivingDocument(idx, doc.fileId)}
-                                                                className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover/doc:opacity-100 transition-opacity"
+                                                                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg active:scale-95 transition-all z-10 border-2 border-white dark:border-zinc-800"
                                                             >
-                                                                <X size={10} />
+                                                                <X size={12} />
                                                             </button>
                                                         </div>
                                                     ))}
@@ -587,6 +593,13 @@ export default function BatchModal({ isOpen, onClose, onSuccess, editItem }: Bat
                         {editItem ? 'Cập nhật' : 'Lưu lô'}
                     </button>
                 </div>
+                
+                <DocumentViewerModal 
+                    isOpen={!!viewDocUrl}
+                    onClose={() => setViewDocUrl(null)}
+                    url={viewDocUrl?.url || ''}
+                    title={viewDocUrl?.title}
+                />
             </div>
         </div>
     )

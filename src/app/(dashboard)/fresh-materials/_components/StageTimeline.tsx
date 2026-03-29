@@ -8,6 +8,7 @@ import { useUser } from '@/contexts/UserContext'
 import StageModal from './StageModal'
 import StageOutputModal from './StageOutputModal'
 import BatchReportModal from './BatchReportModal'
+import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 
 interface StageTimelineProps {
     batch: any
@@ -32,6 +33,7 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
     const [editingOutput, setEditingOutput] = useState<any>(null)
     const [productionLots, setProductionLots] = useState<any[]>([])
     const [isUploading, setIsUploading] = useState<string | null>(null) // stageId
+    const [viewDocUrl, setViewDocUrl] = useState<{url: string, title?: string} | null>(null)
 
     const stages = (batch.fresh_material_stages || []).sort((a: any, b: any) => a.stage_order - b.stage_order)
     const receivings = batch.fresh_material_receivings || []
@@ -468,23 +470,22 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
                                 
                                 <div className="flex flex-col gap-1.5">
                                     {(batch.document_urls || []).map((doc: any) => (
-                                        <div key={doc.fileId} className="group/doc relative flex items-center gap-1.5 px-2 py-1 bg-white dark:bg-zinc-900 border border-stone-100 dark:border-zinc-700 rounded-lg shadow-sm">
-                                            <File size={10} className="text-stone-400 shrink-0" />
-                                            <a 
-                                                href={doc.link} 
-                                                target="_blank" 
-                                                rel="noopener noreferrer"
-                                                onClick={(e) => e.stopPropagation()}
-                                                className="text-[8px] font-bold text-stone-600 dark:text-stone-300 hover:text-blue-600 truncate text-left"
-                                                title={doc.name}
-                                            >
-                                                {doc.name}
-                                            </a>
+                                        <div key={doc.fileId} className="relative flex items-center justify-between gap-1.5 px-2 py-1.5 bg-white dark:bg-zinc-900 border border-stone-100 dark:border-zinc-700 rounded-lg shadow-sm">
+                                            <div className="flex items-center gap-1.5 overflow-hidden w-full">
+                                                <File size={10} className="text-stone-400 shrink-0" />
+                                                <button 
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); setViewDocUrl({ url: doc.link, title: doc.name }) }}
+                                                    className="text-[8px] font-bold text-stone-600 dark:text-stone-300 hover:text-blue-600 truncate text-left"
+                                                >
+                                                    {doc.name}
+                                                </button>
+                                            </div>
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); removeBatchDocument(batch.id, doc.fileId) }}
-                                                className="p-0.5 hover:bg-red-50 text-stone-300 hover:text-red-500 rounded opacity-0 group-hover/doc:opacity-100 transition-opacity ml-auto"
+                                                className="p-1 min-w-[20px] shrink-0 text-red-400 hover:bg-red-50 hover:text-red-500 rounded transition-all ml-auto flex items-center justify-center"
                                             >
-                                                <X size={8} />
+                                                <X size={10} />
                                             </button>
                                         </div>
                                     ))}
@@ -641,21 +642,20 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
 
                                                     <div className="flex flex-wrap gap-2">
                                                         {(stage.document_urls || []).map((doc: any) => (
-                                                            <div key={doc.fileId} className="group/doc relative flex items-center gap-1.5 px-2 py-1 bg-white dark:bg-zinc-900 border border-stone-100 dark:border-zinc-700 rounded-lg shadow-sm">
-                                                                <File size={10} className="text-stone-400" />
-                                                                <a 
-                                                                    href={doc.link} 
-                                                                    target="_blank" 
-                                                                    rel="noopener noreferrer"
-                                                                    onClick={(e) => e.stopPropagation()}
-                                                                    className="text-[9px] font-bold text-stone-600 dark:text-stone-300 hover:text-emerald-600 truncate max-w-[80px]"
-                                                                    title={doc.name}
-                                                                >
-                                                                    {doc.name}
-                                                                </a>
+                                                            <div key={doc.fileId} className="relative flex items-center justify-between gap-1.5 px-2 py-1.5 bg-white dark:bg-zinc-900 border border-stone-100 dark:border-zinc-700 rounded-lg shadow-sm md:w-auto w-full">
+                                                                <div className="flex items-center gap-1.5 overflow-hidden w-full">
+                                                                    <File size={10} className="text-stone-400 shrink-0" />
+                                                                    <button 
+                                                                        type="button"
+                                                                        onClick={(e) => { e.stopPropagation(); setViewDocUrl({ url: doc.link, title: doc.name }) }}
+                                                                        className="text-[9px] font-bold text-stone-600 dark:text-stone-300 hover:text-emerald-600 truncate text-left max-w-[120px] md:max-w-[80px]"
+                                                                    >
+                                                                        {doc.name}
+                                                                    </button>
+                                                                </div>
                                                                 <button
                                                                     onClick={(e) => { e.stopPropagation(); removeDocument(stage.id, doc.fileId) }}
-                                                                    className="p-0.5 hover:bg-red-50 text-stone-300 hover:text-red-500 rounded opacity-0 group-hover/doc:opacity-100 transition-opacity"
+                                                                    className="p-1 min-w-[20px] shrink-0 text-red-400 hover:bg-red-50 hover:text-red-500 rounded transition-all ml-auto flex items-center justify-center"
                                                                 >
                                                                     <X size={10} />
                                                                 </button>
@@ -798,6 +798,13 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
                 isOpen={isReportModalOpen}
                 onClose={() => setIsReportModalOpen(false)}
                 batch={batch}
+            />
+            {/* Document Viewer Modal */}
+            <DocumentViewerModal 
+                isOpen={!!viewDocUrl}
+                onClose={() => setViewDocUrl(null)}
+                url={viewDocUrl?.url || ''}
+                title={viewDocUrl?.title}
             />
         </div>
     )
