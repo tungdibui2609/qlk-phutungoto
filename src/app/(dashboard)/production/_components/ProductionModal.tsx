@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Plus, Save, FileText, Calendar, Info, Activity, Factory, Package, Users, Weight, Hash, Trash2, Wand2, Search, Loader2, Warehouse, ChevronDown, CheckCircle2, X, Scale, Truck, TrendingUp, PieChart, ArrowRight, Leaf } from 'lucide-react'
+import { Plus, Save, FileText, Calendar, Info, Activity, Factory, Package, Users, Weight, Hash, Trash2, Wand2, Search, Loader2, Warehouse, ChevronDown, CheckCircle2, X, Scale, Truck, TrendingUp, PieChart, ArrowRight, Leaf, RotateCw } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
@@ -136,9 +136,15 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const [loadingProducts, setLoadingProducts] = useState(false)
     const [loadingCustomers, setLoadingCustomers] = useState(false)
 
-    // Per-row search states (index -> searchTerm)
     const [rowSearchTerms, setRowSearchTerms] = useState<Record<number, string>>({})
     const [activeRowIdx, setActiveRowIdx] = useState<number | null>(null)
+    const [isRefreshingFm, setIsRefreshingFm] = useState(false)
+    
+    // Stats Date Filters
+    const [statsStartDate, setStatsStartDate] = useState<string>('')
+    const [statsEndDate, setStatsEndDate] = useState<string>('')
+    const [isRefreshingStats, setIsRefreshingStats] = useState(false)
+    const [dailyStats, setDailyStats] = useState<{ date: string, quantity: number }[]>([])
 
     // Summary calculations
     const summary = useMemo(() => {
@@ -222,8 +228,294 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             }
         }
 
-        return { materials, timeProgress, actualTons, inputStats };
-    }, [readOnly, editItem, allocations, summary.actual, startDate, endDate, productionType, productionInputs])
+        // 5. Daily Productivity Insights
+        const totalDays = dailyStats.length;
+        const avgOutput = totalDays > 0 ? dailyStats.reduce((sum, s) => sum + s.quantity, 0) / totalDays : 0;
+        const peakDay = dailyStats.length > 0 ? [...dailyStats].sort((a, b) => b.quantity - a.quantity)[0] : null;
+
+        return { materials, timeProgress, actualTons, inputStats, dailyStats, totalDays, avgOutput, peakDay };
+    }, [readOnly, editItem, allocations, summary.actual, startDate, endDate, productionType, productionInputs, dailyStats])
+
+    const fetchCustomers = async () => {
+        if (!profile?.company_id) return
+        setLoadingCustomers(true)
+        const { data } = await supabase
+            .from('customers')
+            .select('id, name')
+            .eq('company_id', profile.company_id)
+            .order('name')
+        if (data) setCustomers(data)
+        setLoadingCustomers(false)
+    }
+
+    const fetchUnits = async () => {
+        const { data } = await supabase
+            .from('units')
+            .select('*')
+            .order('name')
+        if (data) setUnits(data)
+    }
+
+    const fetchProducts = async (sysCode: string) => {
+        setLoadingProducts(true)
+        const { data } = await supabase
+            .from('products')
+            .select('id, name, sku, weight_kg, unit, product_units(unit_id, conversion_rate)')
+            .eq('system_type', sysCode)
+            .eq('is_active', true)
+            .order('name')
+        if (data) setProducts(data)
+        setLoadingProducts(false)
+    }
+
+    const fetchProductionLots = async (prodId: string, startDate?: string, endDate?: string) => {
+        if (!prodId) return
+        setIsRefreshingStats(true)
+        try {
+            // 1. Get basic lot info
+            const { data: lotsData } = await supabase
+                .from('production_lots')
+                .select('*, products(name, sku, unit, weight_kg)')
+                .eq('production_id', prodId)
+            
+            if (!lotsData) return
+
+            const lotIds = (lotsData as any[]).map(l => l.id)
+            if (lotIds.length === 0) {
+                setLots(lotsData)
+                return
+            }
+
+            // 2. Query statistics with optional date filtering
+            let statsData: any[] = []
+            
+            if (startDate || endDate) {
+                // 1. Get warehouse lot IDs that match our production lots and date range
+                let lotQuery = supabase
+                    .from('lots')
+                    .select('id, production_lot_id, production_id, product_id, inbound_date')
+                    .eq('production_id', prodId)
+
+                if (startDate) lotQuery = lotQuery.gte('inbound_date', startDate)
+                
+                // Fix Today's data: Use next day for inclusive TIMESTAMP filtering
+                if (endDate) {
+                    const nextDay = new Date(endDate);
+                    nextDay.setDate(nextDay.getDate() + 1);
+                    const nextDayStr = nextDay.toISOString().split('T')[0];
+                    lotQuery = lotQuery.lt('inbound_date', nextDayStr)
+                }
+
+                const { data: matchedLots, error: lotErr } = await lotQuery
+                if (lotErr) throw lotErr
+
+                if (!matchedLots || matchedLots.length === 0) {
+                    statsData = []
+                } else {
+                    const warehouseLotIds = (matchedLots as any[]).map(ml => ml.id)
+                    
+                    // 2. Get items for these warehouse lots
+                    const { data: itemsData, error: itemsErr } = await supabase
+                        .from('lot_items')
+                        .select('quantity, unit, lot_id, product_id')
+                        .in('lot_id', warehouseLotIds)
+                    
+                    if (itemsErr) throw itemsErr
+
+                    if (itemsData) {
+                        // SQL Logic: Helper to extract weight from unit string like "(10 Kg)"
+                        const extractWeight = (unit: string): number => {
+                            try {
+                                const match = unit.match(/\(\s*.*?\s*(\d+(\.\d+)?)\s*[kK]?[gG]\s*\)/);
+                                return match ? parseFloat(match[1]) : 1.0;
+                            } catch (e) { return 1.0; }
+                        };
+
+                        const agg: Record<string, any> = {}
+                        
+                        // Use a products map for faster lookup of weight_kg
+                        const { data: prodInfo } = await supabase
+                            .from('products')
+                            .select('id, weight_kg')
+                            .in('id', (itemsData as any[]).map(item => item.product_id))
+
+                        const productMap: Record<string, number> = {}
+                        if (prodInfo) {
+                            (prodInfo as any[]).forEach(p => { 
+                                productMap[p.id] = p.weight_kg || 0 
+                            })
+                        }
+
+                        (itemsData as any[]).forEach((item: any) => {
+                            // SQL Logic: Joins based on production_id AND product_id
+                            // This ensures we match the correct production_lot (output definition)
+                            const matchedPL = (lotsData as any[]).find(pl => 
+                                pl.production_id === prodId && 
+                                pl.product_id === item.product_id
+                            )
+                            
+                            if (!matchedPL) return
+                            const plId = matchedPL.id
+
+                            // Calculate weight factor using SQL priorities:
+                            // 1. product.weight_kg OR 2. extracted weight OR 3. default 1.0
+                            const weightFactor = productMap[item.product_id] || extractWeight(item.unit) || 1.0
+
+                            if (!agg[plId]) agg[plId] = { production_lot_id: plId, actual_quantity: 0, quantity_by_unit: [] }
+                            
+                            // Add to total actual quantity (KG)
+                            agg[plId].actual_quantity += (item.quantity * weightFactor)
+
+                            // Add to breakdown by unit
+                            const weightSuffix = (weightFactor > 1 && !item.unit.includes('(')) ? ` (${weightFactor}kg)` : ''
+                            const displayUnit = item.unit + weightSuffix
+                            
+                            const unitEntry = agg[plId].quantity_by_unit.find((u: any) => u.unit === displayUnit)
+                            if (unitEntry) {
+                                unitEntry.qty += item.quantity
+                            } else {
+                                agg[plId].quantity_by_unit.push({ qty: item.quantity, unit: displayUnit })
+                            }
+                        })
+                        
+                        statsData = Object.values(agg)
+                    }
+                }
+            } else {
+                // Default: use the optimized view
+                const { data } = await supabase
+                    .from('production_item_statistics' as any)
+                    .select('production_lot_id, actual_quantity, quantity_by_unit')
+                    .in('production_lot_id', lotIds) as { data: any[] | null }
+                statsData = data || []
+            }
+
+            // 3. Map back to enriched lots
+            const statsMap: Record<string, { actual: number, by_unit: any[] }> = {}
+            statsData.forEach((s: any) => { 
+                statsMap[s.production_lot_id] = { 
+                    actual: s.actual_quantity, 
+                    by_unit: s.quantity_by_unit || [] 
+                }
+            })
+
+            // 4. Calculate Daily Productivity (for Analysis Tab)
+            // We fetch all records for the production order to show the full trend
+            const { data: allLots } = await supabase
+                .from('lots')
+                .select('id, inbound_date')
+                .eq('production_id', prodId) as { data: any[] | null }
+            
+            if (allLots && allLots.length > 0) {
+                const { data: allItems } = await supabase
+                    .from('lot_items')
+                    .select('quantity, unit, lot_id, product_id')
+                    .in('lot_id', allLots.map(l => l.id)) as { data: any[] | null }
+                
+                if (allItems) {
+                    const extractWeight = (unit: string): number => {
+                        try {
+                            const match = unit.match(/\(\s*.*?\s*(\d+(\.\d+)?)\s*[kK]?[gG]\s*\)/);
+                            return match ? parseFloat(match[1]) : 1.0;
+                        } catch (e) { return 1.0; }
+                    };
+
+                    const dailyMap: Record<string, number> = {}
+                    const lotDateMap: Record<string, string> = {}
+                    allLots.forEach(l => {
+                        if (l.inbound_date) {
+                            lotDateMap[l.id] = new Date(l.inbound_date).toISOString().split('T')[0]
+                        }
+                    })
+
+                    // We need product weight_kg map for accurate daily totals
+                    const { data: pInfo } = await supabase
+                        .from('products')
+                        .select('id, weight_kg')
+                        .in('id', Array.from(new Set(allItems.map(i => i.product_id)))) as { data: any[] | null }
+                    
+                    const pMap: Record<string, number> = {}
+                    pInfo?.forEach(p => { pMap[p.id] = p.weight_kg || 0 })
+
+                    allItems.forEach((item: any) => {
+                        const date = lotDateMap[item.lot_id]
+                        if (!date) return
+                        
+                        const weightFactor = pMap[item.product_id] || extractWeight(item.unit) || 1.0
+                        dailyMap[date] = (dailyMap[date] || 0) + (item.quantity * weightFactor)
+                    })
+
+                    const formattedDaily = Object.entries(dailyMap)
+                        .map(([date, quantity]) => ({ date, quantity }))
+                        .sort((a, b) => a.date.localeCompare(b.date))
+                    
+                    setDailyStats(formattedDaily)
+                }
+            }
+
+            const formattedLots = (lotsData as any[]).map(l => ({
+                id: l.id,
+                lot_code: l.lot_code,
+                product_id: l.product_id,
+                weight_per_unit: l.weight_per_unit || 0,
+                planned_quantity: l.planned_quantity,
+                actual_quantity: statsMap[l.id]?.actual || 0,
+                quantity_by_unit: statsMap[l.id]?.by_unit || [],
+                unit: l.products?.unit || '',
+                product_name: l.products?.name || '',
+                conversion_rules: l.conversion_rules || []
+            }))
+            setLots(formattedLots)
+            
+            // Also set row search terms
+            const searches: Record<number, string> = {}
+            formattedLots.forEach((l, idx) => {
+                if (l.product_name) searches[idx] = l.product_name
+            })
+            setRowSearchTerms(searches)
+        } catch (err: any) {
+            console.error('Fetch production lots error:', err)
+            showToast('Lỗi tải dữ liệu: ' + err.message, 'error')
+        } finally {
+            setIsRefreshingStats(false)
+        }
+    }
+
+    const fetchAllocations = async (prodId: string) => {
+        setLoadingAllocations(true)
+        try {
+            const { data, error } = await supabase
+                .from('production_loans')
+                .select(`
+                    *,
+                    products (
+                        id, name, sku
+                    )
+                `)
+                .eq('production_id', prodId)
+            
+            if (error) throw error
+            setAllocations(data || [])
+        } catch (err: any) {
+            console.error('Fetch allocations error:', err)
+        } finally {
+            setLoadingAllocations(false)
+        }
+    }
+
+    const fetchProductionInputs = async (prodId: string) => {
+        try {
+            const { data, error } = await supabase
+                .from('production_inputs')
+                .select('*, products(name, sku, unit)')
+                .eq('production_id', prodId)
+            
+            if (error) throw error
+            setProductionInputs(data || [])
+        } catch (err: any) {
+            console.error('Fetch production inputs error:', err)
+        }
+    }
 
     useEffect(() => {
         if (editItem) {
@@ -250,7 +542,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             setInputSearchTerm(editItem.input_products?.name || '')
             
             // Fetch production lots if editing (now includes product details)
-            fetchProductionLots(editItem.id)
+            // fetchProductionLots is now handled by a separate useEffect for date filtering
             if (editItem.production_type === 'RE_SORT' || editItem.id) {
                 fetchProductionInputs(editItem.id)
             }
@@ -282,8 +574,17 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             setInputUnit('')
             setInputProductName('')
             setInputSearchTerm('')
+            setStatsStartDate('')
+            setStatsEndDate('')
         }
     }, [editItem, isOpen, readOnly])
+
+    // Effect to refresh production lot statistics when date filters change
+    useEffect(() => {
+        if (isOpen && editItem?.id) {
+            fetchProductionLots(editItem.id, statsStartDate, statsEndDate)
+        }
+    }, [isOpen, editItem?.id, statsStartDate, statsEndDate])
 
     useEffect(() => {
         if (isOpen) {
@@ -335,28 +636,54 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             return
         }
         
-        const stage = fmStages.find(s => s.id === stageId)
-        if (!stage) return
-        
-        const productOutput = stage.fresh_material_stage_outputs?.find((o: any) => o.output_type === 'PRODUCT')
-        if (productOutput) {
-            setInputProductId(productOutput.product_id)
-            setInputQuantity(productOutput.quantity || 0)
-            setInputUnit(productOutput.unit || '')
-            
-            const { data } = await (supabase as any).from('products').select('name').eq('id', productOutput.product_id).single()
-            if (data) {
-                setInputProductName(data.name)
-                setInputSearchTerm(data.name)
+        setIsRefreshingFm(true)
+        try {
+            // Fetch the latest output for this stage directly from database
+            const { data: outputData, error } = await (supabase as any)
+                .from('fresh_material_stage_outputs')
+                .select('product_id, quantity, unit')
+                .eq('stage_id', stageId)
+                .eq('output_type', 'PRODUCT')
+
+            if (error && error.code !== 'PGRST116') {
+                console.error('Fetch stage output error:', error)
+                showToast('Lỗi khi tải dữ liệu giai đoạn', 'error')
+                return
             }
-        } else {
-            setInputProductId(null)
-            setInputQuantity(0)
-            setInputUnit('')
-            setInputProductName('')
-            setInputSearchTerm('')
-            showToast('Giai đoạn này chưa có dữ liệu báo cáo "Sản phẩm đầu ra" chính.', 'warning')
+
+            if (outputData && outputData.length > 0) {
+                // Sum all PRODUCT outputs for this stage
+                const totalQuantity = outputData.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
+                const firstOutput = outputData[0]
+
+                setInputProductId(firstOutput.product_id)
+                setInputQuantity(totalQuantity)
+                setInputUnit(firstOutput.unit || '')
+                
+                const { data: productData } = await (supabase as any).from('products').select('name').eq('id', firstOutput.product_id).single()
+                if (productData) {
+                    setInputProductName(productData.name)
+                    setInputSearchTerm(productData.name)
+                }
+            } else {
+                setInputProductId(null)
+                setInputQuantity(0)
+                setInputUnit('')
+                setInputProductName('')
+                setInputSearchTerm('')
+                showToast('Giai đoạn này chưa có dữ liệu báo cáo "Sản phẩm đầu ra" chính.', 'warning')
+            }
+        } catch (err) {
+            console.error('Handle stage select error:', err)
+        } finally {
+            setIsRefreshingFm(false)
         }
+    }
+
+    const refreshStageData = async () => {
+        if (!fmStageId) return;
+        await handleStageSelect(fmStageId);
+        showToast('Đã cập nhật dữ liệu mới nhất từ Nguyên liệu tươi', 'success')
     }
 
     const [productUnits, setProductUnits] = useState<any[]>([])
@@ -403,119 +730,6 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
         return null // Removed product name fallback
     }, [])
 
-    const fetchCustomers = async () => {
-        if (!profile?.company_id) return
-        setLoadingCustomers(true)
-        const { data } = await supabase
-            .from('customers')
-            .select('id, name')
-            .eq('company_id', profile.company_id)
-            .order('name')
-        if (data) setCustomers(data)
-        setLoadingCustomers(false)
-    }
-
-    const fetchUnits = async () => {
-        const { data } = await supabase
-            .from('units')
-            .select('*')
-            .order('name')
-        if (data) setUnits(data)
-    }
-
-    const fetchProducts = async (sysCode: string) => {
-        setLoadingProducts(true)
-        const { data } = await supabase
-            .from('products')
-            .select('id, name, sku, weight_kg, unit, product_units(unit_id, conversion_rate)')
-            .eq('system_type', sysCode)
-            .eq('is_active', true)
-            .order('name')
-        if (data) setProducts(data)
-        setLoadingProducts(false)
-    }
-
-    const fetchProductionLots = async (prodId: string) => {
-        // First get basic lot info & products
-        const { data: lotsData } = await supabase
-            .from('production_lots')
-            .select('*, products(name, sku, unit, weight_kg)') // Added weight_kg here
-            .eq('production_id', prodId)
-        
-        if (lotsData) {
-            // Then get stats from view
-            const lotIds = (lotsData as any[]).map(l => l.id)
-            const { data: statsData } = await supabase
-                .from('production_item_statistics' as any)
-                .select('production_lot_id, actual_quantity, quantity_by_unit')
-                .in('production_lot_id', lotIds) as { data: any[] | null }
-
-            const statsMap: Record<string, { actual: number, by_unit: any[] }> = {}
-            statsData?.forEach((s: any) => { 
-                statsMap[s.production_lot_id] = {
-                    actual: s.actual_quantity,
-                    by_unit: s.quantity_by_unit || []
-                }
-            })
-
-            const formattedLots = lotsData.map((l: any) => ({
-                id: l.id,
-                lot_code: l.lot_code,
-                product_id: l.product_id,
-                weight_per_unit: l.weight_per_unit || 0,
-                planned_quantity: l.planned_quantity,
-                actual_quantity: statsMap[l.id]?.actual || 0,
-                quantity_by_unit: statsMap[l.id]?.by_unit || [],
-                unit: l.products?.unit || '',
-                product_name: l.products?.name || '',
-                conversion_rules: l.conversion_rules || []
-            }))
-            setLots(formattedLots)
-            
-            // Also set row search terms
-            const searches: Record<number, string> = {}
-            formattedLots.forEach((l, idx) => {
-                if (l.product_name) searches[idx] = l.product_name
-            })
-            setRowSearchTerms(searches)
-        }
-    }
-
-    const fetchAllocations = async (prodId: string) => {
-        setLoadingAllocations(true)
-        try {
-            const { data, error } = await supabase
-                .from('production_loans')
-                .select(`
-                    *,
-                    products (
-                        id, name, sku
-                    )
-                `)
-                .eq('production_id', prodId)
-            
-            if (error) throw error
-            setAllocations(data || [])
-        } catch (err: any) {
-            console.error('Fetch allocations error:', err)
-        } finally {
-            setLoadingAllocations(false)
-        }
-    }
-
-    const fetchProductionInputs = async (prodId: string) => {
-        try {
-            const { data, error } = await supabase
-                .from('production_inputs')
-                .select('*, products(name, sku, unit)')
-                .eq('production_id', prodId)
-            
-            if (error) throw error
-            setProductionInputs(data || [])
-        } catch (err: any) {
-            console.error('Fetch production inputs error:', err)
-        }
-    }
 
 
     const generateAutoCode = () => {
@@ -894,18 +1108,39 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                     </div>
                                                     
                                                     <div className="space-y-2 relative md:col-span-1 lg:col-span-1">
-                                                        <label className="text-xs font-bold text-stone-500">Chọn Giai đoạn lấy kết quả</label>
-                                                        <select
-                                                            value={fmStageId || ''}
-                                                            onChange={e => handleStageSelect(e.target.value)}
-                                                            disabled={!fmBatchId}
-                                                            className="w-full px-4 py-3 rounded-2xl bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/30 font-bold focus:ring-4 focus:ring-emerald-100 outline-none transition-all appearance-none text-emerald-800 dark:text-emerald-400 disabled:opacity-50"
-                                                        >
-                                                            <option value="">-- Chọn giai đoạn --</option>
-                                                            {fmStages.map(s => (
-                                                                <option key={s.id} value={s.id}>{s.stage_name}</option>
-                                                            ))}
-                                                        </select>
+                                                        <label className="text-xs font-bold text-stone-500 flex items-center justify-between">
+                                                            <span>Chọn Giai đoạn lấy kết quả</span>
+                                                            {fmStageId && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={refreshStageData}
+                                                                    disabled={isRefreshingFm}
+                                                                    className="text-emerald-600 hover:text-emerald-700 p-1 rounded-lg hover:bg-emerald-50 transition-all flex items-center gap-1 group"
+                                                                    title="Làm mới số lượng từ NLT"
+                                                                >
+                                                                    <RotateCw size={12} className={`${isRefreshingFm ? 'animate-spin' : 'group-active:rotate-180 transition-transform duration-500'}`} />
+                                                                    <span className="text-[10px] font-bold">Làm mới</span>
+                                                                </button>
+                                                            )}
+                                                        </label>
+                                                        <div className="relative">
+                                                            <select
+                                                                value={fmStageId || ''}
+                                                                onChange={e => handleStageSelect(e.target.value)}
+                                                                disabled={!fmBatchId || isRefreshingFm}
+                                                                className="w-full px-4 py-3 rounded-2xl bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/30 font-bold focus:ring-4 focus:ring-emerald-100 outline-none transition-all appearance-none text-emerald-800 dark:text-emerald-400 disabled:opacity-50"
+                                                            >
+                                                                <option value="">-- Chọn giai đoạn --</option>
+                                                                {fmStages.map(s => (
+                                                                    <option key={s.id} value={s.id}>{s.stage_name}</option>
+                                                                ))}
+                                                            </select>
+                                                            {isRefreshingFm && (
+                                                                <div className="absolute right-10 top-1/2 -translate-y-1/2">
+                                                                    <Loader2 size={16} className="animate-spin text-emerald-500" />
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </>
                                             )}
@@ -1204,6 +1439,105 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                         )}
                                     </div>
 
+                                    {/* Daily Productivity Analysis */}
+                                    <div className="p-8 bg-emerald-500/5 dark:bg-emerald-500/10 rounded-[32px] border border-emerald-100 dark:border-emerald-900/20">
+                                        <div className="flex items-center justify-between mb-8">
+                                            <div className="flex items-center gap-3">
+                                                <div className="p-3 bg-white dark:bg-zinc-800 rounded-2xl shadow-sm text-emerald-600">
+                                                    <Activity size={24} />
+                                                </div>
+                                                <div>
+                                                    <h3 className="font-black text-stone-900 dark:text-white uppercase tracking-widest text-sm">Năng suất sản xuất hàng ngày</h3>
+                                                    <p className="text-xs text-stone-500 font-bold italic">Thống kê sản lượng thực tế theo ngày nhập kho</p>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex items-center gap-4">
+                                                <div className="text-right">
+                                                    <div className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Trung bình/Ngày</div>
+                                                    <div className="text-sm font-black text-emerald-600">
+                                                        {analysisSummary.avgOutput.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} Kg
+                                                    </div>
+                                                </div>
+                                                <div className="w-px h-8 bg-stone-200 dark:bg-zinc-800" />
+                                                <div className="text-right">
+                                                    <div className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Ngày cao điểm</div>
+                                                    <div className="text-sm font-black text-orange-600">
+                                                        {analysisSummary.peakDay ? formatQuantityFull(analysisSummary.peakDay.quantity) : 0} Kg
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {dailyStats.length === 0 ? (
+                                            <div className="p-12 text-center text-stone-400 font-bold bg-white/50 dark:bg-zinc-900/50 rounded-2xl border border-dashed border-stone-300 dark:border-zinc-700">
+                                                Chưa có dữ liệu sản lượng hàng ngày.
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-col lg:flex-row gap-8">
+                                                {/* Daily Bar Chart with Grid */}
+                                                <div className="flex-1 bg-white dark:bg-zinc-900 p-8 rounded-[32px] border border-stone-100 dark:border-zinc-800 shadow-sm relative overflow-hidden">
+                                                    {/* Background Grid Lines */}
+                                                    <div className="absolute inset-x-8 inset-y-8 flex flex-col justify-between pointer-events-none">
+                                                        {[0, 1, 2, 3, 4].map((i) => (
+                                                            <div key={i} className="w-full h-px bg-stone-50 dark:bg-zinc-800/50" />
+                                                        ))}
+                                                    </div>
+
+                                                    <div className="h-64 w-full flex items-end gap-3 px-2 relative z-10">
+                                                        {dailyStats.map((s, idx) => {
+                                                            const height = analysisSummary.peakDay ? (s.quantity / analysisSummary.peakDay.quantity) * 100 : 0;
+                                                            return (
+                                                                <div key={idx} className="flex-1 flex flex-col items-center group relative h-full justify-end">
+                                                                    {/* Tooltip */}
+                                                                    <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[10px] font-black px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none whitespace-nowrap z-20 shadow-xl scale-90 group-hover:scale-100">
+                                                                        {formatQuantityFull(s.quantity)} Kg
+                                                                        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-900 rotate-45" />
+                                                                    </div>
+
+                                                                    {/* Bar with gradient and shadow */}
+                                                                    <div 
+                                                                        className="w-full max-w-[40px] bg-gradient-to-t from-emerald-500 to-emerald-400 hover:from-emerald-400 hover:to-emerald-300 rounded-t-xl transition-all duration-700 cursor-help shadow-[0_-4px_12px_rgba(16,185,129,0.2)]"
+                                                                        style={{ height: `${Math.max(8, height)}%` }}
+                                                                    />
+                                                                    
+                                                                    {/* Date Label */}
+                                                                    <div className="absolute -bottom-10 flex flex-col items-center">
+                                                                        <div className="text-[9px] font-black text-stone-400 uppercase tracking-tighter">
+                                                                            {new Date(s.date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )
+                                                        })}
+                                                    </div>
+                                                    {/* Legend spacing */}
+                                                    <div className="h-8" /> 
+                                                </div>
+
+                                                {/* Daily List */}
+                                                <div className="w-full lg:w-72 flex flex-col gap-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                                                    {dailyStats.map((s, idx) => (
+                                                        <div key={idx} className="bg-white/50 dark:bg-zinc-800/40 p-3 rounded-xl border border-stone-100 dark:border-zinc-800 flex items-center justify-between">
+                                                            <div className="flex flex-col">
+                                                                <span className="text-[10px] font-black text-stone-500 uppercase tracking-tight">
+                                                                    {new Date(s.date).toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+                                                                </span>
+                                                                <span className="text-[9px] text-stone-400 font-bold">{s.date}</span>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <div className="text-xs font-black text-stone-800 dark:text-gray-200">{formatQuantityFull(s.quantity)} <span className="text-[9px] text-stone-400">Kg</span></div>
+                                                                {analysisSummary.peakDay?.date === s.date && (
+                                                                    <div className="text-[8px] text-orange-500 font-bold uppercase tracking-tighter">Cao điểm 🏆</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
                                     {/* Raw Material Input Analysis (Only for RE_SORT) */}
                                     {productionType === 'RE_SORT' && analysisSummary && (
                                         <div className="p-8 bg-orange-500/5 dark:bg-orange-500/10 rounded-[32px] border border-orange-200 dark:border-orange-900/20">
@@ -1326,7 +1660,53 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                     )}
                                 </div>
                             ) : (
-                                <div className={readOnly ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-3'}>
+                                <div className="space-y-4">
+                                    {readOnly && (
+                                        <div className="flex flex-wrap items-center justify-between gap-4 bg-blue-50/50 dark:bg-blue-500/5 p-4 rounded-[28px] border border-blue-100/50 dark:border-blue-900/20">
+                                            <div className="flex items-center gap-3">
+                                                <div className="p-2.5 bg-blue-500/10 rounded-xl">
+                                                    <Calendar size={20} className="text-blue-600" />
+                                                </div>
+                                                <div>
+                                                    <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest leading-none mb-1">Lọc sản lượng thực tế</div>
+                                                    <div className="text-[11px] font-bold text-stone-500 uppercase tracking-tight">Dựa trên ngày nhập kho của lô hàng</div>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex items-center gap-2 bg-white dark:bg-zinc-800 px-4 py-2 rounded-2xl border border-stone-100 dark:border-zinc-700 shadow-sm">
+                                                    <div className="flex items-center gap-2 text-xs font-bold text-stone-600 dark:text-stone-300">
+                                                        <input 
+                                                            type="date" 
+                                                            value={statsStartDate}
+                                                            onChange={e => setStatsStartDate(e.target.value)}
+                                                            className="bg-transparent border-none focus:ring-0 outline-none w-32"
+                                                        />
+                                                        <ArrowRight size={14} className="text-stone-300" />
+                                                        <input 
+                                                            type="date" 
+                                                            value={statsEndDate}
+                                                            onChange={e => setStatsEndDate(e.target.value)}
+                                                            className="bg-transparent border-none focus:ring-0 outline-none w-32"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => {
+                                                        setStatsStartDate('')
+                                                        setStatsEndDate('')
+                                                    }}
+                                                    className="p-2 text-stone-400 hover:text-stone-600 transition-colors"
+                                                    title="Xóa bộ lọc"
+                                                >
+                                                    <X size={18} />
+                                                </button>
+                                                {isRefreshingStats && <Loader2 size={18} className="animate-spin text-blue-500 ml-2" />}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className={readOnly ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-3'}>
                                     {lots.map((lot, idx) => {
                                         const product = products.find(p => p.id === lot.product_id);
                                         // Placeholder for convertUnit, assuming it would be provided by a context or hook
@@ -1718,6 +2098,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                         )
                                     })}
                                 </div>
+                            </div>
                             )}
                         </div>
 
