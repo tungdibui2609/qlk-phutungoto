@@ -21,6 +21,7 @@ export function useWarehouseData() {
     const [layouts, setLayouts] = useState<ZoneLayout[]>([])
     const [collapsedZones, setCollapsedZones] = useState<Set<string>>(() => new Set())
     const [occupiedIds, setOccupiedIds] = useState<Set<string>>(new Set())
+    const [pendingExportPosIds, setPendingExportPosIds] = useState<Set<string>>(new Set())
     const [lotInfo, setLotInfo] = useState<Record<string, any>>({})
 
     // UI Feedback State
@@ -153,12 +154,13 @@ export function useWarehouseData() {
         }
 
         try {
-            const [posData, zoneData, zpData, layoutData, lotsData] = await Promise.all([
+            const [posData, zoneData, zpData, layoutData, lotsData, pendingExportData] = await Promise.all([
                 fetchAll('positions', q => q.eq('system_type', systemType).order('code').order('id')),
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
                 fetchAllZonesPos(),
                 fetchAll('zone_layouts', q => q.order('id')),
-                fetchAll('lots', q => q.eq('system_code', systemType), '*, productions(code, name), suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)') as Promise<any[]>
+                fetchAll('lots', q => q.eq('system_code', systemType), '*, productions(code, name), suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)') as Promise<any[]>,
+                supabase.from('export_task_items').select('position_id, lot_id, export_tasks!inner(status, system_code)').eq('export_tasks.system_code', systemType).in('export_tasks.status', ['Pending', 'Processing'])
             ])
 
             // Create lookup map for positions -> zone_id
@@ -268,6 +270,23 @@ export function useWarehouseData() {
                 }
             })
             setOccupiedIds(occupied)
+
+            // Resolve pending export positions
+            const pendingPos = new Set<string>()
+            if (pendingExportData.data) {
+                pendingExportData.data.forEach((item: any) => {
+                    if (item.position_id) {
+                        pendingPos.add(item.position_id)
+                    } else if (item.lot_id) {
+                        posWithZone.forEach(p => {
+                            if (p.lot_id === item.lot_id) {
+                                pendingPos.add(p.id)
+                            }
+                        })
+                    }
+                })
+            }
+            setPendingExportPosIds(pendingPos)
 
         } catch (error: any) {
             console.error('Error fetching warehouse data:', error)
@@ -401,6 +420,7 @@ export function useWarehouseData() {
         totalPositions: positions.length,
         totalZones: zones.length,
         collapsedZones,
-        setCollapsedZones
+        setCollapsedZones,
+        pendingExportPosIds // export pending state
     }
 }

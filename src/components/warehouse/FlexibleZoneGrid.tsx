@@ -803,22 +803,7 @@ export default function FlexibleZoneGrid({
                             onClick={() => collapsible && onToggleCollapse(zone.id)}
                         >
                             <div className="flex items-center gap-3">
-                                {isEmptyMode && onToggleCheckedZone && (
-                                    <div className="flex items-center justify-center shrink-0 mr-1" onClick={e => e.stopPropagation()}>
-                                        <input
-                                            type="checkbox"
-                                            className="w-5 h-5 rounded border-blue-400 text-blue-600 focus:ring-blue-500 cursor-pointer shadow-sm transition-all"
-                                            checked={checkedZoneIds.has(zone.id)}
-                                            onChange={(e) => onToggleCheckedZone(zone.id, e.target.checked)}
-                                            title="Chọn vùng này để in"
-                                        />
-                                    </div>
-                                )}
-                                {collapsible && (
-                                    isCollapsed
-                                        ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
-                                        : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={headerColor || headerTextColor ? '' : 'text-emerald-500'} />
-                                )}
+
                                 {isEmptyMode && onToggleCheckedZone && (
                                     <div className="flex items-center justify-center shrink-0 mr-1 print:hidden" onClick={e => e.stopPropagation()}>
                                         <input

@@ -56,7 +56,8 @@ function WarehouseMapContent() {
         totalPositions,
         totalZones,
         collapsedZones,
-        setCollapsedZones
+        setCollapsedZones,
+        pendingExportPosIds
     } = useWarehouseData()
 
     // 2. Filter Hook
@@ -71,8 +72,10 @@ function WarehouseMapContent() {
         filteredZones,
         isFifoAvailable,
         isFifoActive,
-        toggleFifo
-    } = useMapFilters({ positions, zones, lotInfo, isFifoEnabled: hasModule('fifo_priority') })
+        toggleFifo,
+        hidePendingExport,
+        setHidePendingExport
+    } = useMapFilters({ positions, zones, lotInfo, isFifoEnabled: hasModule('fifo_priority'), pendingExportPosIds })
 
     // 3. UI State
     const [isMobile, setIsMobile] = useState(false)
@@ -678,6 +681,8 @@ function WarehouseMapContent() {
                         toggleMobileFilters={() => setShowMobileFilters(!showMobileFilters)}
                         zones={groupedZones}
                         grouped={isGrouped}
+                        hidePendingExport={hidePendingExport}
+                        onHidePendingExportChange={setHidePendingExport}
                     />
                 );
             })()}

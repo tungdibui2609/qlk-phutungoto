@@ -22,6 +22,8 @@ interface MapFilterBarProps {
     toggleMobileFilters: () => void
     zones?: any[]
     grouped?: boolean
+    hidePendingExport?: boolean
+    onHidePendingExportChange?: (val: boolean) => void
 }
 
 export function MapFilterBar({
@@ -40,7 +42,9 @@ export function MapFilterBar({
     showMobileFilters,
     toggleMobileFilters,
     zones,
-    grouped
+    grouped,
+    hidePendingExport,
+    onHidePendingExportChange
 }: MapFilterBarProps) {
     // Local state for debounce
     const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm)
@@ -155,6 +159,22 @@ export function MapFilterBar({
 
                 {/* Desktop Extra Filters Wrapper */}
                 <div className="hidden lg:flex items-center gap-2">
+                    {onHidePendingExportChange && (
+                        <button
+                            type="button"
+                            onClick={() => onHidePendingExportChange(!hidePendingExport)}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium transition-colors whitespace-nowrap ${
+                                hidePendingExport 
+                                ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/40 dark:border-indigo-800 dark:text-indigo-400' 
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800/80'
+                            }`}
+                            title="Ẩn các vị trí đang có lệnh xuất kho chờ xử lý"
+                        >
+                            <ClipboardList size={14} className={hidePendingExport ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"} />
+                            Ẩn vị trí đang chờ xuất
+                        </button>
+                    )}
+
                     <DateRangeFilter
                         dateFilterField={dateFilterField}
                         onDateFieldChange={onDateFieldChange}
@@ -170,6 +190,20 @@ export function MapFilterBar({
             {/* Mobile Expanded Filters */}
             {showMobileFilters && (
                 <div className="lg:hidden flex flex-col gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 animate-in slide-in-from-top-2">
+                    {onHidePendingExportChange && (
+                        <button
+                            type="button"
+                            onClick={() => onHidePendingExportChange(!hidePendingExport)}
+                            className={`flex items-center justify-center gap-2 px-3 py-2 w-full rounded-xl border text-xs font-medium transition-colors ${
+                                hidePendingExport 
+                                ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/40 dark:border-indigo-800 dark:text-indigo-400' 
+                                : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 dark:bg-slate-800/50 dark:border-slate-700 dark:text-slate-300'
+                            }`}
+                        >
+                            <ClipboardList size={14} />
+                            Ẩn vị trí đang chờ xuất
+                        </button>
+                    )}
                     <DateRangeFilter
                         dateFilterField={dateFilterField}
                         onDateFieldChange={onDateFieldChange}

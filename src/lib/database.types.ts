@@ -137,6 +137,59 @@ export interface Database {
           created_at?: string | null
         }
       }
+      zone_layouts: {
+        Row: {
+          id: string
+          zone_id: string
+          position_columns: number | null
+          cell_width: number | null
+          cell_height: number | null
+          child_layout: string | null
+          child_columns: number | null
+          child_width: number | null
+          collapsible: boolean | null
+          display_type: string | null
+          alternating_rows: boolean | null
+          header_color: string | null
+          header_text_color: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          zone_id: string
+          position_columns?: number | null
+          cell_width?: number | null
+          cell_height?: number | null
+          child_layout?: string | null
+          child_columns?: number | null
+          child_width?: number | null
+          collapsible?: boolean | null
+          display_type?: string | null
+          alternating_rows?: boolean | null
+          header_color?: string | null
+          header_text_color?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          zone_id?: string
+          position_columns?: number | null
+          cell_width?: number | null
+          cell_height?: number | null
+          child_layout?: string | null
+          child_columns?: number | null
+          child_width?: number | null
+          collapsible?: boolean | null
+          display_type?: string | null
+          alternating_rows?: boolean | null
+          header_color?: string | null
+          header_text_color?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
       pending_assignments: {
         Row: {
           id: string

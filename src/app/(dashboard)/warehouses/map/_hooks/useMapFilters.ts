@@ -10,11 +10,12 @@ interface UseMapFiltersProps {
     zones: any[] // Should be Zone type
     lotInfo: Record<string, any>
     isFifoEnabled?: boolean
+    pendingExportPosIds?: Set<string>
 }
 
 export type SearchMode = 'all' | 'name' | 'code' | 'tag' | 'position' | 'category' | 'production'
 
-export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseMapFiltersProps) {
+export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendingExportPosIds }: UseMapFiltersProps) {
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [searchTerm, setSearchTerm] = useState('')
     const [searchMode, setSearchMode] = useState<SearchMode>('all')
@@ -23,6 +24,9 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
     const [dateFilterField, setDateFilterField] = useState<DateFilterField>('created_at')
     const [startDate, setStartDate] = useState('')
     const [endDate, setEndDate] = useState('')
+
+    // Hide Export Pending
+    const [hidePendingExport, setHidePendingExport] = useState(false)
 
     // FIFO Toggle (local, defaults to ON when module is enabled)
     const [fifoActive, setFifoActive] = useState(true)
@@ -141,6 +145,11 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
             result = result.filter(p => p.zone_id && allRealIds.has(p.zone_id))
         }
 
+        // Filter out pending export positions if toggle is on
+        if (hidePendingExport && pendingExportPosIds) {
+            result = result.filter(p => !pendingExportPosIds.has(p.id))
+        }
+
         // FIFO Sorting: When active and searching, sort by inbound_date ascending (oldest first)
         if (isFifoActive && searchTerm) {
             result = [...result].sort((a, b) => {
@@ -160,7 +169,7 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
         }
 
         return result
-    }, [positions, selectedZoneId, searchTerm, searchMode, zones, lotInfo, startDate, endDate, dateFilterField, isFifoActive])
+    }, [positions, selectedZoneId, searchTerm, searchMode, zones, lotInfo, startDate, endDate, dateFilterField, isFifoActive, hidePendingExport, pendingExportPosIds])
 
     const filteredZones = useMemo(() => {
         if (!selectedZoneId) return zones
@@ -221,6 +230,9 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled }: UseM
         // FIFO
         isFifoAvailable: !!isFifoEnabled,
         isFifoActive,
-        toggleFifo: () => setFifoActive(prev => !prev)
+        toggleFifo: () => setFifoActive(prev => !prev),
+        // Export Filter
+        hidePendingExport,
+        setHidePendingExport
     }
 }
