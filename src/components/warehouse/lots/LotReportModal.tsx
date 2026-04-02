@@ -120,6 +120,47 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
         return Object.values(groups)
     }, [reportData])
 
+    const summaryStats = useMemo(() => {
+        const stats: Record<string, { productName: string, sku: string, totalQty: number, unit: string, lotCount: number }> = {}
+        
+        reportData.forEach(lot => {
+            const items = lot.lot_items || []
+            if (items.length > 0) {
+                items.forEach((item: any) => {
+                    const unit = item.unit || item.products?.unit || '-'
+                    const key = `${item.product_id}_${unit}`
+                    if (!stats[key]) {
+                        stats[key] = {
+                            productName: item.products?.name || 'Sản phẩm không tên',
+                            sku: item.products?.sku || '-',
+                            totalQty: 0,
+                            unit: unit,
+                            lotCount: 0
+                        }
+                    }
+                    stats[key].totalQty += (Number(item.quantity) || 0)
+                    stats[key].lotCount += 1
+                })
+            } else if (lot.products) {
+                const unit = (lot as any).unit || lot.products.unit || '-'
+                const key = `${lot.product_id}_${unit}`
+                if (!stats[key]) {
+                    stats[key] = {
+                        productName: lot.products.name || 'Sản phẩm không tên',
+                        sku: lot.products.sku || '-',
+                        totalQty: 0,
+                        unit: unit,
+                        lotCount: 0
+                    }
+                }
+                stats[key].totalQty += (Number((lot as any).quantity) || 0)
+                stats[key].lotCount += 1
+            }
+        })
+        
+        return Object.values(stats).sort((a, b) => b.totalQty - a.totalQty)
+    }, [reportData])
+
     const handleExportExcel = async () => {
         if (reportData.length === 0) {
             showToast('Không có dữ liệu để xuất Excel', 'warning')
@@ -427,57 +468,59 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                 </div>
 
                 {/* Filters */}
-                <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex flex-wrap items-center justify-between gap-4 no-print">
-                    <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                            <Calendar size={16} className="text-orange-500" />
-                            <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+                <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex flex-col md:flex-row md:items-center justify-between gap-4 no-print border-b border-slate-100 dark:border-slate-800">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                        <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                            <Calendar size={16} className="text-orange-500 shrink-0" />
+                            <div className="flex items-center gap-1 sm:gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
                                 <input
                                     type="date"
                                     value={startDate}
                                     onChange={(e) => setStartDate(e.target.value)}
-                                    className="bg-transparent border-none p-0 focus:ring-0 outline-none w-32"
+                                    className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[110px] sm:w-32 text-center"
                                 />
-                                <span>→</span>
+                                <span className="text-slate-400">→</span>
                                 <input
                                     type="date"
                                     value={endDate}
                                     onChange={(e) => setEndDate(e.target.value)}
-                                    className="bg-transparent border-none p-0 focus:ring-0 outline-none w-32"
+                                    className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[110px] sm:w-32 text-center"
                                 />
                             </div>
                         </div>
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                            Tìm thấy: <span className="text-orange-600 dark:text-orange-400">{reportData.length}</span> LOT
+                        <div className="text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700/50 w-fit">
+                            Tìm thấy: <span className="text-orange-600 dark:text-orange-400 text-sm sm:text-base ml-1">{reportData.length}</span> <span className="ml-0.5">LOT</span>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-between sm:justify-end gap-2 w-full md:w-auto">
                         <button
                             onClick={handleExportExcel}
                             disabled={loading || reportData.length === 0}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-bold transition-all disabled:opacity-50"
+                            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-black shadow-lg shadow-green-600/20 active:scale-95 transition-all disabled:opacity-50 disabled:grayscale"
                         >
                             <Download size={18} />
-                            Xuất Excel
+                            <span className="sm:inline">Excel</span>
                         </button>
-                        <div className="flex items-center bg-slate-800 dark:bg-slate-700 rounded-xl overflow-hidden p-0.5 shadow-sm">
+                        <div className="flex-1 sm:flex-none flex items-center bg-slate-800 dark:bg-slate-700 rounded-xl overflow-hidden p-0.5 shadow-lg shadow-slate-900/20">
                             <button
                                 onClick={() => handlePrint('portrait')}
                                 disabled={loading || reportData.length === 0}
-                                className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-slate-800 dark:bg-slate-700 hover:bg-black text-white text-sm font-bold transition-all disabled:opacity-50"
+                                title="In dọc (Portrait)"
+                                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg bg-transparent hover:bg-black text-white text-sm font-bold transition-all disabled:opacity-50"
                             >
                                 <Printer size={16} />
-                                In dọc
+                                <span className="hidden sm:inline">In dọc</span>
                             </button>
-                            <div className="w-px h-5 bg-slate-600"></div>
+                            <div className="w-px h-5 bg-slate-600 mx-0.5 opacity-50"></div>
                             <button
                                 onClick={() => handlePrint('landscape')}
                                 disabled={loading || reportData.length === 0}
-                                className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-slate-800 dark:bg-slate-700 hover:bg-black text-white text-sm font-bold transition-all disabled:opacity-50"
+                                title="In ngang (Landscape)"
+                                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg bg-transparent hover:bg-black text-white text-sm font-bold transition-all disabled:opacity-50"
                             >
                                 <Printer size={16} className="rotate-90" />
-                                In ngang
+                                <span className="hidden sm:inline">In ngang</span>
                             </button>
                         </div>
                     </div>
@@ -529,147 +572,238 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                 </div>
                             </div>
                             
+                            {/* Summary Statistics - New Segment */}
+                            {summaryStats.length > 0 && (
+                                <div className="mb-8 print-avoid-break">
+                                    <h4 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                        <div className="w-1.5 h-4 bg-orange-500 rounded-full"></div>
+                                        Tổng hợp sản lượng (Sum Statistics)
+                                    </h4>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                        {summaryStats.map((stat, sIdx) => (
+                                            <div key={sIdx} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between group hover:border-orange-200 dark:hover:border-orange-900/30 transition-all shadow-sm">
+                                                <div className="flex-1 min-w-0 pr-3">
+                                                    <div className="text-[10px] font-black text-slate-400 uppercase mb-1 truncate">{stat.productName}</div>
+                                                    <div className="text-lg font-black text-slate-900 dark:text-slate-100 truncate flex items-baseline gap-1">
+                                                        {formatQuantityFull(stat.totalQty)}
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase">{stat.unit}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="shrink-0 flex flex-col items-end">
+                                                    <div className="px-2 py-1 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 text-[10px] font-black">
+                                                        {stat.lotCount} LOT
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="mt-4 pb-4 border-b-2 border-dashed border-slate-100 dark:border-slate-800 no-print"></div>
+                                </div>
+                            )}
+
                             {/* Content per Group */}
                             {groupedData.map((group: any, groupIdx: number) => (
                                 <div key={groupIdx} style={{ marginBottom: '30px' }}>
                                     {/* Group Title: Lệnh Sản Xuất */}
-                                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px', pageBreakAfter: 'avoid' }}>
-                                        <span style={{ fontSize: '12pt', fontWeight: 'bold', textTransform: 'uppercase', marginRight: '8px' }}>
-                                            LỆNH SẢN XUẤT:
+                                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '15px', pageBreakAfter: 'avoid' }}>
+                                        <div className="hidden md:block w-1 h-6 bg-orange-100 rounded-full mr-3"></div>
+                                        <span style={{ fontSize: '11pt', fontWeight: 'bold', textTransform: 'uppercase', color: '#64748b', marginRight: '8px' }}>
+                                            LSX:
                                         </span>
-                                        <span style={{ fontSize: '13pt', fontWeight: '900', textTransform: 'uppercase', color: '#ea580c' }}>
+                                        <h3 style={{ fontSize: '12pt', fontWeight: '900', textTransform: 'uppercase', color: '#0f172a' }}>
                                             {group.production_name || group.production_code || 'Không xác định'}
-                                        </span>
-                                        <span className="no-print" style={{ marginLeft: 'auto', fontSize: '10px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '9999px', backgroundColor: '#f1f5f9', color: '#64748b' }}>
+                                        </h3>
+                                        <span className="ml-3 px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 font-black text-[10px] no-print">
                                             {group.lots.length} LOT
                                         </span>
                                     </div>
 
-                                    {/* Data Table for this specific group */}
-                                    <table className="w-full text-left border-collapse min-w-[900px] xl:min-w-full">
-                                        <thead className="bg-slate-50 dark:bg-slate-900 border-b-2 border-slate-200 dark:border-slate-800 print:static">
-                                            <tr>
-                                                <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '4%' }}>STT</th>
-                                                <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '11%' }}>Ngày tạo</th>
-                                                <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '22%' }}>Mã LOT SX</th>
-                                                <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '33%' }}>Sản phẩm</th>
-                                                <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest text-right" style={{ width: '12%' }}>Số lượng</th>
-                                                <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '8%' }}>Đơn vị</th>
-                                                <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '10%' }}>Vị trí</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {group.lots.map((lot: any, idx: number) => {
-                                                const items = lot.lot_items || []
-                                                const rowSpan = Math.max(items.length, 1)
-                                                return (
-                                                    <React.Fragment key={lot.id}>
+                                    {/* MOBILE VIEW (CARDS) - ONLY VISIBLE ON SMALL SCREENS */}
+                                    <div className="md:hidden space-y-4 no-print">
+                                        {group.lots.map((lot: any, lIdx: number) => {
+                                            const items = lot.lot_items || []
+                                            return (
+                                                <div key={lot.id} className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm relative overflow-hidden group">
+                                                    <div className="absolute top-0 right-0 p-3 flex flex-col items-end gap-2">
+                                                        <div className="text-[10px] font-black text-slate-300">#{lIdx + 1}</div>
+                                                        <div className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded text-[9px] font-black text-slate-500">
+                                                            {format(new Date(lot.created_at), 'dd/MM/yyyy')}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="mb-4">
+                                                        <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Mã Lô SX</div>
+                                                        <div className="text-sm font-black text-orange-600 dark:text-orange-400">
+                                                            {items.length > 0
+                                                                ? productionLotsMap[`${lot.production_id}_${items[0].product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
+                                                                : lot.production_code || lot.productions?.code || '-'}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="space-y-3">
                                                         {items.length > 0 ? (
-                                                            items.map((item: any, itemIdx: number) => (
-                                                                <tr key={item.id} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm">
-                                                                    {itemIdx === 0 && (
-                                                                        <>
-                                                                            <td className="py-4 px-2 font-mono text-slate-500 font-bold" rowSpan={rowSpan} style={{ width: '4%' }}>{idx + 1}</td>
-                                                                            <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400" rowSpan={rowSpan} style={{ width: '11%' }}>
-                                                                                {format(new Date(lot.created_at), 'dd/MM/yyyy')}
+                                                            items.map((item: any) => (
+                                                                <div key={item.id} className="flex items-start justify-between bg-slate-50 dark:bg-slate-800/30 p-2.5 rounded-xl border border-dotted border-slate-200 dark:border-slate-700">
+                                                                    <div className="flex-1 min-w-0 pr-3">
+                                                                        <div className="font-bold text-slate-800 dark:text-slate-200 text-xs leading-tight">{item.products?.name}</div>
+                                                                        <div className="text-[9px] text-slate-400 font-mono mt-0.5">{item.products?.sku}</div>
+                                                                    </div>
+                                                                    <div className="shrink-0 text-right">
+                                                                        <div className="text-sm font-black text-orange-600 dark:text-orange-400">
+                                                                            {formatQuantityFull(item.quantity)}
+                                                                        </div>
+                                                                        <div className="text-[9px] font-bold text-slate-400 uppercase">
+                                                                            {item.unit || item.products?.unit}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            ))
+                                                        ) : (
+                                                            <div className="text-xs italic text-slate-400">Không có dữ liệu hàng hóa</div>
+                                                        )}
+                                                    </div>
+
+                                                    {lot.positions?.length > 0 && (
+                                                        <div className="mt-3 pt-3 border-t border-slate-50 dark:border-slate-800/50 flex flex-wrap gap-1.5">
+                                                            {lot.positions.map((p: any) => (
+                                                                <span key={p.id} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded text-[10px] font-black border border-slate-200 dark:border-slate-700">
+                                                                    {p.code}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+
+                                    {/* DESKTOP VIEW (TABLE) - HIDDEN ON SMALL SCREENS */}
+                                    <div className="hidden md:block overflow-x-auto scrollbar-hide">
+                                        <table className="w-full text-left border-collapse xl:min-w-full">
+                                            <thead className="bg-slate-50 dark:bg-slate-900 border-b-2 border-slate-200 dark:border-slate-800 print:static">
+                                                <tr>
+                                                    <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '4%' }}>STT</th>
+                                                    <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '11%' }}>Ngày tạo</th>
+                                                    <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '22%' }}>Mã LOT SX</th>
+                                                    <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '33%' }}>Sản phẩm</th>
+                                                    <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest text-right" style={{ width: '12%' }}>Số lượng</th>
+                                                    <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '8%' }}>Đơn vị</th>
+                                                    <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '10%' }}>Vị trí</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {group.lots.map((lot: any, idx: number) => {
+                                                    const items = lot.lot_items || []
+                                                    const rowSpan = Math.max(items.length, 1)
+                                                    return (
+                                                        <React.Fragment key={lot.id}>
+                                                            {items.length > 0 ? (
+                                                                items.map((item: any, itemIdx: number) => (
+                                                                    <tr key={item.id} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm active:bg-orange-50/10">
+                                                                        {itemIdx === 0 && (
+                                                                            <>
+                                                                                <td className="py-4 px-2 font-mono text-slate-500 font-bold" rowSpan={rowSpan} style={{ width: '4%' }}>{idx + 1}</td>
+                                                                                <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400" rowSpan={rowSpan} style={{ width: '11%' }}>
+                                                                                    {format(new Date(lot.created_at), 'dd/MM/yyyy')}
+                                                                                </td>
+                                                                                <td className="py-4 px-2" rowSpan={rowSpan} style={{ width: '22%' }}>
+                                                                                    <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30 shadow-sm">
+                                                                                        {productionLotsMap[`${lot.production_id}_${item.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'}
+                                                                                    </span>
+                                                                                </td>
+                                                                            </>
+                                                                        )}
+                                                                        <td className="py-2 px-2" style={{ width: '33%' }}>
+                                                                            <div className="font-bold text-slate-800 dark:text-slate-200 leading-tight">{item.products?.name}</div>
+                                                                            <div className="text-[10px] text-slate-400 font-mono mt-0.5 uppercase tracking-tighter">{item.products?.sku}</div>
+                                                                        </td>
+                                                                        <td className="py-2 px-2 text-right font-black text-orange-600 dark:text-orange-400" style={{ width: '12%' }}>
+                                                                            {formatQuantityFull(item.quantity)}
+                                                                        </td>
+                                                                        <td className="py-2 px-2 font-black text-[10px] text-slate-400 uppercase" style={{ width: '8%' }}>
+                                                                            {item.unit || item.products?.unit}
+                                                                        </td>
+                                                                        {itemIdx === 0 && (
+                                                                            <td className="py-2 px-2" rowSpan={rowSpan} style={{ width: '10%' }}>
+                                                                                {lot.positions?.length > 0 ? (
+                                                                                    <div className="flex flex-wrap gap-1">
+                                                                                        {lot.positions.map((p: any) => (
+                                                                                            <span key={p.id} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-md text-[9px] font-black border border-slate-200 dark:border-slate-700">
+                                                                                                {p.code}
+                                                                                            </span>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                ) : '-'}
                                                                             </td>
-                                                                            <td className="py-4 px-2" rowSpan={rowSpan} style={{ width: '22%' }}>
-                                                                                <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30">
-                                                                                    {productionLotsMap[`${lot.production_id}_${item.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'}
-                                                                                </span>
-                                                                            </td>
-                                                                        </>
-                                                                    )}
+                                                                        )}
+                                                                    </tr>
+                                                                ))
+                                                            ) : lot.products ? (
+                                                                <tr key={lot.id} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm">
+                                                                    <td className="py-4 px-2 font-mono text-slate-500 font-bold" style={{ width: '4%' }}>{idx + 1}</td>
+                                                                    <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400" style={{ width: '11%' }}>
+                                                                        {format(new Date(lot.created_at), 'dd/MM/yyyy')}
+                                                                    </td>
+                                                                    <td className="py-4 px-2" style={{ width: '22%' }}>
+                                                                        <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30">
+                                                                            {productionLotsMap[`${lot.production_id}_${lot.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'}
+                                                                        </span>
+                                                                    </td>
                                                                     <td className="py-2 px-2" style={{ width: '33%' }}>
-                                                                        <div className="font-bold text-slate-800 dark:text-slate-200">{item.products?.name}</div>
-                                                                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">{item.products?.sku}</div>
+                                                                        <div className="font-bold text-slate-800 dark:text-slate-200">{lot.products.name}</div>
+                                                                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">{lot.products.sku}</div>
                                                                     </td>
                                                                     <td className="py-2 px-2 text-right font-black text-orange-600 dark:text-orange-400" style={{ width: '12%' }}>
-                                                                        {formatQuantityFull(item.quantity)}
+                                                                        {formatQuantityFull((lot as any).quantity || 0)}
                                                                     </td>
                                                                     <td className="py-2 px-2 font-medium text-slate-500" style={{ width: '8%' }}>
-                                                                        {item.unit || item.products?.unit}
+                                                                        {(lot as any).unit || lot.products.unit}
                                                                     </td>
-                                                                    {itemIdx === 0 && (
-                                                                        <td className="py-2 px-2" rowSpan={rowSpan} style={{ width: '10%' }}>
-                                                                            {lot.positions?.length > 0 ? (
-                                                                                <div className="flex flex-wrap gap-1">
-                                                                                    {lot.positions.map((p: any) => (
-                                                                                        <span key={p.id} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-md text-[10px] font-black border border-slate-200 dark:border-slate-700">
-                                                                                            {p.code}
-                                                                                        </span>
-                                                                                    ))}
-                                                                                </div>
-                                                                            ) : '-'}
-                                                                        </td>
-                                                                    )}
+                                                                    <td className="py-2 px-2" style={{ width: '10%' }}>
+                                                                        {lot.positions?.length > 0 ? (
+                                                                            <div className="flex flex-wrap gap-1">
+                                                                                {lot.positions.map((p: any) => (
+                                                                                    <span key={p.id} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-md text-[10px] font-black border border-slate-200 dark:border-slate-700">
+                                                                                        {p.code}
+                                                                                    </span>
+                                                                                ))}
+                                                                            </div>
+                                                                        ) : '-'}
+                                                                    </td>
                                                                 </tr>
-                                                            ))
-                                                        ) : lot.products ? (
-                                                            <tr key={lot.id} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm">
-                                                                <td className="py-4 px-2 font-mono text-slate-500 font-bold" style={{ width: '4%' }}>{idx + 1}</td>
-                                                                <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400" style={{ width: '11%' }}>
-                                                                    {format(new Date(lot.created_at), 'dd/MM/yyyy')}
-                                                                </td>
-                                                                <td className="py-4 px-2" style={{ width: '22%' }}>
-                                                                    <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30">
-                                                                        {productionLotsMap[`${lot.production_id}_${lot.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="py-2 px-2" style={{ width: '33%' }}>
-                                                                    <div className="font-bold text-slate-800 dark:text-slate-200">{lot.products.name}</div>
-                                                                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">{lot.products.sku}</div>
-                                                                </td>
-                                                                <td className="py-2 px-2 text-right font-black text-orange-600 dark:text-orange-400" style={{ width: '12%' }}>
-                                                                    {formatQuantityFull((lot as any).quantity || 0)}
-                                                                </td>
-                                                                <td className="py-2 px-2 font-medium text-slate-500" style={{ width: '8%' }}>
-                                                                    {(lot as any).unit || lot.products.unit}
-                                                                </td>
-                                                                <td className="py-2 px-2" style={{ width: '10%' }}>
-                                                                    {lot.positions?.length > 0 ? (
-                                                                        <div className="flex flex-wrap gap-1">
-                                                                            {lot.positions.map((p: any) => (
-                                                                                <span key={p.id} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-md text-[10px] font-black border border-slate-200 dark:border-slate-700">
-                                                                                    {p.code}
-                                                                                </span>
-                                                                            ))}
-                                                                        </div>
-                                                                    ) : '-'}
-                                                                </td>
-                                                            </tr>
-                                                        ) : (
-                                                            <tr key={lot.id} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm">
-                                                                <td className="py-4 px-2 font-mono text-slate-500 font-bold" style={{ width: '4%' }}>{idx + 1}</td>
-                                                                <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400" style={{ width: '11%' }}>
-                                                                    {format(new Date(lot.created_at), 'dd/MM/yyyy')}
-                                                                </td>
-                                                                <td className="py-4 px-2" style={{ width: '22%' }}>
-                                                                    <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30">
-                                                                        {lot.production_code || lot.productions?.code || '-'}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="py-2 px-2 text-slate-400 italic" style={{ width: '33%' }}>Không có dữ liệu hàng hóa</td>
-                                                                <td className="py-2 px-2 text-right font-black" style={{ width: '12%' }}>-</td>
-                                                                <td className="py-2 px-2" style={{ width: '8%' }}>-</td>
-                                                                <td className="py-2 px-2" style={{ width: '10%' }}>
-                                                                    {lot.positions?.length > 0 ? (
-                                                                        <div className="flex flex-wrap gap-1">
-                                                                            {lot.positions.map((p: any) => (
-                                                                                <span key={p.id} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-md text-[10px] font-black border border-slate-200 dark:border-slate-700">
-                                                                                    {p.code}
-                                                                                </span>
-                                                                            ))}
-                                                                        </div>
-                                                                    ) : '-'}
-                                                                </td>
-                                                            </tr>
-                                                        )}
-                                                    </React.Fragment>
-                                                )
-                                            })}
-                                        </tbody>
-                                    </table>
+                                                            ) : (
+                                                                <tr key={lot.id} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm">
+                                                                    <td className="py-4 px-2 font-mono text-slate-500 font-bold" style={{ width: '4%' }}>{idx + 1}</td>
+                                                                    <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400" style={{ width: '11%' }}>
+                                                                        {format(new Date(lot.created_at), 'dd/MM/yyyy')}
+                                                                    </td>
+                                                                    <td className="py-4 px-2" style={{ width: '22%' }}>
+                                                                        <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30">
+                                                                            {lot.production_code || lot.productions?.code || '-'}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="py-2 px-2 text-slate-400 italic" style={{ width: '33%' }}>Không có dữ liệu hàng hóa</td>
+                                                                    <td className="py-2 px-2 text-right font-black" style={{ width: '12%' }}>-</td>
+                                                                    <td className="py-2 px-2" style={{ width: '8%' }}>-</td>
+                                                                    <td className="py-2 px-2" style={{ width: '10%' }}>
+                                                                        {lot.positions?.length > 0 ? (
+                                                                            <div className="flex flex-wrap gap-1">
+                                                                                {lot.positions.map((p: any) => (
+                                                                                    <span key={p.id} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-md text-[10px] font-black border border-slate-200 dark:border-slate-700">
+                                                                                        {p.code}
+                                                                                    </span>
+                                                                                ))}
+                                                                            </div>
+                                                                        ) : '-'}
+                                                                    </td>
+                                                                </tr>
+                                                            )}
+                                                        </React.Fragment>
+                                                    )
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             ))}
     
