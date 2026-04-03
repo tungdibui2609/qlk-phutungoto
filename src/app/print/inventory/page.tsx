@@ -13,6 +13,7 @@ import { EditableText } from '@/components/print/PrintHelpers'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { exportInventoryReportToExcel } from '@/lib/inventoryReportExcelExport'
 import { advancedMatchSearch } from '@/lib/searchUtils'
+import { canonicalizeUnit } from '@/lib/unitConversion'
 
 // Types
 interface InventoryItem {
@@ -366,6 +367,10 @@ export default function PrintInventoryPage() {
                         if (!systemTypeMatch) return []
 
                         const lotTags = (lot.lot_tags || []).map((t: any) => t.tag).filter(Boolean) as string[]
+                        const sxCode = lot.production_code || lot.batch_code || lot.productions?.code;
+                        if (sxCode) {
+                            lotTags.push(`LSX: ${sxCode}`)
+                        }
                         const lotData = {
                             lotCode: lot.code,
                             batchCode: lot.batch_code || '-',
@@ -506,11 +511,11 @@ export default function PrintInventoryPage() {
                             itemCatIds.forEach(catId => {
                                 const category = catId ? (fetchedCategories as any[]).find(c => c.id === catId) : null
                                 const groupHeader = (category as any)?.name || 'Chưa phân loại'
-                                const groupKey = `${groupHeader}__${item.productSku}__${displayUnit}`
+                                const groupKey = `${groupHeader}__${item.productSku}__${canonicalizeUnit(displayUnit)}`
                                 addToGroups(groupKey, groupHeader, displayUnit, displayQty, item, groupsMap)
                             })
                         } else {
-                            const groupKey = `${item.productSku}__${displayUnit}`
+                            const groupKey = `${item.productSku}__${canonicalizeUnit(displayUnit)}`
                             addToGroups(groupKey, '', displayUnit, displayQty, item, groupsMap)
                         }
                     })

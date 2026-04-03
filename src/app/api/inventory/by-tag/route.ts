@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { Database } from "@/lib/database.types";
-import { convertUnit as convertUnitLogic, normalizeUnit, isKg, extractWeightFromName } from '@/lib/unitConversion'
+import { convertUnit as convertUnitLogic, normalizeUnit, canonicalizeUnit, isKg, extractWeightFromName } from '@/lib/unitConversion'
 
 export const dynamic = 'force-dynamic';
 
@@ -84,6 +84,9 @@ export async function GET(req: NextRequest) {
                     code,
                     warehouse_name,
                     status,
+                    production_code,
+                    batch_code,
+                    productions (code),
                     lot_items (
                         id,
                         product_id,
@@ -187,6 +190,11 @@ export async function GET(req: NextRequest) {
             const generalTags = (lot.lot_tags || [])
                 .filter((t: any) => !t.lot_item_id)
                 .map((t: any) => t.tag);
+                
+            const sxCode = lot.production_code || lot.batch_code || lot.productions?.code;
+            if (sxCode) {
+                generalTags.push(`LSX: ${sxCode}`)
+            }
 
             const itemTagsMap = new Map<string, string[]>();
             (lot.lot_tags || []).filter((t: any) => t.lot_item_id).forEach((t: any) => {
@@ -224,7 +232,7 @@ export async function GET(req: NextRequest) {
                     let quantity = item.quantity
                     let unitDisplay = uName
                     let isUnconvertible = false
-                    let key = `${prod.sku}__${uName}`
+                    let key = `${prod.sku}__${canonicalizeUnit(uName)}`
 
                     const baseUnitName = prod.unit || null
                     const isTargetKg = targetUnit && isKg(targetUnit.name)

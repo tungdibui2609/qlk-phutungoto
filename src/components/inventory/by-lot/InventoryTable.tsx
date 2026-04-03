@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { ChevronRight, ChevronDown, Loader2 } from 'lucide-react'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { TagDisplay } from '@/components/lots/TagDisplay'
@@ -17,6 +17,17 @@ export function InventoryTable({
     toggleExpand,
     loading
 }: InventoryTableProps) {
+    const [expandedLsx, setExpandedLsx] = useState<Set<string>>(new Set())
+
+    const toggleLsxExpand = (lsxKey: string) => {
+        setExpandedLsx(prev => {
+            const next = new Set(prev)
+            if (next.has(lsxKey)) next.delete(lsxKey)
+            else next.add(lsxKey)
+            return next
+        })
+    }
+
     if (loading) {
         return (
             <div className="p-8 text-center text-stone-500 bg-white dark:bg-stone-900 rounded-lg border border-stone-200 dark:border-stone-800">
@@ -100,43 +111,105 @@ export function InventoryTable({
                                             <td className="px-4 py-3 text-center text-stone-500">{item.unit}</td>
                                         </tr>
                                         {/* Expanded Variants */}
-                                        {isExpanded && hasVariants && (
-                                            Array.from(item.variants.entries())
-                                                .sort((a, b) => {
-                                                    // "Không có mã phụ" always goes to the bottom
-                                                    if (a[0] === 'Không có mã phụ') return 1;
-                                                    if (b[0] === 'Không có mã phụ') return -1;
-                                                    // Otherwise sort by quantity descending
-                                                    return b[1] - a[1];
-                                                })
-                                                .map(([tag, qty], idx) => {
-                                                    // If tag is 'Không có mã phụ', show as "SKU (còn lại)"
-                                                    const isNoTag = tag === 'Không có mã phụ';
+                                        {isExpanded && hasVariants && (() => {
+                                            const lsxGroups = new Map<string, { totalQty: number, items: { tag: string, qty: number }[] }>()
+                                            const nonLsxItems: { tag: string, qty: number }[] = []
 
-                                                    return (
-                                                        <tr key={`${item.key}-${idx}`} className={`transition-colors ${isNoTag ? 'bg-amber-50 dark:bg-amber-900/20 border-l-2 border-amber-400' : 'bg-stone-50/50 dark:bg-stone-900/50 hover:bg-stone-100/50 dark:hover:bg-stone-800/50'}`}>
-                                                            <td className="px-4 py-2 pl-10" colSpan={2}>
-                                                                <div className="flex items-center gap-2 text-sm">
-                                                                    <ChevronRight size={14} className="text-stone-400" />
-                                                                    {isNoTag ? (
-                                                                        <span className="italic text-stone-400">Gốc ( còn lại )</span>
-                                                                    ) : (
-                                                                        <TagDisplay
-                                                                            tags={[tag]}
-                                                                            placeholderMap={{ '@': item.productSku }}
-                                                                        />
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-4 py-2 text-right text-stone-400">—</td>
-                                                            <td className="px-4 py-2 text-right font-medium text-stone-700 dark:text-stone-300">
-                                                                {formatQuantityFull(qty)}
-                                                            </td>
-                                                            <td className="px-4 py-2 text-center text-stone-500">{item.unit}</td>
-                                                        </tr>
-                                                    )
-                                                })
-                                        )}
+                                            Array.from(item.variants.entries()).forEach(([tagStr, qty]) => {
+                                                if (tagStr.includes('LSX: ')) {
+                                                    const parts = tagStr.split('; ').map(p => p.trim())
+                                                    const lsxPart = parts.find(p => p.startsWith('LSX: '))
+                                                    if (lsxPart) {
+                                                        const otherParts = parts.filter(p => !p.startsWith('LSX: '))
+                                                        const subTags = otherParts.length > 0 ? otherParts.join('; ') : 'Không có mã phụ'
+                                                        if (!lsxGroups.has(lsxPart)) {
+                                                            lsxGroups.set(lsxPart, { totalQty: 0, items: [] })
+                                                        }
+                                                        const group = lsxGroups.get(lsxPart)!
+                                                        group.totalQty += qty
+                                                        group.items.push({ tag: subTags, qty })
+                                                        return
+                                                    }
+                                                }
+                                                nonLsxItems.push({ tag: tagStr, qty })
+                                            })
+
+                                            const rows: React.ReactNode[] = []
+
+                                            Array.from(lsxGroups.entries()).sort((a, b) => b[1].totalQty - a[1].totalQty).forEach(([lsxName, group], idx) => {
+                                                const lsxKey = `${item.key}-${lsxName}`
+                                                const isLsxExpanded = expandedLsx.has(lsxKey)
+
+                                                rows.push(
+                                                    <tr key={lsxKey} 
+                                                        className="bg-orange-50/40 hover:bg-orange-100/50 dark:bg-orange-900/20 dark:hover:bg-orange-900/30 transition-colors cursor-pointer border-l-2 border-orange-400"
+                                                        onClick={(e) => { e.stopPropagation(); toggleLsxExpand(lsxKey); }}
+                                                    >
+                                                        <td className="px-4 py-2 pl-10" colSpan={2}>
+                                                            <div className="flex items-center gap-2 text-sm font-bold text-orange-800 dark:text-orange-400">
+                                                                {isLsxExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                                                <TagDisplay tags={[lsxName]} />
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right text-stone-400">—</td>
+                                                        <td className="px-4 py-2 text-right font-bold text-orange-700 dark:text-orange-300">
+                                                            {formatQuantityFull(group.totalQty)}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center text-stone-500">{item.unit}</td>
+                                                    </tr>
+                                                )
+
+                                                if (isLsxExpanded) {
+                                                    group.items.sort((a, b) => (a.tag === 'Không có mã phụ' ? 1 : b.tag === 'Không có mã phụ' ? -1 : b.qty - a.qty)).forEach((subItem, sIdx) => {
+                                                        const isNoTag = subItem.tag === 'Không có mã phụ'
+                                                        rows.push(
+                                                            <tr key={`${lsxKey}-sub-${sIdx}`} className="bg-stone-50/50 dark:bg-stone-900/50 transition-colors hover:bg-stone-100/50 dark:hover:bg-stone-800/50 border-l border-orange-200 dark:border-orange-900/30">
+                                                                <td className="px-4 py-2 pl-16" colSpan={2}>
+                                                                    <div className="flex items-center gap-2 text-sm">
+                                                                        <ChevronRight size={14} className="text-stone-300" />
+                                                                        {isNoTag ? (
+                                                                            <span className="italic text-stone-400">Không có mã phụ</span>
+                                                                        ) : (
+                                                                            <TagDisplay tags={[subItem.tag]} placeholderMap={{ '@': item.productSku }} />
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-4 py-2 text-right text-stone-400">—</td>
+                                                                <td className="px-4 py-2 text-right font-medium text-stone-700 dark:text-stone-300">
+                                                                    {formatQuantityFull(subItem.qty)}
+                                                                </td>
+                                                                <td className="px-4 py-2 text-center text-stone-500">{item.unit}</td>
+                                                            </tr>
+                                                        )
+                                                    })
+                                                }
+                                            })
+
+                                            nonLsxItems.sort((a, b) => (a.tag === 'Không có mã phụ' ? 1 : b.tag === 'Không có mã phụ' ? -1 : b.qty - a.qty)).forEach((subItem, sIdx) => {
+                                                const isNoTag = subItem.tag === 'Không có mã phụ'
+                                                rows.push(
+                                                    <tr key={`${item.key}-nonlsx-${sIdx}`} className={`transition-colors ${isNoTag ? 'bg-amber-50 dark:bg-amber-900/20 border-l-2 border-amber-400' : 'bg-stone-50/50 dark:bg-stone-900/50 hover:bg-stone-100/50 dark:hover:bg-stone-800/50'}`}>
+                                                        <td className="px-4 py-2 pl-10" colSpan={2}>
+                                                            <div className="flex items-center gap-2 text-sm">
+                                                                <ChevronRight size={14} className="text-stone-400" />
+                                                                {isNoTag ? (
+                                                                    <span className="italic text-stone-400">Gốc ( còn lại )</span>
+                                                                ) : (
+                                                                    <TagDisplay tags={[subItem.tag]} placeholderMap={{ '@': item.productSku }} />
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right text-stone-400">—</td>
+                                                        <td className="px-4 py-2 text-right font-medium text-stone-700 dark:text-stone-300">
+                                                            {formatQuantityFull(subItem.qty)}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center text-stone-500">{item.unit}</td>
+                                                    </tr>
+                                                )
+                                            })
+
+                                            return <>{rows}</>
+                                        })()}
                                     </React.Fragment>
                                 )
                             })

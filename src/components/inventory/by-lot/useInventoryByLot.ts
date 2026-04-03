@@ -6,6 +6,7 @@ import { normalizeSearchString, advancedMatchSearch } from '@/lib/searchUtils'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
 import { 
     normalizeUnit, 
+    canonicalizeUnit,
     isKg, 
     extractWeightFromName,
     MAIN_PACKAGE_UNITS 
@@ -34,6 +35,9 @@ export interface Lot {
     suppliers?: { name: string } | null
     positions?: { id: string, code: string }[]
     lot_tags?: { tag: string, lot_item_id: string | null }[]
+    production_code?: string | null
+    batch_code?: string | null
+    productions?: { code: string } | null
 }
 
 export interface GroupedProduct {
@@ -185,7 +189,7 @@ export function useInventoryByLot(
                 allZonesData,
                 allCategories
             ] = await Promise.all([
-                fetchAll('lots', '*', (q: any) => q.eq('system_code', sysCode)),
+                fetchAll('lots', '*, productions(code)', (q: any) => q.eq('system_code', sysCode)),
                 fetchAll('lot_items', '*'),
                 fetchAll('products', '*', (q: any) => q.or(`system_code.eq.${sysCode},system_type.eq.${sysCode}`)),
                 fetchAll('suppliers', 'id, name'),
@@ -418,7 +422,7 @@ export function useInventoryByLot(
 
                 let displayQty = qty
                 let displayUnit = unit
-                let key = `${sku}__${unit}`
+                let key = `${sku}__${canonicalizeUnit(unit)}`
                 let isUnconvertible = false
 
                 const targetUnit = targetUnitId ? units.find(u => u.id === targetUnitId) : null
@@ -438,7 +442,7 @@ export function useInventoryByLot(
                     displayQty = convertUnit(productId, unit, targetUnit!.name, qty, baseUnit)
                     key = `${sku}__${targetUnitId}`
                 } else if (targetUnitId) {
-                    key = `${sku}__${unit}__UNCONVERTIBLE`
+                    key = `${sku}__${canonicalizeUnit(unit)}__UNCONVERTIBLE`
                     isUnconvertible = true
                 }
                 
@@ -494,8 +498,15 @@ export function useInventoryByLot(
                 if (lot.lot_tags) {
                     const itemTags = lot.lot_tags.filter(t => t.lot_item_id === itemId).map(t => t.tag)
                     const generalTags = lot.lot_tags.filter(t => !t.lot_item_id).map(t => t.tag)
-                    tags = [...new Set([...itemTags, ...generalTags])].sort()
+                    tags = [...new Set([...itemTags, ...generalTags])]
                 }
+                
+                const sxCode = lot.production_code || lot.batch_code || lot.productions?.code;
+                if (sxCode) {
+                    tags.push(`LSX: ${sxCode}`)
+                }
+                
+                tags = tags.sort()
 
                 const compositeTag = tags.length > 0 ? tags.join('; ') : 'Không có mã phụ'
                 const currentVariantQty = group.variants.get(compositeTag) || 0
