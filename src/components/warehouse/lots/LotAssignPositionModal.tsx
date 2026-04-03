@@ -15,7 +15,7 @@ interface LotAssignPositionModalProps {
 }
 
 export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPositionModalProps) {
-    const { showToast } = useToast()
+    const { showToast, showConfirm } = useToast()
     const { currentSystem } = useSystem()
     const [loading, setLoading] = useState(false)
     const [code, setCode] = useState('')
@@ -30,8 +30,7 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
         async function fetchPositions(search: string = '') {
             setLoadingPositions(true)
             try {
-                let query = supabase
-                    .from('positions')
+                let query = (supabase.from('positions') as any)
                     .select('code')
                     .eq('system_type', currentSystem!.code)
                     .order('code')
@@ -46,7 +45,7 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                 if (error) throw error
                 if (data) {
                     // console.log(`Fetched ${data.length} positions for search "${search}"`)
-                    const options = data.map(p => ({
+                    const options = data.map((p: any) => ({
                         value: p.code,
                         label: p.code
                     }))
@@ -69,40 +68,72 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
     const handleAssign = async (e: React.FormEvent) => {
         e.preventDefault()
         const targetCode = code.trim().toUpperCase()
-        if (!targetCode) {
-            showToast('Chưa nhập mã vị trí', 'error')
-            return
-        }
-
+        
         setLoading(true)
 
         try {
+            // Case: Empty code = Unassign position
+            if (!targetCode) {
+                const confirmed = await showConfirm('Bạn có chắc chắn muốn xóa vị trí của LOT này và chuyển về trạng thái chưa gán?')
+                if (!confirmed) {
+                    setLoading(false)
+                    return
+                }
+
+                // Unassign current positions
+                const { error: unassignError } = await (supabase
+                    .from('positions') as any)
+                    .update({ lot_id: null })
+                    .eq('lot_id', lot.id)
+
+                if (unassignError) throw unassignError
+
+                // Log history for unassigning
+                const historyObj = {
+                    system_code: currentSystem?.code ?? null,
+                    action_type: 'unassign_position',
+                    entity_type: 'lot',
+                    entity_id: lot.id,
+                    details: {
+                        previous_positions: lot.positions?.map(p => p.code) || []
+                    }
+                } as any;
+
+                await (supabase as any).from('operation_history').insert(historyObj);
+
+                showToast('Đã xóa vị trí thành công!', 'success')
+                onSuccess()
+                return
+            }
+
             // Check if position exists
-            const { data: posData, error: posError } = await supabase
-                .from('positions')
+            const { data: posData, error: posError } = await (supabase
+                .from('positions') as any)
                 .select('id, lot_id, code')
                 .eq('code', targetCode)
                 .single()
 
             if (posError || !posData) {
                 showToast(`Không tìm thấy ô vị trí: ${targetCode}`, 'error')
+                setLoading(false)
                 return
             }
 
             if (posData.lot_id && posData.lot_id !== lot.id) {
                 showToast(`Ô vị trí ${targetCode} đã được gán cho một LOT khác`, 'error')
+                setLoading(false)
                 return
             }
 
             // Unassign current positions
-            await supabase
-                .from('positions')
+            await (supabase
+                .from('positions') as any)
                 .update({ lot_id: null })
                 .eq('lot_id', lot.id)
 
             // Assign new position
-            const { error: assignError } = await supabase
-                .from('positions')
+            const { error: assignError } = await (supabase
+                .from('positions') as any)
                 .update({ lot_id: lot.id })
                 .eq('id', posData.id)
 
@@ -110,7 +141,6 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                 throw assignError
             }
 
-            // Log history
             // Log history
             const historyObj = {
                 system_code: currentSystem?.code ?? null,
@@ -129,7 +159,7 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
             onSuccess()
         } catch (err: any) {
             console.error(err)
-            showToast('Lỗi khi gán vị trí: ' + err.message, 'error')
+            showToast('Lỗi khi xử lý vị trí: ' + err.message, 'error')
         } finally {
             setLoading(false)
         }

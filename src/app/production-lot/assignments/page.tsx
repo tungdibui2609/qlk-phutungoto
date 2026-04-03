@@ -154,7 +154,7 @@ export default function AssignmentApprovalPage() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-zinc-900 p-6">
+        <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-zinc-900 p-6 h-full">
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
                 <div>
@@ -325,7 +325,7 @@ export default function AssignmentApprovalPage() {
                                                             <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-100 rounded-xl">
                                                                 <AlertTriangle size={14} className="text-amber-500" />
                                                                 <span className="text-[10px] font-bold text-amber-700 uppercase">Chú ý:</span>
-                                                                <span className="text-[10px] text-amber-600 font-medium">LOT có ngày nhập kho là <span className="font-bold underline">{format(new Date(matchedLot.inbound_date), 'dd/MM/yyyy')}</span>, lệch so với yêu cầu ({format(new Date(ass.production_date), 'dd/MM/yyyy')})</span>
+                                                                <span className="text-[10px] text-amber-600 font-medium">LOT có ngày nhập kho là <span className="font-bold underline">{matchedLot.inbound_date ? format(new Date(matchedLot.inbound_date), 'dd/MM/yyyy') : '---'}</span>, lệch so với yêu cầu ({ass.production_date ? format(new Date(ass.production_date), 'dd/MM/yyyy') : '---'})</span>
                                                             </div>
                                                         )}
                                                     </div>
@@ -403,7 +403,7 @@ export default function AssignmentApprovalPage() {
                                             </div>
                                             <span className="text-xs font-black text-zinc-900 dark:text-white group-hover:text-blue-600 transition-colors">{lot.code}</span>
                                         </div>
-                                        {lot.lot_id && (
+                                        {(lot as any).lot_id && (
                                             <div className="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-full text-[8px] font-black">CÓ VỊ TRÍ</div>
                                         )}
                                     </div>
