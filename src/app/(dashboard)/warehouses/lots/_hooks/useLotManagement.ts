@@ -228,6 +228,118 @@ export function useLotManagement() {
 
             let query: any;
 
+            // === PRE-STEP: Zone filter — resolve lot IDs BEFORE building main query ===
+            // This 2-step approach ensures pagination works correctly.
+            // PostgREST nested !inner filters + pagination cause incorrect counts,
+            // so we first find lot_ids from positions, then filter lots by id.
+            let zoneLotIds: string[] | null = null;
+            if (selectedZoneId && positionFilter !== 'unassigned') {
+                // Strategy: MIRROR the warehouse map's logic exactly.
+                // Use MANUAL pagination for zone_positions (same as map's fetchAllZonesPos)
+
+                // 1. Fetch ALL zones (PAGINATED — Supabase defaults to 1000 max!)
+                let rawZones: any[] = []
+                let zoneFrom = 0
+                const ZONE_PAGE = 1000
+                while (true) {
+                    const { data: zonePage, error: zoneErr } = await supabase
+                        .from('zones')
+                        .select('id, parent_id, system_type')
+                        .eq('system_type', currentSystem.code)
+                        .order('id')
+                        .range(zoneFrom, zoneFrom + ZONE_PAGE - 1)
+                    if (zoneErr) { console.error('[Zone Filter] Error fetching zones:', zoneErr); break }
+                    if (!zonePage || zonePage.length === 0) break
+                    rawZones = [...rawZones, ...zonePage]
+                    if (zonePage.length < ZONE_PAGE) break
+                    zoneFrom += ZONE_PAGE
+                }
+
+                // 2. Fetch ALL zone_positions (manual pagination, matching map exactly)
+                let allZpData: any[] = []
+                let zpFrom = 0
+                const ZP_PAGE = 1000
+                while (true) {
+                    const { data: zpPage, error: zpErr } = await supabase
+                        .from('zone_positions')
+                        .select('zone_id, position_id, positions!inner(system_type)')
+                        .eq('positions.system_type' as any, currentSystem.code)
+                        .order('zone_id', { ascending: true })
+                        .order('position_id', { ascending: true })
+                        .range(zpFrom, zpFrom + ZP_PAGE - 1) as any
+                    if (zpErr) { console.error('[Zone Filter] Error fetching zone_positions:', zpErr); break }
+                    if (!zpPage || zpPage.length === 0) break
+                    allZpData = [...allZpData, ...zpPage]
+                    if (zpPage.length < ZP_PAGE) break
+                    zpFrom += ZP_PAGE
+                }
+
+                // 3. Fetch ALL positions with lot_id (manual pagination)
+                let allOccupiedPosData: any[] = []
+                let posFrom = 0
+                const POS_PAGE = 1000
+                while (true) {
+                    const { data: posPage, error: posErr } = await (supabase
+                        .from('positions') as any)
+                        .select('id, lot_id')
+                        .eq('system_type', currentSystem.code)
+                        .not('lot_id', 'is', null)
+                        .range(posFrom, posFrom + POS_PAGE - 1)
+                    if (posErr) { console.error('[Zone Filter] Error fetching positions:', posErr); break }
+                    if (!posPage || posPage.length === 0) break
+                    allOccupiedPosData = [...allOccupiedPosData, ...posPage]
+                    if (posPage.length < POS_PAGE) break
+                    posFrom += POS_PAGE
+                }
+
+                // Build zpLookup: position_id → zone_id (same as map)
+                const zpLookup: Record<string, string> = {}
+                allZpData.forEach((zp: any) => {
+                    if (zp.position_id && zp.zone_id) zpLookup[zp.position_id] = zp.zone_id
+                })
+
+                // Resolve target zone IDs (selected zone + all descendants)
+                const selectedIsRealZone = (rawZones as any[]).some((z: any) => z.id === selectedZoneId)
+                let allTargetZoneIds = new Set<string>()
+
+                const getDescendantIds = (parentId: string): string[] => {
+                    const children = (rawZones as any[]).filter(z => z.parent_id === parentId)
+                    const descendantIds = children.map(z => z.id)
+                    children.forEach(child => {
+                        descendantIds.push(...getDescendantIds(child.id))
+                    })
+                    return descendantIds
+                }
+
+                if (selectedIsRealZone) {
+                    allTargetZoneIds.add(selectedZoneId)
+                    getDescendantIds(selectedZoneId).forEach(dId => allTargetZoneIds.add(dId))
+                } else {
+                    // Virtual zone — resolve via groupWarehouseData
+                    const allPosForGrouping = await fetchAllPaginated('positions',
+                        q => (q as any).eq('system_type', currentSystem.code),
+                        'id, code, system_type'
+                    )
+                    const { virtualToRealMap } = groupWarehouseData(rawZones as any[], allPosForGrouping as any[])
+                    const mapped = virtualToRealMap?.get(selectedZoneId)
+                    const baseRealIds = mapped ? mapped : [selectedZoneId]
+                    baseRealIds.forEach(id => {
+                        allTargetZoneIds.add(id)
+                        getDescendantIds(id).forEach(dId => allTargetZoneIds.add(dId))
+                    })
+                }
+                // Filter occupied positions by zone membership
+                const allLotIds = new Set<string>()
+                allOccupiedPosData.forEach((pos: any) => {
+                    const posZoneId = zpLookup[pos.id]
+                    if (posZoneId && allTargetZoneIds.has(posZoneId) && pos.lot_id) {
+                        allLotIds.add(pos.lot_id)
+                    }
+                })
+
+                zoneLotIds = Array.from(allLotIds)
+            }
+
             if (positionFilter === 'unassigned') {
                 // Unassigned: Use RPC for scalable filtering
                 // Left Join on positions is still needed to fetch (empty) positions array for type consistency
@@ -237,10 +349,8 @@ export function useLotManagement() {
                     .select(selectQuery, { count: 'exact' })
                 // RPC handles system_code and status check internally
             } else {
-                // Standard Logic
-                if (selectedZoneId) {
-                    selectQuery += `, positions!positions_lot_id_fkey!inner(id, code, zone_positions!inner(zone_id))`
-                } else if (positionFilter === 'assigned') {
+                // Standard Logic — use left join for positions (zone filtering done via lot IDs now)
+                if (positionFilter === 'assigned') {
                     selectQuery += `, positions!positions_lot_id_fkey!inner(id, code, zone_positions!left(zone_id))`
                 } else {
                     selectQuery += `, positions!positions_lot_id_fkey(id, code, zone_positions!left(zone_id))`
@@ -253,6 +363,17 @@ export function useLotManagement() {
                     query = query.eq('system_code', currentSystem.code)
                 }
                 query = query.neq('status', 'hidden').neq('status', 'exported')
+
+                // Apply zone lot filter if we resolved lot IDs
+                if (zoneLotIds !== null) {
+                    if (zoneLotIds.length === 0) {
+                        // No lots in this zone — return empty
+                        query = query.eq('id', '00000000-0000-0000-0000-000000000000')
+                    } else {
+                        // Filter by the resolved lot IDs
+                        query = query.in('id', zoneLotIds.slice(0, 1000))
+                    }
+                }
             }
 
             // Implementation Strategy for filters:
@@ -473,58 +594,6 @@ export function useLotManagement() {
                 const end = new Date(endDate)
                 end.setHours(23, 59, 59, 999)
                 query = query.gte(dateFilterField, startDate).lte(dateFilterField, end.toISOString())
-            }
-
-            // 3. Position / Zone Filter
-            // 'assigned' is handled by !inner join implicitly (lots must have positions)
-            // 'unassigned' is handled by RPC call above.
-
-            if (selectedZoneId) {
-                // Fetch all zones and positions to perform grouping and resolve virtual IDs
-                const [allZones, allPositions] = await Promise.all([
-                    supabase
-                        .from('zones')
-                        .select('*')
-                        .eq('system_type', currentSystem.code),
-                    supabase
-                        .from('positions')
-                        .select('id, code, system_type')
-                        .eq('system_type', currentSystem.code)
-                ])
-
-                if (allZones.data) {
-                    const rawZones = allZones.data
-                    const rawPositions = allPositions.data || []
-                    if (selectedZoneId) {
-                        const { virtualToRealMap } = groupWarehouseData(rawZones as any[], rawPositions as any[])
-                        
-                        // Resolve selectedZoneId to the set of real IDs it represents
-                        const resolveRealIds = (id: string): string[] => {
-                            const mapped = virtualToRealMap?.get(id)
-                            return mapped ? mapped : [id]
-                        }
-
-                        const baseRealIds = resolveRealIds(selectedZoneId)
-
-                        // Helper to find all descendants
-                        const getDescendantIds = (parentId: string): string[] => {
-                            const children = (rawZones as any[]).filter(z => z.parent_id === parentId)
-                            const descendantIds = children.map(z => z.id)
-                            children.forEach(child => {
-                                descendantIds.push(...getDescendantIds(child.id))
-                            })
-                            return descendantIds
-                        }
-
-                        const allRealIds = new Set<string>()
-                        baseRealIds.forEach(id => {
-                            allRealIds.add(id)
-                            getDescendantIds(id).forEach(dId => allRealIds.add(dId))
-                        })
-
-                        query = query.in('positions.zone_positions.zone_id', Array.from(allRealIds))
-                    }
-                }
             }
 
             // Pagination
