@@ -46,7 +46,7 @@ export const lotService = {
         conversionMap: Map<string, Map<string, number>>
     ): number {
         if (!productId || !unitName || !baseUnitName) return qty
-        if (unitName.toLowerCase() === baseUnitName.toLowerCase()) return qty
+        if (unitName.normalize('NFC').toLowerCase().trim() === baseUnitName.normalize('NFC').toLowerCase().trim()) return qty
 
         // PRIORITY 1: Parse from name (Thùng (15kg) -> 15)
         const parsedRate = this.parseRateFromName(unitName)

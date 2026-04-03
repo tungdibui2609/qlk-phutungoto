@@ -107,6 +107,18 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
         const baseUnit = item.products?.unit || ''
         const originalUnit = item.unit || baseUnit
 
+        // PRIORITY 0: If selected unit and original unit are the same, no conversion needed
+        const normSelected = selectedUnit.normalize('NFC').toLowerCase().trim()
+        const normOriginal = originalUnit.normalize('NFC').toLowerCase().trim()
+        if (normSelected === normOriginal) {
+            return selectedQty
+        }
+        // Also check without parenthetical suffix: "Thùng" vs "Thùng (20kg)"
+        const stripParens = (s: string) => s.replace(/\s*\([^)]*\)/g, '').trim()
+        if (stripParens(normSelected) === stripParens(normOriginal) && !selectedUnit.includes('(') && !originalUnit.includes('(')) {
+            return selectedQty
+        }
+
         // PRIORITY 1: Parse from names (for Thùng (9kg) etc.)
         const pRateSelected = lotService.parseRateFromName(selectedUnit)
         const pRateOriginal = lotService.parseRateFromName(originalUnit)
@@ -124,7 +136,7 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
         if (pRateOrigFallback !== null) {
             originalRate = pRateOrigFallback
         } else {
-            const originalUnitId = unitNameMap.get(originalUnit.toLowerCase())
+            const originalUnitId = unitNameMap.get(normOriginal)
             if (originalUnitId) {
                 const productRates = conversionMap.get(item.product_id)
                 originalRate = productRates?.get(originalUnitId) || 1
