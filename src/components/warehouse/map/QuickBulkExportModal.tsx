@@ -17,20 +17,29 @@ interface QuickBulkExportModalProps {
         items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>,
         positions?: { code: string }[]
     }>
+    defaultCustomer?: string
+    defaultDescription?: string
     onClose: () => void
     onSuccess: () => void
 }
 
-export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({ lotIds, lotInfo, onClose, onSuccess }) => {
+export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({ 
+    lotIds, 
+    lotInfo, 
+    onClose, 
+    onSuccess,
+    defaultCustomer,
+    defaultDescription
+}) => {
     const { systemType, currentSystem } = useSystem()
     const { showToast } = useToast()
     const { getBaseAmount: toBaseAmount, unitNameMap, conversionMap } = useUnitConversion()
 
-    const [customerName, setCustomerName] = useState('')
+    const [customerName, setCustomerName] = useState(defaultCustomer || '')
     const [customers, setCustomers] = useState<any[]>([])
     const [suggestions, setSuggestions] = useState<any[]>([])
     const [showSuggestions, setShowSuggestions] = useState(false)
-    const [description, setDescription] = useState('Xuất kho nhanh (Sơ đồ)')
+    const [description, setDescription] = useState(defaultDescription || 'Xuất kho nhanh (Sơ đồ)')
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
 

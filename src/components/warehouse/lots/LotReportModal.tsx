@@ -22,7 +22,9 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
     const { companyInfo } = usePrintCompanyInfo()
 
     const [loading, setLoading] = useState(false)
-    const [reportData, setReportData] = useState<any[]>([])
+    const [activeTab, setActiveTab] = useState<'inward' | 'outward'>('inward')
+    const [reportDataInward, setReportDataInward] = useState<any[]>([])
+    const [reportDataOutward, setReportDataOutward] = useState<any[]>([])
     const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0])
     const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
     const [productionLotsMap, setProductionLotsMap] = useState<Record<string, string>>({})
@@ -43,15 +45,13 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
             const end = new Date(endDate)
             end.setHours(23, 59, 59, 999)
 
-            const { data, error } = await supabase
+            const startStr = format(start, "yyyy-MM-dd'T'00:00:00")
+            const endStr = format(end, "yyyy-MM-dd'T'23:59:59")
+
+            const { data: allLots, error } = await supabase
                 .from('lots')
                 .select(`
-                    id,
-                    code,
-                    created_at,
-                    production_code,
-                    production_id,
-                    batch_code,
+                    *,
                     productions(code, name),
                     lot_items(
                         id,
@@ -63,24 +63,99 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                     positions!positions_lot_id_fkey(id, code),
                     products(name, sku, unit)
                 `)
-                .eq('system_code', currentSystem.code)
-                .gte('created_at', start.toISOString())
-                .lte('created_at', end.toISOString())
+                .eq('system_code', currentSystem?.code)
+                .or(`created_at.gte.${startStr},status.eq.exported`)
                 .order('created_at', { ascending: false })
 
-            if (error) throw error
-            const reportRows = (data || []) as any[]
-            setReportData(reportRows)
+            if (error) {
+                console.error('Supabase query error:', error)
+                throw new Error(error.message || 'Lỗi không xác định từ cơ sở dữ liệu')
+            }
+            const rawLots = (allLots || []) as any[]
 
-            // Step 2: Fetch Production Lot Codes if there are productions
-            const productionIds = Array.from(new Set(reportRows.map(r => r.production_id).filter(id => !!id)))
-            if (productionIds.length > 0) {
-                const { data: prodLots, error: prodLotsError } = await supabase
+            // Step 2: Separate Inward and Outward
+            const inward: any[] = []
+            const outwardTransactions: any[] = []
+
+            rawLots.forEach(lot => {
+                // 2a. Check if inward (created in range)
+                const createdAt = new Date(lot.created_at)
+                if (createdAt >= start && createdAt <= end) {
+                    inward.push(lot)
+                }
+
+                // 2b. Check if has exports in range
+                const exports = lot.metadata?.system_history?.exports || []
+                if (Array.isArray(exports)) {
+                    exports.forEach((exp: any) => {
+                        const exportDate = new Date(exp.date)
+                        if (exportDate >= start && exportDate <= end) {
+                            // Flatten outward transactions for easier listing
+                            // Each outward transaction can have multiple items
+                            const items = exp.items || {}
+                            Object.entries(items).forEach(([itemId, itemData]: [string, any]) => {
+                                outwardTransactions.push({
+                                    id: exp.id + '_' + itemId,
+                                    lot_id: lot.id,
+                                    lot_code: lot.code,
+                                    date: exp.date,
+                                    customer: exp.customer || 'Khách lẻ',
+                                    description: exp.description || '',
+                                    product_id: itemData.product_id,
+                                    product_name: itemData.product_name || 'Sản phẩm không tên',
+                                    product_sku: itemData.product_sku || '-',
+                                    quantity: itemData.exported_quantity || 0,
+                                    unit: itemData.unit || '-',
+                                    production_id: itemData.production_id || lot.production_id,
+                                    production_code: lot.productions?.code || lot.production_code || '-',
+                                    production_name: lot.productions?.name || '-',
+                                    location_code: exp.location_code
+                                })
+                            })
+                        }
+                    })
+                }
+            })
+
+            // Step 3: Fetch Production info (Tên và Mã) cho TẤT CẢ các ID liên quan
+            const allProdIds = Array.from(new Set([
+                ...inward.map(r => r.production_id),
+                ...outwardTransactions.map(r => r.production_id),
+                ...rawLots.flatMap(lot => (lot.metadata?.system_history?.exports || []).flatMap((e: any) => Object.values(e.items || {}).map((i: any) => i.production_id)))
+            ].filter(id => !!id)))
+
+            const productionsDataMap: Record<string, { code: string, name: string }> = {}
+            if (allProdIds.length > 0) {
+                const { data: prodData } = await supabase
+                    .from('productions')
+                    .select('id, code, name')
+                    .in('id', allProdIds) as { data: { id: string, code: string, name: string }[] | null }
+                
+                if (prodData) {
+                    prodData.forEach(p => {
+                        productionsDataMap[p.id] = { code: p.code, name: p.name }
+                    })
+                }
+            }
+
+            // Step 4: Map production info back to transactions
+            const mappedOutward = outwardTransactions.map(tx => {
+                const info = productionsDataMap[tx.production_id]
+                return {
+                    ...tx,
+                    production_code: info?.code || tx.production_code,
+                    production_name: info?.name || tx.production_name
+                }
+            })
+
+            // Step 5: Fetch Production LOT codes (Số lô) if any
+            if (allProdIds.length > 0) {
+                const { data: prodLots } = await supabase
                     .from('production_lots')
                     .select('production_id, product_id, lot_code')
-                    .in('production_id', productionIds) as { data: any[] | null, error: any }
+                    .in('production_id', allProdIds)
 
-                if (!prodLotsError && prodLots) {
+                if (prodLots) {
                     const map: Record<string, string> = {}
                     prodLots.forEach((pl: any) => {
                         map[`${pl.production_id}_${pl.product_id}`] = pl.lot_code
@@ -90,20 +165,24 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
             } else {
                 setProductionLotsMap({})
             }
+
+            setReportDataInward(inward)
+            setReportDataOutward(mappedOutward)
         } catch (err: any) {
             console.error('Error fetching report data:', err)
-            showToast('Lỗi tải dữ liệu báo cáo: ' + err.message, 'error')
+            const errMsg = err.message || (typeof err === 'object' ? JSON.stringify(err) : String(err))
+            showToast('Lỗi tải dữ liệu báo cáo: ' + errMsg, 'error')
         } finally {
             setLoading(false)
         }
     }
 
-    const groupedData = useMemo(() => {
-        if (!reportData.length) return []
+    const groupedInwardData = useMemo(() => {
+        if (!reportDataInward.length) return []
         
         const groups: Record<string, { production_code: string, production_name?: string, lots: any[] }> = {}
         
-        reportData.forEach(lot => {
+        reportDataInward.forEach(lot => {
             const prodCode = lot.production_code || lot.productions?.code || 'NO_PROD'
             const prodName = lot.productions?.name || ''
             
@@ -118,12 +197,12 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
         })
         
         return Object.values(groups)
-    }, [reportData])
+    }, [reportDataInward])
 
-    const summaryStats = useMemo(() => {
+    const summaryInward = useMemo(() => {
         const stats: Record<string, { productName: string, sku: string, totalQty: number, unit: string, lotCount: number }> = {}
         
-        reportData.forEach(lot => {
+        reportDataInward.forEach(lot => {
             const items = lot.lot_items || []
             if (items.length > 0) {
                 items.forEach((item: any) => {
@@ -159,28 +238,64 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
         })
         
         return Object.values(stats).sort((a, b) => b.totalQty - a.totalQty)
-    }, [reportData])
+    }, [reportDataInward])
+
+    const summaryOutward = useMemo(() => {
+        const stats: Record<string, { productName: string, sku: string, totalQty: number, unit: string, lotCount: number }> = {}
+        
+        reportDataOutward.forEach(row => {
+            const unit = row.unit || '-'
+            const key = `${row.product_id}_${unit}`
+            if (!stats[key]) {
+                stats[key] = {
+                    productName: row.product_name,
+                    sku: row.product_sku,
+                    totalQty: 0,
+                    unit: unit,
+                    lotCount: 0
+                }
+            }
+            stats[key].totalQty += (Number(row.quantity) || 0)
+            stats[key].lotCount += 1
+        })
+        
+        return Object.values(stats).sort((a, b) => b.totalQty - a.totalQty)
+    }, [reportDataOutward])
 
     const handleExportExcel = async () => {
-        if (reportData.length === 0) {
+        const currentData = activeTab === 'inward' ? reportDataInward : reportDataOutward
+        if (currentData.length === 0) {
             showToast('Không có dữ liệu để xuất Excel', 'warning')
             return
         }
 
         try {
             const workbook = new ExcelJS.Workbook()
-            const worksheet = workbook.addWorksheet('Báo cáo LOT')
+            const worksheet = workbook.addWorksheet(activeTab === 'inward' ? 'Báo cáo Nhập LOT' : 'Báo cáo Xuất LOT')
 
-            // Header
-            worksheet.columns = [
-                { header: 'STT', key: 'stt', width: 5 },
-                { header: 'NGÀY TẠO', key: 'date', width: 15 },
-                { header: 'MÃ LOT SX', key: 'prod_code', width: 25 },
-                { header: 'SẢN PHẨM', key: 'product', width: 40 },
-                { header: 'SỐ LƯỢNG', key: 'qty', width: 12 },
-                { header: 'ĐƠN VỊ', key: 'unit', width: 10 },
-                { header: 'VỊ TRÍ', key: 'position', width: 15 }
-            ]
+            // Header definition based on tab
+            if (activeTab === 'inward') {
+                worksheet.columns = [
+                    { header: 'STT', key: 'stt', width: 5 },
+                    { header: 'NGÀY TẠO', key: 'date', width: 15 },
+                    { header: 'MÃ LOT SX', key: 'prod_code', width: 25 },
+                    { header: 'SẢN PHẨM', key: 'product', width: 40 },
+                    { header: 'SỐ LƯỢNG', key: 'qty', width: 12 },
+                    { header: 'ĐƠN VỊ', key: 'unit', width: 10 },
+                    { header: 'VỊ TRÍ', key: 'position', width: 15 }
+                ]
+            } else {
+                worksheet.columns = [
+                    { header: 'STT', key: 'stt', width: 5 },
+                    { header: 'NGÀY XUẤT', key: 'date', width: 15 },
+                    { header: 'MÃ LOT SX', key: 'prod_code', width: 25 },
+                    { header: 'SẢN PHẨM', key: 'product', width: 40 },
+                    { header: 'SỐ LƯỢNG', key: 'qty', width: 12 },
+                    { header: 'ĐƠN VỊ', key: 'unit', width: 10 },
+                    { header: 'MÃ LỆNH SX', key: 'customer', width: 25 },
+                    { header: 'GHI CHÚ', key: 'description', width: 25 }
+                ]
+            }
 
             // Xóa hàng header mặc định tự động tạo bởi ExcelJS
             worksheet.getRow(1).values = []
@@ -260,91 +375,91 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
             })
             currentRow++
 
-            // Add rows by group
-            groupedData.forEach((group: any) => {
-                // Add Group Header Row
-                const productionLabel = group.production_name || group.production_code || 'Không xác định'
-                const groupHeaderRow = worksheet.addRow([`LỆNH SẢN XUẤT: ${productionLabel}`])
-                worksheet.mergeCells(`A${groupHeaderRow.number}:G${groupHeaderRow.number}`)
-                groupHeaderRow.eachCell((cell) => {
-                    cell.font = { bold: true, size: 11 }
-                    cell.fill = {
-                        type: 'pattern',
-                        pattern: 'solid',
-                        fgColor: { argb: 'FFF2CC' } // Light orange for group headers
-                    }
-                    cell.border = {
-                        top: { style: 'thin' },
-                        left: { style: 'thin' },
-                        bottom: { style: 'thin' },
-                        right: { style: 'thin' }
-                    }
-                })
+            // Add rows based on tab
+            if (activeTab === 'inward') {
+                groupedInwardData.forEach((group: any) => {
+                    // Add Group Header Row
+                    const productionLabel = group.production_name || group.production_code || 'Không xác định'
+                    const groupHeaderRow = worksheet.addRow([`LỆNH SẢN XUẤT: ${productionLabel}`])
+                    worksheet.mergeCells(`A${groupHeaderRow.number}:G${groupHeaderRow.number}`)
+                    groupHeaderRow.eachCell((cell) => {
+                        cell.font = { bold: true, size: 11 }
+                        cell.fill = {
+                            type: 'pattern',
+                            pattern: 'solid',
+                            fgColor: { argb: 'FFF2CC' }
+                        }
+                        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                    })
 
-                group.lots.forEach((lot: any, index: number) => {
-                    const dateStr = format(new Date(lot.created_at), 'dd/MM/yyyy')
-                    const posStr = lot.positions?.map((p: any) => p.code).join(', ') || '-'
-                    
-                    // If lot has items, create one row per item
-                    if (lot.lot_items && lot.lot_items.length > 0) {
-                        lot.lot_items.forEach((item: any, itemIdx: number) => {
-                            const sxLotCode = productionLotsMap[`${lot.production_id}_${item.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
-
-                            const row = worksheet.addRow({
-                                stt: itemIdx === 0 ? index + 1 : '',
-                                date: itemIdx === 0 ? dateStr : '',
-                                prod_code: itemIdx === 0 ? sxLotCode : '',
-                                product: item.products?.name || '-',
-                                qty: item.quantity,
-                                unit: item.unit || item.products?.unit || '-',
-                                position: itemIdx === 0 ? posStr : ''
+                    group.lots.forEach((lot: any, index: number) => {
+                        const dateStr = format(new Date(lot.created_at), 'dd/MM/yyyy')
+                        const posStr = lot.positions?.map((p: any) => p.code).join(', ') || '-'
+                        
+                        if (lot.lot_items && lot.lot_items.length > 0) {
+                            lot.lot_items.forEach((item: any, itemIdx: number) => {
+                                const sxLotCode = productionLotsMap[`${lot.production_id}_${item.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
+                                const row = worksheet.addRow({
+                                    stt: itemIdx === 0 ? index + 1 : '',
+                                    date: itemIdx === 0 ? dateStr : '',
+                                    prod_code: itemIdx === 0 ? sxLotCode : '',
+                                    product: item.products?.name || '-',
+                                    qty: item.quantity,
+                                    unit: item.unit || item.products?.unit || '-',
+                                    position: itemIdx === 0 ? posStr : ''
+                                })
+                                row.eachCell((cell, colNumber) => {
+                                    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                                    if (colNumber === 5) {
+                                        cell.alignment = { horizontal: 'right' }
+                                        cell.numFmt = '#,##0'
+                                    }
+                                })
                             })
-                            
-                            // Apply borders and alignment to each cell
+                        } else if (lot.products) {
+                            const sxLotCode = productionLotsMap[`${lot.production_id}_${lot.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
+                            const row = worksheet.addRow({
+                                stt: index + 1,
+                                date: dateStr,
+                                prod_code: sxLotCode,
+                                product: lot.products.name || '-',
+                                qty: (lot as any).quantity || 0,
+                                unit: (lot as any).unit || lot.products.unit || '-',
+                                position: posStr
+                            })
                             row.eachCell((cell, colNumber) => {
                                 cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
-                                if (colNumber === 6) { // Qty column
+                                if (colNumber === 5) {
                                     cell.alignment = { horizontal: 'right' }
                                     cell.numFmt = '#,##0'
                                 }
                             })
-                        })
-                    } else if (lot.products) {
-                        const sxLotCode = productionLotsMap[`${lot.production_id}_${lot.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
-                        
-                        const row = worksheet.addRow({
-                            stt: index + 1,
-                            date: dateStr,
-                            prod_code: sxLotCode,
-                            product: lot.products.name || '-',
-                            qty: (lot as any).quantity || 0,
-                            unit: (lot as any).unit || lot.products.unit || '-',
-                            position: posStr
-                        })
-                        row.eachCell((cell, colNumber) => {
-                            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
-                            if (colNumber === 6) { // Qty column
-                                cell.alignment = { horizontal: 'right' }
-                                cell.numFmt = '#,##0'
-                            }
-                        })
-                    } else {
-                        const sxLotCode = lot.batch_code || lot.production_code || lot.productions?.code || '-'
-                        const row = worksheet.addRow({
-                            stt: index + 1,
-                            date: dateStr,
-                            prod_code: sxLotCode,
-                            product: '-',
-                            qty: '-',
-                            unit: '-',
-                            position: posStr
-                        })
-                        row.eachCell((cell) => {
-                            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
-                        })
-                    }
+                        }
+                    })
                 })
-            })
+            } else {
+                // Outward export
+                reportDataOutward.forEach((row, index) => {
+                    const sxLotCode = productionLotsMap[`${row.production_id}_${row.product_id}`] || row.lot_code || '-'
+                    const excelRow = worksheet.addRow({
+                        stt: index + 1,
+                        date: format(new Date(row.date), 'dd/MM/yyyy'),
+                        prod_code: sxLotCode,
+                        product: row.product_name,
+                        qty: row.quantity,
+                        unit: row.unit,
+                        customer: `${row.production_code || ''} - ${row.production_name || ''}`.trim().replace(/^ - | - $/, '') || '-',
+                        description: row.description
+                    })
+                    excelRow.eachCell((cell, colNumber) => {
+                        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                        if (colNumber === 5) {
+                            cell.alignment = { horizontal: 'right' }
+                            cell.numFmt = '#,##0'
+                        }
+                    })
+                })
+            }
 
             // 6. Signature section
             let lastRowNumber = worksheet.lastRow ? worksheet.lastRow.number : currentRow
@@ -366,7 +481,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
             })
 
             const buffer = await workbook.xlsx.writeBuffer()
-            const fileName = `Bao_cao_LOT_${startDate}_to_${endDate}.xlsx`
+            const fileName = `Bao_cao_${activeTab === 'inward' ? 'Nhap' : 'Xuat'}_LOT_${startDate}_to_${endDate}.xlsx`
             saveAs(new Blob([buffer]), fileName)
             showToast('Đã xuất file Excel thành công', 'success')
         } catch (err: any) {
@@ -376,7 +491,8 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
     }
 
     const handlePrint = (orientation: 'portrait' | 'landscape' = 'portrait') => {
-        if (reportData.length === 0) {
+        const currentData = activeTab === 'inward' ? reportDataInward : reportDataOutward
+        if (currentData.length === 0) {
             showToast('Không có dữ liệu để in', 'warning')
             return
         }
@@ -429,7 +545,6 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                 <body class="bg-white text-black h-auto overflow-visible" style="font-family: 'Times New Roman', Times, serif;">
                     ${printContent.innerHTML}
                     <script>
-                        // Chờ tài nguyên tải xong rồi mới gọi hàm in tự động
                         setTimeout(() => {
                             window.focus();
                             window.print();
@@ -458,7 +573,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                 Báo cáo tổng hợp LOT
                             </h3>
                             <p className="text-sm font-medium mt-1 text-slate-500">
-                                Kết xuất danh sách LOT tạo trong khoảng ngày đã chọn
+                                Kết xuất danh sách biến động LOT trong khoảng ngày đã chọn
                             </p>
                         </div>
                     </div>
@@ -467,61 +582,92 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                     </button>
                 </div>
 
-                {/* Filters */}
-                <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex flex-col md:flex-row md:items-center justify-between gap-4 no-print border-b border-slate-100 dark:border-slate-800">
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                        <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                            <Calendar size={16} className="text-orange-500 shrink-0" />
-                            <div className="flex items-center gap-1 sm:gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                                <input
-                                    type="date"
-                                    value={startDate}
-                                    onChange={(e) => setStartDate(e.target.value)}
-                                    className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[110px] sm:w-32 text-center"
-                                />
-                                <span className="text-slate-400">→</span>
-                                <input
-                                    type="date"
-                                    value={endDate}
-                                    onChange={(e) => setEndDate(e.target.value)}
-                                    className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[110px] sm:w-32 text-center"
-                                />
+                {/* Tabs & Date Filters */}
+                <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 space-y-4 no-print border-b border-slate-100 dark:border-slate-800">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-center p-1 bg-slate-200 dark:bg-slate-800 rounded-2xl w-fit shadow-inner">
+                            <button
+                                onClick={() => setActiveTab('inward')}
+                                className={`px-6 py-2.5 rounded-xl text-sm font-black transition-all ${activeTab === 'inward' 
+                                    ? 'bg-white dark:bg-slate-900 text-orange-600 dark:text-orange-400 shadow-md scale-100' 
+                                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 scale-95 opacity-70'}`}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <div className={`w-2 h-2 rounded-full ${activeTab === 'inward' ? 'bg-orange-500 animate-pulse' : 'bg-slate-400'}`}></div>
+                                    DANH SÁCH NHẬP
+                                </div>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('outward')}
+                                className={`px-6 py-2.5 rounded-xl text-sm font-black transition-all ${activeTab === 'outward' 
+                                    ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-md scale-100' 
+                                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 scale-95 opacity-70'}`}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <div className={`w-2 h-2 rounded-full ${activeTab === 'outward' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></div>
+                                    DANH SÁCH XUẤT
+                                </div>
+                            </button>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                                <Calendar size={16} className="text-orange-500 shrink-0" />
+                                <div className="flex items-center gap-1 sm:gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+                                    <input
+                                        type="date"
+                                        value={startDate}
+                                        onChange={(e) => setStartDate(e.target.value)}
+                                        className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[110px] sm:w-32 text-center"
+                                    />
+                                    <span className="text-slate-400">→</span>
+                                    <input
+                                        type="date"
+                                        value={endDate}
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                        className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[110px] sm:w-32 text-center"
+                                    />
+                                </div>
+                            </div>
+                            <div className="text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700/50 w-fit">
+                                {activeTab === 'inward' ? 'Nhập kho: ' : 'Xuất kho: '}
+                                <span className={`${activeTab === 'inward' ? 'text-orange-600' : 'text-emerald-600'} text-sm sm:text-base ml-1`}>
+                                    {activeTab === 'inward' ? reportDataInward.length : reportDataOutward.length}
+                                </span> 
+                                <span className="ml-0.5">{activeTab === 'inward' ? 'LOT' : 'Dòng'}</span>
                             </div>
                         </div>
-                        <div className="text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700/50 w-fit">
-                            Tìm thấy: <span className="text-orange-600 dark:text-orange-400 text-sm sm:text-base ml-1">{reportData.length}</span> <span className="ml-0.5">LOT</span>
-                        </div>
-                    </div>
 
-                    <div className="flex items-center justify-between sm:justify-end gap-2 w-full md:w-auto">
-                        <button
-                            onClick={handleExportExcel}
-                            disabled={loading || reportData.length === 0}
-                            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-black shadow-lg shadow-green-600/20 active:scale-95 transition-all disabled:opacity-50 disabled:grayscale"
-                        >
-                            <Download size={18} />
-                            <span className="sm:inline">Excel</span>
-                        </button>
-                        <div className="flex-1 sm:flex-none flex items-center bg-slate-800 dark:bg-slate-700 rounded-xl overflow-hidden p-0.5 shadow-lg shadow-slate-900/20">
+                        <div className="flex items-center justify-between sm:justify-end gap-2 w-full md:w-auto">
                             <button
-                                onClick={() => handlePrint('portrait')}
-                                disabled={loading || reportData.length === 0}
-                                title="In dọc (Portrait)"
-                                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg bg-transparent hover:bg-black text-white text-sm font-bold transition-all disabled:opacity-50"
+                                onClick={handleExportExcel}
+                                disabled={loading || (activeTab === 'inward' ? reportDataInward.length === 0 : reportDataOutward.length === 0)}
+                                className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-black shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:grayscale ${activeTab === 'inward' ? 'bg-orange-600 shadow-orange-600/20' : 'bg-emerald-600 shadow-emerald-600/20'}`}
                             >
-                                <Printer size={16} />
-                                <span className="hidden sm:inline">In dọc</span>
+                                <Download size={18} />
+                                <span className="sm:inline">Excel</span>
                             </button>
-                            <div className="w-px h-5 bg-slate-600 mx-0.5 opacity-50"></div>
-                            <button
-                                onClick={() => handlePrint('landscape')}
-                                disabled={loading || reportData.length === 0}
-                                title="In ngang (Landscape)"
-                                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg bg-transparent hover:bg-black text-white text-sm font-bold transition-all disabled:opacity-50"
-                            >
-                                <Printer size={16} className="rotate-90" />
-                                <span className="hidden sm:inline">In ngang</span>
-                            </button>
+                            <div className="flex-1 sm:flex-none flex items-center bg-slate-800 dark:bg-slate-700 rounded-xl overflow-hidden p-0.5 shadow-lg shadow-slate-900/20">
+                                <button
+                                    onClick={() => handlePrint('portrait')}
+                                    disabled={loading || (activeTab === 'inward' ? reportDataInward.length === 0 : reportDataOutward.length === 0)}
+                                    title="In dọc (Portrait)"
+                                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg bg-transparent hover:bg-black text-white text-sm font-bold transition-all disabled:opacity-50"
+                                >
+                                    <Printer size={16} />
+                                    <span className="hidden sm:inline">In dọc</span>
+                                </button>
+                                <div className="w-px h-5 bg-slate-600 mx-0.5 opacity-50"></div>
+                                <button
+                                    onClick={() => handlePrint('landscape')}
+                                    disabled={loading || (activeTab === 'inward' ? reportDataInward.length === 0 : reportDataOutward.length === 0)}
+                                    title="In ngang (Landscape)"
+                                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg bg-transparent hover:bg-black text-white text-sm font-bold transition-all disabled:opacity-50"
+                                >
+                                    <Printer size={16} className="rotate-90" />
+                                    <span className="hidden sm:inline">In ngang</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -533,18 +679,16 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                             <Loader2 size={40} className="animate-spin text-orange-500" />
                             <p className="text-sm font-bold text-slate-500 animate-pulse">Đang nạp dữ liệu...</p>
                         </div>
-                    ) : reportData.length === 0 ? (
+                    ) : (activeTab === 'inward' ? reportDataInward.length === 0 : reportDataOutward.length === 0) ? (
                         <div className="h-64 flex flex-col items-center justify-center gap-4 text-slate-400 no-print">
                             <LayoutList size={48} strokeWidth={1} />
-                            <p className="font-medium">Không tìm thấy LOT nào trong khoảng ngày này</p>
+                            <p className="font-medium">Không tìm thấy dữ liệu {activeTab === 'inward' ? 'nhập' : 'xuất'} nào trong khoảng ngày này</p>
                         </div>
                     ) : (
                         <div className="report-root">
                             {/* Print Version Header */}
                             <div className="print-header hidden print:block" style={{ marginBottom: '30px' }}>
-                                {/* Header top: Logo & Company info */}
                                 <div style={{ display: 'flex', alignItems: 'flex-start', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
-                                    {/* Left side: Logo + Info */}
                                     <div style={{ display: 'flex', gap: '15px', alignItems: 'center', width: '100%' }}>
                                         {companyInfo?.logo_url && (
                                             <img src={companyInfo.logo_url} alt="Logo" style={{ height: '60px', width: 'auto', objectFit: 'contain' }} />
@@ -560,11 +704,9 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                         </div>
                                     </div>
                                 </div>
-                                
-                                {/* Report Title */}
                                 <div style={{ textAlign: 'center', marginBottom: '25px' }}>
                                     <h2 style={{ fontSize: '20pt', fontWeight: '900', margin: '0 0 8px 0', textTransform: 'uppercase', color: '#0f172a', letterSpacing: '1px' }}>
-                                        BÁO CÁO TỔNG HỢP LOT
+                                        BÁO CÁO {activeTab === 'inward' ? 'DANH SÁCH LOT ĐÃ TẠO' : 'DANH SÁCH LOT ĐÃ XUẤT'}
                                     </h2>
                                     <p style={{ fontSize: '11pt', fontStyle: 'italic', color: '#475569', margin: '0' }}>
                                         Từ ngày: {format(new Date(startDate), 'dd/MM/yyyy')} đến ngày: {format(new Date(endDate), 'dd/MM/yyyy')}
@@ -572,256 +714,250 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                 </div>
                             </div>
                             
-                            {/* Summary Statistics - New Segment */}
-                            {summaryStats.length > 0 && (
-                                <div className="mb-8 print-avoid-break">
-                                    <h4 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                        <div className="w-1.5 h-4 bg-orange-500 rounded-full"></div>
-                                        Tổng hợp sản lượng (Sum Statistics)
-                                    </h4>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                        {summaryStats.map((stat, sIdx) => (
-                                            <div key={sIdx} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between group hover:border-orange-200 dark:hover:border-orange-900/30 transition-all shadow-sm">
-                                                <div className="flex-1 min-w-0 pr-3">
-                                                    <div className="text-[10px] font-black text-slate-400 uppercase mb-1 truncate">{stat.productName}</div>
-                                                    <div className="text-lg font-black text-slate-900 dark:text-slate-100 truncate flex items-baseline gap-1">
-                                                        {formatQuantityFull(stat.totalQty)}
-                                                        <span className="text-[10px] font-bold text-slate-400 uppercase">{stat.unit}</span>
+                            {/* Summary Statistics */}
+                            {(() => {
+                                const stats = activeTab === 'inward' ? summaryInward : summaryOutward;
+                                if (stats.length === 0) return null;
+                                return (
+                                    <div className="mb-8 print-avoid-break">
+                                        <h4 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                            <div className={`w-1.5 h-4 ${activeTab === 'inward' ? 'bg-orange-500' : 'bg-emerald-500'} rounded-full`}></div>
+                                            Tổng hợp sản lượng ({activeTab === 'inward' ? 'Nhập' : 'Xuất'})
+                                        </h4>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                            {stats.map((stat, sIdx) => (
+                                                <div key={sIdx} className={`p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between group transition-all shadow-sm ${activeTab === 'inward' ? 'hover:border-orange-200 dark:hover:border-orange-900/30' : 'hover:border-emerald-200 dark:hover:border-emerald-900/30'}`}>
+                                                    <div className="flex-1 min-w-0 pr-3">
+                                                        <div className="text-[10px] font-black text-slate-400 uppercase mb-1 truncate">{stat.productName}</div>
+                                                        <div className="text-lg font-black text-slate-900 dark:text-slate-100 truncate flex items-baseline gap-1">
+                                                            {formatQuantityFull(stat.totalQty)}
+                                                            <span className="text-[10px] font-bold text-slate-400 uppercase">{stat.unit}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="shrink-0 flex flex-col items-end">
+                                                        <div className={`px-2 py-1 rounded text-[10px] font-black ${activeTab === 'inward' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'}`}>
+                                                            {stat.lotCount} dòng
+                                                        </div>
                                                     </div>
                                                 </div>
-                                                <div className="shrink-0 flex flex-col items-end">
-                                                    <div className="px-2 py-1 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 text-[10px] font-black">
-                                                        {stat.lotCount} LOT
-                                                    </div>
-                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="mt-4 pb-4 border-b-2 border-dashed border-slate-100 dark:border-slate-800 no-print"></div>
+                                    </div>
+                                )
+                            })()}
+
+                            {activeTab === 'inward' ? (
+                                <div className="inward-table-wrapper">
+                                    {groupedInwardData.map((group: any, groupIdx: number) => (
+                                        <div key={groupIdx} style={{ marginBottom: '30px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '15px' }}>
+                                                <div className="hidden md:block w-1 h-6 bg-orange-500 rounded-full mr-3"></div>
+                                                <span className="text-slate-400 font-bold uppercase text-[10px] mr-2">LSX:</span>
+                                                <h3 className="text-base font-black text-slate-900 dark:text-white uppercase">
+                                                    {group.production_name || group.production_code || 'Không xác định'}
+                                                </h3>
                                             </div>
-                                        ))}
-                                    </div>
-                                    <div className="mt-4 pb-4 border-b-2 border-dashed border-slate-100 dark:border-slate-800 no-print"></div>
+
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left border-collapse">
+                                                    <thead className="bg-slate-50 dark:bg-slate-900 border-b-2 border-slate-200 dark:border-slate-800">
+                                                        <tr>
+                                                            <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[4%]">STT</th>
+                                                            <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[11%]">Ngày tạo</th>
+                                                            <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[20%]">Mã LOT SX</th>
+                                                            <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[33%]">Sản phẩm</th>
+                                                            <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right w-[12%]">SL Nhập</th>
+                                                            <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[10%]">Đơn vị</th>
+                                                            <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[10%]">Vị trí</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {group.lots.map((lot: any, idx: number) => {
+                                                            const items = lot.lot_items || []
+                                                            const rowSpan = Math.max(items.length, 1)
+                                                            return (
+                                                                <React.Fragment key={lot.id}>
+                                                                    {items.length > 0 ? (
+                                                                        items.map((item: any, itemIdx: number) => (
+                                                                            <tr key={item.id} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm">
+                                                                                {itemIdx === 0 && (
+                                                                                    <>
+                                                                                        <td className="py-4 px-2 font-mono text-slate-500 font-bold" rowSpan={rowSpan}>{idx + 1}</td>
+                                                                                        <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400" rowSpan={rowSpan}>
+                                                                                            {format(new Date(lot.created_at), 'dd/MM/yyyy')}
+                                                                                        </td>
+                                                                                        <td className="py-4 px-2" rowSpan={rowSpan}>
+                                                                                            <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30">
+                                                                                                {productionLotsMap[`${lot.production_id}_${item.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'}
+                                                                                            </span>
+                                                                                        </td>
+                                                                                    </>
+                                                                                )}
+                                                                                <td className="py-2 px-2">
+                                                                                    <div className="font-bold text-slate-800 dark:text-slate-200">{item.products?.name}</div>
+                                                                                    <div className="text-[10px] text-slate-400 font-mono">{item.products?.sku}</div>
+                                                                                </td>
+                                                                                <td className="py-2 px-2 text-right font-black text-orange-600">
+                                                                                    {formatQuantityFull(item.quantity)}
+                                                                                </td>
+                                                                                <td className="py-2 px-2 font-bold text-[10px] text-slate-400 uppercase">
+                                                                                    {item.unit || item.products?.unit}
+                                                                                </td>
+                                                                                {itemIdx === 0 && (
+                                                                                    <td className="py-2 px-2" rowSpan={rowSpan}>
+                                                                                        <div className="flex flex-wrap gap-1">
+                                                                                            {lot.positions?.map((p: any) => (
+                                                                                                <span key={p.id} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-md text-[9px] font-black border border-slate-200 dark:border-slate-700">
+                                                                                                    {p.code}
+                                                                                                </span>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    </td>
+                                                                                )}
+                                                                            </tr>
+                                                                        ))
+                                                                    ) : (
+                                                                        <tr className="border-b border-slate-100 dark:border-slate-800/50">
+                                                                            <td className="py-4 px-2 font-mono text-slate-500 font-bold">{idx + 1}</td>
+                                                                            <td className="py-4 px-2 text-slate-600 dark:text-slate-400 font-medium">{format(new Date(lot.created_at), 'dd/MM/yyyy')}</td>
+                                                                            <td className="py-4 px-2">
+                                                                                <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-400 font-bold text-[11px]">
+                                                                                    {lot.code}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td className="py-2 px-2 italic text-slate-400 text-xs">Không có dữ liệu hàng hóa</td>
+                                                                            <td className="py-2 px-2 text-right">-</td>
+                                                                            <td className="py-2 px-2 text-slate-400">-</td>
+                                                                            <td className="py-2 px-2">-</td>
+                                                                        </tr>
+                                                                    )}
+                                                                </React.Fragment>
+                                                            )
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
-                            )}
-
-                            {/* Content per Group */}
-                            {groupedData.map((group: any, groupIdx: number) => (
-                                <div key={groupIdx} style={{ marginBottom: '30px' }}>
-                                    {/* Group Title: Lệnh Sản Xuất */}
-                                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '15px', pageBreakAfter: 'avoid' }}>
-                                        <div className="hidden md:block w-1 h-6 bg-orange-100 rounded-full mr-3"></div>
-                                        <span style={{ fontSize: '11pt', fontWeight: 'bold', textTransform: 'uppercase', color: '#64748b', marginRight: '8px' }}>
-                                            LSX:
-                                        </span>
-                                        <h3 style={{ fontSize: '12pt', fontWeight: '900', textTransform: 'uppercase', color: '#0f172a' }}>
-                                            {group.production_name || group.production_code || 'Không xác định'}
-                                        </h3>
-                                        <span className="ml-3 px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 font-black text-[10px] no-print">
-                                            {group.lots.length} LOT
-                                        </span>
-                                    </div>
-
-                                    {/* MOBILE VIEW (CARDS) - ONLY VISIBLE ON SMALL SCREENS */}
-                                    <div className="md:hidden space-y-4 no-print">
-                                        {group.lots.map((lot: any, lIdx: number) => {
-                                            const items = lot.lot_items || []
-                                            return (
-                                                <div key={lot.id} className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm relative overflow-hidden group">
-                                                    <div className="absolute top-0 right-0 p-3 flex flex-col items-end gap-2">
-                                                        <div className="text-[10px] font-black text-slate-300">#{lIdx + 1}</div>
-                                                        <div className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded text-[9px] font-black text-slate-500">
-                                                            {format(new Date(lot.created_at), 'dd/MM/yyyy')}
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="mb-4">
-                                                        <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Mã Lô SX</div>
-                                                        <div className="text-sm font-black text-orange-600 dark:text-orange-400">
-                                                            {items.length > 0
-                                                                ? productionLotsMap[`${lot.production_id}_${items[0].product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
-                                                                : lot.production_code || lot.productions?.code || '-'}
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="space-y-3">
-                                                        {items.length > 0 ? (
-                                                            items.map((item: any) => (
-                                                                <div key={item.id} className="flex items-start justify-between bg-slate-50 dark:bg-slate-800/30 p-2.5 rounded-xl border border-dotted border-slate-200 dark:border-slate-700">
-                                                                    <div className="flex-1 min-w-0 pr-3">
-                                                                        <div className="font-bold text-slate-800 dark:text-slate-200 text-xs leading-tight">{item.products?.name}</div>
-                                                                        <div className="text-[9px] text-slate-400 font-mono mt-0.5">{item.products?.sku}</div>
-                                                                    </div>
-                                                                    <div className="shrink-0 text-right">
-                                                                        <div className="text-sm font-black text-orange-600 dark:text-orange-400">
-                                                                            {formatQuantityFull(item.quantity)}
-                                                                        </div>
-                                                                        <div className="text-[9px] font-bold text-slate-400 uppercase">
-                                                                            {item.unit || item.products?.unit}
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            ))
-                                                        ) : (
-                                                            <div className="text-xs italic text-slate-400">Không có dữ liệu hàng hóa</div>
-                                                        )}
-                                                    </div>
-
-                                                    {lot.positions?.length > 0 && (
-                                                        <div className="mt-3 pt-3 border-t border-slate-50 dark:border-slate-800/50 flex flex-wrap gap-1.5">
-                                                            {lot.positions.map((p: any) => (
-                                                                <span key={p.id} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded text-[10px] font-black border border-slate-200 dark:border-slate-700">
-                                                                    {p.code}
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
-
-                                    {/* DESKTOP VIEW (TABLE) - HIDDEN ON SMALL SCREENS */}
-                                    <div className="hidden md:block overflow-x-auto scrollbar-hide">
-                                        <table className="w-full text-left border-collapse xl:min-w-full">
-                                            <thead className="bg-slate-50 dark:bg-slate-900 border-b-2 border-slate-200 dark:border-slate-800 print:static">
+                            ) : (
+                                <div className="outward-table-wrapper">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse">
+                                            <thead className="bg-slate-50 dark:bg-slate-900 border-b-2 border-slate-200 dark:border-slate-800">
                                                 <tr>
-                                                    <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '4%' }}>STT</th>
-                                                    <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '11%' }}>Ngày tạo</th>
-                                                    <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '22%' }}>Mã LOT SX</th>
-                                                    <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '33%' }}>Sản phẩm</th>
-                                                    <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest text-right" style={{ width: '12%' }}>Số lượng</th>
-                                                    <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '8%' }}>Đơn vị</th>
-                                                    <th className="py-3 px-2 text-xs font-black text-slate-500 uppercase tracking-widest" style={{ width: '10%' }}>Vị trí</th>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[4%]">STT</th>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[11%]">Ngày xuất</th>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[18%]">Mã LOT SX</th>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[25%]">Sản phẩm</th>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right w-[10%]">SL Xuất</th>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[8%]">Đơn vị</th>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[14%]">Lệnh sản xuất</th>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[10%]">Ghi chú</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {group.lots.map((lot: any, idx: number) => {
-                                                    const items = lot.lot_items || []
-                                                    const rowSpan = Math.max(items.length, 1)
-                                                    return (
-                                                        <React.Fragment key={lot.id}>
-                                                            {items.length > 0 ? (
-                                                                items.map((item: any, itemIdx: number) => (
-                                                                    <tr key={item.id} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm active:bg-orange-50/10">
-                                                                        {itemIdx === 0 && (
-                                                                            <>
-                                                                                <td className="py-4 px-2 font-mono text-slate-500 font-bold" rowSpan={rowSpan} style={{ width: '4%' }}>{idx + 1}</td>
-                                                                                <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400" rowSpan={rowSpan} style={{ width: '11%' }}>
-                                                                                    {format(new Date(lot.created_at), 'dd/MM/yyyy')}
-                                                                                </td>
-                                                                                <td className="py-4 px-2" rowSpan={rowSpan} style={{ width: '22%' }}>
-                                                                                    <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30 shadow-sm">
-                                                                                        {productionLotsMap[`${lot.production_id}_${item.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'}
-                                                                                    </span>
-                                                                                </td>
-                                                                            </>
-                                                                        )}
-                                                                        <td className="py-2 px-2" style={{ width: '33%' }}>
-                                                                            <div className="font-bold text-slate-800 dark:text-slate-200 leading-tight">{item.products?.name}</div>
-                                                                            <div className="text-[10px] text-slate-400 font-mono mt-0.5 uppercase tracking-tighter">{item.products?.sku}</div>
-                                                                        </td>
-                                                                        <td className="py-2 px-2 text-right font-black text-orange-600 dark:text-orange-400" style={{ width: '12%' }}>
-                                                                            {formatQuantityFull(item.quantity)}
-                                                                        </td>
-                                                                        <td className="py-2 px-2 font-black text-[10px] text-slate-400 uppercase" style={{ width: '8%' }}>
-                                                                            {item.unit || item.products?.unit}
-                                                                        </td>
-                                                                        {itemIdx === 0 && (
-                                                                            <td className="py-2 px-2" rowSpan={rowSpan} style={{ width: '10%' }}>
-                                                                                {lot.positions?.length > 0 ? (
-                                                                                    <div className="flex flex-wrap gap-1">
-                                                                                        {lot.positions.map((p: any) => (
-                                                                                            <span key={p.id} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-md text-[9px] font-black border border-slate-200 dark:border-slate-700">
-                                                                                                {p.code}
-                                                                                            </span>
-                                                                                        ))}
-                                                                                    </div>
-                                                                                ) : '-'}
-                                                                            </td>
-                                                                        )}
-                                                                    </tr>
-                                                                ))
-                                                            ) : lot.products ? (
-                                                                <tr key={lot.id} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm">
-                                                                    <td className="py-4 px-2 font-mono text-slate-500 font-bold" style={{ width: '4%' }}>{idx + 1}</td>
-                                                                    <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400" style={{ width: '11%' }}>
-                                                                        {format(new Date(lot.created_at), 'dd/MM/yyyy')}
-                                                                    </td>
-                                                                    <td className="py-4 px-2" style={{ width: '22%' }}>
-                                                                        <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30">
-                                                                            {productionLotsMap[`${lot.production_id}_${lot.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'}
-                                                                        </span>
-                                                                    </td>
-                                                                    <td className="py-2 px-2" style={{ width: '33%' }}>
-                                                                        <div className="font-bold text-slate-800 dark:text-slate-200">{lot.products.name}</div>
-                                                                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">{lot.products.sku}</div>
-                                                                    </td>
-                                                                    <td className="py-2 px-2 text-right font-black text-orange-600 dark:text-orange-400" style={{ width: '12%' }}>
-                                                                        {formatQuantityFull((lot as any).quantity || 0)}
-                                                                    </td>
-                                                                    <td className="py-2 px-2 font-medium text-slate-500" style={{ width: '8%' }}>
-                                                                        {(lot as any).unit || lot.products.unit}
-                                                                    </td>
-                                                                    <td className="py-2 px-2" style={{ width: '10%' }}>
-                                                                        {lot.positions?.length > 0 ? (
-                                                                            <div className="flex flex-wrap gap-1">
-                                                                                {lot.positions.map((p: any) => (
-                                                                                    <span key={p.id} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-md text-[10px] font-black border border-slate-200 dark:border-slate-700">
-                                                                                        {p.code}
-                                                                                    </span>
-                                                                                ))}
+                                                {reportDataOutward.map((row, idx) => (
+                                                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm">
+                                                        <td className="py-4 px-2 font-mono text-slate-500 font-bold">{idx + 1}</td>
+                                                        <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400">
+                                                            {format(new Date(row.date), 'dd/MM/yyyy')}
+                                                        </td>
+                                                        <td className="py-4 px-2">
+                                                            <span className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 font-bold text-[11px] border border-emerald-100 dark:border-emerald-800/30">
+                                                                {productionLotsMap[`${row.production_id}_${row.product_id}`] || row.lot_code || '-'}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-2 px-2">
+                                                            <div className="font-bold text-slate-800 dark:text-slate-200">{row.product_name}</div>
+                                                            <div className="text-[10px] text-slate-400 font-mono">{row.product_sku}</div>
+                                                        </td>
+                                                        <td className="py-2 px-2 text-right font-black text-emerald-600">
+                                                            {formatQuantityFull(row.quantity)}
+                                                        </td>
+                                                        <td className="py-2 px-2 font-bold text-[10px] text-slate-400 uppercase">
+                                                            {row.unit}
+                                                        </td>
+                                                        <td className="py-2 px-2">
+                                                            <div className="flex flex-col gap-1">
+                                                                {(() => {
+                                                                    // 1. Ưu tiên Tên lệnh sản xuất (Tên đầy đủ)
+                                                                    if (row.production_name && row.production_name !== '-') {
+                                                                        return (
+                                                                            <div className="text-[11px] font-black text-slate-800 dark:text-white uppercase leading-tight truncate max-w-[160px]">
+                                                                                {row.production_name}
                                                                             </div>
-                                                                        ) : '-'}
-                                                                    </td>
-                                                                </tr>
-                                                            ) : (
-                                                                <tr key={lot.id} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm">
-                                                                    <td className="py-4 px-2 font-mono text-slate-500 font-bold" style={{ width: '4%' }}>{idx + 1}</td>
-                                                                    <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400" style={{ width: '11%' }}>
-                                                                        {format(new Date(lot.created_at), 'dd/MM/yyyy')}
-                                                                    </td>
-                                                                    <td className="py-4 px-2" style={{ width: '22%' }}>
-                                                                        <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30">
-                                                                            {lot.production_code || lot.productions?.code || '-'}
-                                                                        </span>
-                                                                    </td>
-                                                                    <td className="py-2 px-2 text-slate-400 italic" style={{ width: '33%' }}>Không có dữ liệu hàng hóa</td>
-                                                                    <td className="py-2 px-2 text-right font-black" style={{ width: '12%' }}>-</td>
-                                                                    <td className="py-2 px-2" style={{ width: '8%' }}>-</td>
-                                                                    <td className="py-2 px-2" style={{ width: '10%' }}>
-                                                                        {lot.positions?.length > 0 ? (
-                                                                            <div className="flex flex-wrap gap-1">
-                                                                                {lot.positions.map((p: any) => (
-                                                                                    <span key={p.id} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-md text-[10px] font-black border border-slate-200 dark:border-slate-700">
-                                                                                        {p.code}
-                                                                                    </span>
-                                                                                ))}
+                                                                        );
+                                                                    }
+                                                                    
+                                                                    // 2. Nếu không có tên, tìm mã Lệnh xuất (LXK) trong mô tả
+                                                                    const desc = row.description || '';
+                                                                    const lxkMatch = desc.match(/LXK-[A-Z0-9-]+/i);
+                                                                    if (lxkMatch) {
+                                                                        return (
+                                                                            <div className="text-[11px] font-black text-blue-600 dark:text-blue-400 uppercase">
+                                                                                {lxkMatch[0]}
                                                                             </div>
-                                                                        ) : '-'}
-                                                                    </td>
-                                                                </tr>
-                                                            )}
-                                                        </React.Fragment>
-                                                    )
-                                                })}
+                                                                        );
+                                                                    }
+
+                                                                    // 3. Cuối cùng hiện mô tả ngắn hoặc "Xuất lẻ"
+                                                                    return (
+                                                                        <div className="text-[10px] text-slate-400 italic">
+                                                                            {desc.length > 25 ? desc.substring(0, 25) + '...' : (desc || 'Xuất lẻ')}
+                                                                        </div>
+                                                                    );
+                                                                })()}
+                                                                
+                                                                <div className="flex items-center gap-1.5 mt-0.5">
+                                                                    {row.location_code && (
+                                                                        <div className="text-[9px] text-slate-400 font-bold italic">
+                                                                            vị trí xuất: {row.location_code}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-2 px-2">
+                                                            {(() => {
+                                                                const desc = row.description || '-';
+                                                                if (desc.toLowerCase().includes('lệnh')) {
+                                                                    const parts = desc.split(/(LXK-[A-Z0-9]+|Lệnh xuất [A-Z0-9-]+)/i);
+                                                                    return (
+                                                                        <div className="text-[10px] text-slate-600 dark:text-slate-400 italic leading-tight">
+                                                                            {parts.map((p: string, i: number) => (
+                                                                                /LXK-[A-Z0-9]+|Lệnh xuất [A-Z0-9-]+/i.test(p) 
+                                                                                ? <strong key={i} className="text-blue-600 dark:text-blue-400 not-italic font-black">{p}</strong>
+                                                                                : p
+                                                                            ))}
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                return <div className="text-[10px] text-slate-500 italic truncate max-w-[120px]">{desc}</div>;
+                                                            })()}
+                                                        </td>
+                                                    </tr>
+                                                ))}
                                             </tbody>
                                         </table>
                                     </div>
                                 </div>
-                            ))}
-    
-                            {/* Signature Footer */}
-                            <div className="print-footer hidden print:block" style={{ marginTop: '50px', paddingBottom: '60px', pageBreakInside: 'avoid' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', textAlign: 'center', padding: '0 40px' }}>
-                                    <div style={{ flex: 1 }}>
-                                        <p style={{ fontSize: '12pt', fontWeight: 'bold', textTransform: 'uppercase', margin: 0, color: '#0f172a' }}>Người lập biểu</p>
-                                    </div>
-                                    <div style={{ flex: 1 }}>
-                                        <p style={{ fontSize: '12pt', fontWeight: 'bold', textTransform: 'uppercase', margin: 0, color: '#0f172a' }}>Thủ kho</p>
-                                    </div>
-                                    <div style={{ flex: 1 }}>
-                                        <p style={{ fontSize: '12pt', fontWeight: 'bold', textTransform: 'uppercase', margin: 0, color: '#0f172a' }}>Sản xuất</p>
-                                    </div>
-                                    <div style={{ flex: 1 }}>
-                                        <p style={{ fontSize: '12pt', fontWeight: 'bold', textTransform: 'uppercase', margin: 0, color: '#0f172a' }}>QC</p>
-                                    </div>
+                            )}
+
+                            {/* Signatures */}
+                            <div className="mt-12 grid grid-cols-3 gap-8 text-center print-avoid-break">
+                                <div className="flex flex-col items-center">
+                                    <span className="font-black text-slate-900 dark:text-white uppercase text-xs tracking-widest">Người lập biểu</span>
+                                    <span className="text-[10px] text-slate-400 mt-1 italic font-medium">(Ký và ghi rõ họ tên)</span>
+                                </div>
+                                <div className="flex flex-col items-center">
+                                    <span className="font-black text-slate-900 dark:text-white uppercase text-xs tracking-widest">Thủ kho</span>
+                                    <span className="text-[10px] text-slate-400 mt-1 italic font-medium">(Ký và ghi rõ họ tên)</span>
+                                </div>
+                                <div className="flex flex-col items-center">
+                                    <span className="font-black text-slate-900 dark:text-white uppercase text-xs tracking-widest">Giám đốc</span>
+                                    <span className="text-[10px] text-slate-400 mt-1 italic font-medium">(Ký và đóng dấu)</span>
                                 </div>
                             </div>
                         </div>

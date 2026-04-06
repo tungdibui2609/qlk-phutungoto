@@ -924,6 +924,8 @@ function ExportOrderDetailContent() {
                         return info
                     })()}
                     onClose={() => setIsBulkExportOpen(false)}
+                    defaultDescription={`Xuất theo lệnh ${task?.code}`}
+                    defaultCustomer={(task as any)?.customer_name || ""}
                     onSuccess={async () => {
                         setIsBulkExportOpen(false)
                         // Wait for completion, then mark task items as Exported
