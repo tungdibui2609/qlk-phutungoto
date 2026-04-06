@@ -186,7 +186,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                 const prod = products.find(p => p.id === value)
                 let initialUnit = ''
                 if (prod && (!prod.product_units || prod.product_units.length === 0) && prod.unit) initialUnit = prod.unit
-                return { ...item, productId: value, productName: prod?.name || '', unit: initialUnit, price: prod?.cost_price || 0 }
+                return { ...item, productId: value, productName: prod?.name || '', unit: initialUnit, price: (prod as any)?.cost_price || 0 }
             }
             if (field === 'quantity') {
                 const newValue = Number(value)

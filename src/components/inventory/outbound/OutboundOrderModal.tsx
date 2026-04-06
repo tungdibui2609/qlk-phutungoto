@@ -36,7 +36,7 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
         convertUnit
     } = useOutboundOrder({ ...props, editOrderId: props.editOrderId })
 
-    const [displayInternalCode, setDisplayInternalCode] = useState(hasModule('internal_products'))
+    const [displayInternalCode, setDisplayInternalCode] = useState(false)
 
     const selectedCustomerId = customers.find(c => c.name === customerName)?.id || ""
 

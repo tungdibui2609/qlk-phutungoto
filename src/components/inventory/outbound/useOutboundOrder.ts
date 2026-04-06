@@ -254,7 +254,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                 const prod = products.find(p => p.id === value)
                 let initialUnit = ''
                 if (prod && (!prod.product_units || prod.product_units.length === 0) && prod.unit) initialUnit = prod.unit
-                updatedItem = { ...updatedItem, productId: value, productName: prod?.name || '', unit: initialUnit, price: prod?.cost_price || 0 }
+                updatedItem = { ...updatedItem, productId: value, productName: prod?.name || '', unit: initialUnit, price: (prod as any)?.cost_price || 0 }
             }
             
             if (field === 'unit') {
@@ -360,7 +360,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                             reqUnit: item.unit,
                             reqQty: item.quantity,
                             currentLiquid,
-                            costPrice: product?.cost_price || 0,
+                            costPrice: (product as any)?.cost_price || 0,
                             rate: unbundle.rate,
                             warehouseName,
                             systemCode,
@@ -427,6 +427,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                         vehicleNumber,
                         driverName,
                         containerNumber,
+                        sealNumber,
                         targetUnit
                     },
                     company_id: profile?.company_id || null

@@ -35,7 +35,7 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
         convertUnit
     } = useInboundOrder(props)
 
-    const [displayInternalCode, setDisplayInternalCode] = useState(hasModule('internal_products'))
+    const [displayInternalCode, setDisplayInternalCode] = useState(false)
 
     if (!props.isOpen) return null
 
