@@ -345,8 +345,8 @@ export function useLotManagement() {
                 // Left Join on positions is still needed to fetch (empty) positions array for type consistency
                 selectQuery += `, positions!positions_lot_id_fkey(id, code, zone_positions!left(zone_id))`
 
-                query = (supabase.rpc as any)('get_unassigned_lots', { p_system_code: currentSystem.code })
-                    .select(selectQuery, { count: 'exact' })
+                query = (supabase.rpc as any)('get_unassigned_lots', { p_system_code: currentSystem.code }, { count: 'exact' })
+                    .select(selectQuery)
                 // RPC handles system_code and status check internally
             } else {
                 // Standard Logic — use left join for positions (zone filtering done via lot IDs now)
