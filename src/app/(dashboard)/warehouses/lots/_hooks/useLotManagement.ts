@@ -606,8 +606,11 @@ export function useLotManagement() {
                 query = query
                     .order('inbound_date', { ascending: true, nullsFirst: false })
                     .order('created_at', { ascending: true })
+                    .order('id', { ascending: true })
             } else {
-                query = query.order('created_at', { ascending: false })
+                query = query
+                    .order('created_at', { ascending: false })
+                    .order('id', { ascending: true })
             }
 
             const { data, error, count } = await query
@@ -619,62 +622,8 @@ export function useLotManagement() {
             } else if (data) {
                 let sortedLots = data as unknown as Lot[];
 
-                if (searchTerm) {
-                    const getSearchable = (l: Lot) => {
-                        const res: string[] = []
-                        if (l.code) res.push(l.code)
-                        if (l.suppliers?.name) res.push(l.suppliers.name)
-                        if (l.qc_info?.name) res.push(l.qc_info.name)
-                        
-                        const extractProductSearchVals = (p: any) => {
-                            if (!p) return
-                            if (p.name) res.push(p.name)
-                            if (p.internal_name) res.push(p.internal_name)
-                            if (p.sku) res.push(p.sku)
-                            if (p.internal_code) res.push(p.internal_code)
-                            
-                            // Categories
-                            const rel = p.product_category_rel
-                            if (Array.isArray(rel)) {
-                                rel.forEach((r: any) => {
-                                    if (r.categories?.name) res.push(r.categories.name)
-                                })
-                            } else if (rel?.categories?.name) {
-                                res.push(rel.categories.name)
-                            }
-                        }
-
-                        // From lot_items
-                        l.lot_items?.forEach((it: any) => {
-                            extractProductSearchVals(it.products)
-                        })
-
-                        // From direct products property (fallback)
-                        if (l.products) {
-                            extractProductSearchVals(l.products)
-                        }
-
-                        if (l.notes) res.push(l.notes)
-                        l.lot_tags?.forEach((t: any) => res.push(t.tag))
-                        l.positions?.forEach((p: any) => res.push(p.code))
-                        
-                        if (l.productions?.code) res.push(l.productions.code)
-                        if (l.productions?.name) res.push(l.productions.name)
-                        
-                        return res
-                    }
-
-                    // Client-side refinement for Cross-field AND logic
-                    // This ensures "Xoai & A-01" works even if server-side OR was too broad
-                    sortedLots = sortedLots.filter(l => advancedMatchSearch(getSearchable(l), searchTerm))
-
-                    sortedLots.sort((a, b) => {
-                        return calculateSearchScore(b, searchTerm) - calculateSearchScore(a, searchTerm)
-                    });
-                }
-
                 setLots(sortedLots)
-                setTotalLots(searchTerm ? sortedLots.length : (count || 0))
+                setTotalLots(count || 0)
 
                 // Also fetch a separate count for unassigned if not currently filtered by unassigned
                 if (positionFilter === 'unassigned') {
@@ -841,9 +790,9 @@ export function useLotManagement() {
             }
 
             if (isFifoActive) {
-                query = query.order('inbound_date', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true });
+                query = query.order('inbound_date', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true }).order('id', { ascending: true });
             } else {
-                query = query.order('created_at', { ascending: false });
+                query = query.order('created_at', { ascending: false }).order('id', { ascending: true });
             }
 
             const { data, error } = await query.range(0, limit - 1);
