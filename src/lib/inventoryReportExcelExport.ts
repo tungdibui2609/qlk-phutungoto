@@ -148,21 +148,42 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
 
         let stt = 1;
         sortedGroups.forEach(([categoryName, items]) => {
+            const catTotals = items.reduce((acc, item) => ({
+                opening: acc.opening + (item.opening || 0),
+                qtyIn: acc.qtyIn + (item.qtyIn || 0),
+                qtyOut: acc.qtyOut + (item.qtyOut || 0),
+                balance: acc.balance + (item.balance || 0),
+            }), { opening: 0, qtyIn: 0, qtyOut: 0, balance: 0 });
+
             // Add Category Header Row
-            const catRow = worksheet.addRow([`DANH MỤC: ${categoryName.toUpperCase()}`]);
-            worksheet.mergeCells(`A${catRow.number}:H${catRow.number}`);
+            const catRow = worksheet.addRow([
+                `DANH MỤC: ${categoryName.toUpperCase()}`,
+                '', '', '', // B, C, D
+                cleanNum(catTotals.opening),
+                cleanNum(catTotals.qtyIn),
+                cleanNum(catTotals.qtyOut),
+                cleanNum(catTotals.balance)
+            ]);
+            worksheet.mergeCells(`A${catRow.number}:D${catRow.number}`);
             catRow.font = { bold: true, italic: true, size: 10, color: { argb: '7F6000' } };
-            catRow.getCell(1).fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: 'FFF2CC' } // Light orange/yellow
-            };
-            catRow.getCell(1).border = { 
-                top: { style: 'thin' }, 
-                left: { style: 'thin' }, 
-                bottom: { style: 'thin' }, 
-                right: { style: 'thin' } 
-            };
+            
+            catRow.eachCell((cell, colNumber) => {
+                cell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FFF2CC' } // Light orange/yellow
+                };
+                cell.border = { 
+                    top: { style: 'thin' }, 
+                    left: { style: 'thin' }, 
+                    bottom: { style: 'thin' }, 
+                    right: { style: 'thin' } 
+                };
+                if (colNumber >= 5) {
+                    cell.alignment = { horizontal: 'right' };
+                    cell.numFmt = '#,##0';
+                }
+            });
 
             items.forEach((item) => {
                 const row = worksheet.addRow([

@@ -833,54 +833,71 @@ export default function PrintInventoryPage() {
                         <tbody>
                             {(() => {
                                 let sttCounter = 1;
-                                return groupedAccountingItems.map(([categoryName, items]) => (
-                                    <React.Fragment key={categoryName}>
-                                        <tr className="bg-orange-50/50 font-bold">
-                                            <td colSpan={8} className="border border-black p-1 text-orange-800 uppercase italic text-[11px]">
-                                                Danh mục: {categoryName}
-                                            </td>
-                                        </tr>
-                                        {items.map((item, idx) => {
-                                            const displayCode = isInternalCodeDisplay && item.internalCode ? item.internalCode : item.productCode || 'N/A'
-                                            const displayName = isInternalCodeDisplay && item.internalName ? item.internalName : item.productName
-                                            const stt = sttCounter++
-                                            const breakKey = `acc-${stt}`
-                                            const hasBreak = pageBreaks.has(breakKey)
+                                return groupedAccountingItems.map(([categoryName, items]) => {
+                                    const totals = items.reduce((acc, item) => ({
+                                        opening: acc.opening + (item.opening || 0),
+                                        qtyIn: acc.qtyIn + (item.qtyIn || 0),
+                                        qtyOut: acc.qtyOut + (item.qtyOut || 0),
+                                        balance: acc.balance + (item.balance || 0),
+                                    }), { opening: 0, qtyIn: 0, qtyOut: 0, balance: 0 });
 
-                                            return (
-                                                <React.Fragment key={`${item.id}-${idx}`}>
-                                                    {stt > 1 && (
-                                                        <tr className={`print:hidden ${hasBreak ? '' : 'h-0'}`}>
-                                                            <td colSpan={8} className="p-0 border-0 relative">
-                                                                <button
-                                                                    onClick={() => togglePageBreak(breakKey)}
-                                                                    className={`w-full flex items-center justify-center gap-1 text-[10px] py-0.5 transition-all group hover:bg-blue-50 ${hasBreak ? 'bg-blue-100 border-y-2 border-dashed border-blue-500' : 'opacity-0 hover:opacity-100'}`}
-                                                                >
-                                                                    <Scissors size={10} className={hasBreak ? 'text-blue-600' : 'text-stone-400'} />
-                                                                    <span className={hasBreak ? 'text-blue-600 font-bold' : 'text-stone-400'}>{hasBreak ? '✂ Ngắt trang' : 'Ngắt trang'}</span>
-                                                                </button>
+                                    return (
+                                        <React.Fragment key={categoryName}>
+                                            <tr className="bg-orange-50/50 font-bold">
+                                                <td colSpan={8} className="border border-black p-1 text-orange-800 uppercase italic text-[11px]">
+                                                    <div className="flex justify-between items-center w-full px-1">
+                                                        <span>DANH MỤC: {categoryName}</span>
+                                                        <div className="flex gap-4 text-[10px] font-bold italic">
+                                                            <span>Tồn Đầu: {formatQuantityFull(totals.opening)}</span>
+                                                            <span>Nhập: {formatQuantityFull(totals.qtyIn)}</span>
+                                                            <span>Xuất: {formatQuantityFull(totals.qtyOut)}</span>
+                                                            <span>Tồn Cuối: {formatQuantityFull(totals.balance)}</span>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            {items.map((item, idx) => {
+                                                const displayCode = isInternalCodeDisplay && item.internalCode ? item.internalCode : item.productCode || 'N/A'
+                                                const displayName = isInternalCodeDisplay && item.internalName ? item.internalName : item.productName
+                                                const stt = sttCounter++
+                                                const breakKey = `acc-${stt}`
+                                                const hasBreak = pageBreaks.has(breakKey)
+
+                                                return (
+                                                    <React.Fragment key={`${item.id}-${idx}`}>
+                                                        {stt > 1 && (
+                                                            <tr className={`print:hidden ${hasBreak ? '' : 'h-0'}`}>
+                                                                <td colSpan={8} className="p-0 border-0 relative">
+                                                                    <button
+                                                                        onClick={() => togglePageBreak(breakKey)}
+                                                                        className={`w-full flex items-center justify-center gap-1 text-[10px] py-0.5 transition-all group hover:bg-blue-50 ${hasBreak ? 'bg-blue-100 border-y-2 border-dashed border-blue-500' : 'opacity-0 hover:opacity-100'}`}
+                                                                    >
+                                                                        <Scissors size={10} className={hasBreak ? 'text-blue-600' : 'text-stone-400'} />
+                                                                        <span className={hasBreak ? 'text-blue-600 font-bold' : 'text-stone-400'}>{hasBreak ? '✂ Ngắt trang' : 'Ngắt trang'}</span>
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                        {hasBreak && <tr className="hidden print:table-row" style={{ pageBreakBefore: 'always' }}><td colSpan={8} className="p-0 border-0 h-0"></td></tr>}
+                                                        <tr className={item.isUnconvertible ? 'bg-orange-100 print:bg-transparent' : ''}>
+                                                            <td className="border border-black p-1 text-center">{stt}</td>
+                                                            <td className="border border-black p-1">
+                                                                {displayName}
+                                                                {item.isUnconvertible && <span className="ml-1 text-[10px] italic text-red-600 print:text-black">(*)</span>}
                                                             </td>
+                                                            <td className="border border-black p-1">{displayCode}</td>
+                                                            <td className="border border-black p-2 text-center text-stone-600 font-bold">{item.unit}</td>
+                                                            <td className="border border-black p-1 text-right">{formatQuantityFull(item.opening)}</td>
+                                                            <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyIn)}</td>
+                                                            <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyOut)}</td>
+                                                            <td className="border border-black p-1 text-right font-bold">{formatQuantityFull(item.balance)}</td>
                                                         </tr>
-                                                    )}
-                                                    {hasBreak && <tr className="hidden print:table-row" style={{ pageBreakBefore: 'always' }}><td colSpan={8} className="p-0 border-0 h-0"></td></tr>}
-                                                    <tr className={item.isUnconvertible ? 'bg-orange-100 print:bg-transparent' : ''}>
-                                                        <td className="border border-black p-1 text-center">{stt}</td>
-                                                        <td className="border border-black p-1">
-                                                            {displayName}
-                                                            {item.isUnconvertible && <span className="ml-1 text-[10px] italic text-red-600 print:text-black">(*)</span>}
-                                                        </td>
-                                                        <td className="border border-black p-1">{displayCode}</td>
-                                                        <td className="border border-black p-2 text-center text-stone-600 font-bold">{item.unit}</td>
-                                                        <td className="border border-black p-1 text-right">{formatQuantityFull(item.opening)}</td>
-                                                        <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyIn)}</td>
-                                                        <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyOut)}</td>
-                                                        <td className="border border-black p-1 text-right font-bold">{formatQuantityFull(item.balance)}</td>
-                                                    </tr>
-                                                </React.Fragment>
-                                            )
-                                        })}
-                                    </React.Fragment>
-                                ))
+                                                    </React.Fragment>
+                                                )
+                                            })}
+                                        </React.Fragment>
+                                    )
+                                })
                             })()}
                         </tbody>
                     </table>
