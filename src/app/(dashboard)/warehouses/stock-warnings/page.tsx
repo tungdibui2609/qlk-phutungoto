@@ -167,10 +167,9 @@ export default function StockWarningsPage() {
 
     const handleUpdateLevel = async (productId: string, field: 'min_stock_level' | 'critical_stock_level', val: number) => {
         try {
-            const { error } = await supabase
-                .from('products' as any)
-                // @ts-ignore
-                .update({ [field]: val } as any)
+            const { error } = await (supabase as any)
+                .from('products')
+                .update({ [field]: val })
                 .eq('id', productId)
 
             if (error) throw error
@@ -202,27 +201,26 @@ export default function StockWarningsPage() {
         if (!currentSystem) return
         setSaving(true)
         try {
-            const emailList = emails.split(',').map(e => e.trim()).filter(e => e.length > 0)
+            // Hỗ trợ cả dấu phẩy và dấu chấm phẩy
+            const emailList = emails.split(/[,,;]/).map(e => e.trim()).filter(e => e !== '')
             
-            const currentModules = currentSystem.modules as any || {}
-            const updatedModules = {
-                ...currentModules,
-                stock_warning_emails: emailList
-            }
-
-            const { error } = await supabase
-                .from('systems' as any)
-                // @ts-ignore
-                .update({ modules: updatedModules } as any)
+            const { error } = await (supabase as any)
+                .from('systems')
+                .update({ 
+                    modules: { 
+                        ...(currentSystem.modules as any || {}), 
+                        stock_warning_emails: emailList 
+                    } 
+                })
                 .eq('code', systemType)
 
             if (error) throw error
             
             await refreshSystems()
             setIsEditingEmails(false)
-            showToast('Đã lưu cấu hình email nhận cảnh báo', 'success')
+            showToast('Đã lưu cấu hình Email thông báo', 'success')
         } catch (error: any) {
-            showToast('Lỗi lưu cấu hình email: ' + error.message, 'error')
+            showToast('Lỗi lưu cấu hình: ' + error.message, 'error')
         } finally {
             setSaving(false)
         }
