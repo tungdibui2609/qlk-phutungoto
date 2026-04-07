@@ -1,4 +1,4 @@
-import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown, Leaf } from 'lucide-react'
+import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown, Leaf, AlertTriangle } from 'lucide-react'
 
 export type ModuleCategory = 'core' | 'automation' | 'specialized' | 'info'
 
@@ -109,6 +109,14 @@ export const UTILITY_MODULES: UtilityModule[] = [
         description: 'Theo dõi vòng đời nguyên liệu tươi từ bốc xe, phân loại, cấp đông đến thành phẩm.',
         icon: Leaf,
         category: 'specialized',
+        default_enabled: false
+    },
+    {
+        id: 'stock_warning',
+        name: 'Cảnh báo tồn kho',
+        description: 'Tự động gửi email cảnh báo khi sản phẩm xuống dưới ngưỡng tồn tối thiểu.',
+        icon: AlertTriangle,
+        category: 'automation',
         default_enabled: false
     }
 ]

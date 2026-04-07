@@ -3,7 +3,7 @@ import {
     List, FolderTree, Boxes, Globe, Tag, Building2, Car, Users, FileText,
     ShieldCheck, Map, ClipboardCheck, StickyNote, HardHat, ArrowDownToLine,
     ArrowUpFromLine, Activity, DollarSign, History, ArrowRightLeft, Key, PackageSearch,
-    MapPin, QrCode, Printer, Smartphone, Factory
+    MapPin, QrCode, Printer, Smartphone, Factory, AlertTriangle
 } from 'lucide-react'
 
 export interface MenuItemConfig {
@@ -61,6 +61,7 @@ export const MENU_STRUCTURE: MenuItemConfig[] = [
             { id: 'warehouse_status', name: 'Trạng thái kho', icon: BarChart3 },
             { id: 'lots', name: 'Quản lý LOT', icon: Boxes },
             { id: 'requisitions', name: 'Phiếu xuất SX', icon: ArrowUpFromLine },
+            { id: 'stock_warnings', name: 'Cảnh báo tồn kho', icon: AlertTriangle },
             { id: 'notes', name: 'Ghi chú vận hành', icon: StickyNote },
         ]
     },
