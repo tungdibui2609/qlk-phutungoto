@@ -33,7 +33,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
         if (currentSystem?.code) {
             fetchReportData()
         }
-    }, [startDate, endDate, currentSystem])
+    }, [startDate, endDate, currentSystem?.code])
 
     async function fetchReportData() {
         if (!currentSystem?.code) return
@@ -84,18 +84,17 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                     inward.push(lot)
                 }
 
-                // 2b. Check if has exports in range
+                // 2b. Check if has exports in range (metadata path - from QuickBulkExport)
                 const exports = lot.metadata?.system_history?.exports || []
                 if (Array.isArray(exports)) {
                     exports.forEach((exp: any) => {
                         const exportDate = new Date(exp.date)
                         if (exportDate >= start && exportDate <= end) {
-                            // Flatten outward transactions for easier listing
-                            // Each outward transaction can have multiple items
                             const items = exp.items || {}
                             Object.entries(items).forEach(([itemId, itemData]: [string, any]) => {
                                 outwardTransactions.push({
                                     id: exp.id + '_' + itemId,
+                                    source: 'metadata',
                                     lot_id: lot.id,
                                     lot_code: lot.code,
                                     date: exp.date,
@@ -109,13 +108,83 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                     production_id: itemData.production_id || lot.production_id,
                                     production_code: lot.productions?.code || lot.production_code || '-',
                                     production_name: lot.productions?.name || '-',
-                                    location_code: exp.location_code
+                                    location_code: exp.location_code,
+                                    export_order_code: null
                                 })
                             })
                         }
                     })
                 }
             })
+
+            // Step 2c: Fetch export data from export_tasks / export_task_items (export-order page path)
+            const { data: exportTasksData } = await (supabase as any)
+                .from('export_tasks')
+                .select(`
+                    id,
+                    code,
+                    status,
+                    created_at,
+                    system_code,
+                    export_task_items(
+                        id,
+                        product_id,
+                        quantity,
+                        unit,
+                        status,
+                        lots(
+                            id,
+                            code,
+                            production_id,
+                            productions(code, name)
+                        ),
+                        products(name, sku)
+                    )
+                `)
+                .eq('system_code', currentSystem?.code)
+                .gte('created_at', startStr)
+                .lte('created_at', endStr)
+                .order('created_at', { ascending: false })
+
+            console.log('[LOT Report] Export Tasks query result:', exportTasksData?.length, 'tasks found', exportTasksData)
+
+            if (exportTasksData && exportTasksData.length > 0) {
+                // Track lot IDs already captured via metadata to avoid duplicates
+                const metadataLotIds = new Set(outwardTransactions.filter((t: any) => t.source === 'metadata').map((t: any) => t.lot_id))
+
+                exportTasksData.forEach((task: any) => {
+                    const items = task.export_task_items || []
+                    items.forEach((item: any) => {
+                        if (!item.lots) return
+                        const lotId = item.lots?.id
+                        // Skip if this lot already recorded via metadata (avoid duplicates)
+                        if (metadataLotIds.has(lotId)) return
+
+                        // Chỉ lấy những item đã thực sự được xuất
+                        if (item.status !== 'Exported' && item.status !== 'Completed') return
+
+                        outwardTransactions.push({
+                            id: `task_${task.id}_item_${item.id}`,
+                            source: 'export_task',
+                            lot_id: lotId,
+                            lot_code: item.lots?.code || '-',
+                            date: task.created_at,
+                            customer: '-',
+                            description: `Lệnh xuất: ${task.code}`,
+                            product_id: item.product_id,
+                            product_name: item.products?.name || 'Sản phẩm không tên',
+                            product_sku: item.products?.sku || '-',
+                            quantity: item.quantity || 0,
+                            unit: item.unit || '-',
+                            production_id: item.lots?.production_id,
+                            production_code: item.lots?.productions?.code || '-',
+                            production_name: item.lots?.productions?.name || '-',
+                            location_code: null,
+                            export_order_code: task.code
+                        })
+                    })
+                })
+            }
 
             // Step 3: Fetch Production info (Tên và Mã) cho TẤT CẢ các ID liên quan
             const allProdIds = Array.from(new Set([
@@ -593,7 +662,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 scale-95 opacity-70'}`}
                             >
                                 <div className="flex items-center gap-2">
-                                    <div className={`w-2 h-2 rounded-full ${activeTab === 'inward' ? 'bg-orange-500 animate-pulse' : 'bg-slate-400'}`}></div>
+                                    <div className={`w-2 h-2 rounded-full ${activeTab === 'inward' ? 'bg-orange-500' : 'bg-slate-400'}`}></div>
                                     DANH SÁCH NHẬP
                                 </div>
                             </button>
@@ -604,7 +673,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 scale-95 opacity-70'}`}
                             >
                                 <div className="flex items-center gap-2">
-                                    <div className={`w-2 h-2 rounded-full ${activeTab === 'outward' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></div>
+                                    <div className={`w-2 h-2 rounded-full ${activeTab === 'outward' ? 'bg-emerald-500' : 'bg-slate-400'}`}></div>
                                     DANH SÁCH XUẤT
                                 </div>
                             </button>
@@ -618,14 +687,14 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                         type="date"
                                         value={startDate}
                                         onChange={(e) => setStartDate(e.target.value)}
-                                        className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[110px] sm:w-32 text-center"
+                                        className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[130px] sm:w-[145px] text-center"
                                     />
                                     <span className="text-slate-400">→</span>
                                     <input
                                         type="date"
                                         value={endDate}
                                         onChange={(e) => setEndDate(e.target.value)}
-                                        className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[110px] sm:w-32 text-center"
+                                        className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[130px] sm:w-[145px] text-center"
                                     />
                                 </div>
                             </div>
@@ -881,7 +950,12 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                         </td>
                                                         <td className="py-2 px-2">
                                                             <div className="flex flex-col gap-1">
-                                                                {(() => {
+                                                                {row.export_order_code ? (
+                                                                    // Data from export_task: show export order code prominently
+                                                                    <div className="px-2 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-bold text-[11px] border border-blue-100 dark:border-blue-800/30 w-fit">
+                                                                        {row.export_order_code}
+                                                                    </div>
+                                                                ) : (() => {
                                                                     // 1. Ưu tiên Tên lệnh sản xuất (Tên đầy đủ)
                                                                     if (row.production_name && row.production_name !== '-') {
                                                                         return (
