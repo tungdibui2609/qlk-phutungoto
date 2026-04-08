@@ -795,11 +795,171 @@ export async function exportWarehouseLobbyDetailToExcel(data: ExportWarehouseLob
         currentRowIdx += 3; // Spacer between lobbies
     });
 
+    // --- SHEET 2: TỔNG HỢP SẢNH ---
+    const summarySheet = workbook.addWorksheet('Tổng hợp Sảnh');
+    
+    // Header for Summary
+    summarySheet.mergeCells('A1:H1');
+    const sTitle = summarySheet.getCell('A1');
+    sTitle.value = 'BÁO CÁO TỔNG HỢP SẢNH';
+    sTitle.font = { bold: true, size: 16 };
+    sTitle.alignment = { horizontal: 'center', vertical: 'middle' };
+    
+    summarySheet.mergeCells('A2:H2');
+    const sSubtitle = summarySheet.getCell('A2');
+    sSubtitle.value = `Hệ thống: ${data.systemName} | Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`;
+    sSubtitle.alignment = { horizontal: 'center' };
+    sSubtitle.font = { italic: true };
+    
+    // Headers for table
+    const sHeaderRow = summarySheet.getRow(4);
+    ['Sảnh', 'Mã SP', 'Tên sản phẩm', 'Mã SX (Lô)', 'Mã phụ (Tags)', 'ĐVT', 'Số lượng', 'Số LOT (Pallet)'].forEach((h, i) => {
+        const cell = sHeaderRow.getCell(i + 1);
+        cell.value = h;
+        cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4F46E5' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+    });
+    
+    summarySheet.columns = [
+        { key: 'lobby', width: 25 },
+        { key: 'sku', width: 15 },
+        { key: 'name', width: 35 },
+        { key: 'batchCode', width: 15 },
+        { key: 'tags', width: 25 },
+        { key: 'unit', width: 10 },
+        { key: 'qty', width: 15 },
+        { key: 'lotCount', width: 15 },
+    ];
+
+    let sumRowIdx = 5;
+    const globalSummary: Record<string, { sku: string; name: string; batchCode: string; tags: string; unit: string; qty: number; lots: Set<string> }> = {};
+
+    data.lobbies.forEach(lobby => {
+        const lobbyName = lobby.parentName ? `${lobby.parentName} - ${lobby.name}` : lobby.name;
+        const lobbySummary: Record<string, { sku: string; name: string; batchCode: string; tags: string; unit: string; qty: number; lots: Set<string> }> = {};
+
+        lobby.positions.forEach(pos => {
+            if (!pos.items) return;
+            pos.items.forEach(it => {
+                const tagsStr = (it.lotTags || []).join(', ');
+                const batch = it.batchCode || '';
+                const lot = it.lotCode || '';
+                const key = `${it.sku || it.productName}_${it.unit}_${batch}_${tagsStr}`;
+
+                if (!lobbySummary[key]) {
+                    lobbySummary[key] = { sku: it.sku, name: it.productName, batchCode: batch, tags: tagsStr, unit: it.unit, qty: 0, lots: new Set() };
+                }
+                lobbySummary[key].qty += (Number(it.quantity) || 0);
+                if (lot) lobbySummary[key].lots.add(lot);
+
+                if (!globalSummary[key]) {
+                    globalSummary[key] = { sku: it.sku, name: it.productName, batchCode: batch, tags: tagsStr, unit: it.unit, qty: 0, lots: new Set() };
+                }
+                globalSummary[key].qty += (Number(it.quantity) || 0);
+                if (lot) globalSummary[key].lots.add(lot);
+            });
+        });
+
+        // Add rows for this lobby
+        Object.values(lobbySummary).forEach(v => {
+            const row = summarySheet.getRow(sumRowIdx);
+            row.getCell(1).value = lobbyName;
+            row.getCell(2).value = v.sku || '';
+            row.getCell(3).value = v.name || '';
+            row.getCell(4).value = v.batchCode || '';
+            row.getCell(5).value = v.tags || '';
+            row.getCell(6).value = v.unit || '';
+            row.getCell(7).value = Math.round(v.qty * 1000) / 1000;
+            row.getCell(8).value = v.lots.size;
+            
+            const qtyCell = row.getCell(7);
+            qtyCell.numFmt = (Math.floor(v.qty) === v.qty) ? '#,##0' : '#,##0.###';
+            const lotCell = row.getCell(8);
+            lotCell.numFmt = '#,##0';
+            
+            for (let i = 1; i <= 8; i++) {
+                const c = row.getCell(i);
+                c.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                if (i !== 3) c.alignment = { horizontal: i >= 7 ? 'right' : 'center', vertical: 'middle' };
+                else c.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+            }
+            
+            sumRowIdx++;
+        });
+    });
+
+    // Add empty row separator
+    sumRowIdx++;
+
+    // Add Global Summary Header
+    const totalHeaderRow = summarySheet.getRow(sumRowIdx);
+    totalHeaderRow.getCell(1).value = 'TỔNG CỘNG CÁC SẢNH';
+    summarySheet.mergeCells(`A${sumRowIdx}:F${sumRowIdx}`);
+    totalHeaderRow.getCell(1).font = { bold: true };
+    totalHeaderRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD700' } }; // Gold
+    totalHeaderRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+    for (let i = 1; i <= 8; i++) {
+         totalHeaderRow.getCell(i).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+    }
+    
+    const totalAllQty = Object.values(globalSummary).reduce((s, v) => s + v.qty, 0);
+    const totalAllLots = Object.values(globalSummary).reduce((s, v) => s + v.lots.size, 0);
+    
+    const tCell = totalHeaderRow.getCell(7);
+    tCell.value = Math.round(totalAllQty * 1000) / 1000;
+    tCell.font = { bold: true };
+    tCell.numFmt = (Math.floor(totalAllQty) === totalAllQty) ? '#,##0' : '#,##0.###';
+    tCell.alignment = { horizontal: 'right', vertical: 'middle' };
+    tCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD700' } };
+    
+    const lCell = totalHeaderRow.getCell(8);
+    lCell.value = totalAllLots;
+    lCell.font = { bold: true };
+    lCell.numFmt = '#,##0';
+    lCell.alignment = { horizontal: 'right', vertical: 'middle' };
+    lCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD700' } };
+    
+    sumRowIdx++;
+
+    // Global items
+    Object.values(globalSummary)
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+        .forEach(v => {
+            const row = summarySheet.getRow(sumRowIdx);
+            row.getCell(1).value = 'Tổng';
+            row.getCell(2).value = v.sku || '';
+            row.getCell(3).value = v.name || '';
+            row.getCell(4).value = v.batchCode || '';
+            row.getCell(5).value = v.tags || '';
+            row.getCell(6).value = v.unit || '';
+            row.getCell(7).value = Math.round(v.qty * 1000) / 1000;
+            row.getCell(8).value = v.lots.size;
+            
+            const qtyCell = row.getCell(7);
+            qtyCell.numFmt = (Math.floor(v.qty) === v.qty) ? '#,##0' : '#,##0.###';
+            qtyCell.font = { bold: true };
+            
+            const lotCell = row.getCell(8);
+            lotCell.numFmt = '#,##0';
+            lotCell.font = { bold: true };
+            
+            for (let i = 1; i <= 8; i++) {
+                const c = row.getCell(i);
+                c.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                if (i !== 3) c.alignment = { horizontal: i >= 7 ? 'right' : 'center', vertical: 'middle' };
+                else c.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+                c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F9FAFB' } }; // Light gray
+            }
+            
+            sumRowIdx++;
+        });
+
     const buffer = await workbook.xlsx.writeBuffer();
     const fileName = `So_do_chi_tiet_sanh_${data.systemName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
     saveAs(new Blob([buffer]), fileName);
 }
-
 
 export async function exportExportOrderToExcel(data: ExportOrderExcelData) {
     const workbook = new ExcelJS.Workbook();

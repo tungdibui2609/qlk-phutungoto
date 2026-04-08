@@ -58,6 +58,7 @@ const menuItems: MenuItem[] = [
             { id: 'infrastructure', name: 'Hạ tầng', href: '/warehouses', icon: Warehouse, requiredPermission: 'warehouse.view' },
             { id: 'warehouse_map', name: 'Sơ đồ kho', href: '/warehouses/map', icon: Map, requiredPermission: 'warehousemap.manage' },
             { id: 'warehouse_status', name: 'Trạng thái kho', href: '/warehouses/status', icon: BarChart3, requiredPermission: 'warehouse.view' },
+            { id: 'hall_summary', name: 'Thống kê sảnh', href: '/warehouses/hall-summary', icon: BarChart3, requiredPermission: 'warehouse.view' },
             { id: 'lots', name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes, requiredPermission: 'warehouse_lot.view' },
             { id: 'assignment_approval', name: 'Duyệt gán vị trí', href: '/production-lot/assignments', icon: ClipboardCheck, requiredPermission: 'warehouse.view' },
             { id: 'requisitions', name: 'Phiếu xuất SX', href: '/warehouses/requisitions', icon: ArrowUpFromLine, requiredPermission: 'inventory.manage' },
