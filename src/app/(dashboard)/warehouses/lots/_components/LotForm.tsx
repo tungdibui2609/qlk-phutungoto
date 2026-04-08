@@ -653,6 +653,23 @@ export function LotForm({
             error = updateError
         } else {
             // Create
+            // --- CƠ CHẾ CHỐNG TRÙNG MÃ ZERO-RISK ---
+            const { count, error: checkError } = await supabase
+                .from('lots')
+                .select('*', { count: 'exact', head: true })
+                .eq('code', newLotCode)
+                .eq('system_code', currentSystem?.code || '')
+                
+            if (checkError) throw checkError
+            
+            if (count && count > 0) {
+                alert(`Mã định danh ${newLotCode} vừa được ai đó tạo mới hoặc lưu trước bạn. Hệ thống sẽ tự cấp STT mới, vui lòng bấm lưu thêm 1 lần nữa!`)
+                await generateLotCode()
+                setIsSubmitting(false)
+                return
+            }
+            // ------------------------------------
+
             const { data: newLot, error: createError } = await (supabase
                 .from('lots') as any)
                 .insert(lotData)

@@ -171,10 +171,13 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
 
         try {
             // 1. Create New LOT record
+            const parsedDailySeq = parseInt(newLotCode.split('-').pop() || '0')
+            
             const { data: newLot, error: lotError } = await (supabase
                 .from('lots') as any)
                 .insert({
                     code: newLotCode,
+                    daily_seq: isNaN(parsedDailySeq) || parsedDailySeq === 0 ? null : parsedDailySeq,
                     notes: lot.notes,
                     supplier_id: lot.supplier_id,
                     qc_id: lot.qc_id,
