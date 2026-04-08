@@ -345,19 +345,7 @@ export function LotForm({
         currentSystem
     ])
 
-    // Update newLotCode when dailySeq changes manually
-    useEffect(() => {
-        if (!editingLot && isInitialized && dailySeq && newLotCode) {
-            const parts = newLotCode.split('-')
-            if (parts.length > 0) {
-                parts[parts.length - 1] = String(dailySeq).padStart(3, '0')
-                const updatedCode = parts.join('-')
-                if (updatedCode !== newLotCode) {
-                    setNewLotCode(updatedCode)
-                }
-            }
-        }
-    }, [dailySeq, isInitialized, editingLot])
+    // ĐÃ TÁCH BIỆT STT VÀ MÃ LOT: useEffect đồng bộ STT sang Code đã được gỡ bỏ.
 
     function resetForm() {
         setNewLotCode('')
@@ -406,21 +394,41 @@ export function LotForm({
 
         const { data: lastLots } = await supabase
             .from('lots')
-            .select('daily_seq')
-            .eq('system_code', currentSystem.code)
-            .order('created_at', { ascending: false })
+            .select('code')
+            .ilike('code', `${prefix}%`)
+            .order('code', { ascending: false })
             .limit(1)
 
         let sequence = 1
         if (lastLots && lastLots.length > 0) {
-            const lastSeq = (lastLots as any)[0].daily_seq
-            if (lastSeq !== null && !isNaN(Number(lastSeq))) {
-                sequence = Number(lastSeq) + 1
+            const lastCode = (lastLots as any)[0].code
+            const lastSeqRaw = parseInt(lastCode.split('-').pop() || '0')
+            if (!isNaN(lastSeqRaw)) {
+                sequence = lastSeqRaw + 1
             }
         }
-
         setNewLotCode(`${prefix}${String(sequence).padStart(3, '0')}`)
-        setDailySeq(sequence)
+
+        // -- TÍNH TOÁN STT DÁN THÙNG (TỰ ĐỘNG NHẢY THEO NGÀY) --
+        const startOfDay = new Date()
+        startOfDay.setHours(0, 0, 0, 0)
+        
+        const { data: lastSttData } = await supabase
+            .from('lots')
+            .select('daily_seq')
+            .eq('system_code', currentSystem.code)
+            .gte('created_at', startOfDay.toISOString())
+            .order('created_at', { ascending: false })
+            .limit(1)
+
+        let nextDailySeq = 1
+        if (lastSttData && lastSttData.length > 0) {
+            const lastSeq = (lastSttData as any)[0].daily_seq
+            if (lastSeq !== null && !isNaN(Number(lastSeq))) {
+                nextDailySeq = Number(lastSeq) + 1
+            }
+        }
+        setDailySeq(nextDailySeq)
     }
 
     async function handleSubmit() {
