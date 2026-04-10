@@ -1,6 +1,6 @@
 'use client'
 
-import { Hash, Trash2, Edit3, Eye, Tag, Users, Calendar, Target, CheckCircle2, Scale, TrendingUp } from 'lucide-react'
+import { Hash, Trash2, Edit3, Eye, Tag, Users, Calendar, Target, CheckCircle2, Scale, TrendingUp, Printer, FileText, QrCode } from 'lucide-react'
 import Protected from '@/components/auth/Protected'
 
 interface Production {
@@ -62,7 +62,7 @@ export default function ProductionTable({ data, onEdit, onDelete, onStatusToggle
                         <th className="px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 min-w-[220px]">Thông tin Lệnh</th>
                         <th className="px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Lịch trình</th>
                         <th className="px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 text-center">Trạng thái</th>
-                        <th className="px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 text-center">Hành động</th>
+                        <th className="sticky right-0 z-10 px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 text-center bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-md border-l border-zinc-100 dark:border-zinc-800 shadow-[-10px_0_15px_-10px_rgba(0,0,0,0.05)]">Hành động</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
@@ -91,9 +91,9 @@ export default function ProductionTable({ data, onEdit, onDelete, onStatusToggle
                                                 </div>
                                             )}
                                             {(item.input_products || (item.input_quantity && item.input_quantity > 0)) && (
-                                                <div className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/50 w-fit group-hover:bg-emerald-100/50 transition-colors">
-                                                    <Scale size={14} className="text-emerald-500" />
-                                                    <div className="flex items-baseline gap-1">
+                                                <div className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/50 w-fit group-hover:bg-emerald-100/50 transition-colors text-ellipsis overflow-hidden">
+                                                    <Scale size={14} className="text-emerald-500 shrink-0" />
+                                                    <div className="flex items-baseline gap-1 truncate">
                                                         <span className="text-xs font-black text-emerald-700 dark:text-emerald-400">
                                                             {Number(item.input_quantity).toLocaleString('vi-VN')}
                                                         </span>
@@ -115,7 +115,7 @@ export default function ProductionTable({ data, onEdit, onDelete, onStatusToggle
                                     <div className="flex flex-col gap-4">
                                         {(item as any).production_lots?.map((lot: any, idx: number) => (
                                             <div key={idx} className="flex flex-col gap-1.5 last:mb-0 border-l-2 border-zinc-100 dark:border-zinc-800 pl-4 py-0.5 hover:border-orange-200 transition-colors group/lot">
-                                                <div className="flex items-center gap-3">
+                                                <div className="flex items-center gap-3 relative">
                                                     {/* Mã Lot Badge */}
                                                     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-100/50 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-extrabold text-[12px] uppercase border border-zinc-200/50 shadow-sm transition-all hover:bg-orange-50 hover:border-orange-200 hover:text-orange-700">
                                                         <Hash size={12} className="text-zinc-400" /> {lot.lot_code}
@@ -144,12 +144,30 @@ export default function ProductionTable({ data, onEdit, onDelete, onStatusToggle
                                                         )}
                                                     </div>
                                                 </div>
-                                                {/* Tên sản phẩm nhỏ gọn tinh tế */}
-                                                <div className="flex items-center gap-2 group-hover/lot:translate-x-1 transition-transform">
-                                                    <div className="w-1.5 h-1.5 rounded-full bg-orange-400/30"></div>
-                                                    <span className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider opacity-60">
-                                                        {lot.products?.name}
-                                                    </span>
+                                                {/* Tên sản phẩm + Nút In */}
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-orange-400/30"></div>
+                                                        <span className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider opacity-60">
+                                                            {lot.products?.name}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1 opacity-0 group-hover/lot:opacity-100 transition-opacity">
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); window.open(`/print/production-lot?id=${lot.id}&type=label`, '_blank') }}
+                                                            className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-400 bg-zinc-50 dark:bg-zinc-800 hover:bg-orange-50 hover:text-orange-600 transition-all border border-zinc-100 dark:border-zinc-700 hover:border-orange-200 shadow-sm"
+                                                            title={`In tem: ${lot.products?.name}`}
+                                                        >
+                                                            <QrCode size={13} />
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); window.open(`/print/production-lot?id=${lot.id}&type=sheet`, '_blank') }}
+                                                            className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-400 bg-zinc-50 dark:bg-zinc-800 hover:bg-blue-50 hover:text-blue-600 transition-all border border-zinc-100 dark:border-zinc-700 hover:border-blue-200 shadow-sm"
+                                                            title={`In phiếu: ${lot.products?.name}`}
+                                                        >
+                                                            <FileText size={13} />
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))}
@@ -188,31 +206,44 @@ export default function ProductionTable({ data, onEdit, onDelete, onStatusToggle
                                     </button>
                                 </td>
 
-                                <td className="px-8 py-7">
-                                    <div className="flex items-center justify-center gap-1.5">
-                                        <button
-                                            onClick={() => onView?.(item)}
-                                            className="p-3.5 rounded-2xl text-zinc-400 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/10 transition-all border border-transparent hover:border-blue-100 shadow-sm hover:shadow-md"
-                                            title="Xem chi tiết"
-                                        >
-                                            <Eye size={20} />
-                                        </button>
-                                        <Protected permission="warehouse.manage">
+                                <td className="sticky right-0 z-10 px-6 py-7 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-md border-l border-zinc-100 dark:border-zinc-800 shadow-[-25px_0_35px_-25px_rgba(0,0,0,0.12)] group-hover:bg-white/90 dark:group-hover:bg-zinc-900/90 transition-all">
+                                    <div className="flex flex-col gap-2 scale-90 origin-right">
+                                        {/* Hàng 1: Xem & In Tem */}
+                                        <div className="flex items-center justify-center gap-2">
                                             <button
-                                                onClick={() => onEdit(item)}
-                                                className="p-3.5 rounded-2xl text-zinc-400 hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/10 transition-all border border-transparent hover:border-orange-100 shadow-sm hover:shadow-md"
-                                                title="Sửa thông tin"
+                                                onClick={() => onView?.(item)}
+                                                className="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 bg-zinc-50 dark:bg-zinc-800 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 transition-all border border-zinc-100 dark:border-zinc-700 hover:border-blue-100 shadow-sm"
+                                                title="Xem chi tiết"
                                             >
-                                                <Edit3 size={20} />
+                                                <Eye size={18} />
                                             </button>
-                                            <button
-                                                onClick={() => onDelete(item.id)}
-                                                className="p-3.5 rounded-2xl text-zinc-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/10 transition-all border border-transparent hover:border-rose-100 shadow-sm hover:shadow-md"
-                                                title="Xóa lệnh sản xuất"
-                                            >
-                                                <Trash2 size={20} />
-                                            </button>
-                                        </Protected>
+                                        </div>
+
+                                        {/* Hàng 2: Sửa */}
+                                        <div className="flex items-center justify-center gap-2">
+                                            <Protected permission="warehouse.manage">
+                                                <button
+                                                    onClick={() => onEdit(item)}
+                                                    className="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 bg-zinc-50 dark:bg-zinc-800 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20 transition-all border border-zinc-100 dark:border-zinc-700 hover:border-emerald-100 shadow-sm"
+                                                    title="Sửa thông tin"
+                                                >
+                                                    <Edit3 size={18} />
+                                                </button>
+                                            </Protected>
+                                        </div>
+
+                                        {/* Nút Xóa (Hàng 3 hoặc dạt sang một bên) */}
+                                        <div className="flex justify-center">
+                                            <Protected permission="warehouse.manage">
+                                                <button
+                                                    onClick={() => onDelete(item.id)}
+                                                    className="w-full h-8 rounded-lg flex items-center justify-center text-zinc-300 hover:bg-rose-50 hover:text-rose-500 transition-all border border-transparent hover:border-rose-100 text-[10px] font-bold uppercase tracking-widest"
+                                                    title="Xóa lệnh"
+                                                >
+                                                    <Trash2 size={14} className="mr-1" /> Xóa
+                                                </button>
+                                            </Protected>
+                                        </div>
                                     </div>
                                 </td>
                             </tr>
