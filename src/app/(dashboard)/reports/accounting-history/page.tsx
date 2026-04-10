@@ -7,6 +7,9 @@ import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { Scale } from 'lucide-react'
+import { useToast } from '@/components/ui/ToastProvider'
+import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
+import { exportAccountingHistoryToExcel } from '@/lib/accountingHistoryExcelExport'
 
 type OrderType = {
     id: string
@@ -43,6 +46,10 @@ export default function AccountingHistoryPage() {
     const [units, setUnits] = useState<any[]>([])
     const [targetUnitId, setTargetUnitId] = useState<string | null>(null)
 
+    const { showToast } = useToast()
+    const { companyInfo } = usePrintCompanyInfo()
+    const [exporting, setExporting] = useState(false)
+
     const { convertUnit, conversionMap, unitNameMap, loading: loadingConversion } = useUnitConversion()
 
     useEffect(() => {
@@ -53,8 +60,8 @@ export default function AccountingHistoryPage() {
         setLoading(true)
         try {
             // 1. Fetch Products for this system
-            const { data: prodData } = await supabase
-                .from('products')
+            const { data: prodData } = await (supabase
+                .from('products') as any)
                 .select('id, sku, name, unit')
                 .eq('system_type', systemType)
 
@@ -73,8 +80,8 @@ export default function AccountingHistoryPage() {
             setUnits(unitData || [])
 
             // 3. Fetch Inbound Movements (All history to calculate opening)
-            const { data: inboundItems } = await supabase
-                .from('inbound_order_items')
+            const { data: inboundItems } = await (supabase
+                .from('inbound_order_items') as any)
                 .select(`
                     quantity,
                     product_id,
@@ -85,8 +92,8 @@ export default function AccountingHistoryPage() {
                 .eq('order.status', 'Completed')
 
             // 4. Fetch Outbound Movements
-            const { data: outboundItems } = await supabase
-                .from('outbound_order_items')
+            const { data: outboundItems } = await (supabase
+                .from('outbound_order_items') as any)
                 .select(`
                     quantity,
                     product_id,
@@ -106,7 +113,7 @@ export default function AccountingHistoryPage() {
             // Helper to check if a product can be converted to the target unit
             const isConvertible = (productId: string) => {
                 if (!targetUnitId) return false
-                const prod = prodData.find(p => p.id === productId)
+                const prod = prodData.find((p: any) => p.id === productId)
                 if (!prod || !prod.unit) return false
 
                 const baseUnitId = unitNameMap.get(prod.unit.toLowerCase())
@@ -119,7 +126,7 @@ export default function AccountingHistoryPage() {
 
             // Helper to get or create movement entry
             const getMovement = (productId: string, unit: string) => {
-                const prod = prodData.find(p => p.id === productId)
+                const prod = prodData.find((p: any) => p.id === productId)
                 const canConvert = isConvertible(productId)
 
                 const displayUnit = (targetUnit && canConvert) ? targetUnit.name : (unit || '-')
@@ -149,7 +156,7 @@ export default function AccountingHistoryPage() {
                 const mov = getMovement(item.product_id, item.unit || '-')
                 if (!mov) return
 
-                const prod = prodData.find(p => p.id === item.product_id)
+                const prod = prodData.find((p: any) => p.id === item.product_id)
                 const canConvert = isConvertible(item.product_id)
 
                 const qty = (targetUnit && canConvert)
@@ -173,7 +180,7 @@ export default function AccountingHistoryPage() {
                 const mov = getMovement(item.product_id, item.unit || '-')
                 if (!mov) return
 
-                const prod = prodData.find(p => p.id === item.product_id)
+                const prod = prodData.find((p: any) => p.id === item.product_id)
                 const canConvert = isConvertible(item.product_id)
 
                 const qty = (targetUnit && canConvert)
@@ -228,6 +235,35 @@ export default function AccountingHistoryPage() {
         }), { products: 0, opening: 0, inbound: 0, outbound: 0, closing: 0 })
     }, [filteredMovements])
 
+    const handleExportExcel = async () => {
+        if (filteredMovements.length === 0) {
+            showToast('Không có dữ liệu để xuất Excel', 'warning')
+            return
+        }
+
+        setExporting(true)
+        try {
+            const targetUnit = units.find(u => u.id === targetUnitId)
+            await exportAccountingHistoryToExcel({
+                startDate,
+                endDate,
+                systemType: systemType || '',
+                inboundTypes,
+                outboundTypes,
+                movements: filteredMovements,
+                summary,
+                targetUnitName: targetUnit?.name,
+                companyInfo
+            })
+            showToast('Đã xuất file Excel thành công', 'success')
+        } catch (error) {
+            console.error('Excel export error:', error)
+            showToast('Lỗi khi xuất file Excel', 'error')
+        } finally {
+            setExporting(false)
+        }
+    }
+
     return (
         <div className="space-y-6 pb-20">
             {/* Header section */}
@@ -245,11 +281,16 @@ export default function AccountingHistoryPage() {
                 </div>
 
                 <button
-                    onClick={() => { }}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition-all shadow-lg shadow-indigo-500/20 w-fit"
+                    onClick={handleExportExcel}
+                    disabled={exporting}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition-all shadow-lg shadow-indigo-500/20 w-fit ${exporting ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                    <Download size={18} />
-                    Xuất Excel
+                    {exporting ? (
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                    ) : (
+                        <Download size={18} />
+                    )}
+                    {exporting ? 'Đang xuất...' : 'Xuất Excel'}
                 </button>
             </div>
 
@@ -525,8 +566,8 @@ function VoucherDetailModal({ isOpen, onClose, productId, unit, productName, sku
             )
 
             // Fetch Inbound
-            const queryIn = supabase
-                .from('inbound_order_items')
+            const queryIn = (supabase
+                .from('inbound_order_items') as any)
                 .select(`
                     id, quantity, unit,
                     order:inbound_orders!inner(code, created_at, order_type_id, status)
@@ -538,8 +579,8 @@ function VoucherDetailModal({ isOpen, onClose, productId, unit, productName, sku
                 .lte('order.created_at', end)
 
             // Fetch Outbound
-            const queryOut = supabase
-                .from('outbound_order_items')
+            const queryOut = (supabase
+                .from('outbound_order_items') as any)
                 .select(`
                     id, quantity, unit,
                     order:outbound_orders!inner(code, created_at, order_type_id, status)
@@ -559,13 +600,13 @@ function VoucherDetailModal({ isOpen, onClose, productId, unit, productName, sku
             const { data: outbound } = await queryOut
 
             const normalized = [
-                ...(inbound || []).filter(v => v.order).map((v: any) => {
+                ...(inbound || []).filter((v: any) => v.order).map((v: any) => {
                     const qty = (targetUnit && canConvert)
                         ? convertUnit(productId, v.unit || null, targetUnit.name, v.quantity, prod?.unit || null)
                         : v.quantity
                     return { ...v, quantity: qty, displayUnit: (targetUnit && canConvert) ? targetUnit.name : v.unit, type: 'in' }
                 }),
-                ...(outbound || []).filter(v => v.order).map((v: any) => {
+                ...(outbound || []).filter((v: any) => v.order).map((v: any) => {
                     const qty = (targetUnit && canConvert)
                         ? convertUnit(productId, v.unit || null, targetUnit.name, v.quantity, prod?.unit || null)
                         : v.quantity
