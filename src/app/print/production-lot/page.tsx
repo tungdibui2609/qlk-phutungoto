@@ -714,7 +714,9 @@ function ProductionLotPrintContent() {
                             {/* Body: Product Name & SKU */}
                             <div className="flex-1 flex flex-col justify-center min-h-0">
                                 <div className="space-y-1">
-                                    <div className="text-[10px] font-black text-zinc-500 uppercase tracking-tight leading-none bg-zinc-100 py-1 px-2 rounded-sm inline-block">SKU: {(data as any).products?.sku}</div>
+                                    <div className="text-[10px] font-black text-zinc-500 uppercase tracking-tight leading-none bg-zinc-100 py-1 px-2 rounded-sm inline-block">
+                                        SKU: {(data as any).products?.sku} <span className="mx-1 text-zinc-300">|</span> LOT: {(data as any).lot_code}
+                                    </div>
                                     <h1 
                                         className="font-black text-black leading-[1.1] uppercase transition-all duration-300 overflow-hidden"
                                         style={{
