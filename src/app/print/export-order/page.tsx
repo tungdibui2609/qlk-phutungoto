@@ -35,6 +35,7 @@ interface ExportOrderItem {
         inbound_date: string | null
         peeling_date: string | null
         notes: string | null
+        daily_seq: number | null
     } | null
     positions: {
         code: string
@@ -223,6 +224,7 @@ function ExportOrderPrintContent() {
                             inbound_date, 
                             peeling_date,
                             notes, 
+                            daily_seq,
                             lot_tags (tag, lot_item_id),
                             positions!positions_lot_id_fkey (
                                 code,
@@ -568,9 +570,27 @@ function ExportOrderPrintContent() {
                 product_name: item.products?.name || '',
                 sku: item.products?.sku || '',
                 lot_code: item.lots?.code || '',
+                peeling_date: (() => {
+                    const d = itemDates[item.id]?.productionDate || item.lots?.peeling_date;
+                    if (!d) return '';
+                    try {
+                        return format(new Date(d), 'dd/MM/yyyy');
+                    } catch (e) {
+                        return d;
+                    }
+                })(),
+                inbound_date: (() => {
+                    const d = itemDates[item.id]?.inboundDate || item.lots?.inbound_date;
+                    if (!d) return '';
+                    try {
+                        return format(new Date(d), 'dd/MM/yyyy');
+                    } catch (e) {
+                        return d;
+                    }
+                })(),
                 position_code: item.positions?.code || '',
                 notes: item.lots?.notes || '',
-                quyCach: quyCach,
+                stt_lot: item.lots?.daily_seq || '',
                 convertedQty: convertedQty
             }
         })
@@ -659,17 +679,12 @@ function ExportOrderPrintContent() {
 
             {/* Toolbar */}
             <div className={`fixed top-4 right-4 print:hidden z-50 flex items-center gap-4 ${isSnapshotMode ? 'hidden' : ''}`}>
-                <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg shadow-sm border border-stone-200">
-                    <input
-                        id="allow-edit-dates"
-                        type="checkbox"
-                        checked={allowEditDates}
-                        onChange={(e) => setAllowEditDates(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 border-stone-300 rounded focus:ring-blue-500"
-                    />
-                    <label htmlFor="allow-edit-dates" className="text-sm font-medium text-stone-700 cursor-pointer select-none">
-                        Chỉnh sửa ngày
-                    </label>
+                <div 
+                    title="Toggle Edit Mode"
+                    onClick={() => setAllowEditDates(!allowEditDates)}
+                    className={`w-4 h-4 rounded-full flex items-center justify-center cursor-pointer transition-colors ${allowEditDates ? 'bg-blue-100 text-blue-600' : 'text-stone-300 hover:text-stone-400'}`}
+                >
+                    <span className="text-[10px] leading-none">.</span>
                 </div>
                 <div className="flex items-center gap-2">
                 <button

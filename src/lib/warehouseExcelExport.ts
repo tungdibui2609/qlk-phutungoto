@@ -40,8 +40,9 @@ export interface ExportOrderExcelData {
         lot_code?: string;
         position_code?: string;
         inbound_date?: string;
+        peeling_date?: string;
         notes?: string;
-        quyCach?: string;
+        stt_lot?: number | string;
         convertedQty?: number | string;
     }>;
     companyInfo: any;
@@ -972,9 +973,11 @@ export async function exportExportOrderToExcel(data: ExportOrderExcelData) {
         { header: 'Vị trí', key: 'position', width: 18 },
         { header: 'Mã SP (SKU)', key: 'sku', width: 18 },
         { header: 'Sản phẩm', key: 'productName', width: 40 },
+        { header: 'Ngày bóc múi', key: 'peelingDate', width: 15 },
+        { header: 'Ngày nhập kho', key: 'inboundDate', width: 15 },
         { header: 'Số lượng', key: 'quantity', width: 12 },
         { header: 'ĐVT', key: 'unit', width: 10 },
-        { header: 'Quy cách', key: 'quyCach', width: 15 },
+        { header: 'STT (LOT)', key: 'stt_lot', width: 12 },
         { header: 'Ghi chú', key: 'notes', width: 25 },
     ];
 
@@ -997,65 +1000,30 @@ export async function exportExportOrderToExcel(data: ExportOrderExcelData) {
     }
 
     // 3. Tiêu đề Lệnh xuất kho
-    worksheet.mergeCells('A5:I5');
+    worksheet.mergeCells('A5:K5');
     const titleCell = worksheet.getCell('A5');
     titleCell.value = 'LỆNH XUẤT KHO';
     titleCell.font = { bold: true, size: 18 };
     titleCell.alignment = { horizontal: 'center' };
 
-    worksheet.mergeCells('A6:I6');
+    worksheet.mergeCells('A6:K6');
     const dateCell = worksheet.getCell('A6');
     dateCell.value = `Ngày ${data.editableFields.day} tháng ${data.editableFields.month} năm ${data.editableFields.year}`;
     dateCell.alignment = { horizontal: 'center' };
     dateCell.font = { italic: true };
 
-    worksheet.mergeCells('A7:I7');
+    worksheet.mergeCells('A7:K7');
     const codeCell = worksheet.getCell('A7');
     codeCell.value = `Số: ${data.order.code}`;
     codeCell.alignment = { horizontal: 'center' };
     codeCell.font = { bold: true, color: { argb: 'FF0000' } };
 
-    // 4. Thông tin chung
+    // 4. Thông tin chung (Bỏ qua theo yêu cầu)
     let currRow = 9;
-    const addInfo = (label: string, value: string, mergeCols = 8) => {
-        const row = worksheet.getRow(currRow);
-        row.getCell(1).value = label;
-        row.getCell(2).value = value;
-        row.getCell(2).font = { bold: true };
-        worksheet.mergeCells(currRow, 2, currRow, mergeCols + 1);
-        currRow++;
-    };
-
-    addInfo('- Người nhận:', data.editableFields.customerSupplierName);
-    addInfo('- Địa chỉ (bộ phận):', data.editableFields.customerSupplierAddress);
-    addInfo('- Lý do xuất:', data.editableFields.reasonDescription);
-    
-    // Row cho Kho và Biển số xe
-    const whRow = worksheet.getRow(currRow);
-    whRow.getCell(1).value = '- Xuất tại kho:';
-    whRow.getCell(2).value = data.editableFields.warehouse;
-    whRow.getCell(2).font = { bold: true };
-    whRow.getCell(5).value = '- Biển số xe:';
-    whRow.getCell(6).value = data.editableFields.vehicleNumber || '';
-    whRow.getCell(6).font = { bold: true };
-    currRow++;
-
-    // Row cho Cont và Seal
-    const shipRow = worksheet.getRow(currRow);
-    shipRow.getCell(1).value = '- Số Cont:';
-    shipRow.getCell(2).value = data.editableFields.containerNumber || '';
-    shipRow.getCell(2).font = { bold: true };
-    shipRow.getCell(5).value = '- Số Seal:';
-    shipRow.getCell(6).value = data.editableFields.sealNumber || '';
-    shipRow.getCell(6).font = { bold: true };
-    currRow++;
-
-    addInfo('- Ghi chú:', data.editableFields.note || '');
-    currRow++;
 
     // 5. Header bảng
     const tableHeaderRow = worksheet.getRow(currRow);
-    const headers = ['STT', 'Mã LOT', 'Vị trí', 'Mã SP (SKU)', 'Sản phẩm', 'Số lượng', 'ĐVT', 'Quy cách', 'Ghi chú'];
+    const headers = ['STT', 'Mã LOT', 'Vị trí', 'Mã SP (SKU)', 'Sản phẩm', 'Ngày bóc múi', 'Ngày nhập kho', 'Số lượng', 'ĐVT', 'STT (LOT)', 'Ghi chú'];
     headers.forEach((h, i) => {
         const cell = tableHeaderRow.getCell(i + 1);
         cell.value = h;
@@ -1080,15 +1048,17 @@ export async function exportExportOrderToExcel(data: ExportOrderExcelData) {
         row.getCell(3).value = item.position_code || '';
         row.getCell(4).value = item.sku || '';
         row.getCell(5).value = item.product_name;
-        row.getCell(6).value = Number(item.quantity) || 0;
-        row.getCell(7).value = item.unit || '';
-        row.getCell(8).value = item.quyCach || '';
-        row.getCell(9).value = item.notes || '';
+        row.getCell(6).value = item.peeling_date || '';
+        row.getCell(7).value = item.inbound_date || '';
+        row.getCell(8).value = Number(item.quantity) || 0;
+        row.getCell(9).value = item.unit || '';
+        row.getCell(10).value = item.stt_lot || '';
+        row.getCell(11).value = item.notes || '';
 
         totalQty += (Number(item.quantity) || 0);
 
         // Styling cells
-        for (let i = 1; i <= 9; i++) {
+        for (let i = 1; i <= 11; i++) {
             const cell = row.getCell(i);
             cell.border = {
                 top: { style: 'thin' },
@@ -1096,10 +1066,10 @@ export async function exportExportOrderToExcel(data: ExportOrderExcelData) {
                 bottom: { style: 'thin' },
                 right: { style: 'thin' }
             };
-            if ([1, 2, 3, 4, 7, 8].includes(i)) {
+            if ([1, 2, 3, 4, 6, 7, 9, 10].includes(i)) {
                 cell.alignment = { horizontal: 'center' };
             }
-            if (i === 6) {
+            if (i === 8) {
                 cell.alignment = { horizontal: 'right' };
                 const val = Number(cell.value) || 0;
                 cell.numFmt = (Math.floor(val) === val) ? '#,##0' : '#,##0.###';
@@ -1111,16 +1081,16 @@ export async function exportExportOrderToExcel(data: ExportOrderExcelData) {
     // 7. Dòng tổng cộng
     const totalRow = worksheet.getRow(currRow);
     totalRow.getCell(1).value = 'TỔNG CỘNG';
-    worksheet.mergeCells(currRow, 1, currRow, 5);
+    worksheet.mergeCells(currRow, 1, currRow, 7);
     totalRow.getCell(1).font = { bold: true };
     totalRow.getCell(1).alignment = { horizontal: 'center' };
     
-    totalRow.getCell(6).value = totalQty;
-    totalRow.getCell(6).font = { bold: true };
-    totalRow.getCell(6).numFmt = (Math.floor(totalQty) === totalQty) ? '#,##0' : '#,##0.###';
-    totalRow.getCell(6).alignment = { horizontal: 'right' };
+    totalRow.getCell(8).value = totalQty;
+    totalRow.getCell(8).font = { bold: true };
+    totalRow.getCell(8).numFmt = (Math.floor(totalQty) === totalQty) ? '#,##0' : '#,##0.###';
+    totalRow.getCell(8).alignment = { horizontal: 'right' };
 
-    for (let i = 1; i <= 9; i++) {
+    for (let i = 1; i <= 11; i++) {
         totalRow.getCell(i).border = {
             top: { style: 'thin' },
             left: { style: 'thin' },
@@ -1132,15 +1102,15 @@ export async function exportExportOrderToExcel(data: ExportOrderExcelData) {
 
     // 8. Chữ ký
     const signDateRow = worksheet.getRow(currRow);
-    signDateRow.getCell(7).value = `Ngày ${data.editableFields.day} tháng ${data.editableFields.month} năm ${data.editableFields.year}`;
-    signDateRow.getCell(7).font = { italic: true };
-    signDateRow.getCell(7).alignment = { horizontal: 'center' };
-    worksheet.mergeCells(currRow, 7, currRow, 9);
+    signDateRow.getCell(9).value = `Ngày ${data.editableFields.day} tháng ${data.editableFields.month} năm ${data.editableFields.year}`;
+    signDateRow.getCell(9).font = { italic: true };
+    signDateRow.getCell(9).alignment = { horizontal: 'center' };
+    worksheet.mergeCells(currRow, 9, currRow, 11);
     currRow++;
 
     const signTitleRow = worksheet.getRow(currRow);
     data.editableFields.signatures.forEach((sig, i) => {
-        const colIdx = Math.floor(i * (9 / data.editableFields.signatures.length)) + 1;
+        const colIdx = Math.floor(i * (11 / data.editableFields.signatures.length)) + 1;
         const cell = signTitleRow.getCell(colIdx);
         cell.value = sig.title;
         cell.font = { bold: true };
@@ -1150,7 +1120,7 @@ export async function exportExportOrderToExcel(data: ExportOrderExcelData) {
 
     const signNoteRow = worksheet.getRow(currRow);
     data.editableFields.signatures.forEach((sig, i) => {
-        const colIdx = Math.floor(i * (9 / data.editableFields.signatures.length)) + 1;
+        const colIdx = Math.floor(i * (11 / data.editableFields.signatures.length)) + 1;
         const cell = signNoteRow.getCell(colIdx);
         cell.value = '(Ký, họ tên)';
         cell.font = { italic: true, size: 9 };
@@ -1160,7 +1130,7 @@ export async function exportExportOrderToExcel(data: ExportOrderExcelData) {
 
     const signNameRow = worksheet.getRow(currRow);
     data.editableFields.signatures.forEach((sig, i) => {
-        const colIdx = Math.floor(i * (9 / data.editableFields.signatures.length)) + 1;
+        const colIdx = Math.floor(i * (11 / data.editableFields.signatures.length)) + 1;
         const cell = signNameRow.getCell(colIdx);
         cell.value = sig.name;
         cell.font = { bold: true };

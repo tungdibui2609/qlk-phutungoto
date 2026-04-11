@@ -1,7 +1,7 @@
 'use client'
 
 import React, { Suspense, useState, useEffect, useMemo, useRef } from 'react'
-import { FileText, ArrowLeft, Loader2, Printer, Trash2, CheckCircle2, RotateCcw, X, ArrowDownToLine, PackageMinus, BarChart3 } from 'lucide-react'
+import { FileText, ArrowLeft, Loader2, Printer, Trash2, CheckCircle2, RotateCcw, X, ArrowDownToLine, PackageMinus, BarChart3, Calendar } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { format } from 'date-fns'
@@ -15,6 +15,7 @@ import { QuickBulkExportModal } from '@/components/warehouse/map/QuickBulkExport
 import { ExportOrderStatsModal } from '@/components/export/ExportOrderStatsModal'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { logActivity } from '@/lib/audit'
+import { BulkEditLotDatesModal } from '@/components/export/BulkEditLotDatesModal'
 
 interface ExportOrderItem {
     id?: string
@@ -68,6 +69,7 @@ function ExportOrderDetailContent() {
     const [zones, setZones] = useState<any[]>([])
     const [qrLot, setQrLot] = useState<any>(null)
     const [isStatsOpen, setIsStatsOpen] = useState(false)
+    const [isEditDatesOpen, setIsEditDatesOpen] = useState(false)
 
     const taskId = params.id as string
 
@@ -804,6 +806,15 @@ function ExportOrderDetailContent() {
                                         <PackageMinus size={16} className="group-hover:scale-110 transition-transform" />
                                         <span>Xuất khỏi kho</span>
                                     </button>
+
+                                    <button
+                                        onClick={() => setIsEditDatesOpen(true)}
+                                        className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-all active:scale-95 group whitespace-nowrap"
+                                        title="Chỉnh sửa ngày LOT"
+                                    >
+                                        <Calendar size={16} className="group-hover:scale-110 transition-transform" />
+                                        <span>Sửa ngày LOT</span>
+                                    </button>
                                 </div>
 
                                 {/* Close button */}
@@ -992,6 +1003,19 @@ function ExportOrderDetailContent() {
                 onClose={() => setIsStatsOpen(false)}
                 onPrioritiesChanged={() => fetchTaskDetails(true)}
             />
+
+            {isEditDatesOpen && (
+                <BulkEditLotDatesModal
+                    lotIds={Array.from(new Set((task?.items?.filter(item => selectedPositionIds.has(item.id || '')) || []).map(i => i.lot_id).filter(Boolean) as string[]))}
+                    lotCodes={Array.from(new Set((task?.items?.filter(item => selectedPositionIds.has(item.id || '')) || []).map(i => i.lot_code).filter(Boolean) as string[]))}
+                    onClose={() => setIsEditDatesOpen(false)}
+                    onSuccess={() => {
+                        setIsEditDatesOpen(false)
+                        fetchTaskDetails()
+                        setSelectedPositionIds(new Set())
+                    }}
+                />
+            )}
         </div>
     )
 }
