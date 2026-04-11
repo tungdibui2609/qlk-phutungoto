@@ -33,6 +33,7 @@ interface ExportOrderItem {
         code: string
         lot_tags?: { tag: string; lot_item_id: string | null }[] | null
         inbound_date: string | null
+        peeling_date: string | null
         notes: string | null
     } | null
     positions: {
@@ -99,6 +100,13 @@ function ExportOrderPrintContent() {
     const [occupiedIds, setOccupiedIds] = useState<Set<string>>(new Set())
     const [displayInternalCode, setDisplayInternalCode] = useState(false)
     const [mergedZones, setMergedZones] = useState<Set<string>>(new Set())
+    const [allowEditDates, setAllowEditDates] = useState(false)
+    const [itemDates, setItemDates] = useState<Record<string, { inboundDate: string; productionDate: string }>>({})
+    
+    // Bulk edit states
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+    const [bulkInboundDate, setBulkInboundDate] = useState('')
+    const [bulkProductionDate, setBulkProductionDate] = useState('')
 
     // Use shared hook for company info
     const { companyInfo, logoSrc } = usePrintCompanyInfo({
@@ -197,8 +205,7 @@ function ExportOrderPrintContent() {
                     taskData = { ...(taskDataFallback as any), created_by_profile: { full_name: 'Admin' } }
                     setTask(taskData as any)
                 } else {
-                    // @ts-expect-error: Joined type mismatch
-                    setTask(taskData)
+                    setTask(taskData as any)
                 }
 
                 // Fetch Items
@@ -214,6 +221,7 @@ function ExportOrderPrintContent() {
                             id,
                             code,
                             inbound_date, 
+                            peeling_date,
                             notes, 
                             lot_tags (tag, lot_item_id),
                             positions!positions_lot_id_fkey (
@@ -228,7 +236,7 @@ function ExportOrderPrintContent() {
 
                 if (itemsError) throw itemsError
 
-                const initialItemsData = itemsDataRaw || []
+                const initialItemsData: any[] = itemsDataRaw || []
                 
                 // Sắp xếp theo mã vị trí (A-Z) để gom nhóm các khu vực gần nhau
                 initialItemsData.sort((a: any, b: any) => {
@@ -241,7 +249,7 @@ function ExportOrderPrintContent() {
                 setItems(initialItemsData as unknown as ExportOrderItem[] || [])
 
                 // Process Structure for Grid
-                const systemCode = (taskData as any).system_code
+                const systemCode = (taskData as any)?.system_code
                 if (systemCode) {
                     const [posDataRaw, zoneDataRaw, zpDataRaw, layoutDataRaw] = await Promise.all([
                         fetchAll('positions', q => q.eq('system_type', systemCode).order('code', { numeric: true }).order('id')),
@@ -338,7 +346,7 @@ function ExportOrderPrintContent() {
                     const occupied = new Set<string>()
 
                     finalPositions.forEach(p => {
-                        const exportItem = initialItemsData.find((i: any) => i.position_id === p.id)
+                        const exportItem = initialItemsData.find((i: any) => i.position_id === p.id) as any
                         if (exportItem && exportItem.lots) {
                             p.lot_id = exportItem.lots.id
                             occupied.add(p.id)
@@ -429,22 +437,33 @@ function ExportOrderPrintContent() {
                         }
                     })
                     setItems(finalItemsData as unknown as ExportOrderItem[] || [])
+
+                    // Initialize item dates for editing
+                    const dates: Record<string, { inboundDate: string; productionDate: string }> = {}
+                    finalItemsData.forEach((item: any) => {
+                        dates[item.id] = {
+                            inboundDate: item.lots?.inbound_date || '',
+                            productionDate: item.lots?.peeling_date || ''
+                        }
+                    })
+                    setItemDates(dates)
                 }
 
                 // Initialize editable fields
-                if (taskData) {
-                    const d = new Date(taskData.created_at)
+                const taskInfo = taskData as any
+                if (taskInfo) {
+                    const d = new Date(taskInfo.created_at)
                     setEditDay(d.getDate().toString())
 
                     setEditMonth((d.getMonth() + 1).toString())
                     setEditYear(d.getFullYear().toString())
-                    setNotes(taskData.notes || '')
+                    setNotes(taskInfo.notes || '')
 
                     // Lấy thông tin người đăng nhập hiện tại
                     const { data: { user } } = await supabase.auth.getUser()
                     let loggedInName = ''
                     if (user) {
-                        const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', user.id).single()
+                        const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', user.id).single() as any
                         if (profile && profile.full_name) loggedInName = profile.full_name
                     }
 
@@ -452,16 +471,14 @@ function ExportOrderPrintContent() {
                         setSignPerson1(loggedInName)
                         setTask(prev => prev ? { ...prev, created_by_profile: { full_name: loggedInName } } : null)
                     } else {
-                        // @ts-expect-error: Access joined relation
-                        if (taskData.created_by_profile?.full_name) {
-                            // @ts-expect-error: Access joined relation
-                            setSignPerson1(taskData.created_by_profile.full_name as string)
+                        if (taskInfo.created_by_profile?.full_name) {
+                            setSignPerson1(taskInfo.created_by_profile.full_name as string)
                         }
                     }
 
                     // Initialize logistics fields
                     setBranch('Kho mặc định')
-                    setReason(taskData.notes || '')
+                    setReason(taskInfo.notes || '')
                 }
 
             } catch (error) {
@@ -476,6 +493,43 @@ function ExportOrderPrintContent() {
 
     const handlePrint = () => {
         window.print()
+    }
+
+    const toggleSelectItem = (id: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+        })
+    }
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === items.length) {
+            setSelectedIds(new Set())
+        } else {
+            setSelectedIds(new Set(items.map(i => i.id)))
+        }
+    }
+
+    const handleApplyBulkDates = () => {
+        if (selectedIds.size === 0) return
+        
+        setItemDates(prev => {
+            const next = { ...prev }
+            selectedIds.forEach(id => {
+                next[id] = {
+                    inboundDate: bulkInboundDate || next[id]?.inboundDate || '',
+                    productionDate: bulkProductionDate || next[id]?.productionDate || ''
+                }
+            })
+            return next
+        })
+        
+        // Clear bulk dates after apply
+        setBulkInboundDate('')
+        setBulkProductionDate('')
+        setSelectedIds(new Set())
     }
 
     const handleDownload = () => handleCapture(false)
@@ -604,7 +658,20 @@ function ExportOrderPrintContent() {
             `}</style>
 
             {/* Toolbar */}
-            <div className={`fixed top-4 right-4 print:hidden z-50 flex items-center gap-2 ${isSnapshotMode ? 'hidden' : ''}`}>
+            <div className={`fixed top-4 right-4 print:hidden z-50 flex items-center gap-4 ${isSnapshotMode ? 'hidden' : ''}`}>
+                <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg shadow-sm border border-stone-200">
+                    <input
+                        id="allow-edit-dates"
+                        type="checkbox"
+                        checked={allowEditDates}
+                        onChange={(e) => setAllowEditDates(e.target.checked)}
+                        className="w-4 h-4 text-blue-600 border-stone-300 rounded focus:ring-blue-500"
+                    />
+                    <label htmlFor="allow-edit-dates" className="text-sm font-medium text-stone-700 cursor-pointer select-none">
+                        Chỉnh sửa ngày
+                    </label>
+                </div>
+                <div className="flex items-center gap-2">
                 <button
                     onClick={handleDownload}
                     disabled={isDownloadingState}
@@ -620,14 +687,63 @@ function ExportOrderPrintContent() {
                     <Download size={16} />
                     Xuất Excel
                 </button>
-                <button
-                    onClick={handlePrint}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm transition-colors font-sans text-sm"
-                >
-                    <Printer size={16} />
-                    In phiếu
-                </button>
+                    <button
+                        onClick={handlePrint}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm transition-colors font-sans text-sm"
+                    >
+                        <Printer size={16} />
+                        In phiếu
+                    </button>
+                </div>
             </div>
+
+            {/* Bulk Edit Bar */}
+            {allowEditDates && selectedIds.size > 0 && (
+                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 print:hidden z-50 bg-white border border-blue-200 shadow-xl rounded-2xl p-4 flex items-center gap-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                    <div className="flex items-center gap-2 pr-6 border-r border-stone-100">
+                        <span className="bg-blue-100 text-blue-700 font-bold px-2 py-1 rounded text-sm">
+                            {selectedIds.size}
+                        </span>
+                        <span className="text-sm font-medium text-stone-600">dòng đang chọn</span>
+                    </div>
+                    
+                    <div className="flex items-center gap-4">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[10px] uppercase font-bold text-stone-400">Ngày SX (Chung)</label>
+                            <input 
+                                type="date" 
+                                value={bulkProductionDate}
+                                onChange={e => setBulkProductionDate(e.target.value)}
+                                className="border border-stone-200 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                            />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[10px] uppercase font-bold text-stone-400">Ngày Nhập (Chung)</label>
+                            <input 
+                                type="date" 
+                                value={bulkInboundDate}
+                                onChange={e => setBulkInboundDate(e.target.value)}
+                                className="border border-stone-200 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                            />
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={handleApplyBulkDates}
+                        disabled={!bulkInboundDate && !bulkProductionDate}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-stone-300 text-white font-bold px-6 py-2 rounded-xl shadow-lg shadow-blue-200 transition-all active:scale-95 text-sm"
+                    >
+                        Áp dụng hàng loạt
+                    </button>
+                    
+                    <button
+                        onClick={() => setSelectedIds(new Set())}
+                        className="text-stone-400 hover:text-stone-600 text-sm font-medium px-2"
+                    >
+                        Hủy
+                    </button>
+                </div>
+            )}
 
             {/* PAGE 1: EXPORT ORDER DETAIL */}
             <div className={`pt-8 px-8 pb-8 print:p-0 w-full max-w-[210mm] print:max-w-none bg-white shadow-md print:shadow-none ${isCapturing ? 'w-[210mm]' : ''}`}>
@@ -770,70 +886,109 @@ function ExportOrderPrintContent() {
                 <table className="w-full border-collapse border border-black mb-4 text-xs">
                     <thead>
                         <tr>
+                            {allowEditDates && (
+                                <th className="border border-black p-2 w-8 text-center print:hidden">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={selectedIds.size === items.length && items.length > 0}
+                                        onChange={toggleSelectAll}
+                                        className="w-4 h-4 rounded"
+                                    />
+                                </th>
+                            )}
                             <th className="border border-black p-2 w-10 text-center">STT</th>
                             <th className="border border-black p-2 w-24 text-center">Mã LOT</th>
                             <th className="border border-black p-2 w-24 text-center">Vị trí</th>
                             <th className="border border-black p-2 text-center">Sản phẩm</th>
                             <th className="border border-black p-2 w-16 text-center">Số lượng</th>
                             <th className="border border-black p-2 w-16 text-center">ĐVT</th>
-                            {task.status === 'Completed' ? (
-                                <>
-                                    <th className="border border-black p-2 w-14 text-center">Đã hạ</th>
-                                    <th className="border border-black p-2 w-14 text-center">Chưa hạ</th>
-                                </>
-                            ) : (
-                                <th className="border border-black p-2 w-24 text-center">Ngày nhập kho</th>
-                            )}
+                            <th className="border border-black p-2 w-24 text-center">Ngày SX</th>
+                            <th className="border border-black p-2 w-24 text-center">Ngày nhập kho</th>
                             <th className="border border-black p-2 w-24 text-center">Ghi chú</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {items.map((item, idx) => (
-                            <tr key={item.id} className="break-inside-avoid">
-                                <td className="border border-black p-2 text-center">{idx + 1}</td>
-                                <td className="border border-black p-2 text-center">
-                                    <div className="font-bold">{item.lots?.code}</div>
-                                    {item.lots?.lot_tags && item.lots.lot_tags.length > 0 && (
-                                        <div className="mt-1 flex justify-center">
-                                            <TagDisplay
-                                                tags={item.lots.lot_tags
-                                                    .filter(t => !t.tag.startsWith('SPLIT_TO:') && !t.tag.startsWith('MERGED_TO:'))
-                                                    .map(t => t.tag)}
-                                                variant="compact"
-                                                placeholderMap={{
-                                                    '@': item.products?.sku || 'SẢN PHẨM'
-                                                }}
+                        {items.map((item, idx) => {
+                            const d = itemDates[item.id] || { inboundDate: '', productionDate: '' }
+                            const isSelected = selectedIds.has(item.id)
+                            return (
+                                <tr key={item.id} className={`break-inside-avoid ${isSelected ? 'bg-blue-50/50' : ''}`}>
+                                    {allowEditDates && (
+                                        <td className="border border-black p-2 text-center print:hidden">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={isSelected}
+                                                onChange={() => toggleSelectItem(item.id)}
+                                                className="w-4 h-4 rounded cursor-pointer"
                                             />
-                                        </div>
+                                        </td>
                                     )}
-                                </td>
-                                <td className="border border-black p-2 text-center">{item.positions?.code}</td>
-                                <td className="border border-black p-2">
-                                    <div className="font-bold">{item.products?.sku} - {item.products?.name}</div>
-                                    {item.lots?.notes && <div className="text-[10px] font-bold mt-1 uppercase">{item.lots.notes}</div>}
-                                </td>
-                                <td className="border border-black p-2 text-center font-bold">{formatQuantityFull(item.quantity)}</td>
-                                <td className="border border-black p-2 text-center">{item.unit}</td>
-                                {task.status === 'Completed' ? (
-                                    <>
-                                        <td className="border border-black p-2 text-center text-lg">{['Exported', 'Moved to Hall'].includes(item.computed_status as string) ? '☑' : '◻'}</td>
-                                        <td className="border border-black p-2 text-center text-lg">{['Pending', 'Changed Position'].includes(item.computed_status as string) ? '☑' : '◻'}</td>
-                                    </>
-                                ) : (
-                                    <td className="border border-black p-2 text-center font-medium">
-                                        {item.lots?.inbound_date ? format(new Date(item.lots.inbound_date), 'dd/MM/yyyy') : ''}
+                                    <td className="border border-black p-2 text-center">{idx + 1}</td>
+                                    <td className="border border-black p-2 text-center">
+                                        <div className="font-bold">{item.lots?.code}</div>
+                                        {item.lots?.lot_tags && item.lots.lot_tags.length > 0 && (
+                                            <div className="mt-1 flex justify-center">
+                                                <TagDisplay
+                                                    tags={(item.lots?.lot_tags || [])
+                                                        .filter(t => !t.tag.startsWith('SPLIT_TO:') && !t.tag.startsWith('MERGED_TO:'))
+                                                        .map(t => t.tag.replace(/@/g, item.products?.sku || ''))}
+                                                />
+                                            </div>
+                                        )}
                                     </td>
-                                )}
-                                <td className="border border-black p-2 text-xs">
-                                    {item.computed_status === 'Moved to Hall' && 'Hạ sảnh'}
-                                    {item.computed_status === 'Exported' && 'Đã xuất'}
-                                    {item.computed_status === 'Changed Position' && `Đổi vị trí: ${item.current_position_code || ''}`}
-                                </td>
-                            </tr>
-                        ))}
+                                    <td className="border border-black p-2 text-center">{item.positions?.code}</td>
+                                    <td className="border border-black p-2">
+                                        <div className="font-bold">{item.products?.name}</div>
+                                        <div className="text-[10px] text-stone-500">{item.products?.sku}</div>
+                                    </td>
+                                    <td className="border border-black p-2 text-center font-bold">
+                                        {formatQuantityFull(item.quantity)}
+                                    </td>
+                                    <td className="border border-black p-2 text-center">{item.unit}</td>
+                                    <td className="border border-black p-2 text-center">
+                                        {allowEditDates ? (
+                                            <input
+                                                type="date"
+                                                value={d.productionDate?.split('T')[0] || ''}
+                                                onChange={(e) => setItemDates(prev => ({
+                                                    ...prev,
+                                                    [item.id]: { ...prev[item.id], productionDate: e.target.value }
+                                                }))}
+                                                className="w-full text-center bg-transparent border-none p-0 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded"
+                                            />
+                                        ) : (
+                                            d.productionDate ? format(new Date(d.productionDate), 'dd/MM/yyyy') : '-'
+                                        )}
+                                    </td>
+                                    <td className="border border-black p-2 text-center">
+                                        {allowEditDates ? (
+                                            <input
+                                                type="date"
+                                                value={d.inboundDate?.split('T')[0] || ''}
+                                                onChange={(e) => setItemDates(prev => ({
+                                                    ...prev,
+                                                    [item.id]: { ...prev[item.id], inboundDate: e.target.value }
+                                                }))}
+                                                className="w-full text-center bg-transparent border-none p-0 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded"
+                                            />
+                                        ) : (
+                                            d.inboundDate ? format(new Date(d.inboundDate), 'dd/MM/yyyy') : '-'
+                                        )}
+                                    </td>
+                                    <td className="border border-black p-2">
+                                        <EditableText
+                                            value={item.lots?.notes || ''}
+                                            onChange={() => {}} // Notes for lots are not editable yet here, but keeping structure
+                                            isSnapshot={isSnapshotMode}
+                                            className="min-h-[1.5em]"
+                                        />
+                                    </td>
+                                </tr>
+                            )
+                        })}
                         {items.length === 0 && (
                             <tr>
-                                <td className="border border-black p-4 text-center" colSpan={task.status === 'Completed' ? 9 : 8}>Không có dữ liệu</td>
+                                <td className="border border-black p-4 text-center" colSpan={allowEditDates ? 10 : 9}>Không có dữ liệu</td>
                             </tr>
                         )}
                     </tbody>
