@@ -75,6 +75,7 @@ export function LotFilter({
                         {searchMode === 'position' && <MapPin size={14} className="text-orange-500 mr-1.5" />}
                         {searchMode === 'category' && <LayoutGrid size={14} className="text-indigo-500 mr-1.5" />}
                         {searchMode === 'production' && <ClipboardList size={14} className="text-rose-500 mr-1.5" />}
+                        {searchMode === 'stt' && <Hash size={14} className="text-orange-500 mr-1.5" />}
                         
                         <select
                             value={searchMode}
@@ -88,6 +89,7 @@ export function LotFilter({
                             <option value="position">Vị trí</option>
                             <option value="category">Danh mục</option>
                             <option value="production">Lệnh sản xuất</option>
+                            <option value="stt">Số thứ tự (STT)</option>
                         </select>
                     </div>
 
@@ -102,6 +104,7 @@ export function LotFilter({
                                 searchMode === 'position' ? "Mã vị trí..." :
                                 searchMode === 'category' ? "Tên danh mục..." :
                                 searchMode === 'production' ? "Mã lệnh sản xuất..." :
+                                searchMode === 'stt' ? "Số thứ tự pallet (STT)..." :
                                 "Tìm kiếm..."
                             }
                             value={localSearchTerm}

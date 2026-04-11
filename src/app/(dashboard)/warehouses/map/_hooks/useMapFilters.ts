@@ -13,7 +13,7 @@ interface UseMapFiltersProps {
     pendingExportPosIds?: Set<string>
 }
 
-export type SearchMode = 'all' | 'name' | 'code' | 'tag' | 'position' | 'category' | 'production'
+export type SearchMode = 'all' | 'name' | 'code' | 'tag' | 'position' | 'category' | 'production' | 'stt'
 
 export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendingExportPosIds }: UseMapFiltersProps) {
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
@@ -88,6 +88,10 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                         }
 
                         // Other fields
+                        if (mode === 'all' || mode === 'stt') {
+                            if (lot.daily_seq) res.push(String(lot.daily_seq))
+                        }
+
                         if (mode === 'all') {
                             if (lot.supplier_name) res.push(lot.supplier_name)
                             if (lot.qc_name) res.push(lot.qc_name)

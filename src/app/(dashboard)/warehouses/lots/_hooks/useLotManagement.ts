@@ -510,7 +510,22 @@ export function useLotManagement() {
                                 .eq('system_code', currentSystem.code);
                             const directIds = lotsDirect?.map((l: any) => l.id) || [];
 
-                            currentMatchIds = Array.from(new Set([...itemLotIds, ...tagLotIds, ...posIds, ...directIds, ...prodLotIds]));
+                            // STT search in 'all' mode
+                            let sttIds: string[] = [];
+                            const sttNum = parseInt(part);
+                            if (!isNaN(sttNum)) {
+                                const { data: sttLots } = await (supabase.from('lots') as any).select('id').eq('daily_seq', sttNum).eq('system_code', currentSystem.code);
+                                if (sttLots) sttIds = sttLots.map((l: any) => l.id);
+                            }
+
+                            currentMatchIds = Array.from(new Set([...itemLotIds, ...tagLotIds, ...posIds, ...directIds, ...prodLotIds, ...sttIds]));
+                        }
+                        else if (searchMode === 'stt') {
+                            const sttNum = parseInt(part);
+                            if (!isNaN(sttNum)) {
+                                const { data: sttLots } = await (supabase.from('lots') as any).select('id').eq('daily_seq', sttNum).eq('system_code', currentSystem.code);
+                                if (sttLots) currentMatchIds = sttLots.map((l: any) => l.id);
+                            }
                         }
                         else if (searchMode === 'production') {
                             const { data: prodMatched } = await (supabase.from('productions') as any).select('id').or(`code.ilike.${partTerm},name.ilike.${partTerm}`).eq('company_id', currentSystem.company_id);
