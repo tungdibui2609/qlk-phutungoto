@@ -408,6 +408,50 @@ export function useLotManagement() {
                 // Check UUID
                 const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(searchTerm);
 
+                // 🟢 ADVANCED SEARCH: Production Code : STT
+                if (searchTerm.includes(':')) {
+                    const parts = searchTerm.split(':').map(p => p.trim());
+                    if (parts.length === 2 && parts[0] && parts[1]) {
+                        const lsxTerm = parts[0];
+                        const sttTerm = parseInt(parts[1]);
+
+                        if (!isNaN(sttTerm)) {
+                            // 1. Find production IDs
+                            const { data: matchedProds } = await (supabase.from('productions') as any)
+                                .select('id')
+                                .or(`code.ilike.%${lsxTerm}%,name.ilike.%${lsxTerm}%`)
+                                .eq('company_id', currentSystem.company_id);
+                            
+                            const prodIds = matchedProds?.map((p: any) => p.id) || [];
+                            
+                            if (prodIds.length > 0) {
+                                // 2. Find lots with these prods AND stt
+                                const { data: foundLots } = await (supabase.from('lots') as any)
+                                    .select('id')
+                                    .in('production_id', prodIds)
+                                    .eq('daily_seq', sttTerm)
+                                    .eq('system_code', currentSystem.code);
+                                
+                                if (foundLots && foundLots.length > 0) {
+                                    const matchingIds = foundLots.map((l: any) => l.id);
+                                    query = query.in('id', matchingIds);
+                                    
+                                    // Skip the rest of regular search logic
+                                    const { data, error, count } = await query
+                                        .range(page * pageSize, (page + 1) * pageSize - 1);
+                                    
+                                    if (!error && data) {
+                                        setLots(data as unknown as Lot[]);
+                                        setTotalLots(count || 0);
+                                    }
+                                    setLoading(false);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Prefer local filtering on preloaded products to support accent-insensitive search
                 let prodIds: string[] = [];
                 if (products && products.length > 0) {

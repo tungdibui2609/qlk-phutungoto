@@ -87,6 +87,12 @@ export function SearchHelpModal({ isOpen, onOpenChange }: SearchHelpModalProps) 
                                 </div>
                                 <p className="text-sm text-muted-foreground italic">Tìm theo mã hoặc tên lệnh sản xuất. Ví dụ: "LSX001", "SX CAM".</p>
                             </div>
+                            <div className="p-3 bg-muted/50 rounded-lg border border-border/50">
+                                <div className="flex items-center gap-2 mb-1 font-medium text-orange-600 dark:text-orange-400">
+                                    <Hash className="h-4 w-4" /> Số thứ tự (STT)
+                                </div>
+                                <p className="text-sm text-muted-foreground italic">Tìm Pallet theo số thứ tự in trên nhãn. Ví dụ: "9", "120".</p>
+                            </div>
                         </div>
                     </div>
 
@@ -113,6 +119,10 @@ export function SearchHelpModal({ isOpen, onOpenChange }: SearchHelpModalProps) 
                                             <li className="flex gap-2">
                                                 <span className="font-mono text-orange-600 font-bold">Dấu cách</span>
                                                 <span>Trong chế độ Tổng hợp, dấu cách dùng để tìm nhanh nhiều mã vị trí. <br/>Ví dụ: <code className="bg-muted px-1 rounded">A01 B02 C03</code></span>
+                                            </li>
+                                            <li className="flex gap-2">
+                                                <span className="font-mono text-blue-600 font-bold">:</span>
+                                                <span>Tìm chính xác Pallet theo <b>Lệnh sản xuất : STT</b>. <br/>Ví dụ: <code className="bg-muted px-1 rounded">LSX001 : 120</code></span>
                                             </li>
                                         </ul>
                                     </div>
