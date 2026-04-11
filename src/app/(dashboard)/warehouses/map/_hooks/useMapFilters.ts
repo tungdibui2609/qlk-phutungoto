@@ -85,6 +85,7 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                         if (mode === 'all' || mode === 'production') {
                             if (lot.productions?.code) res.push(lot.productions.code)
                             if (lot.productions?.name) res.push(lot.productions.name)
+                            lot.production_lot_codes?.forEach((code: string) => res.push(code))
                         }
 
                         // Other fields

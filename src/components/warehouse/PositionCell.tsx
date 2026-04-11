@@ -152,8 +152,15 @@ const PositionCell = React.memo<{
                     </div>
 
                     {lotDetail.productions?.name && (
-                        <div className="text-[9px] font-bold text-rose-500 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/30 px-1 rounded leading-tight line-clamp-1 text-center w-fit mx-auto" title={`Mã LSX: ${lotDetail.productions.code || ''}`}>
-                            {lotDetail.productions.name}
+                        <div className="flex flex-col gap-0.5 items-center w-full">
+                            <div className="text-[9px] font-bold text-rose-500 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/30 px-1 rounded leading-tight line-clamp-1 text-center w-fit mx-auto" title={`Lệnh SX: ${lotDetail.productions.code || ''}`}>
+                                {lotDetail.productions.name}
+                            </div>
+                            {lotDetail.production_lot_code && (
+                                <div className="text-[8px] font-mono font-medium text-slate-500 dark:text-slate-400 leading-tight truncate w-full text-center" title={`Mã Lot SX: ${lotDetail.production_lot_code}`}>
+                                    {lotDetail.production_lot_code}
+                                </div>
+                            )}
                         </div>
                     )}
 

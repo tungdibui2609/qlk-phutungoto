@@ -46,7 +46,7 @@ export function useWarehouseData() {
 
         const { data: l, error } = await supabase
             .from('lots')
-            .select('*, productions(code, name), suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)')
+            .select('*, productions(code, name, production_lots(lot_code, product_id)), suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)')
             .eq('id', lotId)
             .single() as any
 
@@ -93,13 +93,22 @@ export function useWarehouseData() {
             }]
         }
 
+        const prodData = Array.isArray(l.productions) ? l.productions[0] : l.productions
+        const palletProductIds = new Set(lotItems.map((i: any) => i.product_id))
+        if (l.product_id) palletProductIds.add(l.product_id)
+
+        const matchingProdLots = (prodData?.production_lots || [])
+            .filter((pl: any) => palletProductIds.has(pl.product_id))
+            .map((pl: any) => pl.lot_code)
+
         const info = {
             ...l,
             items,
             tags: accumulatedTags,
             qc_name: l.qc_info?.name,
             supplier_name: l.suppliers?.name,
-            productions: Array.isArray(l.productions) ? l.productions[0] : l.productions
+            productions: prodData,
+            production_lot_codes: matchingProdLots
         }
 
         setLotInfo(prev => ({
@@ -159,7 +168,7 @@ export function useWarehouseData() {
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
                 fetchAllZonesPos(),
                 fetchAll('zone_layouts', q => q.order('id')),
-                fetchAll('lots', q => q.eq('system_code', systemType), '*, productions(code, name), suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)') as Promise<any[]>,
+                fetchAll('lots', q => q.eq('system_code', systemType), '*, productions(code, name, production_lots(lot_code, product_id)), suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)') as Promise<any[]>,
                 supabase.from('export_task_items').select('position_id, lot_id, export_tasks!inner(status, system_code)').eq('export_tasks.system_code', systemType).in('export_tasks.status', ['Pending', 'Processing'])
             ])
 
@@ -226,13 +235,22 @@ export function useWarehouseData() {
                     } as any]
                 }
 
+                const prodData = Array.isArray(l.productions) ? l.productions[0] : l.productions
+                const palletProductIds = new Set(lotItems.map((i: any) => i.product_id))
+                if (l.product_id) palletProductIds.add(l.product_id)
+
+                const matchingProdLots = (prodData?.production_lots || [])
+                    .filter((pl: any) => palletProductIds.has(pl.product_id))
+                    .map((pl: any) => pl.lot_code)
+
                 lotInfoMap[l.id] = {
                     ...l,
                     items,
                     tags: accumulatedTags,
                     qc_name: l.qc_info?.name,
                     supplier_name: l.suppliers?.name,
-                    productions: Array.isArray(l.productions) ? l.productions[0] : l.productions
+                    productions: prodData,
+                    production_lot_codes: matchingProdLots
                 }
             })
 

@@ -43,7 +43,7 @@ interface FlexibleZoneGridProps {
     onConfigureZone?: (zone: Zone) => void
     highlightLotId?: string | null
     highlightingPositionIds?: Set<string>
-    lotInfo?: Record<string, { code: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>, inbound_date?: string, created_at?: string, packaging_date?: string, peeling_date?: string, tags?: string[], productions?: { code: string, name: string } }>
+    lotInfo?: Record<string, { id: string, code: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>, inbound_date?: string, created_at?: string, packaging_date?: string, peeling_date?: string, tags?: string[], productions?: { code: string, name: string }, production_lot_code?: string }>
     pageBreakIds?: Set<string>
     onTogglePageBreak?: (zoneId: string) => void
     onPrintZone?: (zoneId: string) => void
@@ -326,18 +326,20 @@ export default function FlexibleZoneGrid({
             const isHighlightBlinking = realIds.some((id: string) => highlightingPositionIds.has(id))
 
             // Aggregate all lot items from all real positions
-            const itemMap = new Map<string, { product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string, production_name?: string, production_code?: string }>()
+            const itemMap = new Map<string, { product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string, production_name?: string, production_code?: string, production_lot_code?: string }>()
             targetPositions.forEach((p: PositionWithZone) => {
-                if (p.lot_id && lotInfo[p.lot_id]?.items) {
-                    const prodName = lotInfo[p.lot_id].productions?.name
-                    const prodCode = lotInfo[p.lot_id].productions?.code
-                    lotInfo[p.lot_id].items.forEach((item: any) => {
-                        const key = `${item.sku || ''}_${item.unit || ''}_${prodName || ''}`
+                const lot = lotInfo[p.lot_id!]
+                if (p.lot_id && lot?.items) {
+                    const prodName = lot.productions?.name
+                    const prodCode = lot.productions?.code
+                    const prodLotCode = lot.production_lot_code
+                    lot.items.forEach((item: any) => {
+                        const key = `${item.sku || ''}_${item.unit || ''}_${prodName || ''}_${prodLotCode || ''}`
                         const existing = itemMap.get(key)
                         if (existing) {
                             existing.quantity += (item.quantity || 0)
                         } else {
-                            itemMap.set(key, { ...item, quantity: item.quantity || 0, production_name: prodName, production_code: prodCode })
+                            itemMap.set(key, { ...item, quantity: item.quantity || 0, production_name: prodName, production_code: prodCode, production_lot_code: prodLotCode })
                         }
                     })
                 }

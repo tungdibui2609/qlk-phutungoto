@@ -175,9 +175,22 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                             STT: {(lot as any).daily_seq || '--'}
                         </span>
                         {(lot.productions?.code || lot.production_code) && (
-                            <span className="px-2 py-0.5 rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 text-[10px] font-bold border border-orange-100 dark:border-orange-800/50">
-                                {lot.productions?.code || lot.production_code}
-                            </span>
+                            <div className="flex flex-col gap-1">
+                                <span className="px-2 py-0.5 rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 text-[10px] font-bold border border-orange-100 dark:border-orange-800/50 w-fit">
+                                    LSX: {lot.productions?.code || lot.production_code}
+                                </span>
+                                {lot.productions && (lot.productions as any).production_lots && (lot.productions as any).production_lots.length > 0 && (
+                                    <div className="flex flex-wrap gap-1">
+                                        {(lot.productions as any).production_lots
+                                            .filter((pl: any) => lot.lot_items?.some(i => i.product_id === pl.product_id))
+                                            .map((pl: any, idx: number) => (
+                                                <span key={idx} className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-[9px] font-black border border-blue-100 dark:border-blue-800/50 uppercase tracking-tight">
+                                                    Lot SX: {pl.lot_code}
+                                                </span>
+                                            ))}
+                                    </div>
+                                )}
+                            </div>
                         )}
                     </div>
                     {lot.positions && lot.positions.length > 0 ? (

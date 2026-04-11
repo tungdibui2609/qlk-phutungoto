@@ -57,10 +57,10 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
         // Find base weight for this specific product from the lot object
         let baseWeight = 0
         let baseUnitName = ''
-        if (lot.products) {
+        if (lot?.products) {
             baseWeight = (lot.products as any).weight_kg || 0
             baseUnitName = lot.products.unit || ''
-        } else if (lot.lot_items) {
+        } else if (lot?.lot_items) {
             const item = lot.lot_items.find((i: any) => i.product_id === productId)
             if (item?.products) {
                 baseWeight = (item.products as any).weight_kg || 0
@@ -210,10 +210,19 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                         <p className="text-base font-bold text-rose-900 dark:text-rose-100 truncate leading-tight">
                                             {prod?.name || lot.production_code || 'Chưa có tên'}
                                         </p>
-                                        {(prod?.code || (lot.production_code && !prod?.name)) && (
+                                        {(prod?.code || (lot?.production_code && !prod?.name)) && (
                                             <p className="text-[11px] font-mono text-rose-500/80 dark:text-rose-400/60 truncate mt-0.5 mt-1">
-                                                Mã: {prod?.code || lot.production_code}
+                                                Mã LSX: {prod?.code || lot?.production_code}
                                             </p>
+                                        )}
+                                        {lot?.production_lot_codes && lot.production_lot_codes.length > 0 && (
+                                            <div className="flex flex-wrap gap-2 mt-2">
+                                                {lot.production_lot_codes.map((code: string, idx: number) => (
+                                                    <span key={idx} className="px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-xs font-black border border-indigo-100 dark:border-indigo-800/50 uppercase tracking-tight shadow-sm">
+                                                        Lot SX: {code}
+                                                    </span>
+                                                ))}
+                                            </div>
                                         )}
                                     </div>
                                 </div>

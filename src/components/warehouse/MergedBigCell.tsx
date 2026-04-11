@@ -8,7 +8,7 @@ const MergedBigCell = React.memo<{
     isOccupied: boolean,
     isSelected: boolean,
     isTargetLot: boolean,
-    aggregatedItems: Array<{ product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string, production_name?: string, production_code?: string }>,
+    aggregatedItems: Array<{ product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string, production_name?: string, production_code?: string, production_lot_code?: string }>,
     isAssignmentMode: boolean,
     isHighlightBlinking: boolean,
     displayInternalCode?: boolean,
@@ -17,7 +17,7 @@ const MergedBigCell = React.memo<{
     onViewDetails?: (lotId: string) => void,
     onPositionMenu?: (pos: any, event: React.MouseEvent) => void,
     mergedLevels?: string[],
-    levelGroups?: Array<{ name: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string, production_name?: string, production_code?: string }> }>,
+    levelGroups?: Array<{ name: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string, production_name?: string, production_code?: string, production_lot_code?: string }> }>,
     isPrintPage?: boolean,
     isGrouped?: boolean,
     isSanh?: boolean,
@@ -155,7 +155,7 @@ const MergedBigCell = React.memo<{
                                                     <React.Fragment key={idx}>
                                                         <span className="text-[10px] text-gray-600 dark:text-gray-300 line-clamp-1">
                                                             {nameObj}{nameObj ? ` (${codeObj || '-'})` : (codeObj || '-')}
-                                                            {item.production_name && <span className="ml-1.5 px-1 bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 font-bold rounded text-[8px]" title={`Mã LSX: ${item.production_code || ''}`}>{item.production_name}</span>}
+                                                            {item.production_name && <span className="ml-1.5 px-1 bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 font-bold rounded text-[8px]" title={`Lệnh SX: ${item.production_code || ''}`}>{item.production_name} {item.production_lot_code ? `| ${item.production_lot_code}` : ''}</span>}
                                                         </span>
                                                         <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap text-right">
                                                             : {item.quantity} {item.unit || '-'}
@@ -179,7 +179,7 @@ const MergedBigCell = React.memo<{
                                     <React.Fragment key={idx}>
                                         <span className="text-[10px] text-gray-600 dark:text-gray-300">
                                             {nameObj}{nameObj ? ` (${codeObj || '-'})` : (codeObj || '-')}
-                                            {item.production_name && <span className="ml-1.5 px-1 bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 font-bold rounded text-[8px]" title={`Mã LSX: ${item.production_code || ''}`}>{item.production_name}</span>}
+                                            {item.production_name && <span className="ml-1.5 px-1 bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 font-bold rounded text-[8px]" title={`Lệnh SX: ${item.production_code || ''}`}>{item.production_name} {item.production_lot_code ? `| ${item.production_lot_code}` : ''}</span>}
                                         </span>
                                         <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap text-right" style={{ verticalAlign: 'middle' }}>
                                             : {item.quantity} {item.unit || '-'}
