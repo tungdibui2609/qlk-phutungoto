@@ -712,10 +712,24 @@ function ProductionLotPrintContent() {
                             </div>
 
                             {/* Body: Product Name & SKU */}
-                            <div className="flex-1 flex flex-col justify-center py-2">
-                                <span className="text-[9px] font-black uppercase text-zinc-400 mb-0.5 leading-none tracking-widest">Sản phẩm / Product</span>
-                                <h1 className="text-xl font-black text-black leading-[1.1] uppercase line-clamp-2">{(data as any).products?.name}</h1>
-                                <div className="text-[11px] font-black text-zinc-600 mt-1 uppercase tracking-tight">SKU: {(data as any).products?.sku}</div>
+                            <div className="flex-1 flex flex-col justify-center min-h-0">
+                                <div className="space-y-1">
+                                    <div className="text-[10px] font-black text-zinc-500 uppercase tracking-tight leading-none bg-zinc-100 py-1 px-2 rounded-sm inline-block">SKU: {(data as any).products?.sku}</div>
+                                    <h1 
+                                        className="font-black text-black leading-[1.1] uppercase transition-all duration-300 overflow-hidden"
+                                        style={{
+                                            fontSize: (data as any).products?.name?.length > 40 ? '13px' : 
+                                                     (data as any).products?.name?.length > 30 ? '16px' :
+                                                     (data as any).products?.name?.length > 20 ? '19px' : '22px',
+                                            display: '-webkit-box',
+                                            WebkitLineClamp: 2,
+                                            WebkitBoxOrient: 'vertical',
+                                            maxHeight: '48px' // Cố định chiều cao tối đa 2 dòng
+                                        }}
+                                    >
+                                        {(data as any).products?.name}
+                                    </h1>
+                                </div>
                             </div>
 
                             {/* Details Grid & Dates - Grouped at the bottom */}
@@ -1145,7 +1159,19 @@ function ProductionLotPrintContent() {
                                         <section>
                                             <h3 className="text-[11px] font-black uppercase tracking-[0.25em] text-zinc-400 mb-4 border-b-2 border-zinc-100 pb-2">Sản phẩm</h3>
                                             <div className="space-y-4">
-                                                <div className="flex flex-col"><span className="text-[11px] font-bold text-zinc-400 uppercase mb-1">Tên SP:</span> <span className="font-black text-zinc-900 text-2xl leading-tight uppercase">{data.products?.name}</span></div>
+                                                <div className="flex flex-col">
+                                                    <span className="text-[11px] font-bold text-zinc-400 uppercase mb-1">Tên SP:</span> 
+                                                    <span 
+                                                        className="font-black text-zinc-900 leading-tight uppercase"
+                                                        style={{
+                                                            fontSize: (data as any).products?.name?.length > 60 ? '16px' : 
+                                                                     (data as any).products?.name?.length > 45 ? '20px' :
+                                                                     (data as any).products?.name?.length > 30 ? '24px' : '30px',
+                                                        }}
+                                                    >
+                                                        {(data as any).products?.name}
+                                                    </span>
+                                                </div>
                                                 <div className="flex flex-col"><span className="text-[11px] font-bold text-zinc-400 uppercase mb-1">SKU:</span> <span className="font-black text-zinc-900 text-xl tracking-tight leading-none-0">{data.products?.sku}</span></div>
                                             </div>
                                         </section>
