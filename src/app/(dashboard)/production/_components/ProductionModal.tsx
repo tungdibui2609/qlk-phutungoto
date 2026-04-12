@@ -17,9 +17,11 @@ interface ProductionLot {
     weight_per_unit: number
     planned_quantity?: number | null
     actual_quantity?: number // Added for display
+    inventory_quantity?: number // Added for display
     unit?: string // Added for display (Product base unit)
     product_name?: string // UI helper
     conversion_rules?: { factor: number; unit_name: string; ref_unit_name: string }[] // Linked rules
+    quantity_by_unit?: { qty: number; current_qty?: number; unit: string }[] // Linked units stats
 }
 
 interface ProductionModalProps {
@@ -152,9 +154,11 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const summary = useMemo(() => {
         let planned = 0
         let actual = 0
+        let inventory = 0
         lots.forEach(l => {
             planned += (l.planned_quantity || 0) * (l.weight_per_unit || 1)
             actual += l.actual_quantity || 0
+            inventory += l.inventory_quantity || 0
         })
         
         let totalInputWeight = 0
@@ -168,7 +172,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
         const lossWeight = totalInputWeight > 0 ? Math.max(0, totalInputWeight - actual) : 0
         const lossRate = totalInputWeight > 0 ? (lossWeight / totalInputWeight) * 100 : 0
 
-        return { planned, actual, rate, totalInputWeight, lossWeight, lossRate }
+        return { planned, actual, inventory, rate, totalInputWeight, lossWeight, lossRate }
     }, [lots, productionType, inputQuantity, inputProductName, productionInputs])
 
     const analysisSummary = useMemo(() => {
@@ -318,9 +322,10 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                     const warehouseLotIds = (matchedLots as any[]).map(ml => ml.id)
                     
                     // 2. Get items for these warehouse lots
+                    // Dùng initial_quantity (số gốc khi SX) để không bị ảnh hưởng bởi xuất kho
                     const { data: itemsData, error: itemsErr } = await supabase
                         .from('lot_items')
-                        .select('quantity, unit, lot_id, product_id')
+                        .select('quantity, initial_quantity, unit, lot_id, product_id')
                         .in('lot_id', warehouseLotIds)
                     
                     if (itemsErr) throw itemsErr
@@ -364,10 +369,12 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                             // 1. product.weight_kg OR 2. extracted weight OR 3. default 1.0
                             const weightFactor = productMap[item.product_id] || extractWeight(item.unit) || 1.0
 
-                            if (!agg[plId]) agg[plId] = { production_lot_id: plId, actual_quantity: 0, quantity_by_unit: [] }
+                            if (!agg[plId]) agg[plId] = { production_lot_id: plId, actual_quantity: 0, inventory_quantity: 0, quantity_by_unit: [] }
                             
-                            // Add to total actual quantity (KG)
-                            agg[plId].actual_quantity += (item.quantity * weightFactor)
+                            // Add to total actual quantity (KG) - Dùng initial_quantity (số gốc khi SX)
+                            const itemQty = item.initial_quantity || item.quantity
+                            agg[plId].actual_quantity += (itemQty * weightFactor)
+                            agg[plId].inventory_quantity += (item.quantity * weightFactor)
 
                             // Add to breakdown by unit
                             const weightSuffix = (weightFactor > 1 && !item.unit.includes('(')) ? ` (${weightFactor}kg)` : ''
@@ -375,9 +382,10 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                             
                             const unitEntry = agg[plId].quantity_by_unit.find((u: any) => u.unit === displayUnit)
                             if (unitEntry) {
-                                unitEntry.qty += item.quantity
+                                unitEntry.qty += itemQty
+                                unitEntry.current_qty = (unitEntry.current_qty || 0) + item.quantity
                             } else {
-                                agg[plId].quantity_by_unit.push({ qty: item.quantity, unit: displayUnit })
+                                agg[plId].quantity_by_unit.push({ qty: itemQty, current_qty: item.quantity, unit: displayUnit })
                             }
                         })
                         
@@ -388,16 +396,17 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                 // Default: use the optimized view
                 const { data } = await supabase
                     .from('production_item_statistics' as any)
-                    .select('production_lot_id, actual_quantity, quantity_by_unit')
+                    .select('production_lot_id, actual_quantity, current_inventory, quantity_by_unit')
                     .in('production_lot_id', lotIds) as { data: any[] | null }
                 statsData = data || []
             }
 
             // 3. Map back to enriched lots
-            const statsMap: Record<string, { actual: number, by_unit: any[] }> = {}
+            const statsMap: Record<string, { actual: number, inventory: number, by_unit: any[] }> = {}
             statsData.forEach((s: any) => { 
                 statsMap[s.production_lot_id] = { 
                     actual: s.actual_quantity, 
+                    inventory: s.current_inventory || s.inventory_quantity || 0,
                     by_unit: s.quantity_by_unit || [] 
                 }
             })
@@ -412,7 +421,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             if (allLots && allLots.length > 0) {
                 const { data: allItems } = await supabase
                     .from('lot_items')
-                    .select('quantity, unit, lot_id, product_id')
+                    .select('quantity, initial_quantity, unit, lot_id, product_id')
                     .in('lot_id', allLots.map(l => l.id)) as { data: any[] | null }
                 
                 if (allItems) {
@@ -445,7 +454,8 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                         if (!date) return
                         
                         const weightFactor = pMap[item.product_id] || extractWeight(item.unit) || 1.0
-                        dailyMap[date] = (dailyMap[date] || 0) + (item.quantity * weightFactor)
+                        const dailyQty = item.initial_quantity || item.quantity
+                        dailyMap[date] = (dailyMap[date] || 0) + (dailyQty * weightFactor)
                     })
 
                     const formattedDaily = Object.entries(dailyMap)
@@ -463,6 +473,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                 weight_per_unit: l.weight_per_unit || 0,
                 planned_quantity: l.planned_quantity,
                 actual_quantity: statsMap[l.id]?.actual || 0,
+                inventory_quantity: statsMap[l.id]?.inventory || 0,
                 quantity_by_unit: statsMap[l.id]?.by_unit || [],
                 unit: l.products?.unit || '',
                 product_name: l.products?.name || '',
@@ -1006,7 +1017,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                     )}
                     <form id="prod-form" onSubmit={handleSubmit} className="space-y-8">
                         {isLocked && (
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                 <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm flex flex-col items-center justify-center gap-2">
                                     <span className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-400">Tổng kế hoạch</span>
                                     <div className="text-2xl font-black text-stone-800 dark:text-white flex items-baseline gap-1">
@@ -1015,13 +1026,20 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                     </div>
                                 </div>
                                 <div className="p-6 bg-blue-500/5 dark:bg-blue-500/10 rounded-[28px] border border-blue-100 dark:border-blue-900/20 shadow-sm flex flex-col items-center justify-center gap-2">
-                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500">Tổng thực tế</span>
+                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500">Sản lượng gốc</span>
                                     <div className="text-2xl font-black text-blue-600 dark:text-blue-400 flex items-baseline gap-1">
                                         {summary.actual.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
                                         <span className="text-xs font-bold text-blue-400/60 uppercase">Kg</span>
                                     </div>
                                 </div>
-                                <div className="p-6 bg-emerald-500/5 dark:bg-emerald-500/10 rounded-[28px] border border-emerald-100 dark:border-emerald-900/20 shadow-sm flex flex-col items-center justify-center gap-2">
+                                <div className="p-6 bg-indigo-500/5 dark:bg-indigo-500/10 rounded-[28px] border border-indigo-100 dark:border-indigo-900/20 shadow-sm flex flex-col items-center justify-center gap-2">
+                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-500">Tồn kho hiện có</span>
+                                    <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400 flex items-baseline gap-1">
+                                        {summary.inventory.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
+                                        <span className="text-xs font-bold text-indigo-400/60 uppercase">Kg</span>
+                                    </div>
+                                </div>
+                                <div className="p-6 bg-emerald-500/5 dark:bg-emerald-500/10 rounded-[28px] border border-emerald-100 dark:border-emerald-900/20 shadow-sm flex flex-col items-center justify-center gap-2 col-span-2 lg:col-span-1">
                                     <span className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500">Tỉ lệ hoàn thành</span>
                                     <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 flex items-baseline gap-1">
                                         {summary.rate.toFixed(1)}
@@ -1813,22 +1831,56 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                     <div className="h-px bg-stone-100 dark:bg-zinc-800 w-full" />
 
                                                     <div className="flex items-center justify-between">
-                                                        <div className="flex flex-col">
-                                                            <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">Đã sản xuất (Thực tế)</div>
-                                                            <div className="font-black text-blue-600 dark:text-blue-400 text-lg flex items-baseline gap-1">
-                                                                {(lot as any).quantity_by_unit && (lot as any).quantity_by_unit.length > 0 ? (
-                                                                    <div className="flex flex-wrap gap-1 items-center">
-                                                                        {(lot as any).quantity_by_unit.map((q: any, i: number) => (
-                                                                            <span key={i} className="flex items-baseline gap-0.5 whitespace-nowrap">
-                                                                                {Number(q.qty).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
-                                                                                <span className="text-[10px] font-normal text-stone-500 uppercase tracking-wider">{q.unit}</span>
-                                                                                {i < (lot as any).quantity_by_unit.length - 1 && <span className="mx-0.5 text-stone-300">•</span>}
-                                                                            </span>
-                                                                        ))}
-                                                                    </div>
-                                                                ) : (
-                                                                    <span>{(lot.actual_quantity || 0).toLocaleString('vi-VN')} <span className="text-xs">{lot.unit || 'Kg'}</span></span>
-                                                                )}
+                                                        <div className="flex flex-col gap-3">
+                                                            {/* Original Production Qty */}
+                                                            <div>
+                                                                <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                                                                    <div className="w-1 h-1 bg-blue-500 rounded-full" /> Sản lượng gốc (Ban đầu)
+                                                                </div>
+                                                                <div className="font-black text-blue-600 dark:text-blue-400 text-lg flex flex-wrap items-center gap-x-2 gap-y-1">
+                                                                    {(lot as any).quantity_by_unit && (lot as any).quantity_by_unit.length > 0 ? (
+                                                                        (lot as any).quantity_by_unit.map((q: any, i: number) => {
+                                                                            const isExported = q.current_qty === 0;
+                                                                            const isPartiallyExported = q.current_qty > 0 && q.current_qty < q.qty;
+                                                                            
+                                                                            return (
+                                                                                <div key={i} className="flex items-center gap-2">
+                                                                                    <span className={`flex items-baseline gap-1 whitespace-nowrap transition-colors ${isExported ? 'text-rose-500 line-through opacity-60' : isPartiallyExported ? 'text-orange-500' : 'text-blue-600'}`}>
+                                                                                        <span className="text-xl">{Number(q.qty).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}</span>
+                                                                                        <span className="text-[10px] font-bold uppercase tracking-wider">{q.unit}</span>
+                                                                                        {(isExported || isPartiallyExported) && (
+                                                                                            <span className={`ml-1 text-[11px] font-black underline decoration-2 underline-offset-4 ${isExported ? 'text-rose-600 bg-rose-50 px-1.5 rounded' : 'text-orange-600 bg-orange-50 px-1.5 rounded'}`}>
+                                                                                                Còn {Number(q.current_qty).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </span>
+                                                                                    {i < (lot as any).quantity_by_unit.length - 1 && (
+                                                                                        <span className="text-stone-300 font-black text-xs mx-1">•</span>
+                                                                                    )}
+                                                                                </div>
+                                                                            )
+                                                                        })
+                                                                    ) : (
+                                                                        <span>{(lot.actual_quantity || 0).toLocaleString('vi-VN')} <span className="text-xs">{lot.unit || 'Kg'}</span></span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="text-[9px] font-bold text-stone-400 italic">
+                                                                    ~ {(lot.actual_quantity || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} kg
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Current Inventory Balance */}
+                                                            <div>
+                                                                <div className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                                                                    <div className="w-1 h-1 bg-indigo-500 rounded-full" /> Tồn kho thực tế (Hiện tại)
+                                                                </div>
+                                                                <div className="font-black text-indigo-600 dark:text-indigo-400 text-base">
+                                                                    {((lot as any).inventory_quantity || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
+                                                                    <span className="text-[10px] ml-1 text-stone-400 uppercase tracking-widest">{lot.unit || product?.unit || 'Kg'}</span>
+                                                                </div>
+                                                                <div className="text-[9px] font-bold text-stone-400 italic">
+                                                                    ~ {((lot as any).inventory_quantity || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} kg
+                                                                </div>
                                                             </div>
                                                         </div>
                                                         
@@ -1838,35 +1890,37 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                              const ak = lot.actual_quantity || 0
                                                              const percent = pk > 0 ? Math.min(100, (ak / pk) * 100) : 0
                                                              return (
-                                                                <div className="flex items-center gap-2">
-                                                                    <div className="text-right">
-                                                                        <div className="text-[14px] font-black text-stone-800 dark:text-white leading-none">{percent.toFixed(0)}%</div>
-                                                                        <div className="text-[8px] text-zinc-400 font-bold uppercase tracking-tighter">Hoàn thành</div>
+                                                                <div className="flex flex-col items-end gap-3">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="text-right">
+                                                                            <div className="text-[14px] font-black text-stone-800 dark:text-white leading-none">{percent.toFixed(0)}%</div>
+                                                                            <div className="text-[8px] text-zinc-400 font-bold uppercase tracking-tighter">Hoàn thành</div>
+                                                                        </div>
+                                                                        <div className="relative w-10 h-10">
+                                                                            <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                                                                                <path
+                                                                                    className="stroke-stone-100 dark:stroke-zinc-800 fill-none"
+                                                                                    strokeWidth="4"
+                                                                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                                                                />
+                                                                                <path
+                                                                                    className="stroke-blue-500 fill-none transition-all duration-1000"
+                                                                                    strokeWidth="4"
+                                                                                    strokeDasharray={`${percent}, 100`}
+                                                                                    strokeLinecap="round"
+                                                                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                                                                />
+                                                                            </svg>
+                                                                        </div>
                                                                     </div>
-                                                                    <div className="relative w-10 h-10">
-                                                                        <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
-                                                                            <path
-                                                                                className="stroke-stone-100 dark:stroke-zinc-800 fill-none"
-                                                                                strokeWidth="4"
-                                                                                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                                                            />
-                                                                            <path
-                                                                                className="stroke-blue-500 fill-none transition-all duration-1000"
-                                                                                strokeWidth="4"
-                                                                                strokeDasharray={`${percent}, 100`}
-                                                                                strokeLinecap="round"
-                                                                                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                                                            />
-                                                                        </svg>
-                                                                    </div>
+                                                                    {(lot.actual_quantity || 0) > (lot.inventory_quantity || 0) && (
+                                                                        <div className="px-2 py-1 bg-orange-100 dark:bg-orange-950/30 text-orange-600 dark:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-tighter animate-pulse">
+                                                                            Đang xuất hàng
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                              )
                                                         })()}
-                                                    </div>
-                                                    
-                                                    {/* Converted total for the card */}
-                                                    <div className="mt-1 text-[10px] font-bold text-stone-400 italic">
-                                                        Quy đổi tổng cộng: {(lot.actual_quantity || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} kg
                                                     </div>
                                                 </div>
                                             )
