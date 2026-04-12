@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Plus, Save, FileText, Calendar, Info, Activity, Factory, Package, Users, Weight, Hash, Trash2, Wand2, Search, Loader2, Warehouse, ChevronDown, CheckCircle2, X, Scale, Truck, TrendingUp, PieChart, ArrowRight, Leaf, RotateCw } from 'lucide-react'
+import { Plus, Save, FileText, Calendar, Info, Activity, Factory, Package, Users, Weight, Hash, Trash2, Wand2, Search, Loader2, Warehouse, ChevronDown, CheckCircle2, X, Scale, Truck, TrendingUp, PieChart, ArrowRight, Leaf, RotateCw, Lock } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
@@ -31,6 +31,7 @@ interface ProductionModalProps {
 }
 
 export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, readOnly = false }: ProductionModalProps) {
+    const isLocked = readOnly || editItem?.status === 'DONE';
     const { showToast, showConfirm } = useToast()
     const { profile } = useUser()
     const { systems, currentSystem } = useSystem()
@@ -170,7 +171,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     }, [lots, productionType, inputQuantity, inputProductName, productionInputs])
 
     const analysisSummary = useMemo(() => {
-        if (!readOnly || !editItem) return null;
+        if (!isLocked || !editItem) return null;
         
         // 1. Material aggregation (Production Loans)
         const materialStats: Record<string, { name: string, sku: string, total: number, unit: string }> = {};
@@ -234,7 +235,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
         const peakDay = dailyStats.length > 0 ? [...dailyStats].sort((a, b) => b.quantity - a.quantity)[0] : null;
 
         return { materials, timeProgress, actualTons, inputStats, dailyStats, totalDays, avgOutput, peakDay };
-    }, [readOnly, editItem, allocations, summary.actual, startDate, endDate, productionType, productionInputs, dailyStats])
+    }, [isLocked, editItem, allocations, summary.actual, startDate, endDate, productionType, productionInputs, dailyStats])
 
     const fetchCustomers = async () => {
         if (!profile?.company_id) return
@@ -546,8 +547,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             if (editItem.production_type === 'RE_SORT' || editItem.id) {
                 fetchProductionInputs(editItem.id)
             }
-            if (readOnly) {
+            if (isLocked) {
                 fetchAllocations(editItem.id)
+                showToast('Lệnh sản xuất đã hoàn thành, không thể chỉnh sửa.', 'warning')
             }
         } else {
             setCode('')
@@ -577,7 +579,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             setStatsStartDate('')
             setStatsEndDate('')
         }
-    }, [editItem, isOpen, readOnly])
+    }, [editItem, isOpen, isLocked])
 
     // Effect to refresh production lot statistics when date filters change
     useEffect(() => {
@@ -908,15 +910,15 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                 {/* Header */}
                 <div className="px-8 py-6 border-b border-stone-100 dark:border-zinc-800 flex items-center justify-between bg-white dark:bg-zinc-800/50 shadow-sm shrink-0">
                     <div className="flex items-center gap-4">
-                        <div className={`p-3 rounded-2xl ${readOnly ? 'bg-blue-100 dark:bg-blue-950/30' : 'bg-orange-100 dark:bg-orange-950/30'}`}>
-                            {readOnly ? <FileText className="text-blue-600" size={24} /> : <Factory className="text-orange-600" size={24} />}
+                        <div className={`p-3 rounded-2xl ${isLocked ? 'bg-blue-100 dark:bg-blue-950/30' : 'bg-orange-100 dark:bg-orange-950/30'}`}>
+                            {isLocked ? <FileText className="text-blue-600" size={24} /> : <Factory className="text-orange-600" size={24} />}
                         </div>
                         <div>
                             <h2 className="text-xl font-bold text-stone-900 dark:text-white">
-                                {readOnly ? 'Báo cáo chi tiết lệnh sản xuất' : editItem ? 'Chỉnh sửa lệnh sản xuất' : 'Tạo mới lệnh sản xuất'}
+                                {isLocked ? (editItem?.status === 'DONE' ? 'Chi tiết lệnh đã hoàn thành' : 'Báo cáo chi tiết lệnh') : editItem ? 'Chỉnh sửa lệnh sản xuất' : 'Tạo mới lệnh sản xuất'}
                             </h2>
                             <p className="text-xs text-stone-500 font-medium">
-                                {readOnly ? `Mã lệnh: ${code}` : 'LSX - Quy trình sản xuất đa mặt hàng'}
+                                {isLocked ? `Mã lệnh: ${code}` : 'LSX - Quy trình sản xuất đa mặt hàng'}
                             </p>
                         </div>
                     </div>
@@ -927,6 +929,12 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-stone-50/30 dark:bg-zinc-900">
+                    {isLocked && editItem?.status === 'DONE' && (
+                        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl flex items-center gap-3 text-blue-700 dark:text-blue-400">
+                            <Lock size={18} />
+                            <span className="text-sm font-bold">Lệnh sản xuất này đã hoàn thành và đang được khóa. Muốn chỉnh sửa vui lòng chuyển trạng thái về Đang sản xuất.</span>
+                        </div>
+                    )}
                     {/* Raw Material Info Summary Bar (If filled) */}
                     {(productionType === 'NEW' ? (inputProductId || inputQuantity > 0) : summary.totalInputWeight > 0) && (
                         <div className="flex items-center gap-6 p-6 bg-emerald-500/5 dark:bg-emerald-500/10 rounded-[28px] border border-emerald-200/50 dark:border-emerald-900/20 animate-in slide-in-from-top-4">
@@ -967,7 +975,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                         </div>
                     )}
                     <form id="prod-form" onSubmit={handleSubmit} className="space-y-8">
-                        {readOnly && (
+                        {isLocked && (
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm flex flex-col items-center justify-center gap-2">
                                     <span className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-400">Tổng kế hoạch</span>
@@ -1004,7 +1012,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                         <div className="flex items-center gap-2">
                                             <Info size={14} className="text-orange-500" /> Thông tin cơ bản
                                         </div>
-                                        {!readOnly && (
+                                        {!isLocked && (
                                             <div className="flex bg-stone-100 dark:bg-zinc-800 p-1 rounded-xl">
                                                 <button
                                                     type="button"
@@ -1025,7 +1033,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                     </div>
                                     
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        {!readOnly && (
+                                        {!isLocked && (
                                             <div className="space-y-2">
                                                 <label className="text-xs font-bold text-stone-500 flex items-center justify-between">
                                                     <span>Mã sản xuất</span>
@@ -1042,9 +1050,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                 />
                                             </div>
                                         )}
-                                        <div className={readOnly ? 'md:col-span-1 space-y-2' : 'space-y-2'}>
+                                        <div className={isLocked ? 'md:col-span-1 space-y-2' : 'space-y-2'}>
                                             <label className="text-xs font-bold text-stone-500">Đối tác / Khách hàng</label>
-                                            {readOnly ? (
+                                            {isLocked ? (
                                                 <div className="px-4 py-3 rounded-2xl bg-stone-50 dark:bg-zinc-800 font-bold text-sm text-stone-800 dark:text-white border border-stone-100 dark:border-zinc-700">
                                                     {customers.find(c => c.id === customerId)?.name || 'Chưa xác định'}
                                                 </div>
@@ -1063,7 +1071,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                         </div>
                                         <div className="md:col-span-2 space-y-2">
                                             <label className="text-xs font-bold text-stone-500">Nội dung sản xuất</label>
-                                            {readOnly ? (
+                                            {isLocked ? (
                                                 <div className="px-4 py-3 rounded-2xl bg-stone-50 dark:bg-zinc-800 font-black text-lg text-stone-900 dark:text-white border border-stone-100 dark:border-zinc-700">
                                                     {name}
                                                 </div>
@@ -1082,7 +1090,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                 </div>
 
                                 {/* Raw Material Selection - NEW SECTION */}
-                                {!readOnly && (
+                                {!isLocked && (
                                     <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm space-y-6">
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-2 text-stone-400 font-black text-[10px] uppercase tracking-widest">
@@ -1234,7 +1242,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                         <Activity size={14} className="text-orange-500" /> Trạng thái & Thời gian
                                     </div>
                                     <div className="space-y-4">
-                                        {readOnly ? (
+                                        {isLocked ? (
                                             <div className={`px-6 py-4 rounded-2xl font-black text-center uppercase tracking-widest text-sm border-2 ${status === 'DONE' ? 'bg-emerald-500/10 border-emerald-500 text-emerald-600' : 'bg-orange-500/10 border-orange-500 text-orange-600'}`}>
                                                 {status === 'DONE' ? 'Đã hoàn thành' : 'Đang triển khai'}
                                             </div>
@@ -1259,7 +1267,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-bold text-stone-400 uppercase">Bắt đầu</label>
-                                                {readOnly ? (
+                                                {isLocked ? (
                                                     <div className="text-xs font-black text-stone-800 dark:text-white px-1">
                                                         {startDate ? new Date(startDate).toLocaleDateString('vi-VN') : '---'}
                                                     </div>
@@ -1269,7 +1277,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                             </div>
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-bold text-stone-400 uppercase">Kết thúc</label>
-                                                {readOnly ? (
+                                                {isLocked ? (
                                                     <div className="text-xs font-black text-stone-800 dark:text-white px-1">
                                                         {endDate ? new Date(endDate).toLocaleDateString('vi-VN') : '---'}
                                                     </div>
@@ -1284,7 +1292,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                         </div>
 
                         {/* Section 2: Warehouse Filter (Global for items) */}
-                        {!readOnly && (
+                        {!isLocked && (
                             <div className="flex items-center gap-6 p-6 bg-orange-500/5 dark:bg-orange-500/5 rounded-[28px] border border-orange-200/50 dark:border-orange-900/20">
                                 <div className="p-3 bg-orange-600 text-white rounded-2xl shadow-lg shadow-orange-600/20">
                                     <Warehouse size={20} />
@@ -1309,7 +1317,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
 
                         {/* Section 3: Product & Lot List (DYNAMIC) */}
                         <div className="space-y-4">
-                            {!readOnly && (
+                            {!isLocked && (
                                 <div className="flex items-center justify-between px-2">
                                     <div className="flex items-center gap-2 text-stone-400 font-black text-[10px] uppercase tracking-widest">
                                         <Package size={14} className="text-orange-500" /> Danh sách sản phẩm & Lot
@@ -1326,14 +1334,14 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                             )}
 
                             {/* Section Header for ReadOnly Mode */}
-                            {readOnly && (
+                            {isLocked && (
                                 <div className="flex items-center gap-2 px-2 text-stone-400 font-black text-[10px] uppercase tracking-widest mb-2">
                                     <Package size={14} className="text-orange-500" /> Chi tiết Lệnh sản xuất {activeTab === 'allocations' && '& Cấp phát'}
                                 </div>
                             )}
                             
                             {/* Tabs for View Mode */}
-                            {readOnly && (
+                            {isLocked && (
                                 <div className="flex p-1 bg-stone-100 dark:bg-zinc-800 rounded-2xl w-fit mb-6">
                                     <button
                                         type="button"
@@ -1367,7 +1375,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                 </div>
                             )}
 
-                            {readOnly && activeTab === 'analysis' && analysisSummary ? (
+                            {isLocked && activeTab === 'analysis' && analysisSummary ? (
                                 <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
                                     {/* Progress Grid */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1611,7 +1619,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                         </div>
                                     )}
                                 </div>
-                            ) : readOnly && activeTab === 'allocations' ? (
+                            ) : isLocked && activeTab === 'allocations' ? (
                                 <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
                                     {loadingAllocations ? (
                                         <div className="p-12 text-center bg-white dark:bg-zinc-800/40 rounded-[32px] border border-stone-200 dark:border-zinc-800 border-dashed">
@@ -1680,7 +1688,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                 </div>
                             ) : (
                                 <div className="space-y-4">
-                                    {readOnly && (
+                                    {isLocked && (
                                         <div className="flex flex-wrap items-center justify-between gap-4 bg-blue-50/50 dark:bg-blue-500/5 p-4 rounded-[28px] border border-blue-100/50 dark:border-blue-900/20">
                                             <div className="flex items-center gap-3">
                                                 <div className="p-2.5 bg-blue-500/10 rounded-xl">
@@ -1725,7 +1733,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                         </div>
                                     )}
 
-                                    <div className={readOnly ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-3'}>
+                                    <div className={isLocked ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-3'}>
                                     {lots.map((lot, idx) => {
                                         const product = products.find(p => p.id === lot.product_id);
                                         // Placeholder for convertUnit, assuming it would be provided by a context or hook
@@ -1734,7 +1742,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                         // Example usage if `selectedProduct` was defined:
                                         // (qty, from, to) => convertUnit(selectedProduct.id, from, to, qty, selectedProduct.unit, unitNameMap, conversionMap);
                                         
-                                        if (readOnly) {
+                                        if (isLocked) {
                                             return (
                                                 <div key={idx} className="bg-white dark:bg-zinc-800/60 p-6 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm flex flex-col gap-4 relative overflow-hidden group hover:border-blue-400 transition-all duration-300">
                                                     <div className="flex items-start justify-between">
@@ -2124,7 +2132,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                         {/* Description */}
                         <div className="space-y-2 px-2">
                              <label className="text-[10px] font-black uppercase tracking-widest text-stone-400">Ghi chú lệnh sản xuất</label>
-                             {readOnly ? (
+                             {isLocked ? (
                                 <div className="p-6 rounded-[24px] bg-white dark:bg-zinc-800/40 border border-stone-100 dark:border-zinc-800 text-stone-600 dark:text-gray-400 text-sm italic">
                                     {description || 'Không có ghi chú.'}
                                 </div>
@@ -2147,9 +2155,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                         onClick={onClose}
                         className="px-6 py-3 rounded-2xl border border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-gray-300 font-bold hover:bg-stone-50 dark:hover:bg-zinc-800 transition-colors"
                     >
-                        {readOnly ? 'Đóng lại' : 'Hủy bỏ'}
+                        {isLocked ? 'Đóng lại' : 'Hủy bỏ'}
                     </button>
-                    {!readOnly && (
+                    {!isLocked && (
                         <button
                             form="prod-form"
                             type="submit"

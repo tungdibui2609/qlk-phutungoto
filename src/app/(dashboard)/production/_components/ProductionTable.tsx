@@ -1,6 +1,6 @@
 'use client'
 
-import { Hash, Trash2, Edit3, Eye, Tag, Users, Calendar, Target, CheckCircle2, Scale, TrendingUp, Printer, FileText, QrCode } from 'lucide-react'
+import { Hash, Trash2, Edit3, Eye, Tag, Users, Calendar, Target, CheckCircle2, Scale, TrendingUp, Printer, FileText, QrCode, Lock } from 'lucide-react'
 import Protected from '@/components/auth/Protected'
 
 interface Production {
@@ -40,11 +40,11 @@ interface ProductionTableProps {
 
 const getStatusConfig = (status: string) => {
     switch (status) {
-        case 'DRAFT': return { label: 'Bản nháp', color: 'bg-zinc-100/80 text-zinc-500 border-zinc-200/50' }
-        case 'IN_PROGRESS': return { label: 'Đang chạy', color: 'bg-blue-50/80 text-blue-600 border-blue-200/50' }
-        case 'DONE': return { label: 'Hoàn thành', color: 'bg-emerald-50/80 text-emerald-600 border-emerald-200/50' }
-        case 'CANCELED': return { label: 'Đã hủy', color: 'bg-rose-50/80 text-rose-600 border-rose-200/50' }
-        default: return { label: status, color: 'bg-zinc-100 text-zinc-600' }
+        case 'DRAFT': return { label: 'Bản nháp', color: 'bg-zinc-100/80 text-zinc-500 border-zinc-200/50', icon: null }
+        case 'IN_PROGRESS': return { label: 'Đang chạy', color: 'bg-blue-50/80 text-blue-600 border-blue-200/50', icon: null }
+        case 'DONE': return { label: 'Hoàn thành', color: 'bg-emerald-50/80 text-emerald-600 border-emerald-200/50', icon: <Lock size={12} className="mr-1.5" /> }
+        case 'CANCELED': return { label: 'Đã hủy', color: 'bg-rose-50/80 text-rose-600 border-rose-200/50', icon: null }
+        default: return { label: status, color: 'bg-zinc-100 text-zinc-600', icon: null }
     }
 }
 
@@ -200,8 +200,9 @@ export default function ProductionTable({ data, onEdit, onDelete, onStatusToggle
                                 <td className="px-8 py-7 text-center">
                                     <button
                                         onClick={() => onStatusToggle?.(item.id, item.status)}
-                                        className={`px-5 py-2.5 rounded-[1.25rem] text-[10px] font-black uppercase tracking-widest border transition-all active:scale-95 shadow-[0_2px_10px_rgb(0,0,0,0.02)] group-hover:shadow-[0_4px_15px_rgb(0,0,0,0.06)] ${statusConfig.color}`}
+                                        className={`px-5 py-2.5 rounded-[1.25rem] text-[10px] font-black uppercase tracking-widest border transition-all active:scale-95 shadow-[0_2px_10px_rgb(0,0,0,0.02)] group-hover:shadow-[0_4px_15px_rgb(0,0,0,0.06)] flex items-center justify-center ${statusConfig.color}`}
                                     >
+                                        {statusConfig.icon}
                                         {statusConfig.label}
                                     </button>
                                 </td>

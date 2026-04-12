@@ -958,9 +958,11 @@ export function LotForm({
                                     className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-900 border border-orange-200 dark:border-orange-800 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all font-bold text-sm"
                                 >
                                     <option value="">-- Chọn lệnh SX --</option>
-                                    {(productions as any[]).map(p => (
-                                        <option key={p.id} value={p.id}>{p.name} - {p.code}</option>
-                                    ))}
+                                    {(productions as any[])
+                                        .filter(p => (p.status !== 'DONE' && p.status !== 'CANCELED') || p.id === selectedProductionId)
+                                        .map(p => (
+                                            <option key={p.id} value={p.id}>{p.name} - {p.code}</option>
+                                        ))}
                                 </select>
                                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-orange-400 pointer-events-none" size={16} />
                             </div>
