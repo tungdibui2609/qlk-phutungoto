@@ -140,6 +140,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const [rowSearchTerms, setRowSearchTerms] = useState<Record<number, string>>({})
     const [activeRowIdx, setActiveRowIdx] = useState<number | null>(null)
     const [isRefreshingFm, setIsRefreshingFm] = useState(false)
+    const [isFetchingLots, setIsFetchingLots] = useState(false)
     
     // Stats Date Filters
     const [statsStartDate, setStatsStartDate] = useState<string>('')
@@ -271,6 +272,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
 
     const fetchProductionLots = async (prodId: string, startDate?: string, endDate?: string) => {
         if (!prodId) return
+        setIsFetchingLots(true)
         setIsRefreshingStats(true)
         try {
             // 1. Get basic lot info
@@ -479,6 +481,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             showToast('Lỗi tải dữ liệu: ' + err.message, 'error')
         } finally {
             setIsRefreshingStats(false)
+            setIsFetchingLots(false)
         }
     }
 
@@ -519,7 +522,15 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     }
 
     useEffect(() => {
-        if (editItem) {
+        if (isOpen && editItem) {
+            // Immediate reset to prevent data mixing between different production orders
+            setLots([])
+            setAllocations([])
+            setProductionInputs([])
+            setDailyStats([])
+            setRowSearchTerms({})
+            setIsFetchingLots(true)
+
             setCode(editItem.code)
             setName(editItem.name)
             setDescription(editItem.description || '')
@@ -542,16 +553,19 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             setInputProductName(editItem.input_products?.name || '')
             setInputSearchTerm(editItem.input_products?.name || '')
             
-            // Fetch production lots if editing (now includes product details)
-            // fetchProductionLots is now handled by a separate useEffect for date filtering
             if (editItem.production_type === 'RE_SORT' || editItem.id) {
                 fetchProductionInputs(editItem.id)
             }
             if (isLocked) {
                 fetchAllocations(editItem.id)
-                showToast('Lệnh sản xuất đã hoàn thành, không thể chỉnh sửa.', 'warning')
+                // Only show "Already Done" message if the status is actually DONE
+                // If it's just readOnly (User clicked 'View'), don't show the confusing message
+                if (editItem.status === 'DONE') {
+                    showToast('Lệnh sản xuất đã hoàn thành, không thể chỉnh sửa.', 'warning')
+                }
             }
-        } else {
+        } else if (isOpen) {
+            // Creating NEW
             setCode('')
             setName('')
             setDescription('')
@@ -564,8 +578,10 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             setLots([])
             setAllocations([])
             setProductionInputs([])
+            setDailyStats([])
             setActiveTab('products')
             setRowSearchTerms({})
+            setIsFetchingLots(false)
             
             setInputSource('MANUAL')
             setFmBatchId(null)
@@ -790,6 +806,13 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!profile?.company_id) return
+        
+        // CRITICAL: Block saving if data is still being fetched from the database
+        // This prevents accidental data loss/overwriting due to incomplete state
+        if (isFetchingLots) {
+            showToast('Đang tải dữ liệu lô sản xuất, vui lòng đợi trong giây lát...', 'warning')
+            return
+        }
 
         // Check if any product is selected but LOT code is missing
         const incompleteLots = lots.filter(l => l.product_id && !l.lot_code.trim())
@@ -837,6 +860,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
 
             // 1. Save Production Info
             if (productionId) {
+                // Update production: last_sheet_index is NOT in the payload, so it's preserved
                 const { error: err } = await (supabase as any)
                     .from('productions')
                     .update(productionPayload)
@@ -855,7 +879,8 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
 
             // 2. Save Lots (Multi-product per lot) - Surgical update to preserve statistics
             if (productionId) {
-                // Get existing lot IDs to identify which ones were removed from the UI
+                // Only identify and delete removed lots if we successfully fetched existing ones
+                // This is a safety measure to prevent "delete-all" if state was somehow corrupted
                 const { data: existingLotsFromDB } = await (supabase as any)
                     .from('production_lots')
                     .select('id')
@@ -875,6 +900,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                 }
                 
                 // Prepare lots for UPSERT (Update existing, Insert new)
+                // IMPORTANT: We ONLY include business fields. 
+                // Printing counters (total_printed_labels, last_printed_index, etc.) 
+                // are NOT in this payload, ensuring they are PRESERVED in the database.
                 const lotsToUpsert = lots
                     .filter(l => l.lot_code.trim() !== '' && l.product_id)
                     .map(l => ({
@@ -915,7 +943,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                         </div>
                         <div>
                             <h2 className="text-xl font-bold text-stone-900 dark:text-white">
-                                {isLocked ? (editItem?.status === 'DONE' ? 'Chi tiết lệnh đã hoàn thành' : 'Báo cáo chi tiết lệnh') : editItem ? 'Chỉnh sửa lệnh sản xuất' : 'Tạo mới lệnh sản xuất'}
+                                {isLocked 
+                                    ? (editItem?.status === 'DONE' ? 'Chi tiết lệnh đã hoàn thành' : 'Xem chi tiết lệnh đang chạy') 
+                                    : (editItem ? 'Chỉnh sửa lệnh sản xuất' : 'Tạo mới lệnh sản xuất')}
                             </h2>
                             <p className="text-xs text-stone-500 font-medium">
                                 {isLocked ? `Mã lệnh: ${code}` : 'LSX - Quy trình sản xuất đa mặt hàng'}
@@ -2161,11 +2191,11 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                         <button
                             form="prod-form"
                             type="submit"
-                            disabled={isSaving}
+                            disabled={isSaving || isFetchingLots}
                             className="px-10 py-3 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-black uppercase tracking-widest shadow-xl shadow-orange-600/30 flex items-center gap-2 transition-all transform active:scale-95 disabled:opacity-70"
                         >
-                            {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
-                            {editItem ? 'LƯU THAY ĐỔI' : 'TẠO LỆNH SẢN XUẤT'}
+                            {(isSaving || isFetchingLots) ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
+                            {isFetchingLots ? 'ĐANG TẢI DỮ LIỆU...' : (editItem ? 'LƯU THAY ĐỔI' : 'TẠO LỆNH SẢN XUẤT')}
                         </button>
                     )}
                 </div>
