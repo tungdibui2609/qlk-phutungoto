@@ -851,13 +851,32 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
 
             if (error) throw error
 
-            // 2. Save Lots (Multi-product per lot)
+            // 2. Save Lots (Multi-product per lot) - Surgical update to preserve statistics
             if (productionId) {
-                await (supabase as any).from('production_lots').delete().eq('production_id', productionId)
+                // Get existing lot IDs to identify which ones were removed from the UI
+                const { data: existingLotsFromDB } = await (supabase as any)
+                    .from('production_lots')
+                    .select('id')
+                    .eq('production_id', productionId)
                 
-                const validLots = lots
+                const existingIDs: string[] = (existingLotsFromDB || []).map((l: any) => l.id)
+                const currentIDs = lots.map(l => l.id).filter(Boolean) as string[]
+                const idsToDelete = existingIDs.filter((id: string) => !currentIDs.includes(id))
+
+                // Delete removed lots
+                if (idsToDelete.length > 0) {
+                    const { error: delError } = await (supabase as any)
+                        .from('production_lots')
+                        .delete()
+                        .in('id', idsToDelete)
+                    if (delError) throw delError
+                }
+                
+                // Prepare lots for UPSERT (Update existing, Insert new)
+                const lotsToUpsert = lots
                     .filter(l => l.lot_code.trim() !== '' && l.product_id)
                     .map(l => ({
+                        ...(l.id ? { id: l.id } : {}), // Include ID for update behavior
                         production_id: productionId,
                         lot_code: l.lot_code,
                         product_id: l.product_id,
@@ -867,8 +886,8 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                         company_id: profile.company_id
                     }))
 
-                if (validLots.length > 0) {
-                    const { error: lotErr } = await (supabase as any).from('production_lots').insert(validLots)
+                if (lotsToUpsert.length > 0) {
+                    const { error: lotErr } = await (supabase as any).from('production_lots').upsert(lotsToUpsert)
                     if (lotErr) throw lotErr
                 }
             }
