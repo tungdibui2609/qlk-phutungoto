@@ -288,7 +288,16 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
                                                                                         return (
                                                                                             <div 
                                                                                                 key={item.id}
-                                                                                                onClick={() => !readOnly && onPositionSelect?.(item.id!)}
+onClick={() => !readOnly && onPositionSelect?.(item.id!)}
+    onContextMenu={(e) => {
+        e.preventDefault()
+        if (readOnly) return
+        const lotIds = posItems.map(i => i.lot_id || '').filter(Boolean)
+        if (lotIds.length === 0) return
+        // Call parent context handler if provided (will add prop later)
+        console.log('Context menu on position', posName, 'lotIds:', lotIds)
+        // TODO: Open context menu here
+    }}
                                                                                                 className={`flex flex-col gap-1 p-2 rounded-lg border transition-all cursor-pointer ${
                                                                                                     isItemSelected 
                                                                                                     ? 'bg-blue-600/5 border-blue-200' 

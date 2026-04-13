@@ -917,7 +917,9 @@ function ExportOrderPrintContent() {
                             <th className="border border-black p-2 text-center">Sản phẩm</th>
                             <th className="border border-black p-2 w-16 text-center">Số lượng</th>
                             <th className="border border-black p-2 w-16 text-center">ĐVT</th>
-                            <th className="border border-black p-2 w-24 text-center">Ngày SX</th>
+                            {(allowEditDates && !isSnapshotMode) && (
+                                <th className="border border-black p-2 w-24 text-center print:hidden">Ngày SX</th>
+                            )}
                             <th className="border border-black p-2 w-24 text-center">Ngày nhập kho</th>
                             <th className="border border-black p-2 w-24 text-center">Ghi chú</th>
                         </tr>
@@ -960,8 +962,8 @@ function ExportOrderPrintContent() {
                                         {formatQuantityFull(item.quantity)}
                                     </td>
                                     <td className="border border-black p-2 text-center">{item.unit}</td>
-                                    <td className="border border-black p-2 text-center">
-                                        {allowEditDates ? (
+                                    {(allowEditDates && !isSnapshotMode) && (
+                                        <td className="border border-black p-2 text-center print:hidden">
                                             <input
                                                 type="date"
                                                 value={d.productionDate?.split('T')[0] || ''}
@@ -971,10 +973,8 @@ function ExportOrderPrintContent() {
                                                 }))}
                                                 className="w-full text-center bg-transparent border-none p-0 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded"
                                             />
-                                        ) : (
-                                            d.productionDate ? format(new Date(d.productionDate), 'dd/MM/yyyy') : '-'
-                                        )}
-                                    </td>
+                                        </td>
+                                    )}
                                     <td className="border border-black p-2 text-center">
                                         {allowEditDates ? (
                                             <input
@@ -1003,7 +1003,7 @@ function ExportOrderPrintContent() {
                         })}
                         {items.length === 0 && (
                             <tr>
-                                <td className="border border-black p-4 text-center" colSpan={allowEditDates ? 10 : 9}>Không có dữ liệu</td>
+                                <td className="border border-black p-4 text-center" colSpan={allowEditDates ? (allowEditDates && !isSnapshotMode ? 10 : 9) : 8}>Không có dữ liệu</td>
                             </tr>
                         )}
                     </tbody>

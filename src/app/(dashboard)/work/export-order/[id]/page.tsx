@@ -815,6 +815,22 @@ function ExportOrderDetailContent() {
                                         <Calendar size={16} className="group-hover:scale-110 transition-transform" />
                                         <span>Sửa ngày LOT</span>
                                     </button>
+                                    <button
+                                        onClick={() => {
+                                            const selectedItems = task?.items?.filter(item => selectedPositionIds.has(item.id || '')) || []
+                                            if (selectedItems.length > 0) {
+                                                const itemIds = selectedItems.map(item => item.id).join(',')
+                                                window.open(`/print/export-lot?export_order_id=${taskId}&item_ids=${itemIds}`, '_blank')
+                                            } else {
+                                                showToast('Chọn ít nhất 1 vị trí có LOT để in tem', 'warning')
+                                            }
+                                        }}
+                                        className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-lg transition-all active:scale-95 group whitespace-nowrap"
+                                        title="In tem xuất kho (lot đầu tiên)"
+                                    >
+                                        <Printer size={16} className="group-hover:scale-110 transition-transform" />
+                                        <span>In tem</span>
+                                    </button>
                                 </div>
 
                                 {/* Close button */}

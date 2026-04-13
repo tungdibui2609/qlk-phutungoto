@@ -1,44 +1,55 @@
-# Warehouse Lots Search Fix - TODO
+# TODO: Thêm menu "In tem" cho Export Order
 
-Context:
-- Issue: On /warehouses/lots, searching does not return some products that exist in the product catalog. Root causes identified:
-  - Supabase 1000-row limit causing incomplete matching datasets when searching via related tables.
-  - Accent-sensitive search with ilike means typing without Vietnamese diacritics (e.g., "xoai") fails to match "Xoài".
-  - Minor bugs in bulk-search functions using an extra space in the search pattern.
+## ✅ Completed (0/8)
 
-Plan (Approved):
-1) Update fetch logic in src/app/(dashboard)/warehouses/lots/_hooks/useLotManagement.ts:
-   - Use local (accent-insensitive) filtering against preloaded products/suppliers/qc lists from fetchCommonData for search.
-   - Use fetchAllPaginated for lot_tags search to avoid 1000-row limit when collecting lot_ids matched by tags.
-   - Chunk queries to lot_items when mapping product_ids → lot_ids to avoid URL length/parameter-size issues.
-   - Keep final top-level lots filtering server-side with safe OR conditions and pagination.
-2) Update bulk functions to fix search:
-   - fetchUnassignedLotsForBulkAssign: replace buggy " % searchTerm% " with "%searchTerm%" and use local accent-insensitive filtering and paginated tag fetch.
-   - fetchUntaggedLotsForBulkAssign: same fixes and keep the existing all-lots pagination pass for untagged detection.
-3) No UI changes.
+## ⏳ In Progress (0/8)
 
-Status:
-- [x] Implemented useLotManagement.ts search improvements (accent-insensitive local matching, paginated lot_tags, chunked lot_items).
-- [x] Fixed search logic in fetchUnassignedLotsForBulkAssign (pattern cleanup + local matching + paginated tags).
-- [x] Fixed search logic in fetchUntaggedLotsForBulkAssign (pattern cleanup + local matching).
-- [ ] Manual test on http://localhost:3000/warehouses/lots (or active dev port) to confirm:
-  - [ ] Searching by product name with diacritics finds results (e.g., "Xoài").
-  - [ ] Searching by product name without diacritics finds results (e.g., "xoai").
-  - [ ] Searching by SKU/internal_code/internal_name works.
-  - [ ] Searching by supplier name works.
-  - [ ] Searching by QC name works.
-  - [ ] Searching by tag works (with and without accents).
-  - [ ] Products beyond 1000th row are discoverable via search.
-  - [ ] Unassigned bulk and Untagged bulk modals return expected results with the same search behavior.
-- [ ] Validate pagination (next/prev) with search active.
-- [ ] Quick regression: FIFO toggle order, date range filtering, and zone filtering remain functional.
+## 📋 Pending Steps (8/8)
 
-Notes:
-- A Next dev server instance appears to be already running and holding the .next/dev/lock. If you want to run a new one, terminate the other dev process or delete the lock after closing the process.
-- If your main instance is already serving at http://localhost:3000, simply reload the page and re-test search behaviors.
+### 1. ✅ Tạo print page mới `src/app/print/export-lot/page.tsx`
+   - **Hoàn thành**: File created với full config form, 90x60mm template, data từ lots + lot_items + export_tasks
+   - Test: `http://localhost:3000/print/export-lot?id={lotId}&export_order_id={taskId}`
 
-How to test quickly:
-1. Open the Lots page: http://localhost:3000/warehouses/lots (or your active port if different).
-2. Try search terms with/without diacritics for known-catalog products, SKUs, supplier names, QC names, and tags.
-3. Confirm results appear even for items that were previously missing due to 1000-row limits.
-4. Open the Unassigned and Untagged bulk modals and search similarly.
+   - Copy structure từ `src/app/print/production-lot/page.tsx`
+   - Thay đổi data source: `lots` + `lot_items` + `export_tasks` (join via lot_id)
+   - Template: LSX → Export Order Code, thêm customer_name
+   - Size: 90x60mm label, config tương tự (start_index, label_count)
+
+### 2. ✅ Thêm Context Menu vào `ExportMapList.tsx`
+   - **Hoàn thành**: Added `onContextMenu` to item divs, logs lotIds on right-click
+   - Next: Connect to full menu component in step 3
+   - Position div: `onContextMenu={(e) => handleContextMenu(e, posItems.map(i=>i.lot_id))}`
+   - Menu state: `[contextMenu, setContextMenu] = useState({visible: false, x, y, lotIds})`
+   - Menu items: Hạ sảnh, Xuất kho, Sửa ngày, **In tem** (new)
+
+### 3. ✅ Update `work/export-order/[id]/page.tsx`
+   - **Hoàn thành**: Added emerald "In tem" button in floating bar
+   - Logic: Prints first selected lot_id, passes export_order_id
+   - Ready to test!
+   - Floating bar: Thêm button "In tem" gọi `window.open(/print/export-lot?id=${firstLotId}&type=label)`
+   - Pass export_order_code qua query params
+
+### 4. [ ] Tạo `LotLabelExport.tsx` component (optional)
+   - Shared label template giữa production/export
+   - Props: lotData, printConfig, type='export'
+
+### 5. [ ] DB Migration (if needed)
+   ```sql
+   ALTER TABLE lots ADD COLUMN IF NOT EXISTS total_printed_labels INTEGER DEFAULT 0;
+   ALTER TABLE lots ADD COLUMN IF NOT EXISTS damaged_printed_labels INTEGER DEFAULT 0;
+   ```
+
+### 6. [ ] Test single lot print
+   - Chọn 1 position → Right-click → In tem
+   - Verify tem prints đúng size, data
+
+### 7. [ ] Test với selection multiple
+   - Print first lot_id, console.log others for batch
+
+### 8. [ ] Polish & Completion
+   - Update TODO.md ✅ all
+   - Test full flow localhost:3000/work/export-order/{id}
+   - `attempt_completion`
+
+**Current step: 1/8 - Tạo export-lot print page**
+
