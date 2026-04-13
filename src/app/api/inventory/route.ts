@@ -49,101 +49,102 @@ export async function GET(request: Request) {
         if (systemType === 'FROZEN') normalizedSystemType = 'KHO_DONG_LANH';
         else if (systemType === 'DRY') normalizedSystemType = 'KHO_VAT_TU_BAO_BI';
 
-        // 1. Fetch ALL Inbound items (Status = 'Completed') using pagination
-        let inboundItems: any[] = [];
-        let inboundFrom = 0;
         const PAGE_SIZE = 1000;
-        let inboundHasMore = true;
 
-        while (inboundHasMore) {
-            let inboundQuery = supabase
-                .from('inbound_order_items')
-                .select(`
-                    product_id,
-                    product_name,
-                    unit,
-                    quantity,
-                    order:inbound_orders!inner (
-                        status,
-                        warehouse_name,
-                        created_at,
-                        system_code
-                    )
-                `)
-                .eq('order.status', 'Completed')
-                .eq('order.system_code', normalizedSystemType)
-                .order('id', { ascending: true })
-                .range(inboundFrom, inboundFrom + PAGE_SIZE - 1);
+        // Helper to fetch order items with pagination
+        const fetchOrderItems = async (tableName: 'inbound_order_items' | 'outbound_order_items') => {
+            let allItems: any[] = [];
+            let currentFrom = 0;
+            let hasMore = true;
+            const orderRelation = tableName === 'inbound_order_items' ? 'inbound_orders' : 'outbound_orders';
 
-            if (warehouse && warehouse !== 'Tất cả') {
-                inboundQuery = inboundQuery.eq('order.warehouse_name', warehouse)
-            }
+            while (hasMore) {
+                let query = supabase
+                    .from(tableName as any)
+                    .select(`
+                        product_id,
+                        unit,
+                        quantity,
+                        order:${orderRelation}!inner (
+                            warehouse_name,
+                            created_at
+                        )
+                    `)
+                    .eq('order.status', 'Completed')
+                    .eq('order.system_code', normalizedSystemType)
+                    .order('id', { ascending: true })
+                    .range(currentFrom, currentFrom + PAGE_SIZE - 1);
 
-            if (to) {
-                inboundQuery = inboundQuery.lte('order.created_at', `${to} 23:59:59`)
-            }
+                if (warehouse && warehouse !== 'Tất cả') {
+                    query = query.eq('order.warehouse_name', warehouse)
+                }
 
-            const { data, error } = await inboundQuery;
-            if (error) throw error;
+                if (to) {
+                    query = query.lte('order.created_at', `${to} 23:59:59`)
+                }
 
-            if (!data || data.length === 0) {
-                inboundHasMore = false;
-            } else {
-                inboundItems = [...inboundItems, ...data];
-                if (data.length < PAGE_SIZE) {
-                    inboundHasMore = false;
+                const { data, error } = await query;
+                if (error) throw error;
+
+                if (!data || data.length === 0) {
+                    hasMore = false;
                 } else {
-                    inboundFrom += PAGE_SIZE;
+                    allItems = [...allItems, ...data];
+                    if (data.length < PAGE_SIZE) hasMore = false;
+                    else currentFrom += PAGE_SIZE;
                 }
             }
-        }
+            return allItems;
+        };
 
-        // 2. Fetch ALL Outbound items (Status = 'Completed') using pagination
-        let outboundItems: any[] = [];
-        let outboundFrom = 0;
-        let outboundHasMore = true;
-
-        while (outboundHasMore) {
-            let outboundQuery = supabase
-                .from('outbound_order_items')
-                .select(`
-                    product_id,
-                    product_name,
-                    unit,
-                    quantity,
-                    order:outbound_orders!inner (
-                        status,
-                        warehouse_name,
-                        created_at,
-                        system_code
-                    )
-                `)
-                .eq('order.status', 'Completed')
-                .eq('order.system_code', normalizedSystemType)
-                .order('id', { ascending: true })
-                .range(outboundFrom, outboundFrom + PAGE_SIZE - 1);
-
-            if (warehouse && warehouse !== 'Tất cả') {
-                outboundQuery = outboundQuery.eq('order.warehouse_name', warehouse)
+        // Helper for support data
+        const fetchAllWithPagination = async (tableName: string, select = '*') => {
+            let allResults: any[] = [];
+            let currentFrom = 0;
+            const LIMIT = 1000;
+            while (true) {
+                const { data, error } = await supabase
+                    .from(tableName as any)
+                    .select(select)
+                    .order('id' as any, { ascending: true })
+                    .range(currentFrom, currentFrom + LIMIT - 1);
+                if (error) throw error;
+                if (!data || data.length === 0) break;
+                allResults = [...allResults, ...data];
+                if (data.length < LIMIT) break;
+                currentFrom += LIMIT;
             }
+            return allResults;
+        };
 
-            if (to) {
-                outboundQuery = outboundQuery.lte('order.created_at', `${to} 23:59:59`)
-            }
+        // 1 & 2. Fetch Order Items and Support Data parallelly
+        const [
+            inboundItems,
+            outboundItems,
+            productsData,
+            unitsData,
+            prodUnitsData,
+            categoriesData
+        ] = await Promise.all([
+            fetchOrderItems('inbound_order_items'),
+            fetchOrderItems('outbound_order_items'),
+            fetchAllWithPagination('products'),
+            fetchAllWithPagination('units'),
+            fetchAllWithPagination('product_units'),
+            fetchAllWithPagination('categories')
+        ]);
 
-            const { data, error } = await outboundQuery;
-            if (error) throw error;
+        // 3. Conditional fetch for search-related data
+        let lotsData: any[] = [];
+        let positionsData: any[] = [];
+        let lotTagsData: any[] = [];
 
-            if (!data || data.length === 0) {
-                outboundHasMore = false;
-            } else {
-                outboundItems = [...outboundItems, ...data];
-                if (data.length < PAGE_SIZE) {
-                    outboundHasMore = false;
-                } else {
-                    outboundFrom += PAGE_SIZE;
-                }
-            }
+        if (q) {
+            [lotsData, positionsData, lotTagsData] = await Promise.all([
+                fetchAllWithPagination('lots', 'id, product_id, warehouse_name, code'),
+                fetchAllWithPagination('positions', 'id, lot_id, code'),
+                fetchAllWithPagination('lot_tags', 'id, lot_id, tag')
+            ]);
         }
 
         // 3. Aggregate Data
@@ -165,34 +166,6 @@ export async function GET(request: Request) {
             isUnconvertible?: boolean
         }
 
-        // Fetch support data with pagination to bypass 1000 limit
-        const fetchAllWithPagination = async (tableName: string) => {
-            let allResults: any[] = [];
-            let currentFrom = 0;
-            const LIMIT = 1000;
-            while (true) {
-                const { data, error } = await supabase
-                    .from(tableName as any)
-                    .select('*')
-                    .order('id', { ascending: true })
-                    .range(currentFrom, currentFrom + LIMIT - 1);
-                if (error) throw error;
-                if (!data || data.length === 0) break;
-                allResults = [...allResults, ...data];
-                if (data.length < LIMIT) break;
-                currentFrom += LIMIT;
-            }
-            return allResults;
-        };
-
-        const productsData = await fetchAllWithPagination('products');
-        const unitsData = await fetchAllWithPagination('units');
-        const prodUnitsData = await fetchAllWithPagination('product_units');
-        const categoriesData = await fetchAllWithPagination('categories');
-        const lotsData = await fetchAllWithPagination('lots');
-        const positionsData = await fetchAllWithPagination('positions');
-        const lotTagsData = await fetchAllWithPagination('lot_tags');
-
         // Maps for O(1) Access
         const productMap = new Map<string, any>()
         ; (productsData as any[])?.forEach(p => productMap.set(p.id, p))
@@ -212,9 +185,6 @@ export async function GET(request: Request) {
                 lotToTags.get(t.lot_id)!.push(t.tag)
             }
         })
-
-        const lotMap = new Map<string, any>()
-        ; (lotsData as any[])?.forEach(l => lotMap.set(l.id, l))
 
         const categoryMap = new Map<string, string>() // ID -> Name
         ; (categoriesData as any[])?.forEach(c => categoryMap.set(c.id, c.name))
@@ -340,10 +310,7 @@ export async function GET(request: Request) {
 
             if (isBeforePeriod) {
                 if (type === 'in') entry.opening += quantity
-                else entry.opening -= quantity // Outbound reduces opening balance? No.
-                // Logic check: Opening Balance = Sum(In before) - Sum(Out before)
-                // If this item is IN before period: Opening increases.
-                // If this item is OUT before period: Opening decreases.
+                else entry.opening -= quantity
             } else {
                 if (type === 'in') entry.qtyIn += quantity
                 else entry.qtyOut += quantity
@@ -430,4 +397,3 @@ export async function GET(request: Request) {
         )
     }
 }
-

@@ -98,14 +98,17 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
             if (order.metadata) {
                 const meta = order.metadata as any
                 setSealNumber(meta.sealNumber || '')
-                setTargetUnit(meta.targetUnit || '')
-                if (order.created_at) setCreatedAt(order.created_at)
+                setVehicleNumber(meta.vehicleNumber || '')
+                setDriverName(meta.driverName || '')
+                setContainerNumber(meta.containerNumber || '')
+                if (meta.targetUnit) setTargetUnit(meta.targetUnit)
             }
+            if (order.created_at) setCreatedAt(order.created_at)
 
             if (order.items) {
                 const formattedItems = order.items.map((i: any) => {
                     const item = {
-                        id: crypto.randomUUID(), // New ID for frontend handling
+                        id: crypto.randomUUID(),
                         productId: i.product_id,
                         productName: i.product_name,
                         unit: i.unit,
@@ -169,9 +172,14 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                     const detailedStockMap = new Map<string, string[]>()
                     const localUnitStockMap = new Map<string, number>()
 
+                    // Optimization: Use a lookup map for products instead of repeating .find() inside the loop.
+                    // This improves performance from O(N*M) to O(N+M).
+                    const productLookup = new Map<string, any>()
+                    ;(prodRes.data as any[]).forEach(p => productLookup.set(p.id, p))
+
                     invRes.items.forEach((item: any) => {
                         if (item.productId) {
-                            const prod = (prodRes.data as any[]).find(p => p.id === item.productId)
+                            const prod = productLookup.get(item.productId)
                             const baseQty = toBaseAmount(item.productId, item.unit, item.balance, prod?.unit || null)
                             totalStockMap.set(item.productId, (totalStockMap.get(item.productId) || 0) + baseQty)
 
@@ -248,15 +256,33 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
     const updateItem = (id: string, field: keyof OrderItem, value: any) => {
         setItems(prev => prev.map(item => {
             if (item.id !== id) return item
-            let updatedItem = { ...item, [field]: value }
-
             if (field === 'productId') {
                 const prod = products.find(p => p.id === value)
                 let initialUnit = ''
                 if (prod && (!prod.product_units || prod.product_units.length === 0) && prod.unit) initialUnit = prod.unit
-                updatedItem = { ...updatedItem, productId: value, productName: prod?.name || '', unit: initialUnit, price: (prod as any)?.cost_price || 0 }
+                
+                const returnItem = { ...item, productId: value, productName: prod?.name || '', unit: initialUnit, price: (prod as any)?.price || 0 }
+                
+                // Check unbundle
+                if (isUtilityEnabled('auto_unbundle_order')) {
+                    const { needsUnbundle, unbundleInfo } = checkUnbundle(value, initialUnit, item.quantity)
+                    return { ...returnItem, needsUnbundle, unbundleInfo }
+                }
+
+                return returnItem
             }
-            
+            if (field === 'quantity') {
+                const newValue = Number(value)
+                const returnItem = { ...item, quantity: newValue, document_quantity: !item.isDocQtyVisible ? newValue : item.document_quantity }
+                
+                // Check unbundle
+                if (isUtilityEnabled('auto_unbundle_order')) {
+                    const { needsUnbundle, unbundleInfo } = checkUnbundle(item.productId, item.unit, newValue)
+                    return { ...returnItem, needsUnbundle, unbundleInfo }
+                }
+
+                return returnItem
+            }
             if (field === 'unit') {
                 const newVal = value as string
                 const oldVal = item.unit
@@ -271,33 +297,22 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                     baseUnitName
                 )
 
-                updatedItem = { 
-                    ...updatedItem, 
+                const returnItem = { 
+                    ...item, 
                     unit: newVal, 
                     quantity: Number(newQty.toFixed(3)),
                     document_quantity: !item.isDocQtyVisible ? Number(newQty.toFixed(3)) : item.document_quantity
                 }
-            }
 
-            if (field === 'quantity') {
-                const newValue = Number(value)
-                updatedItem = { ...updatedItem, quantity: newValue, document_quantity: !item.isDocQtyVisible ? newValue : item.document_quantity }
-            }
-
-            // Always re-check unbundle status when product, unit or quantity changes
-            if (field === 'productId' || field === 'unit' || field === 'quantity') {
-                const isAutoUnbundleEnabled = isUtilityEnabled('auto_unbundle_order')
-                if (isAutoUnbundleEnabled) {
-                    const { needsUnbundle, unbundleInfo } = checkUnbundle(updatedItem.productId, updatedItem.unit, updatedItem.quantity)
-                    updatedItem.needsUnbundle = needsUnbundle
-                    updatedItem.unbundleInfo = unbundleInfo
-                } else {
-                    updatedItem.needsUnbundle = false
-                    updatedItem.unbundleInfo = undefined
+                // Check unbundle
+                if (isUtilityEnabled('auto_unbundle_order')) {
+                    const { needsUnbundle, unbundleInfo } = checkUnbundle(item.productId, newVal, Number(newQty.toFixed(3)))
+                    return { ...returnItem, needsUnbundle, unbundleInfo }
                 }
-            }
 
-            return updatedItem
+                return returnItem
+            }
+            return { ...item, [field]: value }
         }))
     }
 
@@ -307,174 +322,69 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         if (items.length === 0) return showToast('Vui lòng thêm ít nhất 1 sản phẩm', 'warning')
         if (items.find(i => !i.productId || !i.unit)) return showToast('Vui lòng chọn đầy đủ sản phẩm và đơn vị tính', 'warning')
 
-        // Stock Check
-        const warnings: string[] = []
-        items.forEach(item => {
-            const product = products.find(p => p.id === item.productId)
-            if (product) {
-                if ((product.stock_quantity ?? 0) <= 0) warnings.push(`• ${product.name}\n  (Hết hàng - Tồn: ${product.stock_quantity ?? 0})`)
-                else if (item.quantity > (product.stock_quantity ?? 0)) warnings.push(`• ${product.name}\n  (Xuất quá tồn - Tồn: ${product.stock_quantity ?? 0}, Xuất: ${item.quantity})`)
-            }
-        })
+        // Validating total quantity
+        const totalItemsQty = items.reduce((acc, item) => acc + (item.quantity || 0), 0)
+        if (totalItemsQty === 0) return showToast('Tổng số lượng phải lớn hơn 0', 'warning')
 
-        if (warnings.length > 0) {
-            setConfirmDialog({
-                isOpen: true,
-                title: 'Cảnh báo tồn kho',
-                message: `Phát hiện các vấn đề sau:\n\n${warnings.join('\n\n')}\n\nBạn có chắc chắn muốn tiếp tục tạo phiếu xuất không?`,
-                onConfirm: () => processSubmit()
-            })
-            return
-        }
-
-        processSubmit()
-    }
-
-    const processSubmit = async () => {
-        setConfirmDialog(prev => ({ ...prev, isOpen: false }))
         setSubmitting(true)
         try {
-            // Find Conversion Order Type - Robust matching
-            const conversionType = orderTypes.find(t => {
-                const normName = t.name.toLowerCase().replace(/\s+/g, ' ').trim()
-                const noAccents = normName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d")
-                return normName.includes('chuyển đổi') || noAccents.includes('chuyen doi') || t.code === 'CONV'
-            })
-            const convTypeId = conversionType?.id
-
-            // Step 1: Check and Perform Auto-Unbundle for items that need it
-            const isAutoUnbundleEnabled = isUtilityEnabled('auto_unbundle_order')
-            if (isAutoUnbundleEnabled) {
-                for (const item of items) {
-                    const unbundle = checkUnbundle(item.productId, item.unit, item.quantity)
-
-                    if (unbundle.needsUnbundle && unbundle.sourceUnit && unbundle.rate) {
-                        const product = products.find(p => p.id === item.productId)
-                        const currentLiquid = unitStockMap.get(`${item.productId}_${item.unit}`) || 0
-
-                        const baseToBreak = await unbundleService.executeAutoUnbundle({
-                            supabase,
-                            productId: item.productId,
-                            productName: item.productName,
-                            baseUnit: unbundle.sourceUnit,
-                            reqUnit: item.unit,
-                            reqQty: item.quantity,
-                            currentLiquid,
-                            costPrice: (product as any)?.cost_price || 0,
-                            rate: unbundle.rate,
-                            warehouseName,
-                            systemCode,
-                            mainOrderCode: code,
-                            convTypeId,
-                            conversionMap,
-                            unitNameMap,
-                            unitIdMap,
-                            generateOrderCode: (type) => generateOrderCode(type, systemCode)
-                        })
-
-                        if (baseToBreak) {
-                            showToast(`Đã tự động bẻ ${baseToBreak} ${unbundle.sourceUnit} sang ${item.unit}`, 'success')
-                        }
-                    }
+            // Unbundle processing if enabled
+            let processedItems = [...items]
+            if (isUtilityEnabled('auto_unbundle_order')) {
+                const { processed, unbundledCount } = unbundleService.processUnbundle(items, products, units, unitNameMap, unitIdMap, conversionMap, unitStockMap)
+                if (unbundledCount > 0) {
+                    processedItems = processed
+                    showToast(`Đã tự động rã ${unbundledCount} dòng sản phẩm từ kho lẻ`, 'info')
                 }
             }
 
-            // Step 2: Create or Update Main Outbound Order
             let orderId = editOrderId
+            const payload = {
+                customer_name: customerName,
+                customer_address: customerAddress,
+                customer_phone: customerPhone,
+                warehouse_name: warehouseName,
+                description,
+                order_type_id: orderTypeId || null,
+                images,
+                updated_at: new Date().toISOString(),
+                metadata: { vehicleNumber, driverName, containerNumber, sealNumber, targetUnit },
+                company_id: profile?.company_id || null,
+                created_at: createdAt
+            }
 
             if (editOrderId) {
-                const { error: updateError } = await (supabase.from('outbound_orders') as any).update({
-                    customer_name: customerName,
-                    customer_address: customerAddress,
-                    customer_phone: customerPhone,
-                    warehouse_name: warehouseName,
-                    description,
-                    order_type_id: orderTypeId || null,
-                    images,
-                    metadata: {
-                        vehicleNumber,
-                        driverName,
-                        containerNumber,
-                        sealNumber,
-                        targetUnit
-                    },
-                    company_id: profile?.company_id || null,
-                    created_at: createdAt
-                }).eq('id', editOrderId)
-
+                const { error: updateError } = await (supabase.from('outbound_orders') as any).update(payload).eq('id', editOrderId)
                 if (updateError) throw updateError
-
-                // Delete old items to replace with new ones
-                const { error: deleteError } = await supabase.from('outbound_order_items').delete().eq('order_id', editOrderId)
-                if (deleteError) throw deleteError
-
+                await supabase.from('outbound_order_items').delete().eq('order_id', editOrderId)
             } else {
                 const { data: order, error: orderError } = await (supabase.from('outbound_orders') as any).insert({
+                    ...payload,
                     code,
-                    customer_name: customerName,
-                    customer_address: customerAddress,
-                    customer_phone: customerPhone,
-                    warehouse_name: warehouseName,
-                    description,
                     status: 'Pending',
                     type: 'Sale',
-                    order_type_id: orderTypeId || null,
-                    images,
                     system_code: systemCode,
                     system_type: systemCode,
-                    created_at: createdAt,
-                    metadata: {
-                        vehicleNumber,
-                        driverName,
-                        containerNumber,
-                        sealNumber,
-                        targetUnit
-                    },
-                    company_id: profile?.company_id || null
                 }).select().single()
-
                 if (orderError) throw orderError
-                if (!order) throw new Error('Failed to create order')
                 orderId = order.id
             }
 
-            const orderItems = items.map(item => ({
+            if (!orderId) throw new Error('No Order ID')
+            const orderItems = processedItems.map(item => ({
                 order_id: orderId,
                 product_id: item.productId,
                 product_name: item.productName,
                 unit: item.unit,
                 quantity: item.quantity,
                 document_quantity: item.document_quantity || item.quantity,
-                price: item.price || 0,
+                price: item.price,
                 note: item.note
             }))
 
             const { error: itemsError } = await (supabase.from('outbound_order_items') as any).insert(orderItems)
             if (itemsError) throw itemsError
 
-            // Cleanup LOT metadata if this was a buffer sync
-            if (initialData?.batchData) {
-                for (const p of initialData.batchData) {
-                    const { data: lot } = await supabase.from('lots').select('metadata').eq('id', p.lot_id).single() as any
-                    if (lot) {
-                        const metadata = { ...lot.metadata as any }
-                        metadata.system_history.exports = metadata.system_history.exports.map((exp: any) => {
-                            if (exp.id === p.export_id) {
-                                return { ...exp, draft: false, order_id: orderId, order_code: code }
-                            }
-                            return exp
-                        })
-                        await (supabase.from('lots') as any).update({ metadata }).eq('id', p.lot_id)
-
-                        // [NEW] Sync LOT Status and Quantity
-                        await lotService.syncLotStatus({
-                            supabase,
-                            lotId: p.lot_id,
-                            isSiteIssuance: false
-                        })
-                    }
-                }
-            }
             onSuccess(orderId)
             onClose()
         } catch (e: any) {
@@ -502,7 +412,9 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         createdAt, setCreatedAt,
         products, customers, branches, units, orderTypes,
         loadingData, submitting, handleSubmit,
-        hasModule, isUtilityEnabled, confirmDialog, setConfirmDialog, handleCustomerSelect,
+        handleCustomerSelect,
+        confirmDialog, setConfirmDialog,
+        hasModule,
         convertUnit
     }
 }

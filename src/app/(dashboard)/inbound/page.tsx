@@ -1,57 +1,39 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Database } from '@/lib/database.types'
-import { Plus, Search, FileText, Calendar, User, Package, ChevronRight, Filter, Edit, Trash2, RotateCcw, StickyNote } from 'lucide-react'
-import { format } from 'date-fns'
-import InboundOrderModal from './InboundOrderModal'
-import InboundOrderDetailModal from './InboundOrderDetailModal'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
+import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2 } from 'lucide-react'
+import InboundOrderModal from '@/components/inventory/inbound/InboundOrderModal'
+import InboundOrderDetailModal from './InboundOrderDetailModal'
 import { LotInboundBuffer } from '@/components/warehouse/lots/LotInboundBuffer'
-import { ShoppingCart } from 'lucide-react'
-
-type InboundOrder = Database['public']['Tables']['inbound_orders']['Row'] & {
-    supplier: { name: string } | null
-    items?: { note: string | null }[]
-    description: string | null
-    warehouse_name: string | null
-    supplier_address?: string | null
-    supplier_phone?: string | null
-    image_url?: string | null
-    images?: string[] | null
-    metadata?: {
-        vehicleNumber?: string
-        driverName?: string
-        containerNumber?: string
-    } | null
-    order_types?: { name: string } | null
-}
+import { format } from 'date-fns'
+import { vi } from 'date-fns/locale'
 
 export default function InboundPage() {
-    const [orders, setOrders] = useState<InboundOrder[]>([])
-    const [loading, setLoading] = useState(true)
-    const [searchTerm, setSearchTerm] = useState('')
-    const [isModalOpen, setIsModalOpen] = useState(false)
-    const [selectedOrder, setSelectedOrder] = useState<InboundOrder | null>(null)
-    const [editingOrderId, setEditingOrderId] = useState<string | null>(null)
-    const [initialBufferData, setInitialBufferData] = useState<any>(null)
-    const { showToast, showConfirm } = useToast()
-
+    const { showToast } = useToast()
     const { systemType, currentSystem } = useSystem()
-    const [bufferOpen, setBufferOpen] = useState(false)
-    const [bufferCount, setBufferCount] = useState(0)
+    const [orders, setOrders] = useState<any[]>([])
+    const [loading, setLoading] = useState(true)
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+    const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
+    const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
+    const [searchQuery, setSearchQuery] = useState('')
+    const [statusFilter, setStatusFilter] = useState('all')
 
+    // Buffer Stats
+    const [bufferCount, setBufferCount] = useState(0)
+    const [isBufferOpen, setIsBufferOpen] = useState(false)
+
+    // Helper: Utility Check
     const isUtilityEnabled = (utilityId: string) => {
-        if (!currentSystem?.modules) return false
-        const modules = typeof currentSystem.modules === 'string'
-            ? JSON.parse(currentSystem.modules)
-            : currentSystem.modules
+        if (!currentSystem) return false
+        const modules = typeof (currentSystem as any).modules === 'string'
+            ? JSON.parse((currentSystem as any).modules)
+            : (currentSystem as any).modules
         return Array.isArray(modules?.utility_modules) && modules.utility_modules.includes(utilityId)
     }
-
-    const isLotSyncEnabled = isUtilityEnabled('lot_accounting_sync')
 
     useEffect(() => {
         fetchOrders()
@@ -60,7 +42,6 @@ export default function InboundPage() {
 
     const updateBufferCount = async () => {
         if (!systemType) return
-        // Fetch with limit 2000 and order newest first to match the buffer display
         const { data } = await supabase
             .from('lots')
             .select('metadata')
@@ -70,11 +51,10 @@ export default function InboundPage() {
             
         const activationDate = (currentSystem?.modules as any)?.activation_dates?.lot_accounting_sync
         let count = 0
-        data?.forEach(lot => {
+        data?.forEach((lot: any) => {
             const metadata = lot.metadata as any
             const history = metadata?.system_history || {}
             
-            // Combine both standard inbound and accounting sync inbound adjustments
             const rawInbound = history.inbound || []
             const rawSyncInbound = history.accounting_sync?.inbound || []
             
@@ -95,284 +75,287 @@ export default function InboundPage() {
 
     async function fetchOrders() {
         setLoading(true)
-        const { data, error } = await supabase
-            .from('inbound_orders')
-            .select(`
-                *,
-                supplier:suppliers(name),
-                items:inbound_order_items(note),
-                order_types(name)
-            `)
-            .eq('system_type', systemType)
-            .order('created_at', { ascending: false })
+        try {
+            let query = supabase
+                .from('inbound_orders')
+                .select(`
+                    *,
+                    items:inbound_order_items(note),
+                    order_types(name)
+                `)
+                .eq('system_code', systemType)
+                .order('created_at', { ascending: false })
+                .range(0, 49);
 
-        if (error) {
-            console.error('Error fetching orders:', error)
-        } else {
-            setOrders(data as any)
+            if (statusFilter !== 'all') {
+                query = query.eq('status', statusFilter)
+            }
+
+            const { data, error } = await query
+            if (error) throw error
+            setOrders(data || [])
+        } catch (error: any) {
+            showToast('Lỗi tải danh sách phiếu: ' + error.message, 'error')
+        } finally {
+            setLoading(false)
         }
-        setLoading(false)
     }
 
-    const filteredOrders = orders.filter(order =>
-        order.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.supplier?.name?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    const handleSearch = async () => {
+        if (!searchQuery.trim()) {
+            fetchOrders()
+            return
+        }
+        setLoading(true)
+        try {
+            const { data, error } = await supabase
+                .from('inbound_orders')
+                .select(`
+                    *,
+                    items:inbound_order_items(note),
+                    order_types(name)
+                `)
+                .eq('system_code', systemType)
+                .or(`code.ilike.%${searchQuery}%,supplier_name.ilike.%${searchQuery}%`)
+                .order('created_at', { ascending: false })
+                .limit(100)
+
+            if (error) throw error
+            setOrders(data || [])
+        } catch (e: any) {
+            showToast('Lỗi tìm kiếm: ' + e.message, 'error')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'Completed': return 'bg-green-100 text-green-700 border-green-200'
+            case 'Pending': return 'bg-amber-100 text-amber-700 border-amber-200'
+            case 'Processing': return 'bg-blue-100 text-blue-700 border-blue-200'
+            case 'Cancelled': return 'bg-red-100 text-red-700 border-red-200'
+            default: return 'bg-gray-100 text-gray-700 border-gray-200'
+        }
+    }
+
+    const getStatusText = (status: string) => {
+        switch (status) {
+            case 'Completed': return 'Đã hoàn tất'
+            case 'Pending': return 'Chờ duyệt'
+            case 'Processing': return 'Đang xử lý'
+            case 'Cancelled': return 'Đã hủy'
+            default: return status
+        }
+    }
 
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-zinc-900 text-gray-900 dark:text-gray-100 p-6">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+        <div className="p-6 space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-white flex items-center gap-3">
-                        <FileText className="text-orange-600" size={32} />
-                        Nhập kho (Kế toán)
-                    </h1>
-                    <p className="text-stone-500 dark:text-gray-400 mt-1">
-                        Quản lý phiếu nhập, hóa đơn và chứng từ đầu vào.
-                    </p>
+                    <h1 className="text-2xl font-bold text-gray-900">Quản lý Nhập kho</h1>
+                    <p className="text-gray-500">Xem và quản lý các phiếu nhập kho trong hệ thống</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    {isLotSyncEnabled && (
-                        <button
-                            onClick={() => setBufferOpen(true)}
-                            className={`flex items-center gap-2.5 px-6 py-2.5 rounded-xl border border-stone-200 dark:border-zinc-700 font-bold text-sm shadow-sm relative group active:scale-95 transition-all ${bufferCount > 0
-                                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/50 hover:bg-blue-100'
-                                : 'bg-white dark:bg-zinc-800 text-stone-400 hover:bg-stone-50'
-                                }`}
-                        >
-                            <ShoppingCart size={18} className={bufferCount > 0 ? "group-hover:rotate-12 transition-transform" : ""} />
-                            <span>Hàng chờ nhập</span>
-                            {bufferCount > 0 && (
-                                <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center border-2 border-white dark:border-zinc-900 animate-in zoom-in shadow-lg">
-                                    {bufferCount}
-                                </span>
-                            )}
-                        </button>
-                    )}
-
                     <button
-                        onClick={() => {
-                            setEditingOrderId(null)
-                            setIsModalOpen(true)
-                        }}
-                        className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-5 py-2.5 rounded-lg font-medium shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95"
+                        className="relative flex items-center h-10 px-4 bg-white border border-amber-200 rounded-lg hover:bg-amber-50 transition-all font-medium text-amber-700"
+                        onClick={() => setIsBufferOpen(true)}
                     >
-                        <Plus size={20} />
-                        Tạo Phiếu Nhập
+                        <Inbox className="w-4 h-4 mr-2 text-amber-500" />
+                        <span>Hàng chờ</span>
+                        {bufferCount > 0 && (
+                            <span className="absolute -top-2 -right-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-lg">
+                                {bufferCount}
+                            </span>
+                        )}
+                    </button>
+                    <button
+                        className="flex items-center h-10 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-md transition-all active:scale-95 font-medium"
+                        onClick={() => setIsCreateModalOpen(true)}
+                    >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Tạo phiếu mới
                     </button>
                 </div>
             </div>
 
-            {/* Filters */}
-            <div className="bg-white dark:bg-zinc-800 rounded-xl shadow-sm border border-stone-200 dark:border-zinc-700 p-4 mb-6 sticky top-4 z-20">
-                <div className="flex flex-col md:flex-row gap-4">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={20} />
-                        <input
-                            type="text"
-                            placeholder="Tìm kiếm theo mã phiếu, nhà cung cấp..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2.5 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all"
-                        />
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="md:col-span-3 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="p-4 border-b border-gray-100">
+                        <div className="flex flex-col md:flex-row md:items-center gap-4">
+                            <div className="relative flex-1">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <input
+                                    placeholder="Tìm theo mã phiếu, nhà cung cấp..."
+                                    className="w-full pl-10 h-10 border border-gray-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                />
+                            </div>
+                            <select 
+                                className="w-full md:w-[180px] h-10 border border-gray-200 rounded-lg px-3 outline-none focus:border-indigo-500 appearance-none bg-no-repeat bg-[right_0.75rem_center]"
+                                value={statusFilter} 
+                                onChange={(e) => {
+                                    setStatusFilter(e.target.value);
+                                    setTimeout(() => fetchOrders(), 0);
+                                }}
+                            >
+                                <option value="all">Tất cả trạng thái</option>
+                                <option value="Pending">Chờ duyệt</option>
+                                <option value="Processing">Đang xử lý</option>
+                                <option value="Completed">Đã hoàn tất</option>
+                                <option value="Cancelled">Đã hủy</option>
+                            </select>
+                        </div>
                     </div>
-                    <button className="flex items-center gap-2 px-4 py-2.5 bg-stone-100 dark:bg-zinc-700 text-stone-700 dark:text-gray-300 rounded-lg hover:bg-stone-200 dark:hover:bg-zinc-600 transition-colors">
-                        <Filter size={18} />
-                        <span>Bộ lọc</span>
-                    </button>
-                </div>
-            </div>
-
-            {/* Orders List */}
-            {loading ? (
-                <div className="flex justify-center py-20">
-                    <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-                </div>
-            ) : filteredOrders.length === 0 ? (
-                <div className="text-center py-20 bg-white dark:bg-zinc-800 rounded-xl border border-dashed border-stone-300 dark:border-zinc-700">
-                    <Package className="mx-auto text-stone-400 mb-4 opacity-50" size={48} />
-                    <p className="text-stone-500 dark:text-gray-400 text-lg font-medium">Chưa có phiếu nhập nào</p>
-                    <p className="text-stone-400 text-sm mt-1">Bấm nút "Tạo Phiếu Nhập" để bắt đầu</p>
-                </div>
-            ) : (
-                <div className="grid gap-4">
-                    {filteredOrders.map(order => (
-                        <div
-                            key={order.id}
-                            onClick={() => setSelectedOrder(order)}
-                            className="group bg-white dark:bg-zinc-800 rounded-xl p-5 border border-stone-200 dark:border-zinc-700 hover:border-orange-300 dark:hover:border-orange-700 hover:shadow-md transition-all cursor-pointer relative overflow-hidden"
-                        >
-                            <div className="absolute top-0 left-0 w-1 h-full bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                {/* Left Info */}
-                                <div className="flex-1">
-                                    <div className="flex items-center gap-3 mb-2">
-                                        <span className="font-mono font-bold text-lg text-orange-600 dark:text-orange-400">
-                                            {order.code}
-                                        </span>
-                                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${order.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300' :
-                                            order.status === 'Cancelled' ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300' :
-                                                'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300'
-                                            }`}>
-                                            {order.status === 'Pending' ? 'Chờ xử lý' : order.status}
-                                        </span>
-                                    </div>
-                                    <h3 className="font-semibold text-stone-900 dark:text-white mb-1">
-                                        {order.supplier?.name || "Nhà cung cấp vãng lai"}
-                                    </h3>
-                                    {order.description && (
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <FileText size={14} className="text-stone-400" />
-                                            <span className="text-sm text-stone-500 dark:text-gray-400 line-clamp-1 italic">
-                                                {order.description}
-                                            </span>
-                                        </div>
-                                    )}
-                                    {/* Item Notes */}
-                                    {order.items && order.items.length > 0 && (
-                                        <div className="flex flex-col gap-1 mt-1">
-                                            {order.items
-                                                .filter((item: any) => item.note)
-                                                .slice(0, 3) // Limit to 3 notes
-                                                .map((item: any, idx: number) => (
-                                                    <div key={idx} className="flex items-center gap-2">
-                                                        <StickyNote size={14} className="text-amber-500 flex-shrink-0" />
-                                                        <span className="text-sm text-stone-500 dark:text-gray-400 line-clamp-1 italic">
-                                                            {item.note}
+                    
+                    <div className="bg-white min-h-[400px]">
+                        {loading ? (
+                            <div className="flex flex-col items-center justify-center p-20 space-y-4">
+                                <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+                                <p className="text-gray-500">Đang tải danh sách phiếu...</p>
+                            </div>
+                        ) : orders.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center p-20 text-center space-y-4">
+                                <Inbox className="w-12 h-12 text-gray-200" />
+                                <p className="text-gray-500">Không tìm thấy phiếu nào</p>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-gray-50/50 border-b">
+                                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Mã phiếu</th>
+                                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Nhà cung cấp</th>
+                                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Ngày tạo</th>
+                                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Người tạo</th>
+                                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Trạng thái</th>
+                                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase text-right">Thao tác</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {orders.map((order) => (
+                                            <tr key={order.id} className="hover:bg-gray-50/80 transition-colors">
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-sm font-semibold text-indigo-600 cursor-pointer" onClick={() => { setSelectedOrderId(order.id); setIsDetailModalOpen(true); }}>
+                                                            {order.code}
                                                         </span>
+                                                        <span className="text-[11px] text-gray-400 mt-0.5">{order.order_types?.name || 'Nhập kho'}</span>
                                                     </div>
-                                                ))
-                                            }
-                                        </div>
-                                    )}
-                                </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-sm font-medium text-gray-900">{order.supplier_name || 'Hệ thống'}</span>
+                                                        <span className="text-xs text-gray-500">Kho: {order.warehouse_name || '---'}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className="text-sm text-gray-600">
+                                                        {format(new Date(order.created_at), 'dd/MM/yyyy HH:mm', { locale: vi })}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className="text-sm text-gray-600">{order.created_by_name || 'Hệ thống'}</span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${getStatusColor(order.status)} border`}>
+                                                        {getStatusText(order.status)}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-right">
+                                                    <div className="flex justify-end items-center gap-2">
+                                                        <button 
+                                                            className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                                                            onClick={() => { setSelectedOrderId(order.id); setIsDetailModalOpen(true); }}
+                                                            title="Xem chi tiết"
+                                                        >
+                                                            <ExternalLink className="w-4 h-4" />
+                                                        </button>
+                                                        {order.status !== 'Cancelled' && (
+                                                            <button 
+                                                                className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                                                                onClick={() => { setSelectedOrderId(order.id); setIsCreateModalOpen(true); }}
+                                                                title="Sửa phiếu"
+                                                            >
+                                                                <Edit2 className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                        <div className="p-4 border-t border-gray-100 bg-gray-50/30">
+                           <p className="text-xs text-gray-500 text-center">
+                              Hiển thị 50 phiếu mới nhất. Sử dụng tìm kiếm để xem các phiếu cũ hơn.
+                           </p>
+                        </div>
+                    </div>
+                </div>
 
-                                {/* Right Stats & Actions */}
-                                <div className="flex items-center gap-4">
-                                    <div className="flex items-center gap-6 md:gap-12 text-sm text-stone-600 dark:text-gray-400">
-                                        <div className="flex items-center gap-2">
-                                            <Package size={16} />
-                                            <span>{order.warehouse_name || "Kho mặc định"}</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <Calendar size={16} />
-                                            <span>{format(new Date(order.created_at), 'dd/MM/yyyy HH:mm')}</span>
-                                        </div>
-                                    </div>
-
-                                    {/* Actions */}
-                                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                                        {order.status === 'Completed' && (
-                                            <button
-                                                onClick={async (e) => {
-                                                    e.stopPropagation()
-                                                    const confirmed = await showConfirm(`Bạn có chắc chắn muốn bỏ ghi phiếu ${order.code}? Trạng thái sẽ về Chờ xử lý.`)
-                                                    if (!confirmed) return
-
-                                                    try {
-                                                        const { error } = await (supabase.from('inbound_orders') as any).update({ status: 'Pending' }).eq('id', order.id)
-                                                        if (error) throw error
-                                                        showToast('Đã bỏ ghi phiếu thành công', 'success')
-                                                        fetchOrders()
-                                                    } catch (err: any) {
-                                                        showToast(err.message, 'error')
-                                                    }
-                                                }}
-                                                className="p-2 text-stone-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors"
-                                                title="Bỏ ghi (Sửa lại)"
-                                            >
-                                                <RotateCcw size={18} />
-                                            </button>
-                                        )}
-
-                                        {order.status === 'Pending' && (
-                                            <>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation()
-                                                        setEditingOrderId(order.id)
-                                                        setIsModalOpen(true)
-                                                    }}
-                                                    className="p-2 text-stone-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors"
-                                                    title="Chỉnh sửa"
-                                                >
-                                                    <Edit size={18} />
-                                                </button>
-                                                <button
-                                                    onClick={async (e) => {
-                                                        e.stopPropagation()
-                                                        const confirmed = await showConfirm(`Bạn có chắc chắn muốn xóa phiếu ${order.code}?`)
-                                                        if (!confirmed) return
-
-                                                        try {
-                                                            const { error } = await supabase.from('inbound_orders').delete().eq('id', order.id)
-                                                            if (error) throw error
-                                                            showToast('Đã xóa phiếu nhập thành công', 'success')
-                                                            fetchOrders()
-                                                        } catch (err: any) {
-                                                            showToast(err.message, 'error')
-                                                        }
-                                                    }}
-                                                    className="p-2 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                                                    title="Xóa phiếu"
-                                                >
-                                                    <Trash2 size={18} />
-                                                </button>
-                                            </>
-                                        )}
-                                        <ChevronRight className="text-stone-400 group-hover:text-orange-500 transition-colors ml-2" />
-                                    </div>
-                                </div>
+                <div className="space-y-4">
+                    <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-indigo-600 rounded-lg">
+                                <Inbox className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-medium text-indigo-600">Tổng phiếu nhập</p>
+                                <h3 className="text-2xl font-bold text-gray-900">{orders.length}</h3>
                             </div>
                         </div>
-                    ))}
+                    </div>
+
+                    <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-amber-500 rounded-lg">
+                                <ArrowRight className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-medium text-amber-600">Phiếu chờ duyệt</p>
+                                <h3 className="text-2xl font-bold text-gray-900">
+                                    {orders.filter(o => o.status === 'Pending').length}
+                                </h3>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+            </div>
+
+            {isCreateModalOpen && (
+                <InboundOrderModal
+                    isOpen={isCreateModalOpen}
+                    onClose={() => { setIsCreateModalOpen(false); setSelectedOrderId(null); }}
+                    onSuccess={() => {
+                        fetchOrders();
+                        showToast(`Phiếu nhập ${selectedOrderId ? 'đã cập nhật' : 'đã tạo'} thành công!`, 'success');
+                        setSelectedOrderId(null);
+                    }}
+                    editOrderId={selectedOrderId || undefined}
+                    systemCode={systemType}
+                />
             )}
 
-            {/* Modal Create */}
-            <InboundOrderModal
-                key={systemType}
-                isOpen={isModalOpen}
-                onClose={() => {
-                    setIsModalOpen(false)
-                    setEditingOrderId(null)
-                    setInitialBufferData(null)
-                }}
-                onSuccess={() => {
-                    fetchOrders()
-                    setIsModalOpen(false)
-                    setEditingOrderId(null)
-                    setInitialBufferData(null)
-                    updateBufferCount()
-                }}
-                editOrderId={editingOrderId}
-                initialData={initialBufferData}
-                systemCode={systemType}
-            />
+            {isDetailModalOpen && selectedOrderId && (
+                <InboundOrderDetailModal
+                    order={orders.find(o => o.id === selectedOrderId)}
+                    onClose={() => { setIsDetailModalOpen(false); setSelectedOrderId(null); }}
+                    onUpdate={fetchOrders}
+                />
+            )}
 
-            {/* Modal Detail */}
-            <InboundOrderDetailModal
-                order={selectedOrder}
-                onClose={() => setSelectedOrder(null)}
-                onUpdate={fetchOrders}
-            />
-
-            <LotInboundBuffer
-                isOpen={bufferOpen}
-                onClose={() => setBufferOpen(false)}
-                onSuccess={() => {
-                    fetchOrders();
-                    updateBufferCount();
-                }}
-                onFillInfo={(data) => {
-                    setInitialBufferData(data)
-                    setEditingOrderId(null)
-                    setIsModalOpen(true)
-                    setBufferOpen(false)
-                }}
-                onUpdate={updateBufferCount}
-            />
+            {isBufferOpen && (
+                <LotInboundBuffer
+                    isOpen={isBufferOpen}
+                    onClose={() => { setIsBufferOpen(false); updateBufferCount(); }}
+                    onSuccess={fetchOrders}
+                />
+            )}
         </div>
     )
 }
