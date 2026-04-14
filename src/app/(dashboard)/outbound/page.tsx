@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
-import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2, FileText, FileSpreadsheet } from 'lucide-react'
+import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2, Trash2, RotateCcw, FileText, FileSpreadsheet } from 'lucide-react'
 import OutboundOrderModal from '@/components/inventory/outbound/OutboundOrderModal'
 import OutboundOrderDetailModal from './OutboundOrderDetailModal'
 import { LotExportBuffer } from '@/components/warehouse/lots/LotExportBuffer'
@@ -129,6 +129,48 @@ export default function OutboundPage() {
             showToast('Lỗi tìm kiếm: ' + e.message, 'error')
         } finally {
             setLoading(false)
+        }
+    }
+
+    async function handleDeleteOrder(id: string, code: string) {
+        if (!window.confirm(`Bạn có chắc chắn muốn xóa phiếu xuất ${code}? Hành động này không thể hoàn tác.`)) return
+
+        try {
+            // 1. Delete items first
+            const { error: itemsError } = await supabase
+                .from('outbound_order_items')
+                .delete()
+                .eq('order_id', id)
+            if (itemsError) throw itemsError
+
+            // 2. Delete order
+            const { error: orderError } = await supabase
+                .from('outbound_orders')
+                .delete()
+                .eq('id', id)
+            if (orderError) throw orderError
+
+            showToast(`Đã xóa phiếu ${code} thành công`, 'success')
+            fetchOrders()
+            updateBufferCount()
+        } catch (error: any) {
+            showToast('Lỗi khi xóa phiếu: ' + error.message, 'error')
+        }
+    }
+
+    async function handleResetToPending(id: string, code: string) {
+        if (!window.confirm(`Bạn có muốn quay lại trạng thái Chờ duyệt cho phiếu ${code}?`)) return
+
+        try {
+            const { error } = await (supabase.from('outbound_orders') as any)
+                .update({ status: 'Pending' })
+                .eq('id', id)
+
+            if (error) throw error
+            showToast(`Phiếu ${code} đã quay lại trạng thái Chờ duyệt`, 'success')
+            fetchOrders()
+        } catch (error: any) {
+            showToast('Lỗi khi cập nhật trạng thái: ' + error.message, 'error')
         }
     }
 
@@ -297,6 +339,24 @@ export default function OutboundPage() {
                                                                 title="Sửa phiếu"
                                                             >
                                                                 <Edit2 className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                        {(order.status === 'Pending' || order.status === 'Cancelled') && (
+                                                            <button 
+                                                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                                onClick={() => handleDeleteOrder(order.id, order.code)}
+                                                                title="Xóa phiếu"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                        {order.status === 'Completed' && (
+                                                            <button 
+                                                                className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                                                                onClick={() => handleResetToPending(order.id, order.code)}
+                                                                title="Quay lại Chờ duyệt"
+                                                            >
+                                                                <RotateCcw className="w-4 h-4" />
                                                             </button>
                                                         )}
                                                     </div>
