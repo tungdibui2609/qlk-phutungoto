@@ -5,7 +5,7 @@ import { useUser } from '@/contexts/UserContext'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
-import { CheckCircle2, MapPin, Hash, PlayCircle, Zap, X, Loader2, Download, RotateCcw, Send, Package, Calendar, Trash2 } from 'lucide-react'
+import { CheckCircle2, MapPin, Hash, PlayCircle, X, Loader2, Download, RotateCcw, Send, Package, Trash2 } from 'lucide-react'
 import { groupWarehouseData, sortPositionsByBinPriority } from '@/lib/warehouseUtils'
 import { Database } from '@/lib/database.types'
 import { useMobile } from '@/contexts/MobileContext'
@@ -62,10 +62,6 @@ export default function MobileAssignTab() {
     const [currentStt, setCurrentStt] = useState('')
     const [matchingLots, setMatchingLots] = useState<LocalLot[]>([])
     const [showMatchPicker, setShowMatchPicker] = useState(false)
-    const [productionDate, setProductionDate] = useState(() => {
-        const now = new Date()
-        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-    })
 
     // Re-calculate grouped data when zones/positions in context change
     useEffect(() => {
@@ -95,7 +91,7 @@ export default function MobileAssignTab() {
                 return all
             }
 
-            // 1. Fetch ALL Position Status (to find assigned lot IDs)
+            // 1. Fetch ALL Position Status
             const posQuery = supabase.from('positions')
                 .select('id, code, lot_id')
                 .eq('system_type', currentSystem.code)
@@ -110,8 +106,6 @@ export default function MobileAssignTab() {
                 .eq('status', 'active')
             
             const rawLots = await fetchAll(lotsQuery)
-            
-            // Only lots NOT in positions are considered "in lobby"
             const unassignedLots = rawLots.filter((l: any) => !assignedLotIds.has(l.id))
 
             const formattedLots: LocalLot[] = (unassignedLots || []).map((l: any) => ({
@@ -122,9 +116,8 @@ export default function MobileAssignTab() {
                 product_names: l.lot_items?.map((li: any) => li.products?.name).filter(Boolean) || []
             }))
 
-            // 3. Process Empty Positions for suggestions
+            // 3. Process Empty Positions
             const emptyPositions = posData.filter((p: any) => !p.lot_id)
-            
             const zpQuery = supabase.from('zone_positions').select('position_id, zone_id')
             const zpData = await fetchAll(zpQuery)
 
@@ -145,7 +138,6 @@ export default function MobileAssignTab() {
             const zonesQuery = (supabase.from('zones') as any).select('*').eq('system_type', currentSystem.code)
             const zonesData = await fetchAll(zonesQuery)
 
-            // Calculate Grouped Data (Gom ô)
             const { positions: gPositions } = groupWarehouseData(zonesData || [], formattedPositions as any)
 
             updateData({
@@ -154,7 +146,7 @@ export default function MobileAssignTab() {
                 zones: zonesData || []
             })
 
-            showToast(`Sảnh: ${formattedLots.length} món | Kệ: ${formattedPositions.length} trống`, 'success')
+            showToast(`Dữ liệu sảnh: ${formattedLots.length} món | Kệ: ${formattedPositions.length} trống`, 'success')
         } catch (e: any) {
             showToast('Lỗi tải dữ liệu: ' + e.message, 'error')
         } finally {
@@ -184,10 +176,7 @@ export default function MobileAssignTab() {
         try {
             const descendantIds = getDescendantZoneIds(effectiveZoneId)
             const assignedPosIds = new Set(assignments.map((a: any) => a.positionId))
-            
-            // Exclude skipped IDs
             skippedIds.forEach(id => assignedPosIds.add(id))
-            
             if (extraExcludeIds) {
                 extraExcludeIds.forEach(id => assignedPosIds.add(id))
             }
@@ -200,6 +189,8 @@ export default function MobileAssignTab() {
                 setSuggestedPos(nextPos)
                 updateSelection({ step: 'working' })
                 setCurrentStt('')
+                // Focus back to input
+                setTimeout(() => document.getElementById('mobile-stt-input')?.focus(), 100);
             } else {
                 showToast('Không còn vị trí trống trong khu vực này!', 'error')
                 updateSelection({ step: 'setup' })
@@ -212,8 +203,6 @@ export default function MobileAssignTab() {
         setLoading(true)
         try {
             const sttNum = parseInt(currentStt)
-            
-            // 1. Find matching lot
             let targetLot = selectedLotFromPool;
             if (!targetLot) {
                 const matches = localLots.filter((l: any) => l.daily_seq === sttNum)
@@ -227,10 +216,9 @@ export default function MobileAssignTab() {
             }
 
             const finalInboundDate = targetLot?.inbound_date || new Date().toISOString().split('T')[0]
-
             const newAssignment: PendingAssignment = {
                 lotId: targetLot?.id || null,
-                lotCode: targetLot?.code || `STT #${currentStt} (Tự nhập)`,
+                lotCode: targetLot?.code || `STT #${currentStt} (Gán mù)`,
                 productNames: targetLot?.product_names || ['Hàng chờ khớp'],
                 positionId: suggestedPos.id,
                 positionCode: suggestedPos.code,
@@ -239,11 +227,9 @@ export default function MobileAssignTab() {
                 timestamp: Date.now()
             }
             
-            // 2. Save assignment to global context
             addAssignment(newAssignment)
-            showToast(`Đã gán: #${newAssignment.stt} (${finalInboundDate}) → ${suggestedPos.code}`, 'success')
+            showToast(`Đã gán: #${newAssignment.stt} → ${suggestedPos.code}`, 'success')
             
-            // 3. Prepare for next 
             const currentPositionId = suggestedPos.id
             setCurrentStt('')
             setSuggestedPos(null)
@@ -252,12 +238,9 @@ export default function MobileAssignTab() {
             
             setTimeout(() => {
                 suggestNextPosition(new Set([currentPositionId]))
-            }, 100)
-
+            }, 50)
         } catch (e: any) {
-            console.error('Lỗi khi lưu gán vị trí:', e)
             showToast('Lỗi khi lưu: ' + e.message, 'error')
-            updateSelection({ step: 'setup' })
         } finally { setLoading(false) }
     }
 
@@ -277,6 +260,7 @@ export default function MobileAssignTab() {
             if (error) throw error
             showToast('Đồng bộ thành công!', 'success')
             clearAssignments()
+            updateSelection({ step: 'setup' })
         } catch (e: any) {
             showToast('Lỗi đồng bộ: ' + e.message, 'error')
         } finally { setIsSyncing(false) }
@@ -340,7 +324,7 @@ export default function MobileAssignTab() {
                         <button className="w-10 h-10 flex items-center justify-center bg-blue-50 text-blue-600 rounded-xl" onClick={downloadData} disabled={isDownloading}>
                             {isDownloading ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
                         </button>
-                        <button className="w-10 h-10 flex items-center justify-center bg-zinc-100 text-zinc-600 rounded-xl" onClick={() => { clearAssignments(); updateSelection({ step: 'setup' }); }}>
+                        <button className="w-10 h-10 flex items-center justify-center bg-zinc-100 text-zinc-600 rounded-xl" onClick={() => { if(confirm('⚠️ Xóa sạch dữ liệu tạm trên máy?')) { clearAssignments(); updateSelection({ step: 'setup' }); } }}>
                             <RotateCcw size={18} />
                         </button>
                     </div>
@@ -361,18 +345,18 @@ export default function MobileAssignTab() {
             <div className="p-4 space-y-6">
                 {step === 'setup' ? (
                     <div className="mobile-card-premium p-6 space-y-6">
-                        <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
-                            <h3 className="text-xs font-black text-emerald-700 uppercase mb-1">Quy trình thông minh</h3>
-                            <p className="text-[10px] text-emerald-600 font-medium leading-relaxed">
-                                Hệ thống sẽ tự động khớp STT từ "Bể hàng tại sảnh". Bạn không cần chọn ngày sản xuất thủ công.
+                        <div className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 rounded-2xl p-4">
+                            <h3 className="text-xs font-black text-emerald-700 dark:text-emerald-400 uppercase mb-1">Quy trình thông minh</h3>
+                            <p className="text-[10px] text-emerald-600 dark:text-emerald-500 font-medium leading-relaxed uppercase tracking-tight">
+                                Bạn chỉ cần nhập STT. Hệ thống sẽ tự động gửi yêu cầu kết nối đến Admin.
                             </p>
                         </div>
 
                         {breadcrumbs.length > 0 && (
-                            <div className="flex flex-wrap gap-2 p-3 bg-zinc-50 rounded-2xl border border-zinc-100">
+                            <div className="flex flex-wrap gap-2 p-3 bg-zinc-50 dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800">
                                 {breadcrumbs.map((b, i) => (
                                     <React.Fragment key={i}>
-                                        <button onClick={b.setStep} className="text-[10px] font-black text-emerald-600 uppercase bg-white px-2 py-1 rounded-lg border border-emerald-100">{b.label}: {getZoneName(b.id)}</button>
+                                        <button onClick={b.setStep} className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase bg-white dark:bg-zinc-800 px-2 py-1 rounded-lg border border-emerald-100 dark:border-emerald-900/30 shadow-sm">{b.label}: {getZoneName(b.id)}</button>
                                         {i < breadcrumbs.length - 1 && <span className="text-zinc-300">/</span>}
                                     </React.Fragment>
                                 ))}
@@ -382,12 +366,12 @@ export default function MobileAssignTab() {
                         <div className="space-y-6">
                             {selectionStep === 'warehouse' && (
                                 <div className="space-y-4">
-                                    <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">1. Chọn Kho hàng</label>
+                                    <label className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">1. Chọn Kho hàng</label>
                                     <div className="grid grid-cols-2 gap-2">
                                         {warehouses.filter(w => (emptyCounts.get(w.id) || 0) > 0).map(w => (
-                                            <button key={w.id} onClick={() => updateSelection({ warehouseId: w.id, selectionStep: 'aisle' })} className={`p-4 rounded-2xl border-2 transition-all ${selectedWarehouseId === w.id ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg' : 'bg-white border-zinc-100 text-zinc-400'}`}>
-                                                <div className="text-xs font-black">{w.name}</div>
-                                                <div className="text-[9px] font-bold opacity-60">Trống: {emptyCounts.get(w.id) || 0}</div>
+                                            <button key={w.id} onClick={() => updateSelection({ warehouseId: w.id, selectionStep: 'aisle' })} className={`p-4 rounded-2xl border-2 transition-all ${selectedWarehouseId === w.id ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg' : 'bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-400'}`}>
+                                                <div className="text-xs font-black uppercase">{w.name}</div>
+                                                <div className="text-[9px] font-bold opacity-60">TRỐNG {emptyCounts.get(w.id) || 0}</div>
                                             </button>
                                         ))}
                                     </div>
@@ -396,11 +380,11 @@ export default function MobileAssignTab() {
 
                             {selectionStep === 'aisle' && (
                                 <div className="space-y-4">
-                                    <div className="flex justify-between items-center"><label className="text-[10px] font-black text-emerald-600 uppercase">2. Chọn Dãy</label><button onClick={() => updateSelection({ selectionStep: 'warehouse' })} className="text-[9px] font-bold text-zinc-400 uppercase">&larr; Đổi Kho</button></div>
+                                    <div className="flex justify-between items-center"><label className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase">2. Chọn Dãy</label><button onClick={() => updateSelection({ selectionStep: 'warehouse' })} className="text-[9px] font-bold text-zinc-400 uppercase">&larr; Đổi Kho</button></div>
                                     <div className="grid grid-cols-1 gap-2">
                                         {aisles.filter(z => (emptyCounts.get(z.id) || 0) > 0).map(z => (
-                                            <button key={z.id} onClick={() => updateSelection({ aisleId: z.id, selectionStep: 'slot' })} className={`flex justify-between p-4 rounded-2xl border-2 ${selectedAisleId === z.id ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-white border-zinc-100 text-zinc-500'}`}>
-                                                <span className="font-black text-sm">{z.name}</span>
+                                            <button key={z.id} onClick={() => updateSelection({ aisleId: z.id, selectionStep: 'slot' })} className={`flex justify-between p-4 rounded-2xl border-2 ${selectedAisleId === z.id ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-500'}`}>
+                                                <span className="font-black text-sm uppercase">{z.name}</span>
                                                 <span className="text-[10px] font-bold opacity-60">TRỐNG {emptyCounts.get(z.id) || 0}</span>
                                             </button>
                                         ))}
@@ -410,14 +394,14 @@ export default function MobileAssignTab() {
 
                             {selectionStep === 'slot' && (
                                 <div className="space-y-4">
-                                    <div className="flex justify-between items-center"><label className="text-[10px] font-black text-emerald-600 uppercase">3. Chọn Ô</label><button onClick={() => updateSelection({ selectionStep: 'aisle' })} className="text-[9px] font-bold text-zinc-400 uppercase">&larr; Đổi Dãy</button></div>
+                                    <div className="flex justify-between items-center"><label className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase">3. Chọn Ô</label><button onClick={() => updateSelection({ selectionStep: 'aisle' })} className="text-[9px] font-bold text-zinc-400 uppercase">&larr; Đổi Dãy</button></div>
                                     <div className="grid grid-cols-2 gap-2">
                                         {slots.filter(z => (emptyCounts.get(z.id) || 0) > 0).map(z => (
                                             <button key={z.id} onClick={() => {
                                                 updateSelection({ slotId: z.id, tierId: null })
                                                 if (activeZones.some(az => az.parent_id === z.id)) { updateSelection({ selectionStep: 'tier' }) }
-                                            }} className={`p-4 rounded-2xl border-2 transition-all ${selectedSlotId === z.id ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm' : 'bg-white border-zinc-100 text-zinc-400'}`}>
-                                                <div className="font-black">{z.name}</div>
+                                            }} className={`p-4 rounded-2xl border-2 transition-all ${selectedSlotId === z.id ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-500 text-emerald-700 dark:text-emerald-400 shadow-sm' : 'bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-400'}`}>
+                                                <div className="font-black uppercase">{z.name}</div>
                                                 <div className="text-[9px] font-bold opacity-60">TRỐNG {emptyCounts.get(z.id) || 0}</div>
                                             </button>
                                         ))}
@@ -427,11 +411,11 @@ export default function MobileAssignTab() {
 
                             {selectionStep === 'tier' && (
                                 <div className="space-y-4">
-                                    <div className="flex justify-between items-center"><label className="text-[10px] font-black text-emerald-600 uppercase">4. Chọn Tầng</label><button onClick={() => updateSelection({ selectionStep: 'slot' })} className="text-[9px] font-bold text-zinc-400 uppercase">&larr; Đổi Ô</button></div>
+                                    <div className="flex justify-between items-center"><label className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase">4. Chọn Tầng</label><button onClick={() => updateSelection({ selectionStep: 'slot' })} className="text-[9px] font-bold text-zinc-400 uppercase">&larr; Đổi Ô</button></div>
                                     <div className="flex flex-wrap gap-2">
                                         {tiers.filter(z => (emptyCounts.get(z.id) || 0) > 0).map(z => (
-                                            <button key={z.id} onClick={() => updateSelection({ tierId: z.id })} className={`px-5 py-3 rounded-2xl text-[13px] font-black border-2 transition-all ${selectedTierId === z.id ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg' : 'bg-white border-zinc-100 text-zinc-400'}`}>
-                                                <div className="flex items-center gap-2">{z.name} {selectedTierId === z.id && <CheckCircle2 size={16} />}</div>
+                                            <button key={z.id} onClick={() => updateSelection({ tierId: z.id })} className={`px-5 py-3 rounded-2xl text-[13px] font-black border-2 transition-all ${selectedTierId === z.id ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg' : 'bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-400'}`}>
+                                                <div className="flex items-center gap-2 uppercase">{z.name} {selectedTierId === z.id && <CheckCircle2 size={16} />}</div>
                                                 <span className="text-[9px] font-bold opacity-60">TRỐNG {emptyCounts.get(z.id) || 0}</span>
                                             </button>
                                         ))}
@@ -444,145 +428,181 @@ export default function MobileAssignTab() {
                             <button
                                 onClick={() => suggestNextPosition()}
                                 disabled={!effectiveZoneId || loading || isDownloading}
-                                className={`w-full py-5 rounded-3xl flex items-center justify-center gap-3 text-sm font-black transition-all shadow-xl ${!effectiveZoneId || loading || isDownloading ? 'bg-zinc-100 text-zinc-300' : 'bg-zinc-900 text-white hover:bg-zinc-800'}`}
+                                className={`w-full py-5 rounded-3xl flex items-center justify-center gap-3 text-sm font-black transition-all shadow-xl ${!effectiveZoneId || loading || isDownloading ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-300 dark:text-zinc-700' : 'bg-zinc-900 dark:bg-emerald-600 text-white hover:bg-zinc-800 active:scale-95'}`}
                             >
-                                <PlayCircle size={20} className={!effectiveZoneId || loading ? 'text-zinc-300' : 'text-emerald-400'} />
+                                <PlayCircle size={20} className={!effectiveZoneId || loading ? 'text-zinc-300' : 'text-emerald-400 dark:text-white'} />
                                 <span>BẮT ĐẦU GÁN VỊ TRÍ</span>
                             </button>
                             {!effectiveZoneId && <p className="text-[9px] text-zinc-400 text-center mt-3 font-medium uppercase tracking-tight">Vui lòng chọn khu vực</p>}
                         </div>
                     </div>
                 ) : (
-                    <div className="mobile-card-premium p-6 border-emerald-500 animate-in zoom-in duration-300">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-black uppercase tracking-wider">VỊ TRÍ TIẾP THEO</div>
-                            <button onClick={() => updateSelection({ step: 'setup' })} className="p-1 text-zinc-400"><X size={20} /></button>
-                        </div>
-                        <div className="text-center py-6">
-                            <div className="mx-auto w-24 h-24 bg-emerald-50 text-emerald-600 rounded-[32px] flex items-center justify-center mb-4 border border-emerald-100"><MapPin size={48} /></div>
-                            <div className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-1">HÃY ĐẶT HÀNG VÀO</div>
-                            <div className="text-5xl font-black text-zinc-900 tracking-tighter">{suggestedPos?.code}</div>
-                            
-                            {/* Short Lot Summary if STT entered */}
-                            {currentStt && !showMatchPicker && (
-                                <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                    {(() => {
-                                        const match = localLots.find(l => l.daily_seq === parseInt(currentStt))
-                                        if (!match) return null
-                                        return (
-                                            <div className="bg-zinc-50 rounded-xl p-3 border border-zinc-100">
-                                                <div className="text-[9px] font-black text-emerald-600 uppercase mb-1">Khớp được lô hàng</div>
-                                                <div className="text-[11px] font-black text-zinc-900 truncate">{match.product_names.join(', ')}</div>
-                                                <div className="text-[9px] text-zinc-400 font-bold uppercase mt-1">Ngày: {new Date(match.inbound_date).toLocaleDateString('vi-VN')}</div>
-                                            </div>
-                                        )
-                                    })()}
-                                </div>
-                            )}
-
-                            <button 
-                                onClick={() => {
-                                    if (suggestedPos) {
-                                        setSkippedIds(prev => new Set(prev).add(suggestedPos.id));
-                                        setSuggestedPos(null);
-                                        setTimeout(() => suggestNextPosition(new Set([suggestedPos.id])), 10);
-                                    }
-                                }}
-                                disabled={loading}
-                                className="mt-2 text-zinc-400 text-[10px] font-black uppercase tracking-widest hover:text-emerald-600 transition-colors flex items-center justify-center gap-1 mx-auto"
-                            >
-                                <RotateCcw size={10} /> Bỏ qua & gợi ý vị trí khác &rarr;
-                            </button>
-                        </div>
-                        <div className="h-px bg-zinc-100 my-6" />
-                        <div className="space-y-4">
-                            <label className="text-[11px] font-black text-zinc-400 uppercase tracking-widest text-center block">NHẬP STT CỦA LÔ HÀNG</label>
-                            <div className="relative">
-                                <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={24} />
-                                <input type="number" pattern="[0-9]*" inputMode="numeric" value={currentStt} onChange={e => setCurrentStt(e.target.value)} placeholder="STT..." className="w-full bg-zinc-50 dark:bg-zinc-900 border-2 border-zinc-100 dark:border-zinc-800 focus:border-emerald-500 rounded-2xl py-5 pl-14 pr-6 text-2xl font-black text-zinc-900 dark:text-white outline-none transition-all placeholder:text-zinc-400" autoFocus />
+                    <div className="space-y-6">
+                        <div className="mobile-card-premium p-6 border-emerald-500 animate-in zoom-in duration-300">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="px-3 py-1 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-full text-[10px] font-black uppercase tracking-wider">VỊ TRÍ ĐẶT HÀNG</div>
+                                <button onClick={() => updateSelection({ step: 'setup' })} className="p-1 text-zinc-300 dark:text-zinc-700"><X size={24} /></button>
                             </div>
-                            <button onClick={() => handleConfirmStt()} disabled={!currentStt || loading} className={`w-full py-5 rounded-2xl flex items-center justify-center gap-2 text-lg font-black transition-all ${!currentStt || loading ? 'bg-zinc-100 text-zinc-400' : 'bg-emerald-600 text-white shadow-lg active:scale-95'}`}>
-                                {loading ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
-                                XÁC NHẬN
-                            </button>
+                            <div className="text-center py-6">
+                                <div className="mx-auto w-20 h-20 bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 rounded-[28px] flex items-center justify-center mb-4 border border-emerald-100 dark:border-emerald-900/20"><MapPin size={40} /></div>
+                                <div className="text-[10px] font-black text-emerald-600 dark:text-emerald-500 uppercase tracking-[0.2em] mb-1">HÃY ĐẶT HÀNG VÀO</div>
+                                
+                                {/* Quick Position Edit */}
+                                <div className="relative inline-block group" onClick={() => {
+                                    const newCode = prompt('Nhập mã kệ thực tế:', suggestedPos?.code);
+                                    if (newCode && suggestedPos) {
+                                        setSuggestedPos({ ...suggestedPos, code: newCode.toUpperCase() });
+                                    }
+                                }}>
+                                    <div className="text-5xl font-black text-zinc-900 dark:text-white tracking-tighter flex items-center gap-2 cursor-pointer transition-transform active:scale-95">
+                                        {suggestedPos?.code}
+                                        <div className="w-8 h-8 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-300 dark:text-zinc-600"><RotateCcw size={14} /></div>
+                                    </div>
+                                    <div className="text-[8px] font-black text-zinc-400 uppercase tracking-widest mt-1 opacity-0 group-hover:opacity-100 transition-opacity">Nhấn vào để sửa kệ</div>
+                                </div>
+                                
+                                {currentStt && !showMatchPicker && (
+                                    <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                        {(() => {
+                                            const match = localLots.find(l => l.daily_seq === parseInt(currentStt))
+                                            if (!match) return null
+                                            return (
+                                                <div className="bg-emerald-50 dark:bg-emerald-900/5 rounded-xl p-3 border border-emerald-100 dark:border-emerald-900/10">
+                                                    <div className="text-[10px] font-black text-emerald-600 uppercase mb-1">Khớp chính xác lô hàng</div>
+                                                    <div className="text-[11px] font-black text-zinc-900 dark:text-zinc-100 truncate">{match.product_names.join(', ')}</div>
+                                                </div>
+                                            )
+                                        })()}
+                                    </div>
+                                )}
+
+                                <button 
+                                    onClick={() => {
+                                        if (suggestedPos) {
+                                            setSkippedIds(prev => new Set(prev).add(suggestedPos.id));
+                                            setSuggestedPos(null);
+                                            setTimeout(() => suggestNextPosition(new Set([suggestedPos.id])), 10);
+                                        }
+                                    }}
+                                    disabled={loading}
+                                    className="mt-6 text-zinc-400 dark:text-zinc-600 text-[10px] font-black uppercase tracking-widest hover:text-emerald-600 transition-colors flex items-center justify-center gap-2 mx-auto"
+                                >
+                                    <RotateCcw size={12} /> Bỏ qua & gợi ý khác
+                                </button>
+                            </div>
+                            <div className="h-px bg-zinc-100 dark:bg-zinc-800 my-6" />
+                            <div className="space-y-4">
+                                <label className="text-[11px] font-black text-zinc-400 uppercase tracking-widest text-center block">NHẬP STT CỦA LÔ HÀNG</label>
+                                <div className="relative">
+                                    <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={24} />
+                                    <input 
+                                        type="number" 
+                                        pattern="[0-9]*" 
+                                        inputMode="numeric" 
+                                        value={currentStt} 
+                                        onChange={e => setCurrentStt(e.target.value)} 
+                                        placeholder="Số STT..." 
+                                        className="w-full bg-zinc-50 dark:bg-zinc-950 border-2 border-zinc-100 dark:border-zinc-800 focus:border-emerald-500 rounded-2xl py-6 pl-14 pr-6 text-3xl font-black text-zinc-900 dark:text-white outline-none transition-all placeholder:text-zinc-300" 
+                                        autoFocus 
+                                        id="mobile-stt-input"
+                                        onKeyDown={(e) => e.key === 'Enter' && currentStt && handleConfirmStt()}
+                                    />
+                                </div>
+                                <button onClick={() => handleConfirmStt()} disabled={!currentStt || loading} className={`w-full py-6 rounded-2xl flex items-center justify-center gap-3 text-lg font-black transition-all ${!currentStt || loading ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-300 dark:text-zinc-700' : 'bg-emerald-600 text-white shadow-xl shadow-emerald-500/20 active:scale-95'}`}>
+                                    {loading ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
+                                    XÁC NHẬN GÁN
+                                </button>
+                            </div>
                         </div>
+
+                        {/* Recent History - 3 mục vừa gán xong */}
+                        {assignments.length > 0 && (
+                            <div className="space-y-3 animate-in fade-in duration-500">
+                                <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest px-2">Vừa gán xong ({assignments.length})</h4>
+                                <div className="space-y-2">
+                                    {assignments.slice(0, 3).map((ass: any, i: number) => (
+                                        <div key={i} className="flex items-center justify-between p-4 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl shadow-sm">
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <div className="w-10 h-10 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 rounded-xl flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-black shrink-0">#{ass.stt}</div>
+                                                <div className="min-w-0">
+                                                    <div className="text-xs font-black text-zinc-900 dark:text-zinc-100 leading-none mb-1 truncate">{ass.lotCode}</div>
+                                                    <div className="text-[9px] text-zinc-500 font-bold uppercase flex items-center gap-1.5 tracking-tight"><MapPin size={10} className="text-red-500" /> {ass.positionCode}</div>
+                                                </div>
+                                            </div>
+                                            <button 
+                                                onClick={() => { if(confirm('Xóa lần gán này?')) removeAssignment(ass.positionId); }}
+                                                className="w-8 h-8 flex items-center justify-center text-zinc-200 dark:text-zinc-800 hover:text-red-500 transition-colors"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    {assignments.length > 3 && (
+                                        <p className="text-center text-[9px] font-black text-zinc-400 uppercase py-2">... và {assignments.length - 3} mục khác bên dưới ...</p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
                 {/* Match Picker Modal */}
                 {showMatchPicker && (
-                    <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 min-h-screen">
-                        <div className="bg-white w-full max-w-md rounded-[32px] overflow-hidden animate-in slide-in-from-bottom duration-300">
-                            <div className="p-6 border-b border-zinc-100">
-                                <div className="flex justify-between items-center mb-2">
-                                    <h3 className="text-lg font-black text-zinc-900 uppercase tracking-tight">Trùng STT #{currentStt}</h3>
-                                    <button onClick={() => setShowMatchPicker(false)} className="p-2 text-zinc-400 hover:text-zinc-900"><X size={24} /></button>
+                    <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-4">
+                        <div className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-[40px] overflow-hidden animate-in slide-in-from-bottom duration-300 border border-zinc-100 dark:border-zinc-800 shadow-2xl">
+                            <div className="p-8 border-b border-zinc-100 dark:border-zinc-800">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h3 className="text-2xl font-black text-zinc-900 dark:text-white tracking-tighter">TRÙNG STT #{currentStt}</h3>
+                                    <button onClick={() => setShowMatchPicker(false)} className="p-2 text-zinc-400"><X size={32} /></button>
                                 </div>
-                                <p className="text-xs text-zinc-500 font-medium leading-relaxed">Phát hiện nhiều lô hàng cùng số STT này tại sảnh. Vui lòng chọn đúng lô bạn đang cầm:</p>
+                                <p className="text-xs text-zinc-500 font-bold uppercase tracking-tight leading-relaxed">Chọn chính xác lô hàng:</p>
                             </div>
-                            <div className="max-h-[60vh] overflow-y-auto p-4 space-y-3">
+                            <div className="max-h-[50vh] overflow-y-auto p-6 space-y-3 scrollbar-thin">
                                 {matchingLots.map((l) => (
                                     <button 
                                         key={l.id} 
                                         onClick={() => handleConfirmStt(l)}
-                                        className="w-full text-left p-4 bg-zinc-50 rounded-2xl border-2 border-transparent hover:border-emerald-500 hover:bg-emerald-50 transition-all group"
+                                        className="w-full text-left p-5 bg-zinc-50 dark:bg-zinc-950 rounded-3xl border-2 border-transparent hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/10 transition-all group"
                                     >
                                         <div className="flex justify-between items-start mb-2">
-                                            <div className="px-2 py-0.5 bg-white border border-zinc-200 rounded text-[9px] font-black text-zinc-400">NGÀY: {new Date(l.inbound_date).toLocaleDateString('vi-VN')}</div>
-                                            <div className="text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity"><CheckCircle2 size={20} /></div>
+                                            <div className="px-2.5 py-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 rounded-lg text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest">SX: {new Date(l.inbound_date).toLocaleDateString('vi-VN')}</div>
+                                            <div className="text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity"><CheckCircle2 size={24} /></div>
                                         </div>
-                                        <div className="text-xs font-black text-zinc-900 leading-snug">{l.product_names.join(', ')}</div>
-                                        <div className="text-[10px] text-zinc-400 font-bold mt-1">Mã: {l.code}</div>
+                                        <div className="text-sm font-black text-zinc-900 dark:text-white leading-snug mb-1">{l.product_names.join(', ')}</div>
+                                        <div className="text-[10px] text-zinc-400 font-bold tracking-tight uppercase">Mã lô: {l.code}</div>
                                     </button>
                                 ))}
                             </div>
-                            <div className="p-4 bg-zinc-50">
-                                <button onClick={() => setShowMatchPicker(false)} className="w-full py-4 text-xs font-black text-zinc-400 uppercase tracking-widest">Đóng</button>
+                            <div className="p-6 bg-zinc-50 dark:bg-zinc-950 border-t border-zinc-100 dark:border-zinc-800 flex gap-4">
+                                <button onClick={() => {setShowMatchPicker(false); handleConfirmStt();}} className="flex-1 py-4 bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 text-xs font-black uppercase tracking-widest rounded-2xl active:scale-95 transition-all">Gán mù</button>
+                                <button onClick={() => setShowMatchPicker(false)} className="flex-1 py-4 bg-zinc-900 dark:bg-zinc-700 text-white text-xs font-black uppercase tracking-widest rounded-2xl active:scale-95 transition-all">Đóng</button>
                             </div>
                         </div>
                     </div>
                 )}
 
+                {/* Full History Section */}
                 {assignments.length > 0 && (
-                    <div className="mt-8 space-y-3 pb-10">
-                        <div className="flex items-center justify-between px-2">
-                            <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">ĐÃ GHÉP TRONG PHIÊN ({assignments.length})</h4>
-                            <div className="flex gap-2">
-                                <button 
-                                    onClick={() => { if(confirm('Xóa sạch danh sách trong phiên này?')) clearAssignments(); }}
-                                    className="px-3 py-1.5 bg-zinc-100 rounded-lg text-[10px] font-black text-zinc-500 uppercase tracking-widest active:scale-95"
-                                >
-                                    Xóa hết
-                                </button>
-                                <button onClick={syncAssignments} disabled={isSyncing} className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 rounded-lg text-[10px] font-black text-orange-600 uppercase tracking-widest active:scale-95 disabled:opacity-50">
-                                    {isSyncing ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Đồng bộ {assignments.length} mục
-                                </button>
-                            </div>
+                    <div className="mt-8 space-y-4 pb-20 border-t border-zinc-100 dark:border-zinc-800 pt-8 px-2">
+                        <div className="flex items-center justify-between">
+                            <h4 className="text-[11px] font-black text-zinc-400 uppercase tracking-widest">Chờ đồng bộ ({assignments.length})</h4>
                         </div>
-                        <div className="space-y-2">
-                            {assignments.map((ass: any, i: number) => (
-                                <div key={i} className="flex items-center justify-between p-4 bg-white border border-zinc-100 rounded-2xl shadow-sm">
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        <div className="w-10 h-10 bg-zinc-50 rounded-xl flex items-center justify-center text-zinc-900 font-black shrink-0 border border-zinc-100">#{ass.stt}</div>
-                                        <div className="min-w-0">
-                                            <div className="text-xs font-black text-zinc-900 leading-none mb-1 truncate">{ass.lotCode}</div>
-                                            <div className="text-[9px] text-zinc-500 font-bold uppercase flex items-center gap-1"><MapPin size={10} /> {ass.positionCode}</div>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <div className="text-[10px] font-bold text-zinc-300">{new Date(ass.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</div>
-                                        <button 
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                if(confirm('Xóa lần gán này?')) removeAssignment(ass.positionId);
-                                            }}
-                                            className="w-8 h-8 flex items-center justify-center text-zinc-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
+                        <div className="grid grid-cols-2 gap-3">
+                            <button 
+                                onClick={syncAssignments} 
+                                disabled={isSyncing} 
+                                className="flex flex-col items-center justify-center p-6 bg-emerald-600 text-white rounded-[32px] shadow-xl shadow-emerald-600/20 active:scale-95 disabled:opacity-50 transition-all group"
+                            >
+                                {isSyncing ? <Loader2 size={32} className="animate-spin mb-3" /> : <Send size={32} className="mb-3 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />}
+                                <div className="text-xs font-black uppercase tracking-widest">Đồng bộ</div>
+                            </button>
+                            <button 
+                                onClick={() => { if(confirm('⚠️ Xóa toàn bộ danh sách để làm lại?')) clearAssignments(); }}
+                                className="flex flex-col items-center justify-center p-6 bg-white dark:bg-zinc-900 border-2 border-zinc-100 dark:border-zinc-800 text-zinc-400 hover:text-red-500 rounded-[32px] transition-all active:scale-95"
+                            >
+                                <Trash2 size={32} className="mb-3" />
+                                <div className="text-xs font-black uppercase tracking-widest">Xóa sạch</div>
+                            </button>
                         </div>
                     </div>
                 )}

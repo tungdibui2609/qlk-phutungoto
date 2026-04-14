@@ -7,12 +7,12 @@ import {
     CheckCircle2, MapPin, Hash, Calendar, Loader2, 
     Link as LinkIcon, AlertCircle, Trash2, Check, X, XCircle,
     ArrowRight, Package, Search, Filter, RefreshCcw,
-    AlertTriangle, Edit2, Save, ChevronDown, Clock, History
+    AlertTriangle, Edit2, Save, ChevronDown, Clock, History, Info, Plus
 } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
-import { format } from 'date-fns'
+import { format, subDays, isWithinInterval, parseISO } from 'date-fns'
 import { vi } from 'date-fns/locale'
 
 type PendingAssignment = {
@@ -23,7 +23,6 @@ type PendingAssignment = {
     system_code: string
     created_at: string
     status: string
-    // Joined data
     position?: {
         code: string
         id: string
@@ -32,6 +31,7 @@ type PendingAssignment = {
 
 type Lot = Database['public']['Tables']['lots']['Row'] & {
     product_names?: string[]
+    positions?: { code: string }[]
 }
 
 export default function AssignmentApprovalPage() {
@@ -41,23 +41,28 @@ export default function AssignmentApprovalPage() {
 
     const [loading, setLoading] = useState(true)
     const [actionLoading, setActionLoading] = useState<string | null>(null)
-    const [productionDate, setProductionDate] = useState(() => format(new Date(), 'yyyy-MM-dd'))
+    const [dateFrom, setDateFrom] = useState(() => format(subDays(new Date(), 7), 'yyyy-MM-dd'))
+    const [dateTo, setDateTo] = useState(() => format(new Date(), 'yyyy-MM-dd'))
     
     const [pendingList, setPendingList] = useState<PendingAssignment[]>([])
     const [approvedList, setApprovedList] = useState<PendingAssignment[]>([])
     const [rejectedList, setRejectedList] = useState<PendingAssignment[]>([])
     const [lotsInDay, setLotsInDay] = useState<Lot[]>([])
+    const [lotSearchTerm, setLotSearchTerm] = useState('')
     
     // History state
     const [showHistory, setShowHistory] = useState(false)
-    const [historyDateFrom, setHistoryDateFrom] = useState(() => format(new Date(), 'yyyy-MM-dd'))
+    const [historyDateFrom, setHistoryDateFrom] = useState(() => format(subDays(new Date(), 7), 'yyyy-MM-dd'))
     const [historyDateTo, setHistoryDateTo] = useState(() => format(new Date(), 'yyyy-MM-dd'))
     const [historyList, setHistoryList] = useState<PendingAssignment[]>([])
     const [historyLoading, setHistoryLoading] = useState(false)
     const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | 'approved' | 'rejected'>('all')
+    const [historySearchTerm, setHistorySearchTerm] = useState('')
+    
+    // Global positions for manual join
+    const [allPositions, setAllPositions] = useState<any[]>([])
     
     // Editing state
-    const [allPositions, setAllPositions] = useState<any[]>([])
     const [editingId, setEditingId] = useState<string | null>(null)
     const [editValues, setEditValues] = useState<{ lot_stt: string, position_id: string, position_code: string }>({ lot_stt: '', position_id: '', position_code: '' })
     const [manualEdits, setManualEdits] = useState<Record<string, { lot_stt: number, position_code: string }>>({})
@@ -65,26 +70,8 @@ export default function AssignmentApprovalPage() {
     useEffect(() => {
         if (currentSystem?.code) {
             fetchData()
-            fetchPositions()
         }
-    }, [currentSystem, productionDate])
-
-    async function fetchPositions() {
-        if (!currentSystem?.code) return;
-
-        try {
-            // company_id is null in positions table, so filter by system_type only
-            const { data, error } = await (supabase.from('positions') as any)
-                .select('id, code')
-                .eq('system_type', currentSystem.code)
-                .order('code', { ascending: true });
-            
-            if (error) throw error;
-            setAllPositions(data || []);
-        } catch (e) {
-            console.error('Fetch positions error:', e);
-        }
-    }
+    }, [currentSystem, dateFrom, dateTo])
 
     async function fetchData() {
         if (!currentSystem?.code) {
@@ -93,26 +80,52 @@ export default function AssignmentApprovalPage() {
         }
         setLoading(true)
         try {
-            // 1. Fetch pending assignments AND processed (approved/rejected) assignments for the selected date
+            // 1. Fetch Assignments
             const { data: pData, error: pErr } = await (supabase.from('pending_assignments') as any)
-                .select('*, position:positions(id, code)')
+                .select('*')
                 .eq('system_code', currentSystem.code)
-                .or(`status.eq.pending,and(status.neq.pending,production_date.eq.${productionDate})`)
+                .gte('production_date', dateFrom)
+                .lte('production_date', dateTo)
                 .order('created_at', { ascending: false })
 
             if (pErr) throw pErr
+            const assignments = pData || []
 
-            const pending = pData?.filter((a: any) => a.status === 'pending') || []
-            const approved = pData?.filter((a: any) => a.status === 'approved') || []
-            const rejected = pData?.filter((a: any) => a.status === 'rejected') || []
-
-            // 2. Extract unique dates from assignments to fetch relevant LOTs
-            const relevantDates = Array.from(new Set(pData?.map((a: any) => a.production_date) || []))
-            if (!relevantDates.includes(productionDate)) {
-                relevantDates.push(productionDate) // Always include selected date for sidebar
+            // 2. Fetch required positions for these assignments
+            const posIds = Array.from(new Set(assignments.map((a: any) => a.position_id).filter(Boolean)))
+            let posMap: Record<string, string> = {}
+            if (posIds.length > 0) {
+                const { data: historyPosData } = await (supabase.from('positions') as any)
+                    .select('id, code')
+                    .in('id', posIds)
+                if (historyPosData) {
+                    historyPosData.forEach((p: any) => {
+                        posMap[p.id] = p.code
+                    })
+                }
             }
 
-            // 3. Fetch LOTs for these dates
+            // 3. Keep allPositions updated for dropdowns and edits
+            const { data: allPosData } = await (supabase.from('positions') as any)
+                .select('id, code, lot_id')
+                .eq('system_type', currentSystem.code)
+            const safePosData = allPosData || []
+            setAllPositions(safePosData)
+
+            // 4. Manual Join Assignments with prioritized posMap
+            const enrichedAssignments = assignments.map((ass: any) => ({
+                ...ass,
+                position: {
+                    id: ass.position_id,
+                    code: posMap[ass.position_id] || safePosData.find((p: any) => p.id === ass.position_id)?.code || '---'
+                }
+            }))
+
+            setPendingList(enrichedAssignments.filter((a: any) => a.status === 'pending'))
+            setApprovedList(enrichedAssignments.filter((a: any) => a.status === 'approved'))
+            setRejectedList(enrichedAssignments.filter((a: any) => a.status === 'rejected'))
+
+            // 5. Fetch LOTs for matching list
             const { data: lData, error: lErr } = await supabase
                 .from('lots')
                 .select(`
@@ -120,26 +133,24 @@ export default function AssignmentApprovalPage() {
                     lot_items(products(name))
                 `)
                 .eq('system_code', currentSystem.code)
-                .in('inbound_date', relevantDates)
+                .gte('inbound_date', dateFrom)
+                .lte('inbound_date', dateTo + 'T23:59:59')
                 .neq('status', 'hidden')
                 .neq('status', 'exported')
                 .order('daily_seq', { ascending: true })
 
             if (lErr) throw lErr
-            let finalLots = lData || []
 
-            const formattedLots: Lot[] = finalLots.map((l: any) => ({
+            const formattedLots: Lot[] = (lData || []).map((l: any) => ({
                 ...l,
-                product_names: l.lot_items?.map((li: any) => li.products?.name).filter(Boolean) || []
+                product_names: l.lot_items?.map((li: any) => li.products?.name).filter(Boolean) || [],
+                positions: safePosData.filter((p: any) => p.lot_id === l.id)
             }))
 
-            setPendingList(pending)
-            setApprovedList(approved)
-            setRejectedList(rejected)
-            setLotsInDay(formattedLots || [])
+            setLotsInDay(formattedLots)
         } catch (e: any) {
             console.error('Fetch error:', e)
-            showToast('Lỗi tải dữ liệu: ' + e.message, 'error')
+            showToast('Lỗi tải dữ liệu: ' + (e.message || 'Không xác định'), 'error')
         } finally {
             setLoading(false)
         }
@@ -150,21 +161,43 @@ export default function AssignmentApprovalPage() {
         setHistoryLoading(true)
         try {
             let query = (supabase.from('pending_assignments') as any)
-                .select('*, position:positions(id, code)')
+                .select('*')
                 .eq('system_code', currentSystem.code)
                 .neq('status', 'pending')
                 .gte('production_date', historyDateFrom)
                 .lte('production_date', historyDateTo)
                 .order('created_at', { ascending: false })
-                .limit(500)
             
-            if (historyStatusFilter !== 'all') {
-                query = query.eq('status', historyStatusFilter)
-            }
+            if (historyStatusFilter !== 'all') query = query.eq('status', historyStatusFilter)
 
             const { data, error } = await query
             if (error) throw error
-            setHistoryList(data || [])
+            const assignments = data || []
+
+            // Extract all unique position IDs from history
+            const posIds = Array.from(new Set(assignments.map((a: any) => a.position_id).filter(Boolean)))
+            
+            let posMap: Record<string, string> = {}
+            if (posIds.length > 0) {
+                const { data: posData } = await (supabase.from('positions') as any)
+                    .select('id, code')
+                    .in('id', posIds)
+                
+                if (posData) {
+                    posData.forEach((p: any) => {
+                        posMap[p.id] = p.code
+                    })
+                }
+            }
+
+            const enriched = assignments.map((h: any) => ({
+                ...h,
+                position: { 
+                    id: h.position_id, 
+                    code: posMap[h.position_id] || 'N/A' 
+                }
+            }))
+            setHistoryList(enriched)
         } catch (e: any) {
             showToast('Lỗi tải lịch sử: ' + e.message, 'error')
         } finally {
@@ -181,147 +214,121 @@ export default function AssignmentApprovalPage() {
         })
     }
 
-    // [HELPER] Find position ID from code (used only during Approval)
-    const resolvePositionId = async (code: string) => {
-        const searchCode = code.trim()
-
-        // 1. Search in local list first (already filtered by system_type)
-        const matched = allPositions.find((p: any) => 
-            p.code.trim().toLowerCase() === searchCode.toLowerCase()
-        )
-        if (matched) return matched.id
-
-        // 2. Fallback: direct DB search by system_type + code
-        const { data } = await (supabase.from('positions') as any)
-            .select('id, code')
-            .eq('system_type', currentSystem?.code)
-            .ilike('code', searchCode)
-            .limit(1)
-        
-        if (data?.[0]) return data[0].id
-        return null
-    }
-
     const handleSaveEdit = (ass: PendingAssignment) => {
         const newStt = parseInt(editValues.lot_stt)
         const newCode = editValues.position_code.trim()
-        
         if (isNaN(newStt) || !newCode) {
             showToast('Vui lòng nhập đầy đủ STT và Mã vị trí', 'error')
             return
         }
-
-        // JUST UPDATE LOCAL STATE. No DB check here as per user request.
-        // The finding of position_id will happen in handleApprove.
-        setManualEdits(prev => ({
-            ...prev,
-            [ass.id]: { lot_stt: newStt, position_code: newCode }
-        }))
-        
+        setManualEdits(prev => ({ ...prev, [ass.id]: { lot_stt: newStt, position_code: newCode } }))
         setEditingId(null)
-        showToast(`Đã ghi nhận STT ${newStt} tại ${newCode}. Nhấn Duyệt để hoàn tất.`, 'success')
+        showToast(`Đã ghi nhận thay đổi. Nhấn Duyệt để hoàn tất.`, 'success')
     }
 
     const handleApprove = async (ass: PendingAssignment, lotId: string) => {
         setActionLoading(ass.id)
         try {
-            // [NEW] Resolve correct Position ID and STT (from manual edits if any)
             const manual = manualEdits[ass.id]
             let targetPosId = ass.position_id
             let targetStt = ass.lot_stt
 
+            // 1. Handle manual edit resolution
             if (manual) {
                 targetStt = manual.lot_stt
-                const resolvedId = await resolvePositionId(manual.position_code)
-                if (!resolvedId) {
-                    throw new Error(`Không thấy mã "${manual.position_code}" trong kho. Vui lòng kiểm tra lại.`);
-                }
-                targetPosId = resolvedId
+                const { data: matchedPos, error: posFindErr } = await (supabase.from('positions') as any)
+                    .select('id')
+                    .eq('system_type', currentSystem?.code)
+                    .ilike('code', manual.position_code.trim())
+                    .limit(1)
+                    .single()
+                
+                if (posFindErr || !matchedPos) throw new Error(`Không thấy mã vị trí "${manual.position_code}"`);
+                targetPosId = matchedPos.id
 
-                // Persist the change to assignment record first
-                const { error: updErr } = await (supabase.from('pending_assignments') as any)
+                const { error: assUpdErr } = await (supabase.from('pending_assignments') as any)
                     .update({ position_id: targetPosId, lot_stt: targetStt })
                     .eq('id', ass.id)
-                if (updErr) throw updErr
+                if (assUpdErr) throw new Error("Lỗi cập nhật yêu cầu: " + assUpdErr.message);
             }
 
-            // Validate 1: Is this LOT already assigned to another position?
-            const { data: existingPositions, error: checkErr1 } = await (supabase.from('positions') as any)
-                .select('id, code')
-                .eq('lot_id', lotId)
-                
-            if (checkErr1) throw new Error("Không thể kiểm tra vị trí cũ của lô: " + checkErr1.message);
-
-            const otherPositions = (existingPositions || []).filter((p: any) => p.id !== targetPosId);
-            if (otherPositions.length > 0) {
-                const posCodes = otherPositions.map((p: any) => p.code).join(', ');
-                throw new Error(`LOT này đang nằm tại vị trí: ${posCodes}. Yêu cầu gỡ LOT khỏi vị trí cũ TRƯỚC khi gán sang vị trí mới!`);
-            }
-
-            // Validate 2: Is the target position already occupied by another LOT?
-            const { data: targetPos, error: checkErr2 } = await (supabase.from('positions') as any)
+            // 2. Resolve Target Position Info for validation and messaging
+            const { data: targetPosInfo, error: checkErr } = await (supabase.from('positions') as any)
                 .select('code, lot_id')
                 .eq('id', targetPosId)
                 .single()
+            if (checkErr) throw new Error("Lỗi kiểm tra vị trí: " + checkErr.message);
 
-            if (checkErr2) throw new Error("Không thể kiểm tra thông tin vị trí đích: " + checkErr2.message);
-
-            if (targetPos?.lot_id && targetPos.lot_id !== lotId) {
-                const { data: occupiedLot } = await (supabase.from('lots') as any).select('code, daily_seq').eq('id', targetPos.lot_id).single()
-                const lotInfo = occupiedLot ? `LOT ${occupiedLot.code} (STT ${occupiedLot.daily_seq || '?'})` : 'một LOT khác';
-                throw new Error(`Vị trí ${targetPos.code} ĐÃ CÓ ${lotInfo} lưu trữ. Vui lòng gỡ LOT này khỏi vị trí trước khi gán LOT mới!`);
+            // 3. Validate and handle existing placement
+            // Check if this LOT is already assigned to ANY position
+            const { data: currentPlacements, error: placementErr } = await (supabase.from('positions') as any)
+                .select('id, code')
+                .eq('lot_id', lotId)
+            
+            if (placementErr) throw new Error("Lỗi kiểm tra vị trí LOT: " + placementErr.message);
+            
+            // If it's already somewhere else, we must unbind it first
+            const otherPlacements = (currentPlacements || []).filter((p: any) => p.id !== targetPosId)
+            if (otherPlacements.length > 0) {
+                const confirmed = await showConfirm(`Lô hàng này đang được ghi nhận ở vị trí: ${otherPlacements.map((p: any) => p.code).join(', ')}. Bạn có muốn chuyển nó sang vị trí mới (${targetPosInfo?.code || '---'}) không?`)
+                if (!confirmed) {
+                    setActionLoading(null) // Reset loading state
+                    return // EXIT GRACEFULLY
+                }
+                
+                // Unbind from all old positions
+                for (const oldPos of otherPlacements) {
+                    const { error: unbindErr } = await (supabase.from('positions') as any)
+                        .update({ lot_id: null })
+                        .eq('id', oldPos.id)
+                    if (unbindErr) throw new Error(`Lỗi khi gỡ khỏi vị trí ${oldPos.code}: ` + unbindErr.message);
+                }
             }
 
-            // 1. Update position
-            const { error: posErr } = await (supabase.from('positions') as any)
+            // 4. Check target position availability
+            if (targetPosInfo?.lot_id && targetPosInfo.lot_id !== lotId) {
+                throw new Error(`Vị trí ${targetPosInfo.code} đã có Lô hàng khác đang ở đó! Hãy gỡ ra trước.`);
+            }
+
+            // 5. EXECUTE UPDATES
+            const { error: posUpdateErr } = await (supabase.from('positions') as any)
                 .update({ lot_id: lotId })
                 .eq('id', targetPosId)
+            
+            if (posUpdateErr) {
+                throw new Error("KHÔNG THỂ GHI NHẬN VỊ TRÍ: " + posUpdateErr.message);
+            }
 
-            if (posErr) throw new Error("Lỗi cập nhật lúc gán LOT vào vị trí: " + posErr.message)
-
-            // 2. Mark as approved
-            const { error: pErr } = await (supabase.from('pending_assignments') as any)
+            // Then, mark assignment as approved
+            const { error: statusUpdateErr } = await (supabase.from('pending_assignments') as any)
                 .update({ status: 'approved' })
                 .eq('id', ass.id)
-
-            if (pErr) throw new Error("Lỗi ghi nhận trạng thái đã duyệt: " + pErr.message);
-
-            showToast('Đã khớp nối vị trí thành công!', 'success')
             
-            // Remove from pending list
-            setPendingList(prev => prev.filter(p => p.id !== ass.id))
-            
-            // If it matches the currently viewed daily list, add to history
-            if (ass.production_date === productionDate) {
-                setApprovedList(prev => [{...ass, status: 'approved'}, ...prev])
+            if (statusUpdateErr) {
+                // Warning: position linked but assignment status failed to update
+                showToast("Vị trí đã lưu nhưng lỗi cập nhật trạng thái: " + statusUpdateErr.message, "error");
+                throw new Error("Lỗi cập nhật trạng thái duyệt.");
             }
+
+            showToast('Đã duyệt và ghi nhận vị trí thành công!', 'success')
+            fetchData() 
         } catch (e: any) {
             showToast(e.message || 'Có lỗi xảy ra', 'error')
+            console.error('Approval Process Error:', e)
         } finally {
             setActionLoading(null)
         }
     }
 
     const handleReject = async (ass: PendingAssignment) => {
-        const confirmed = await showConfirm(`Bạn có chắc chắn muốn từ chối (hủy) yêu cầu gán STT #${ass.lot_stt} này?`)
+        const confirmed = await showConfirm(`Bạn có chắc chắn muốn hủy yêu cầu này?`)
         if (!confirmed) return
-
         setActionLoading(ass.id)
         try {
-            const { error } = await (supabase.from('pending_assignments') as any)
-                .update({ status: 'rejected' })
-                .eq('id', ass.id)
-
+            const { error } = await (supabase.from('pending_assignments') as any).update({ status: 'rejected' }).eq('id', ass.id)
             if (error) throw error
-
             showToast('Đã hủy yêu cầu', 'success')
-            // Remove from pending
-            setPendingList(prev => prev.filter(p => p.id !== ass.id))
-            
-            // Add to rejected history
-            if (ass.production_date === productionDate) {
-                setRejectedList(prev => [{...ass, status: 'rejected'}, ...prev])
-            }
+            fetchData() 
         } catch (e: any) {
             showToast('Lỗi khi hủy: ' + e.message, 'error')
         } finally {
@@ -330,7 +337,7 @@ export default function AssignmentApprovalPage() {
     }
 
     return (
-        <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-zinc-900 p-6 h-full">
+        <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-zinc-950 p-6 h-full transition-colors">
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
                 <div>
@@ -338,294 +345,151 @@ export default function AssignmentApprovalPage() {
                         <LinkIcon className="text-blue-600" size={32} />
                         Duyệt Gán Vị Trí
                     </h1>
-                    <p className="text-zinc-500 dark:text-zinc-400 mt-1 font-medium">
-                        Khớp nối STT từ mobile với dữ liệu LOT thực tế.
-                    </p>
+                    <p className="text-zinc-500 dark:text-zinc-400 mt-1 font-medium">Kết nối dữ liệu thực tế với báo cáo từ Mobile.</p>
                 </div>
-
                 <div className="flex items-center gap-3">
-                    <div className="hidden md:flex flex-col items-end">
-                        <span className="text-[10px] font-black text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-100 uppercase tracking-widest">{currentSystem?.code}</span>
-                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-tighter mt-1">{currentSystem?.name}</span>
+                    <div className="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center">
+                        <Calendar size={16} className="text-zinc-400 mx-2" />
+                        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="bg-transparent border-none outline-none font-bold text-xs text-zinc-900 dark:text-white" />
+                        <span className="text-zinc-300 mx-1">→</span>
+                        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="bg-transparent border-none outline-none font-bold text-xs text-zinc-900 dark:text-white" />
                     </div>
-                    <div className="flex items-center gap-2 bg-white dark:bg-zinc-800 p-2 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm">
-                        <Calendar size={18} className="text-zinc-400 ml-2" />
-                        <input 
-                            type="date"
-                            value={productionDate}
-                            onChange={(e) => setProductionDate(e.target.value)}
-                            className="bg-transparent border-none outline-none font-bold text-sm text-zinc-900 dark:text-white pr-2 cursor-pointer"
-                        />
-                    </div>
-                    <button 
-                        onClick={fetchData}
-                        className="p-3 bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
-                        title="Tải lại"
-                    >
-                        <RefreshCcw size={18} className={loading ? "animate-spin" : ""} />
+                    <button onClick={fetchData} className="p-3 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+                        <RefreshCcw size={18} className={`${loading ? 'animate-spin' : ''} text-zinc-600 dark:text-zinc-400`} />
                     </button>
                 </div>
             </div>
 
-            {/* Main Content */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                {/* Pending List (Main) */}
                 <div className="lg:col-span-2 space-y-4">
-                    <div className="flex items-center justify-between mb-2 px-2">
-                        <h2 className="text-xs font-black text-zinc-400 uppercase tracking-widest flex items-center gap-2">
-                            Yêu cầu từ Mobile ({pendingList.length})
-                        </h2>
-                    </div>
-
+                    <h2 className="text-xs font-black text-zinc-400 uppercase tracking-widest mb-2 px-2">Yêu cầu từ Mobile ({pendingList.length})</h2>
+                    
                     {loading ? (
-                        <div className="flex flex-col items-center justify-center py-20 bg-white dark:bg-zinc-800 rounded-3xl border border-zinc-100 dark:border-zinc-800/50 shadow-sm">
-                            <Loader2 size={32} className="text-blue-600 animate-spin mb-4" />
-                            <p className="text-zinc-400 font-bold uppercase text-[10px] tracking-widest">Đang tải dữ liệu chờ duyệt...</p>
+                        <div className="py-24 flex flex-col items-center justify-center bg-white dark:bg-zinc-900 rounded-[32px] border border-zinc-100 dark:border-zinc-800 shadow-sm">
+                            <Loader2 className="animate-spin text-blue-600 mb-4" size={32} />
+                            <p className="text-zinc-400 font-bold text-[10px] uppercase tracking-widest">Đang tải dữ liệu...</p>
                         </div>
                     ) : pendingList.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-20 bg-white dark:bg-zinc-800 rounded-3xl border-2 border-dashed border-zinc-100 dark:border-zinc-800/50 shadow-sm">
-                            <div className="w-16 h-16 bg-zinc-50 dark:bg-zinc-900 rounded-full flex items-center justify-center mb-4 text-zinc-300 dark:text-zinc-600">
-                                <CheckCircle2 size={32} />
-                            </div>
-                            <p className="text-zinc-400 font-bold uppercase text-[10px] tracking-widest">Tuyệt vời! Không còn vị trí nào chờ duyệt.</p>
+                        <div className="py-24 flex flex-col items-center justify-center bg-white dark:bg-zinc-900 rounded-[32px] border border-dashed border-zinc-200 dark:border-zinc-800 text-zinc-300">
+                            <CheckCircle2 size={40} className="mb-4 opacity-20" />
+                            <p className="text-zinc-400 font-bold text-[10px] uppercase tracking-widest">Không có yêu cầu chờ duyệt</p>
                         </div>
                     ) : (
                         <div className="space-y-4">
                             {pendingList.map((ass) => {
-                                const matchedLot = lotsInDay.find(l => {
-                                    const lotInboundDate = l.inbound_date?.split('T')[0]
-                                    return l.daily_seq === ass.lot_stt && lotInboundDate === ass.production_date
-                                })
-                                const isDifferentSystem = matchedLot && matchedLot.system_code !== currentSystem?.code
+                                const allMatchedLots = lotsInDay.filter(l => l.daily_seq === ass.lot_stt)
+                                const perfectMatch = allMatchedLots.find(l => l.inbound_date?.split('T')[0] === ass.production_date)
+                                const hasOtherMatches = allMatchedLots.length > 0
                                 
-                                // Deep date check (ignore time)
-                                const assDate = ass.production_date
-                                const lotInboundDate = matchedLot?.inbound_date?.split('T')[0]
-                                const isDifferentDate = matchedLot && lotInboundDate !== assDate
-
                                 return (
-                                    <div 
-                                        key={ass.id} 
-                                        className={`group bg-white dark:bg-zinc-800 border-2 rounded-[28px] p-6 transition-all hover:shadow-xl hover:scale-[1.01] ${
-                                            matchedLot 
-                                            ? (isDifferentDate || isDifferentSystem ? 'border-amber-100 bg-amber-50/10' : 'border-emerald-100 dark:border-emerald-900/30 bg-emerald-50/20') 
-                                            : 'border-zinc-100 dark:border-zinc-800'
-                                        }`}
-                                    >
-                                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-                                            {/* Info Section */}
+                                    <div key={ass.id} className="bg-white dark:bg-zinc-900 border-2 border-zinc-100 dark:border-zinc-800 rounded-[28px] p-6 shadow-sm hover:shadow-md transition-all group">
+                                        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                                             <div className="flex items-center gap-5">
-                                                <div className={`w-16 h-16 rounded-2xl flex flex-col items-center justify-center font-black border shadow-sm ${
-                                                    matchedLot 
-                                                    ? (isDifferentDate || isDifferentSystem ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100') 
-                                                    : 'bg-blue-50 text-blue-600 border-blue-100'
-                                                }`}>
-                                                    <span className="text-[10px] uppercase opacity-50 mb-0.5 leading-none">STT</span>
-                                                    {editingId === ass.id ? (
-                                                        <input 
-                                                            type="number"
-                                                            value={editValues.lot_stt}
-                                                            onChange={(e) => setEditValues(prev => ({...prev, lot_stt: e.target.value}))}
-                                                            className="w-12 bg-white dark:bg-zinc-700 text-center rounded-lg text-lg border border-zinc-200 outline-none"
-                                                        />
-                                                    ) : (
-                                                        <span className="text-2xl leading-none">#{manualEdits[ass.id]?.lot_stt || ass.lot_stt}</span>
-                                                    )}
+                                                <div className="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-900/10 text-blue-600 border border-blue-100 dark:border-blue-900/20 flex flex-col items-center justify-center font-black">
+                                                    <span className="text-[10px] opacity-50 uppercase text-zinc-500">STT</span>
+                                                    <span className="text-2xl">#{manualEdits[ass.id]?.lot_stt || ass.lot_stt}</span>
                                                 </div>
-                                                
-                                                <ArrowRight className="text-zinc-300 hidden md:block" />
-
-                                                <div className="space-y-1">
-                                                    <div 
-                                                        className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all cursor-pointer ${
-                                                            editingId === ass.id 
-                                                            ? 'bg-white dark:bg-zinc-800 border-blue-500 shadow-lg shadow-blue-500/10' 
-                                                            : (manualEdits[ass.id] ? 'bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800' : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 hover:border-blue-400')
-                                                        }`}
-                                                        onClick={() => editingId !== ass.id && startEdit(ass)}
-                                                    >
-                                                        <MapPin size={16} className={editingId === ass.id ? "text-blue-500" : (manualEdits[ass.id] ? "text-amber-500" : "text-red-500")} />
-                                                        {editingId === ass.id ? (
-                                                            <div className="relative flex-1">
-                                                                <input 
-                                                                    list="positions-list"
-                                                                    value={editValues.position_code}
-                                                                    onChange={(e) => setEditValues(prev => ({...prev, position_code: e.target.value}))}
-                                                                    className="w-full bg-transparent border-none py-1 pl-1 pr-2 text-sm font-black outline-none cursor-text text-zinc-900 dark:text-white placeholder:text-zinc-300"
-                                                                    placeholder="Gõ mã vị trí..."
-                                                                    autoFocus
-                                                                />
-                                                                <datalist id="positions-list">
-                                                                    {allPositions.map(p => (
-                                                                        <option key={p.id} value={p.code} />
-                                                                    ))}
-                                                                </datalist>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="flex items-center gap-1">
-                                                                <span className="text-xl font-black text-zinc-900 dark:text-white uppercase tracking-tight shrink-0">
-                                                                    {manualEdits[ass.id]?.position_code || ass.position?.code || '---'}
-                                                                </span>
-                                                                {manualEdits[ass.id] && <span className="text-[8px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-black ml-1">NHÁP</span>}
-                                                            </div>
-                                                        )}
+                                                <ArrowRight className="text-zinc-300 dark:text-zinc-700" />
+                                                <div className="flex flex-col gap-2">
+                                                    <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-2xl cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 transition-all" onClick={() => startEdit(ass)}>
+                                                        <div className="flex items-center gap-2">
+                                                            <MapPin size={16} className="text-red-500" />
+                                                            <span className="text-xl font-black uppercase text-zinc-900 dark:text-white">
+                                                                {manualEdits[ass.id]?.position_code || ass.position?.code || '---'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="text-[9px] text-zinc-500 dark:text-zinc-500 font-bold uppercase mt-1 tracking-wider">SX: {format(new Date(ass.production_date), 'dd/MM/yyyy')}</div>
                                                     </div>
-                                                    <div className="flex items-center gap-2 text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
-                                                        <Calendar size={12} />
-                                                        <span>Lô ngày: {format(new Date(ass.production_date), 'dd/MM/yyyy')}</span>
-                                                        <span className="text-zinc-200">|</span>
-                                                        <span>Gửi lúc: {format(new Date(ass.created_at), 'HH:mm')}</span>
-                                                    </div>
+                                                    
+                                                    {(() => {
+                                                        const targetPosCode = manualEdits[ass.id]?.position_code || ass.position?.code
+                                                        const pos = allPositions.find(p => p.code === targetPosCode)
+                                                        if (pos?.lot_id) {
+                                                            const occupant = lotsInDay.find(l => l.id === pos.lot_id)
+                                                            return (
+                                                                <div className="px-3 py-2 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 rounded-xl animate-in fade-in slide-in-from-top-1 duration-300">
+                                                                    <div className="text-[8px] font-black text-red-600 dark:text-red-400 uppercase flex items-center gap-1.5"><AlertTriangle size={10} /> Vị trí này đang chứa:</div>
+                                                                    <div className="text-[10px] font-black text-red-700 dark:text-red-300 mt-0.5">#{occupant?.daily_seq} | {occupant?.code}</div>
+                                                                    <div className="text-[8px] text-red-500 font-bold leading-tight mt-1">{occupant?.product_names?.join(', ')}</div>
+                                                                </div>
+                                                            )
+                                                        }
+                                                        return null
+                                                    })()}
                                                 </div>
                                             </div>
 
-                                            {/* Matching Section */}
-                                            <div className="flex-1 w-full md:w-auto">
-                                                {matchedLot ? (
-                                                    <div className="space-y-3">
-                                                        <div className={`flex items-center gap-4 p-4 rounded-2xl border animate-in zoom-in duration-300 relative overflow-hidden ${
-                                                            isDifferentDate || isDifferentSystem 
-                                                            ? 'bg-amber-50 border-amber-100 dark:bg-amber-900/20 dark:border-amber-800' 
-                                                            : 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800/50'
-                                                        }`}>
-                                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                                                                isDifferentDate || isDifferentSystem 
-                                                                ? 'bg-amber-100 text-amber-600' 
-                                                                : 'bg-emerald-100 dark:bg-emerald-800 text-emerald-600 dark:text-emerald-400'
-                                                            }`}>
-                                                                {isDifferentDate || isDifferentSystem ? <AlertTriangle size={24} /> : <CheckCircle2 size={24} />}
-                                                            </div>
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className={`text-[10px] font-black uppercase tracking-widest mb-0.5 ${
-                                                                    isDifferentDate || isDifferentSystem ? 'text-amber-600' : 'text-emerald-600 dark:text-emerald-400'
-                                                                }`}>
-                                                                    {isDifferentSystem ? `TÌM THẤY TẠI KHO: ${matchedLot.system_code}` : 'KHỚP TỰ ĐỘNG (99%)'}
-                                                                </div>
-                                                                <div className="text-xs font-black text-zinc-900 dark:text-white truncate">{matchedLot.code}</div>
-                                                                <div className="text-[9px] text-zinc-500 truncate">{matchedLot.product_names?.join(', ')}</div>
-                                                            </div>
-
-                                                            <div className="flex items-center gap-2">
-                                                                {editingId === ass.id ? (
-                                                                    <>
-                                                                        <button 
-                                                                            onClick={() => handleSaveEdit(ass)}
-                                                                            disabled={!!actionLoading}
-                                                                            className="p-3 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all active:scale-95"
-                                                                            title="Lưu thay đổi"
-                                                                        >
-                                                                            <Save size={18} />
-                                                                        </button>
-                                                                        <button 
-                                                                            onClick={() => setEditingId(null)}
-                                                                            className="p-3 bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-xl hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-all"
-                                                                            title="Hủy"
-                                                                        >
-                                                                            <X size={18} />
-                                                                        </button>
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        <button 
-                                                                            onClick={() => handleApprove(ass, matchedLot.id)}
-                                                                            disabled={!!actionLoading}
-                                                                            className={`px-6 py-2.5 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg transition-all active:scale-95 disabled:opacity-50 ${
-                                                                                isDifferentDate || isDifferentSystem 
-                                                                                ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' 
-                                                                                : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'
-                                                                            }`}
-                                                                        >
-                                                                            {actionLoading === ass.id ? <Loader2 size={16} className="animate-spin" /> : 'DUYỆT NGAY'}
-                                                                        </button>
-                                                                        <button 
-                                                                            onClick={() => startEdit(ass)}
-                                                                            disabled={!!actionLoading}
-                                                                            className="p-2 text-zinc-400 hover:text-blue-600 transition-colors"
-                                                                            title="Sửa yêu cầu"
-                                                                        >
-                                                                            <Edit2 size={18} />
-                                                                        </button>
-                                                                        <button 
-                                                                            onClick={() => handleReject(ass)}
-                                                                            disabled={!!actionLoading}
-                                                                            className="p-2 text-zinc-300 hover:text-red-500 transition-colors"
-                                                                        >
-                                                                            <Trash2 size={18} />
-                                                                        </button>
-                                                                    </>
-                                                                )}
-                                                            </div>
-
-                                                            {(isDifferentDate || isDifferentSystem) && (
-                                                                <div className="absolute top-0 right-0">
-                                                                    <div className="bg-amber-500 text-white text-[8px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-widest shadow-sm">
-                                                                        Dữ liệu lệch
-                                                                    </div>
-                                                                </div>
-                                                            )}
+                                            <div className="flex-1 w-full min-w-0">
+                                                {perfectMatch ? (
+                                                    <div className="p-5 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 rounded-[24px] flex items-center justify-between">
+                                                        <div className="min-w-0 pr-4">
+                                                            <div className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase mb-1 tracking-widest flex items-center gap-2"><CheckCircle2 size={14} /> KHỚP TỰ ĐỘNG (100%)</div>
+                                                            <div className="text-sm font-black text-zinc-900 dark:text-white mb-0.5">{perfectMatch.code}</div>
+                                                            <div className="text-[10px] text-zinc-600 dark:text-zinc-400 font-bold leading-relaxed">{perfectMatch.product_names?.join(', ')}</div>
                                                         </div>
-
-                                                        {isDifferentDate && (
-                                                            <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-100 rounded-xl">
-                                                                <AlertTriangle size={14} className="text-amber-500" />
-                                                                <span className="text-[10px] font-bold text-amber-700 uppercase">Chú ý:</span>
-                                                                <span className="text-[10px] text-amber-600 font-medium">LOT có ngày nhập kho là <span className="font-bold underline">{matchedLot.inbound_date ? format(new Date(matchedLot.inbound_date), 'dd/MM/yyyy') : '---'}</span>, lệch so với yêu cầu ({ass.production_date ? format(new Date(ass.production_date), 'dd/MM/yyyy') : '---'})</span>
+                                                        <div className="flex gap-2 shrink-0">
+                                                            <button onClick={() => handleApprove(ass, perfectMatch.id)} disabled={!!actionLoading} className="px-8 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl text-xs font-black uppercase shadow-lg shadow-emerald-500/20 active:scale-95 transition-all">DUYỆT NGAY</button>
+                                                            <button onClick={() => handleReject(ass)} className="p-3 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={20} /></button>
+                                                        </div>
+                                                    </div>
+                                                ) : hasOtherMatches ? (
+                                                    <div className="space-y-3">
+                                                        <div className="flex items-center justify-between px-2">
+                                                            <div className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest flex items-center gap-2"><Info size={14} />PHÁT HIỆN {allMatchedLots.length} LÔ HÀNG TRÙNG STT</div>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => startEdit(ass)} className="p-1 text-zinc-400 hover:text-blue-500 transition-colors"><Edit2 size={14} /></button>
+                                                                <button onClick={() => handleReject(ass)} className="p-1 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
                                                             </div>
-                                                        )}
+                                                        </div>
+                                                        <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto scrollbar-thin pr-1">
+                                                            {allMatchedLots.sort((a,b)=>new Date(b.inbound_date||'').getTime()-new Date(a.inbound_date||'').getTime()).map(l=>(
+                                                                <button key={l.id} onClick={() => handleApprove(ass, l.id)} className="w-full text-left p-4 bg-white dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 hover:border-blue-500 dark:hover:border-blue-600 rounded-2xl transition-all group relative overflow-hidden">
+                                                                    <div className="flex justify-between items-start mb-2">
+                                                                        <div className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-[9px] font-black rounded-lg border border-blue-100 dark:border-blue-900/30">SX: {format(new Date(l.inbound_date||''), 'dd/MM/yyyy')}</div>
+                                                                        {l.positions?.[0] ? (
+                                                                            <div className="text-[9px] font-black text-emerald-600 flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-lg"><MapPin size={10} /> {l.positions[0].code}</div>
+                                                                        ) : (
+                                                                            <div className="text-[9px] font-black text-blue-600 flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-lg">⭐ LÔ MỚI</div>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="text-xs font-black text-zinc-900 dark:text-white mb-1">{l.code}</div>
+                                                                    <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-bold leading-normal">{l.product_names?.join(', ')}</div>
+                                                                    <div className="absolute top-0 right-0 h-full w-12 bg-gradient-to-l from-blue-500/10 to-transparent flex items-center justify-center translate-x-12 group-hover:translate-x-0 transition-transform">
+                                                                        <CheckCircle2 size={24} className="text-blue-600" />
+                                                                    </div>
+                                                                </button>
+                                                            ))}
+                                                        </div>
                                                     </div>
                                                 ) : (
-                                                    <div className="p-4 bg-amber-50 dark:bg-amber-900/10 rounded-2xl border-2 border-dashed border-amber-200 dark:border-amber-900/20 flex items-center justify-between">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-10 h-10 bg-amber-100 dark:bg-amber-800/50 text-amber-600 dark:text-amber-400 rounded-xl flex items-center justify-center shrink-0">
-                                                                <AlertCircle size={24} />
-                                                            </div>
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-0.5">KHÔNG TÌM THẤY LOT KHỚP STT</div>
-                                                                <div className="text-[9px] text-amber-500 font-medium leading-relaxed">
-                                                                    Hãy kiểm tra xem lô hàng STT #{ass.lot_stt} đã được tạo cho kho <b>{currentSystem?.code}</b> chưa?
-                                                                </div>
+                                                    <div className="space-y-3">
+                                                        <div className="flex items-center justify-between px-2">
+                                                            <div className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest flex items-center gap-2"><AlertCircle size={14} />DỮ LIỆU CẦN KẾT NỐI THỦ CÔNG</div>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => startEdit(ass)} className="p-1.5 text-zinc-400 hover:text-blue-500 transition-colors"><Edit2 size={16} /></button>
+                                                                <button onClick={() => handleReject(ass)} className="p-1.5 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
                                                             </div>
                                                         </div>
-                                                        <div className="flex items-center gap-2">
-                                                            {editingId === ass.id ? (
-                                                                <>
-                                                                    <button 
-                                                                        onClick={() => handleSaveEdit(ass)}
-                                                                        disabled={!!actionLoading}
-                                                                        className="px-4 py-2 bg-blue-600 text-white rounded-xl font-black text-xs uppercase"
-                                                                    >
-                                                                        LƯU
+                                                        <div className="bg-amber-50 dark:bg-amber-900/5 border border-amber-100 dark:border-amber-900/20 rounded-3xl p-4">
+                                                            <p className="text-[10px] text-zinc-500 font-bold mb-3 uppercase tracking-tighter text-center">Tìm lô hàng tương ứng để kết nối:</p>
+                                                            <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto scrollbar-thin pr-1">
+                                                                {lotsInDay.filter(l=>!l.positions?.[0]).slice(0, 10).map(l=>(
+                                                                    <button key={l.id} onClick={() => handleApprove(ass, l.id)} className="w-full text-left p-4 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-amber-500 rounded-2xl transition-all relative group">
+                                                                        <div className="flex justify-between items-center mb-1">
+                                                                            <span className="text-[10px] font-black text-zinc-400">STT #{l.daily_seq}</span>
+                                                                            <span className="text-[9px] font-black text-zinc-400 uppercase">{format(new Date(l.inbound_date||''), 'dd/MM/yyyy')}</span>
+                                                                        </div>
+                                                                        <div className="text-xs font-black text-zinc-900 dark:text-white mb-1">{l.code}</div>
+                                                                        <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-bold leading-tight">{l.product_names?.join(', ')}</div>
+                                                                        <div className="absolute top-0 right-0 h-full w-8 bg-amber-500/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                            <Plus size={16} className="text-amber-600" />
+                                                                        </div>
                                                                     </button>
-                                                                    <button 
-                                                                        onClick={() => setEditingId(null)}
-                                                                        className="px-4 py-2 bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-xl font-black text-xs uppercase"
-                                                                    >
-                                                                        HỦY
-                                                                    </button>
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <button 
-                                                                        onClick={() => showToast('Tính năng gán thủ công đang được phát triển', 'info')}
-                                                                        className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95"
-                                                                    >
-                                                                        Gán thủ công
-                                                                    </button>
-                                                                    <button 
-                                                                        onClick={() => startEdit(ass)}
-                                                                        className="p-2 text-zinc-400 hover:text-blue-500"
-                                                                    >
-                                                                        <Filter size={18} />
-                                                                    </button>
-                                                                    <button 
-                                                                        onClick={() => handleReject(ass)}
-                                                                        className="p-2 text-zinc-300 hover:text-red-500 transition-colors"
-                                                                    >
-                                                                        <Trash2 size={18} />
-                                                                    </button>
-                                                                </>
-                                                            )}
+                                                                ))}
+                                                                {lotsInDay.filter(l=>!l.positions?.[0]).length > 10 && (
+                                                                    <p className="text-[9px] text-center text-zinc-400 py-2 italic font-bold">Dùng thanh "Tìm mã số LOT" bên phải để thấy nhiều hơn...</p>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 )}
@@ -637,211 +501,103 @@ export default function AssignmentApprovalPage() {
                         </div>
                     )}
 
-                    {/* ===== LỊCH SỬ DUYỆT GÁN VỊ TRÍ ===== */}
+                    {/* History Section */}
                     <div className="mt-12">
-                        <button
-                            onClick={() => {
-                                setShowHistory(!showHistory)
-                                if (!showHistory && historyList.length === 0) fetchHistory()
-                            }}
-                            className="w-full flex items-center justify-between px-5 py-4 bg-white dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-2xl hover:border-blue-200 dark:hover:border-blue-800 transition-all group"
-                        >
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-blue-50 dark:bg-blue-900/30 rounded-xl flex items-center justify-center">
-                                    <History size={20} className="text-blue-600 dark:text-blue-400" />
-                                </div>
-                                <div className="text-left">
-                                    <h3 className="text-sm font-black text-zinc-900 dark:text-white">Lịch Sử Duyệt Gán Vị Trí</h3>
-                                    <p className="text-[10px] text-zinc-400 font-medium">Tra cứu theo ngày, xem chi tiết trạng thái duyệt</p>
-                                </div>
-                            </div>
-                            <ChevronDown size={20} className={`text-zinc-400 transition-transform duration-300 ${showHistory ? 'rotate-180' : ''}`} />
+                        <button onClick={() => {setShowHistory(!showHistory); if(!showHistory) fetchHistory();}} className="w-full flex items-center justify-between px-6 py-5 bg-white dark:bg-zinc-900 border-2 border-zinc-100 dark:border-zinc-800 rounded-3xl transition-all hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
+                            <div className="flex items-center gap-3"><History size={20} className="text-blue-600" /><span className="text-base font-black text-zinc-900 dark:text-white">Lịch Sử Duyệt Gán</span></div>
+                            <ChevronDown className={`transition-transform text-zinc-400 ${showHistory?'rotate-180':''}`} />
                         </button>
-
                         {showHistory && (
-                            <div className="mt-4 bg-white dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 rounded-3xl p-6 space-y-5 animate-in slide-in-from-top-2 duration-300">
-                                {/* Filter Bar */}
-                                <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
-                                    <div className="flex items-center gap-2">
-                                        <div>
-                                            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-1">Từ ngày</label>
-                                            <input 
-                                                type="date" 
-                                                value={historyDateFrom} 
-                                                onChange={e => setHistoryDateFrom(e.target.value)}
-                                                className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-blue-400 transition-colors"
-                                            />
-                                        </div>
-                                        <span className="text-zinc-300 font-bold mt-5">→</span>
-                                        <div>
-                                            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-1">Đến ngày</label>
-                                            <input 
-                                                type="date" 
-                                                value={historyDateTo} 
-                                                onChange={e => setHistoryDateTo(e.target.value)}
-                                                className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-blue-400 transition-colors"
-                                            />
-                                        </div>
+                            <div className="mt-4 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-[32px] p-6 space-y-4 shadow-xl">
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                    <div className="flex items-center gap-2 bg-zinc-50 dark:bg-zinc-950 px-3 py-1 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                                        <input type="date" value={historyDateFrom} onChange={e => setHistoryDateFrom(e.target.value)} className="bg-transparent text-xs font-black text-zinc-900 dark:text-white outline-none" />
+                                        <span className="text-zinc-300">→</span>
+                                        <input type="date" value={historyDateTo} onChange={e => setHistoryDateTo(e.target.value)} className="bg-transparent text-xs font-black text-zinc-900 dark:text-white outline-none" />
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <div className="flex bg-zinc-100 dark:bg-zinc-900 rounded-xl p-0.5">
-                                            {(['all', 'approved', 'rejected'] as const).map(s => (
-                                                <button
-                                                    key={s}
-                                                    onClick={() => setHistoryStatusFilter(s)}
-                                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
-                                                        historyStatusFilter === s
-                                                            ? (s === 'approved' ? 'bg-emerald-500 text-white shadow-sm' : s === 'rejected' ? 'bg-red-500 text-white shadow-sm' : 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm')
-                                                            : 'text-zinc-400 hover:text-zinc-600'
-                                                    }`}
-                                                >
-                                                    {s === 'all' ? 'Tất cả' : s === 'approved' ? 'Đã duyệt' : 'Đã hủy'}
-                                                </button>
-                                            ))}
-                                        </div>
-                                        <button
-                                            onClick={fetchHistory}
-                                            disabled={historyLoading}
-                                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
-                                        >
-                                            {historyLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-                                            Tra cứu
-                                        </button>
+                                    <div className="relative flex-1">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={14} />
+                                        <input placeholder="Tìm kiếm vị trí hoặc STT..." value={historySearchTerm} onChange={e => setHistorySearchTerm(e.target.value)} className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl py-2 pl-9 pr-4 text-xs font-bold text-zinc-900 dark:text-white outline-none focus:border-blue-400" />
                                     </div>
+                                    <button onClick={fetchHistory} className="px-5 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-600/20 active:scale-95 transition-all"><RefreshCcw size={16} className={historyLoading?"animate-spin":""}/></button>
                                 </div>
-
-                                {/* Stats Summary */}
-                                {historyList.length > 0 && (
-                                    <div className="flex items-center gap-4 px-1">
-                                        <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800">
-                                            <CheckCircle2 size={14} className="text-emerald-500" />
-                                            <span className="text-xs font-black text-emerald-700 dark:text-emerald-400">
-                                                {historyList.filter(h => h.status === 'approved').length} Đã duyệt
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-100 dark:border-red-800">
-                                            <XCircle size={14} className="text-red-500" />
-                                            <span className="text-xs font-black text-red-700 dark:text-red-400">
-                                                {historyList.filter(h => h.status === 'rejected').length} Đã hủy
-                                            </span>
-                                        </div>
-                                        <span className="text-[10px] text-zinc-400 font-bold">Tổng: {historyList.length} bản ghi</span>
-                                    </div>
-                                )}
-
-                                {/* Table */}
-                                {historyLoading ? (
-                                    <div className="flex items-center justify-center py-12">
-                                        <Loader2 size={24} className="text-blue-500 animate-spin" />
-                                    </div>
-                                ) : historyList.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center py-12 text-zinc-300">
-                                        <Clock size={32} className="mb-3" />
-                                        <p className="text-xs font-bold text-zinc-400">Chưa có lịch sử trong khoảng ngày đã chọn</p>
-                                        <p className="text-[10px] text-zinc-300 mt-1">Chọn khoảng ngày rồi nhấn &quot;Tra cứu&quot;</p>
-                                    </div>
-                                ) : (
-                                    <div className="overflow-x-auto rounded-2xl border border-zinc-100 dark:border-zinc-700">
-                                        <table className="w-full text-xs">
-                                            <thead>
-                                                <tr className="bg-zinc-50 dark:bg-zinc-900">
-                                                    <th className="text-left px-4 py-3 font-black text-zinc-400 uppercase tracking-widest text-[10px]">STT</th>
-                                                    <th className="text-left px-4 py-3 font-black text-zinc-400 uppercase tracking-widest text-[10px]">Vị trí</th>
-                                                    <th className="text-left px-4 py-3 font-black text-zinc-400 uppercase tracking-widest text-[10px]">Ngày lô</th>
-                                                    <th className="text-left px-4 py-3 font-black text-zinc-400 uppercase tracking-widest text-[10px]">Thời gian gửi</th>
-                                                    <th className="text-left px-4 py-3 font-black text-zinc-400 uppercase tracking-widest text-[10px]">Trạng thái</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
-                                                {historyList.map(h => (
-                                                    <tr key={h.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-900/50 transition-colors">
-                                                        <td className="px-4 py-3">
-                                                            <span className="inline-flex items-center justify-center w-8 h-8 bg-zinc-100 dark:bg-zinc-700 rounded-lg font-black text-zinc-900 dark:text-white">
-                                                                #{h.lot_stt}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-3">
-                                                            <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg font-black text-[11px]">
-                                                                {h.position?.code || '---'}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-3 font-bold text-zinc-600 dark:text-zinc-300">
-                                                            {h.production_date ? format(new Date(h.production_date), 'dd/MM/yyyy') : '---'}
-                                                        </td>
-                                                        <td className="px-4 py-3 text-zinc-500 font-medium">
-                                                            <div className="flex items-center gap-1">
-                                                                <Clock size={12} className="text-zinc-300" />
-                                                                {h.created_at ? format(new Date(h.created_at), 'dd/MM/yyyy HH:mm') : '---'}
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-4 py-3">
-                                                            {h.status === 'approved' ? (
-                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-full text-[10px] font-black uppercase">
-                                                                    <CheckCircle2 size={12} /> Đã duyệt
-                                                                </span>
-                                                            ) : (
-                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-full text-[10px] font-black uppercase">
-                                                                    <XCircle size={12} /> Đã hủy
-                                                                </span>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
+                                <div className="overflow-x-auto rounded-2xl border border-zinc-100 dark:border-zinc-800">
+                                    <table className="w-full text-xs">
+                                        <thead className="bg-zinc-50 dark:bg-zinc-950"><tr><th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">STT</th><th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">Vị trí</th><th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">Ngày SX</th><th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">Trạng thái</th></tr></thead>
+                                        <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">{historyList.filter(h => !historySearchTerm || h.position?.code?.toLowerCase().includes(historySearchTerm.toLowerCase()) || h.lot_stt.toString().includes(historySearchTerm)).map(h => (
+                                            <tr key={h.id} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/20 transition-colors"><td className="px-4 py-3 font-bold text-zinc-900 dark:text-zinc-300">#{h.lot_stt}</td><td className="px-4 py-3 font-black uppercase text-zinc-900 dark:text-white">{h.position?.code || '---'}</td><td className="px-4 py-3 text-zinc-500 font-medium">{format(new Date(h.production_date), 'dd/MM/yyyy')}</td><td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${h.status === 'approved' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400'}`}>{h.status === 'approved' ? 'Đã duyệt' : 'Đã hủy'}</span></td></tr>
+                                        ))}</tbody>
+                                    </table>
+                                </div>
                             </div>
                         )}
                     </div>
                 </div>
 
-                {/* Lot Directory (Sidebar) */}
-                <div className="lg:col-span-1 space-y-4">
-                    <div className="flex items-center justify-between mb-2 px-2">
-                        <h2 className="text-xs font-black text-zinc-400 uppercase tracking-widest flex items-center gap-2">
-                            Danh sách LOT trong ngày ({lotsInDay.length})
+                {/* Sidebar */}
+                <div className="lg:col-span-1">
+                    <div className="bg-white dark:bg-zinc-900 rounded-[32px] border border-zinc-100 dark:border-zinc-800 p-5 sticky top-6 shadow-sm">
+                        <h2 className="text-xs font-black text-zinc-400 dark:text-zinc-500 uppercase px-2 mb-4 tracking-widest flex justify-between items-center">
+                            Danh sách LOT ({lotsInDay.length})
+                            <Package size={14} className="opacity-40" />
                         </h2>
-                    </div>
-
-                    <div className="bg-white dark:bg-zinc-800 rounded-3xl border border-zinc-100 dark:border-zinc-800/50 p-2 space-y-2 sticky top-6">
-                        <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 mb-2">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={14} />
-                                <input 
-                                    placeholder="Tìm mã LOT hoặc STT..."
-                                    className="w-full bg-zinc-50 dark:bg-zinc-900 border-none rounded-xl py-2.5 pl-9 pr-4 text-xs font-bold outline-none"
-                                />
-                            </div>
+                        <div className="relative mb-5">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={14} />
+                            <input placeholder="Tìm mã số LOT..." value={lotSearchTerm} onChange={e => setLotSearchTerm(e.target.value)} className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl py-2.5 pl-10 pr-4 text-xs font-black text-zinc-900 dark:text-white outline-none focus:border-blue-500 shadow-inner" />
                         </div>
-
-                        <div className="max-h-[600px] overflow-y-auto pr-1 space-y-1 custom-scrollbar">
-                            {lotsInDay.length === 0 ? (
-                                <div className="text-center py-10 opacity-50">
-                                    <Package size={24} className="mx-auto mb-2 text-zinc-300" />
-                                    <p className="text-[10px] font-bold text-zinc-400 uppercase">Ngày này chưa có LOT nào</p>
-                                </div>
-                            ) : lotsInDay.sort((a,b) => (a.daily_seq||0) - (b.daily_seq||0)).map((lot) => (
-                                <div key={lot.id} className="p-3 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 rounded-2xl border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 transition-all group">
-                                    <div className="flex items-center justify-between mb-1">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-7 h-7 bg-zinc-100 dark:bg-zinc-700 rounded-lg flex items-center justify-center text-[10px] font-black text-zinc-900 dark:text-white">
-                                                #{lot.daily_seq}
-                                            </div>
-                                            <span className="text-xs font-black text-zinc-900 dark:text-white group-hover:text-blue-600 transition-colors">{lot.code}</span>
+                        <div className="max-h-[600px] overflow-y-auto space-y-2.5 pr-1 scrollbar-thin">
+                            {lotsInDay.filter(l => !lotSearchTerm || l.code.toLowerCase().includes(lotSearchTerm.toLowerCase())).map(lot => (
+                                <div key={lot.id} className="p-4 bg-zinc-50/50 dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-800 hover:border-blue-200 dark:hover:border-blue-900 transition-all flex items-center justify-between group">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 bg-zinc-100 dark:bg-zinc-900 rounded-xl flex items-center justify-center font-black text-xs text-zinc-900 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 shadow-sm group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 transition-all">#{lot.daily_seq}</div>
+                                        <div>
+                                            <div className="text-sm font-black text-zinc-900 dark:text-zinc-100">{lot.code}</div>
+                                            <div className="text-[9px] text-zinc-500 dark:text-zinc-500 font-bold uppercase tracking-wider">{lot.inbound_date ? format(new Date(lot.inbound_date), 'dd/MM/yyyy') : '---'}</div>
                                         </div>
-                                        {(lot as any).lot_id && (
-                                            <div className="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-full text-[8px] font-black">CÓ VỊ TRÍ</div>
-                                        )}
                                     </div>
-                                    <p className="text-[9px] text-zinc-400 line-clamp-1 italic pl-9">{lot.product_names?.join(', ')}</p>
+                                    {lot.positions?.[0]?.code ? (
+                                        <div className="px-2.5 py-1 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-[9px] font-black rounded-lg uppercase border border-emerald-200 dark:border-emerald-900/30">
+                                            {lot.positions[0].code}
+                                        </div>
+                                    ) : (
+                                        <div className="w-2 h-2 rounded-full bg-zinc-200 dark:bg-zinc-800" />
+                                    )}
                                 </div>
                             ))}
                         </div>
                     </div>
                 </div>
-
             </div>
+
+            {/* Edit Modal */}
+            {editingId && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-zinc-900 rounded-[40px] p-8 w-full max-w-md shadow-2xl border border-zinc-100 dark:border-zinc-800 animate-in zoom-in duration-300">
+                        <div className="flex items-center gap-4 mb-8">
+                            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-2xl text-blue-600"><Edit2 size={24} /></div>
+                            <div>
+                                <h3 className="text-2xl font-black text-zinc-900 dark:text-white">Chỉnh sửa yêu cầu</h3>
+                                <p className="text-zinc-500 dark:text-zinc-400 text-xs font-bold uppercase tracking-widest mt-0.5">Mobile Assignment Fix</p>
+                            </div>
+                        </div>
+                        <div className="space-y-6">
+                            <div>
+                                <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest block mb-1.5 ml-1">Số STT Lô hàng</label>
+                                <input type="number" value={editValues.lot_stt} onChange={e => setEditValues(prev => ({...prev, lot_stt: e.target.value}))} className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-base font-black text-zinc-900 dark:text-white outline-none focus:border-blue-500 shadow-inner" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest block mb-1.5 ml-1">Mã số vị trí kệ hàng</label>
+                                <input value={editValues.position_code} list="edit-pos-list" onChange={e => setEditValues(prev => ({...prev, position_code: e.target.value}))} className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-base font-black uppercase text-zinc-900 dark:text-white outline-none focus:border-blue-500 shadow-inner" />
+                                <datalist id="edit-pos-list">{allPositions.map(p => <option key={p.id} value={p.code} />)}</datalist>
+                            </div>
+                        </div>
+                        <div className="flex gap-4 mt-10">
+                            <button onClick={() => setEditingId(null)} className="flex-1 py-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-black rounded-2xl text-xs uppercase tracking-widest transition-all active:scale-95">Hủy bỏ</button>
+                            <button onClick={() => handleSaveEdit(pendingList.find(a => a.id === editingId)!)} className="flex-1 py-4 bg-blue-600 text-white font-black rounded-2xl text-xs uppercase tracking-widest shadow-xl shadow-blue-600/20 active:scale-95 transition-all">Lưu nháp</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
