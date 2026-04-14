@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
-import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2 } from 'lucide-react'
+import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2, FileText, FileSpreadsheet } from 'lucide-react'
 import InboundOrderModal from '@/components/inventory/inbound/InboundOrderModal'
 import InboundOrderDetailModal from './InboundOrderDetailModal'
 import { LotInboundBuffer } from '@/components/warehouse/lots/LotInboundBuffer'
@@ -27,6 +27,7 @@ export default function InboundPage() {
     const [bufferCount, setBufferCount] = useState(0)
     const [isBufferOpen, setIsBufferOpen] = useState(false)
     const [isExportModalOpen, setIsExportModalOpen] = useState(false)
+    const [isAllExportModalOpen, setIsAllExportModalOpen] = useState(false)
 
     // Helper: Utility Check
     const isUtilityEnabled = (utilityId: string) => {
@@ -172,11 +173,18 @@ export default function InboundPage() {
                         )}
                     </button>
                     <button
-                        className="flex items-center h-10 px-4 bg-white border border-gray-200 text-gray-700 rounded-lg shadow-sm hover:bg-gray-50 transition-all font-medium"
-                        onClick={() => setIsExportModalOpen(true)}
+                        onClick={() => setIsAllExportModalOpen(true)}
+                        className="flex items-center gap-2 h-10 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm font-medium"
                     >
-                        <FileDown className="w-4 h-4 mr-2 text-indigo-500" />
-                        Báo cáo ngày
+                        <FileText size={16} />
+                        Báo cáo Tổng hợp
+                    </button>
+                    <button
+                        onClick={() => setIsExportModalOpen(true)}
+                        className="flex items-center gap-2 h-10 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm font-medium"
+                    >
+                        <FileSpreadsheet size={16} />
+                        Báo cáo Nhập
                     </button>
                     <button
                         className="flex items-center h-10 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-md transition-all active:scale-95 font-medium"
@@ -370,6 +378,12 @@ export default function InboundPage() {
                 isOpen={isExportModalOpen}
                 onClose={() => setIsExportModalOpen(false)}
                 type="inbound"
+            />
+
+            <DailyExportModal 
+                isOpen={isAllExportModalOpen} 
+                onClose={() => setIsAllExportModalOpen(false)} 
+                type="all"
             />
         </div>
     )

@@ -13,7 +13,7 @@ import { useUnitConversion } from '@/hooks/useUnitConversion'
 interface DailyExportModalProps {
     isOpen: boolean;
     onClose: () => void;
-    type: 'inbound' | 'outbound';
+    type: 'inbound' | 'outbound' | 'all';
 }
 
 export default function DailyExportModal({ isOpen, onClose, type }: DailyExportModalProps) {
@@ -32,12 +32,12 @@ export default function DailyExportModal({ isOpen, onClose, type }: DailyExportM
 
         setLoading(true)
         try {
-            const start = startOfDay(new Date(startDate)).toISOString()
-            const end = endOfDay(new Date(endDate)).toISOString()
+            const start = `${startDate}T00:00:00Z`
+            const end = `${endDate}T23:59:59Z`
 
             let items: any[] = []
 
-            if (type === 'inbound') {
+            const fetchInbound = async () => {
                 const { data, error } = await supabase
                     .from('inbound_order_items')
                     .select(`
@@ -60,7 +60,7 @@ export default function DailyExportModal({ isOpen, onClose, type }: DailyExportM
 
                 if (error) throw error
                 
-                items = ((data as any[]) || []).map(item => {
+                return ((data as any[]) || []).map(item => {
                     const convertedQty = convertUnit(
                         item.product_id,
                         item.unit,
@@ -70,6 +70,7 @@ export default function DailyExportModal({ isOpen, onClose, type }: DailyExportM
                     )
 
                     return {
+                        type: 'inbound',
                         order_code: item.order.code,
                         order_date: item.order.created_at,
                         product_name: item.product_name || item.products?.internal_name || item.products?.sku || 'N/A',
@@ -81,7 +82,9 @@ export default function DailyExportModal({ isOpen, onClose, type }: DailyExportM
                         note: item.note
                     }
                 })
-            } else {
+            }
+
+            const fetchOutbound = async () => {
                 const { data, error } = await supabase
                     .from('outbound_order_items')
                     .select(`
@@ -104,7 +107,7 @@ export default function DailyExportModal({ isOpen, onClose, type }: DailyExportM
 
                 if (error) throw error
 
-                items = ((data as any[]) || []).map(item => {
+                return ((data as any[]) || []).map(item => {
                     const convertedQty = convertUnit(
                         item.product_id,
                         item.unit,
@@ -114,6 +117,7 @@ export default function DailyExportModal({ isOpen, onClose, type }: DailyExportM
                     )
 
                     return {
+                        type: 'outbound',
                         order_code: item.order.code,
                         order_date: item.order.created_at,
                         product_name: item.product_name || item.products?.internal_name || item.products?.sku || 'N/A',
@@ -127,11 +131,21 @@ export default function DailyExportModal({ isOpen, onClose, type }: DailyExportM
                 })
             }
 
+            if (type === 'all') {
+                const [inbound, outbound] = await Promise.all([fetchInbound(), fetchOutbound()])
+                items = [...inbound, ...outbound]
+            } else if (type === 'inbound') {
+                items = await fetchInbound()
+            } else {
+                items = await fetchOutbound()
+            }
+
             if (items.length === 0) {
+                const typeText = type === 'all' ? 'nhập/xuất' : (type === 'inbound' ? 'nhập' : 'xuất')
                 const dateText = startDate === endDate 
                     ? format(new Date(startDate), 'dd/MM/yyyy')
                     : `từ ${format(new Date(startDate), 'dd/MM/yyyy')} đến ${format(new Date(endDate), 'dd/MM/yyyy')}`
-                showToast(`Không có dữ liệu ${type === 'inbound' ? 'nhập' : 'xuất'} ${dateText}`, 'warning')
+                showToast(`Không có dữ liệu ${typeText} ${dateText}`, 'warning')
             } else {
                 const systemName = (currentSystem as any)?.name || systemType
                 await exportDailyItemsToExcel({
@@ -141,8 +155,8 @@ export default function DailyExportModal({ isOpen, onClose, type }: DailyExportM
                     systemName,
                     items
                 })
-                showToast('Tải báo cáo thành công!', 'success')
                 onClose()
+                showToast('Đã xuất báo cáo thành công', 'success')
             }
         } catch (error: any) {
             console.error('Export error:', error)
