@@ -41,8 +41,15 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
 
         try {
             const start = new Date(startDate)
-            start.setHours(0, 0, 0, 0)
             const end = new Date(endDate)
+
+            // Kiểm tra tính hợp lệ của ngày trước khi xử lý tiếp
+            if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+                console.warn('[LOT Report] Invalid date provided:', { startDate, endDate })
+                return
+            }
+
+            start.setHours(0, 0, 0, 0)
             end.setHours(23, 59, 59, 999)
 
             const startStr = format(start, "yyyy-MM-dd'T'00:00:00")
@@ -680,21 +687,21 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                         </div>
 
                         <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm relative">
                                 <Calendar size={16} className="text-orange-500 shrink-0" />
                                 <div className="flex items-center gap-1 sm:gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
                                     <input
                                         type="date"
                                         value={startDate}
                                         onChange={(e) => setStartDate(e.target.value)}
-                                        className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[130px] sm:w-[145px] text-center"
+                                        className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[110px] sm:w-[130px] md:w-[145px] text-center"
                                     />
                                     <span className="text-slate-400">→</span>
                                     <input
                                         type="date"
                                         value={endDate}
                                         onChange={(e) => setEndDate(e.target.value)}
-                                        className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[130px] sm:w-[145px] text-center"
+                                        className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[110px] sm:w-[130px] md:w-[145px] text-center"
                                     />
                                 </div>
                             </div>
