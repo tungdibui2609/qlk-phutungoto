@@ -371,6 +371,37 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
             }
 
             if (!orderId) throw new Error('No Order ID')
+
+            // Execute automatic unbundling for marked items
+            if (isUtilityEnabled('auto_unbundle_order')) {
+                const convType = orderTypes.find(t => t.name?.toLowerCase().includes('chuyển đổi') || t.scope === 'internal')
+                for (const item of processedItems as any[]) {
+                    if (item.needsUnbundle && item.unbundleMeta) {
+                        const meta = item.unbundleMeta
+                        const currentLiquid = unitStockMap.get(`${item.productId}_${(item.unit || '').toLowerCase().trim()}`) || 0
+                        
+                        await unbundleService.executeAutoUnbundle({
+                            supabase,
+                            productId: item.productId,
+                            productName: item.productName,
+                            baseUnit: meta.sourceUnit,
+                            reqUnit: item.unit,
+                            reqQty: item.quantity,
+                            currentLiquid,
+                            costPrice: item.price,
+                            rate: meta.rate,
+                            warehouseName,
+                            systemCode,
+                            mainOrderCode: code,
+                            convTypeId: convType?.id,
+                            conversionMap,
+                            unitNameMap,
+                            unitIdMap,
+                            generateOrderCode: (type: 'PNK' | 'PXK') => generateOrderCode(type, systemCode)
+                        })
+                    }
+                }
+            }
             const orderItems = processedItems.map(item => ({
                 order_id: orderId,
                 product_id: item.productId,

@@ -205,6 +205,46 @@ export const unbundleService = {
     },
 
     /**
+     * Processes a list of items to identify and mark those that require unbundling.
+     */
+    processUnbundle(
+        items: any[],
+        products: any[],
+        units: any[],
+        unitNameMap: Map<string, string>,
+        unitIdMap: Map<string, string>,
+        conversionMap: Map<string, Map<string, number>>,
+        unitStockMap: Map<string, number>
+    ): { processed: any[], unbundledCount: number } {
+        let unbundledCount = 0
+        const processed = items.map(item => {
+            const { needsUnbundle, unbundleInfo, sourceUnit, rate } = this.checkUnbundle({
+                productId: item.productId,
+                unit: item.unit,
+                qty: item.quantity,
+                products,
+                units,
+                unitNameMap,
+                unitIdMap,
+                conversionMap,
+                unitStockMap
+            })
+
+            if (needsUnbundle) {
+                unbundledCount++
+                return { 
+                    ...item, 
+                    needsUnbundle: true, 
+                    unbundleMeta: { sourceUnit, rate, unbundleInfo } 
+                }
+            }
+            return item
+        })
+
+        return { processed, unbundledCount }
+    },
+
+    /**
      * Executes the Auto-Unbundle process:
      * 1. Creates a Conversion Outbound Order (PXK) to remove base units.
      * 2. Creates a Conversion Inbound Order (PNK) to add converted smaller units.
