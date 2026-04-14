@@ -10,6 +10,7 @@ import OutboundOrderDetailModal from './OutboundOrderDetailModal'
 import { LotExportBuffer } from '@/components/warehouse/lots/LotExportBuffer'
 import { format } from 'date-fns'
 import { vi } from 'date-fns/locale'
+import DailyExportModal from '@/components/inventory/shared/DailyExportModal'
 
 export default function OutboundPage() {
     const { showToast } = useToast()
@@ -25,6 +26,7 @@ export default function OutboundPage() {
     // Buffer Stats
     const [bufferCount, setBufferCount] = useState(0)
     const [isBufferOpen, setIsBufferOpen] = useState(false)
+    const [isExportModalOpen, setIsExportModalOpen] = useState(false)
 
     // Helper: Utility Check
     const isUtilityEnabled = (utilityId: string) => {
@@ -168,6 +170,13 @@ export default function OutboundPage() {
                                 {bufferCount}
                             </span>
                         )}
+                    </button>
+                    <button
+                        className="flex items-center h-10 px-4 bg-white border border-gray-200 text-gray-700 rounded-lg shadow-sm hover:bg-gray-50 transition-all font-medium"
+                        onClick={() => setIsExportModalOpen(true)}
+                    >
+                        <FileDown className="w-4 h-4 mr-2 text-indigo-500" />
+                        Báo cáo ngày
                     </button>
                     <button
                         className="flex items-center h-10 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-md transition-all active:scale-95 font-medium"
@@ -356,6 +365,12 @@ export default function OutboundPage() {
                     onSuccess={fetchOrders}
                 />
             )}
+
+            <DailyExportModal
+                isOpen={isExportModalOpen}
+                onClose={() => setIsExportModalOpen(false)}
+                type="outbound"
+            />
         </div>
     )
 }
