@@ -18,6 +18,7 @@ interface LotItemInput {
     quantity: number | string
     unit: string
     tag?: string
+    productionLotId?: string
 }
 
 interface LotFormProps {
@@ -39,6 +40,8 @@ interface LotFormProps {
     productions?: any[]
     managePermission?: string
 }
+
+const PRODUCTION_FIELDS = '*, products:product_id(*), production_lots(*, products(*))'
 
 export function LotForm({
     isVisible,
@@ -85,11 +88,43 @@ export function LotForm({
     const [isPersistent, setIsPersistent] = useState(false)
     const [isInfoExpanded, setIsInfoExpanded] = useState(true)
     const [selectedProductionId, setSelectedProductionId] = useState('')
+    const [productionData, setProductionData] = useState<any>(null)
+    const [isFetchingProduction, setIsFetchingProduction] = useState(false)
+
+    // Load extra production data if needed to ensure we have latest lots
+    useEffect(() => {
+        const fetchCurrentProduction = async () => {
+            if (!selectedProductionId) {
+                setProductionData(null)
+                return
+            }
+
+            setIsFetchingProduction(true)
+            try {
+                const { data } = await supabase
+                    .from('productions')
+                    .select(PRODUCTION_FIELDS)
+                    .eq('id', selectedProductionId)
+                    .single()
+                
+                if (data) {
+                    setProductionData(data)
+                }
+            } catch (err) {
+                console.error('Error fetching production details:', err)
+            } finally {
+                setIsFetchingProduction(false)
+            }
+        }
+
+        fetchCurrentProduction()
+    }, [selectedProductionId])
+
     const [dailySeq, setDailySeq] = useState<number | string>('')
     const [isSubmitting, setIsSubmitting] = useState(false)
 
     // Product filtering based on selected production - Multi-item support
-    const selectedProduction = productions.find((p: any) => p.id === selectedProductionId)
+    const selectedProduction = productionData || productions.find((p: any) => p.id === selectedProductionId)
     let availableProducts = products
     if (selectedProductionId) {
         // IDs from main field and multiple item fields
@@ -166,7 +201,8 @@ export function LotForm({
                         productId: item.product_id,
                         quantity: item.quantity,
                         unit: (item as any).unit || '',
-                        tag: editingLot.lot_tags?.find((t: any) => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_') && !t.tag.startsWith('SPLIT_'))?.tag || ''
+                        tag: editingLot.lot_tags?.find((t: any) => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_') && !t.tag.startsWith('SPLIT_'))?.tag || '',
+                        productionLotId: (editingLot as any).production_lot_id || ''
                     })))
                 } else {
                     setLotItems([{ productId: '', quantity: 0, unit: '', tag: '' }])
@@ -637,6 +673,7 @@ export function LotForm({
             batch_code: batchCode || null,
             production_code: productionCode || null,
             production_id: selectedProductionId || null,
+            production_lot_id: lotItems[0]?.productionLotId || null,
             daily_seq: dailySeq ? parseInt(String(dailySeq)) : null,
             quantity: totalQuantity,
             status: 'active',
@@ -968,6 +1005,8 @@ export function LotForm({
                             </div>
                         </div>
 
+
+
                         {/* Mã sản xuất (MSX) */}
                         <div className="space-y-2">
                             <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase">
@@ -1184,21 +1223,41 @@ export function LotForm({
                                     <div className="flex-1 w-full space-y-1">
                                         <div className="relative">
                                             <Combobox
-                                                options={availableProducts.map(p => ({
-                                                    value: p.id,
-                                                    label: hasModule('internal_products') && (p as any).internal_code
-                                                        ? `${(p as any).internal_code} - ${(p as any).internal_name || p.name}`
-                                                        : `${p.sku} - ${p.name}`,
-                                                    sku: hasModule('internal_products') && (p as any).internal_code ? (p as any).internal_code : p.sku,
-                                                    name: hasModule('internal_products') && (p as any).internal_name ? (p as any).internal_name : p.name,
-                                                    originalSku: p.sku,
-                                                    originalName: p.name
-                                                }))}
-                                                value={item.productId}
+                                                isLoading={isFetchingProduction}
+                                                options={selectedProductionId && selectedProduction?.production_lots?.length > 0 
+                                                    ? selectedProduction.production_lots
+                                                        .filter((pl: any) => !pl.is_locked)
+                                                        .map((pl: any) => ({
+                                                            value: `${pl.products?.id || pl.product_id}|${pl.id}`,
+                                                            label: `${pl.lot_code} - ${pl.products?.name || 'Sản phẩm'}`,
+                                                            sku: pl.lot_code,
+                                                            name: pl.products?.name || 'Sản phẩm',
+                                                            lotCode: pl.lot_code
+                                                        }))
+                                                    : availableProducts.map(p => ({
+                                                        value: p.id,
+                                                        label: hasModule('internal_products') && (p as any).internal_code
+                                                            ? `${(p as any).internal_code} - ${(p as any).internal_name || p.name}`
+                                                            : `${p.sku} - ${p.name}`,
+                                                        sku: hasModule('internal_products') && (p as any).internal_code ? (p as any).internal_code : p.sku,
+                                                        name: hasModule('internal_products') && (p as any).internal_name ? (p as any).internal_name : p.name,
+                                                        originalSku: p.sku,
+                                                        originalName: p.name
+                                                    }))}
+                                                value={item.productionLotId ? `${item.productId}|${item.productionLotId}` : item.productId}
                                                 onChange={(val) => {
+                                                    let productId = val || ''
+                                                    let lotId = ''
+                                                    
+                                                    if (productId.includes('|')) {
+                                                        const parts = productId.split('|')
+                                                        productId = parts[0]
+                                                        lotId = parts[1]
+                                                    }
+
                                                     setLotItems(prev => {
                                                         const newItems = [...prev]
-                                                        const product = products.find(p => p.id === val)
+                                                        const product = products.find(p => p.id === productId)
                                                         const baseUnit = product?.unit || ''
                                                         let baseWeight = (product as any)?.weight_kg || 0
                                                         
@@ -1209,7 +1268,7 @@ export function LotForm({
                                                         }
                                                         
                                                         // Strategy: Find a default unit to show. Prefer "Thùng" > Base Unit.
-                                                        const pUnits = productUnits.filter(pu => pu.product_id === val)
+                                                        const pUnits = productUnits.filter(pu => pu.product_id === productId)
                                                         const thungUnit = pUnits.find(pu => {
                                                             const u = units.find(ux => ux.id === pu.unit_id)
                                                             return u && normalizeUnit(u.name) === 'thung'
@@ -1233,8 +1292,9 @@ export function LotForm({
                                                         
                                                         newItems[index] = { 
                                                             ...newItems[index], 
-                                                            productId: val || '',
-                                                            unit: formattedUnit 
+                                                            productId: productId || '',
+                                                            unit: formattedUnit,
+                                                            productionLotId: lotId
                                                         }
                                                         return newItems
                                                     })
@@ -1249,10 +1309,17 @@ export function LotForm({
                                                         </div>
                                                     </div>
                                                 )}
-                                                renderOption={(option) => (
+                                                renderOption={(option: any) => (
                                                     <div className="flex flex-col text-left w-full py-0.5">
-                                                        <div className="text-xs font-black text-zinc-900 dark:text-zinc-100 font-mono mb-0.5 leading-none uppercase">
-                                                            {option.sku}
+                                                        <div className="flex items-center gap-2 mb-0.5">
+                                                            <div className="text-xs font-black text-zinc-900 dark:text-zinc-100 font-mono leading-none uppercase">
+                                                                {option.sku}
+                                                            </div>
+                                                            {option.lotCode && (
+                                                                <span className="text-[10px] px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-md font-bold">
+                                                                    LOT: {option.lotCode}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                         <div className="text-[10px] text-zinc-500 dark:text-zinc-400 line-clamp-1 leading-tight font-medium">
                                                             {option.name}

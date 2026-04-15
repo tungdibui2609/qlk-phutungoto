@@ -198,7 +198,7 @@ export function useLotManagement() {
     raw_material_date,
     production_code,
     production_id,
-    productions(code, name, production_lots(lot_code, product_id)),
+    productions!lots_production_id_fkey(code, name, production_lots(id, lot_code, product_id)),
     packaging_date,
     warehouse_name,
     images,

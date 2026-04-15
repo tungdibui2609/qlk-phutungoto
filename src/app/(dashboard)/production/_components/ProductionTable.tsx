@@ -27,6 +27,7 @@ interface Production {
         planned_quantity: number | null
         products: { name: string, sku: string, unit: string }
         actual_quantity?: number
+        is_locked?: boolean
     }>
 }
 
@@ -35,6 +36,7 @@ interface ProductionTableProps {
     onEdit: (item: Production) => void
     onDelete: (id: string) => void
     onStatusToggle?: (id: string, currentStatus: string) => void
+    onLotLockToggle?: (id: string, isLocked: boolean) => void
     onView?: (item: any) => void
 }
 
@@ -48,7 +50,7 @@ const getStatusConfig = (status: string) => {
     }
 }
 
-export default function ProductionTable({ data, onEdit, onDelete, onStatusToggle, onView }: ProductionTableProps) {
+export default function ProductionTable({ data, onEdit, onDelete, onStatusToggle, onLotLockToggle, onView }: ProductionTableProps) {
     const formatDate = (dateStr: string | null) => {
         if (!dateStr) return '-'
         return new Date(dateStr).toLocaleDateString('vi-VN')
@@ -147,8 +149,10 @@ export default function ProductionTable({ data, onEdit, onDelete, onStatusToggle
                                             <div key={idx} className="flex flex-col gap-1.5 last:mb-0 border-l-2 border-zinc-100 dark:border-zinc-800 pl-4 py-0.5 hover:border-orange-200 transition-colors group/lot">
                                                 <div className="flex items-center gap-3 relative">
                                                     {/* Mã Lot Badge */}
-                                                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-100/50 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-extrabold text-[12px] uppercase border border-zinc-200/50 shadow-sm transition-all hover:bg-orange-50 hover:border-orange-200 hover:text-orange-700">
-                                                        <Hash size={12} className="text-zinc-400" /> {lot.lot_code}
+                                                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-extrabold text-[12px] uppercase border shadow-sm transition-all ${lot.is_locked ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-zinc-100/50 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border-zinc-200/50 hover:bg-orange-50 hover:border-orange-200 hover:text-orange-700'}`}>
+                                                        <Hash size={12} className={lot.is_locked ? 'text-rose-400' : 'text-zinc-400'} /> 
+                                                        {lot.lot_code}
+                                                        {lot.is_locked && <Lock size={10} className="ml-1" />}
                                                     </div>
 
                                                     {/* Sản lượng Thực tế (Rút gọn) */}
@@ -183,6 +187,13 @@ export default function ProductionTable({ data, onEdit, onDelete, onStatusToggle
                                                         </span>
                                                     </div>
                                                     <div className="flex items-center gap-1 opacity-0 group-hover/lot:opacity-100 transition-opacity">
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); onLotLockToggle?.(lot.id, !!lot.is_locked) }}
+                                                            className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all border shadow-sm ${lot.is_locked ? 'text-rose-600 bg-rose-50 border-rose-200 hover:bg-white' : 'text-zinc-400 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-200 hover:text-zinc-800 border-zinc-100 dark:border-zinc-700'}`}
+                                                            title={lot.is_locked ? 'Mở khóa mã lot này' : 'Khóa mã lot này (sẽ ẩn khỏi danh sách nhập kho)'}
+                                                        >
+                                                            {lot.is_locked ? <Lock size={13} /> : <TrendingUp size={13} />}
+                                                        </button>
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); window.open(`/print/production-lot?id=${lot.id}&type=label`, '_blank') }}
                                                             className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-400 bg-zinc-50 dark:bg-zinc-800 hover:bg-orange-50 hover:text-orange-600 transition-all border border-zinc-100 dark:border-zinc-700 hover:border-orange-200 shadow-sm"

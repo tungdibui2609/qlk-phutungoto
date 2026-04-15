@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Plus, Save, FileText, Calendar, Info, Activity, Factory, Package, Users, Weight, Hash, Trash2, Wand2, Search, Loader2, Warehouse, ChevronDown, CheckCircle2, X, Scale, Truck, TrendingUp, PieChart, ArrowRight, Leaf, RotateCw, Lock } from 'lucide-react'
+import { Plus, Save, FileText, Calendar, Info, Activity, Factory, Package, Users, Weight, Hash, Trash2, Wand2, Search, Loader2, Warehouse, ChevronDown, CheckCircle2, X, Scale, Truck, TrendingUp, PieChart, ArrowRight, Leaf, RotateCw, Lock, Copy } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
@@ -340,6 +340,14 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                         };
 
                         const agg: Record<string, any> = {}
+
+                        // Create a lookup map for warehouse lots to their production_lot_id
+                        const lotToPLMap: Record<string, string> = {}
+                        matchedLots.forEach((ml: any) => {
+                            if (ml.production_lot_id) {
+                                lotToPLMap[ml.id] = ml.production_lot_id
+                            }
+                        })
                         
                         // Use a products map for faster lookup of weight_kg
                         const { data: prodInfo } = await supabase
@@ -355,28 +363,20 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                         }
 
                         (itemsData as any[]).forEach((item: any) => {
-                            // SQL Logic: Joins based on production_id AND product_id
-                            // This ensures we match the correct production_lot (output definition)
-                            const matchedPL = (lotsData as any[]).find(pl => 
-                                pl.production_id === prodId && 
-                                pl.product_id === item.product_id
-                            )
+                            // Link item to production slot via its parent lot''s production_lot_id
+                            const plId = lotToPLMap[item.lot_id]
                             
-                            if (!matchedPL) return
-                            const plId = matchedPL.id
-
-                            // Calculate weight factor using SQL priorities:
-                            // 1. product.weight_kg OR 2. extracted weight OR 3. default 1.0
+                            if (!plId) return
+                            
+                            // Calculate weight factor
                             const weightFactor = productMap[item.product_id] || extractWeight(item.unit) || 1.0
 
                             if (!agg[plId]) agg[plId] = { production_lot_id: plId, actual_quantity: 0, inventory_quantity: 0, quantity_by_unit: [] }
                             
-                            // Add to total actual quantity (KG) - Dùng initial_quantity (số gốc khi SX)
                             const itemQty = item.initial_quantity || item.quantity
                             agg[plId].actual_quantity += (itemQty * weightFactor)
                             agg[plId].inventory_quantity += (item.quantity * weightFactor)
 
-                            // Add to breakdown by unit
                             const weightSuffix = (weightFactor > 1 && !item.unit.includes('(')) ? ` (${weightFactor}kg)` : ''
                             const displayUnit = item.unit + weightSuffix
                             
@@ -769,7 +769,39 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     }
 
     const addLotRow = () => {
-        setLots([...lots, { lot_code: '', product_id: null, weight_per_unit: 0, planned_quantity: null, conversion_rules: [] }])
+        setLots([...lots, { 
+            id: crypto.randomUUID(),
+            lot_code: '', 
+            product_id: null, 
+            weight_per_unit: 0, 
+            planned_quantity: null, 
+            conversion_rules: [] 
+        }])
+    }
+
+    const cloneLotRow = (index: number) => {
+        const lotToClone = lots[index];
+        // Create a new version of the lot WITH a new ID to ensure it''s treated as a new insert during upsert
+        const newLotCode = lotToClone.lot_code ? `${lotToClone.lot_code}-COPY` : '';
+        
+        const clonedLot = {
+            ...lotToClone,
+            id: crypto.randomUUID(), // Generate new UUID
+            lot_code: newLotCode,
+            // Reset statistics for the new clone
+            actual_quantity: 0,
+            inventory_quantity: 0,
+            quantity_by_unit: []
+        };
+        
+        const newLots = [...lots];
+        newLots.splice(index + 1, 0, clonedLot);
+        setLots(newLots);
+        
+        // Copy search term if exists
+        if (rowSearchTerms[index]) {
+            setRowSearchTerms(prev => ({ ...prev, [index + 1]: rowSearchTerms[index] }));
+        }
     }
 
     const removeLotRow = (index: number) => {
@@ -2196,13 +2228,22 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                     <div className="flex items-center gap-4">
                                                         {/* Status info or extra fields could go here */}
                                                     </div>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => removeLotRow(idx)}
-                                                        className="flex items-center gap-2 px-6 py-3 text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-xl transition-all font-bold text-xs uppercase tracking-widest active:scale-95"
-                                                    >
-                                                        <Trash2 size={16} /> Gỡ bỏ sản phẩm
-                                                    </button>
+                                                    <div className="flex items-center gap-3">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => cloneLotRow(idx)}
+                                                            className="flex items-center gap-2 px-6 py-3 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 rounded-xl transition-all font-bold text-xs uppercase tracking-widest active:scale-95"
+                                                        >
+                                                            <Copy size={16} /> Nhân bản Lô
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeLotRow(idx)}
+                                                            className="flex items-center gap-2 px-6 py-3 text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-xl transition-all font-bold text-xs uppercase tracking-widest active:scale-95"
+                                                        >
+                                                            <Trash2 size={16} /> Gỡ bỏ sản phẩm
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, Check, Search, X } from 'lucide-react'
 import { normalizeSearchString, calculateSearchScore } from '@/lib/searchUtils'
 
@@ -45,11 +46,42 @@ export function Combobox({
     const [searchTerm, setSearchTerm] = useState('')
     const containerRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLInputElement>(null)
+    const dropdownRef = useRef<HTMLDivElement>(null)
+    const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 })
+
+    // Update coordinates when opening and on scroll/resize
+    useEffect(() => {
+        const updateCoords = () => {
+            if (isOpen && containerRef.current) {
+                const rect = containerRef.current.getBoundingClientRect()
+                setCoords({
+                    top: rect.bottom,
+                    left: rect.left,
+                    width: rect.width
+                })
+            }
+        }
+
+        if (isOpen) {
+            updateCoords()
+            // Listen to scroll events on any parent element
+            window.addEventListener('scroll', updateCoords, true)
+            window.addEventListener('resize', updateCoords)
+        }
+
+        return () => {
+            window.removeEventListener('scroll', updateCoords, true)
+            window.removeEventListener('resize', updateCoords)
+        }
+    }, [isOpen])
 
     // Close dropdown when clicking outside
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
-            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+            const isClickInsideContainer = containerRef.current && containerRef.current.contains(event.target as Node)
+            const isClickInsideDropdown = dropdownRef.current && dropdownRef.current.contains(event.target as Node)
+
+            if (!isClickInsideContainer && !isClickInsideDropdown) {
                 setIsOpen(false)
             }
         }
@@ -161,11 +193,22 @@ export function Combobox({
                 </div>
             </div>
 
-            {/* Dropdown Options */}
-            {isOpen && !disabled && (
-                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl shadow-xl max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-100">
+            {/* Dropdown Options using Portal */}
+            {isOpen && !disabled && typeof document !== 'undefined' && createPortal(
+                <div 
+                    ref={dropdownRef}
+                    className="fixed z-[9999] bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-2xl max-h-80 overflow-y-auto animate-in fade-in zoom-in-95 duration-100 [scrollbar-width:thin] [scrollbar-color:theme(colors.zinc.300)_transparent] dark:[scrollbar-color:theme(colors.zinc.700)_transparent]"
+                    style={{
+                        top: coords.top + 4, // 4px gap
+                        left: coords.left,
+                        width: coords.width,
+                    }}
+                >
                     {isLoading ? (
-                        <div className="p-4 text-center text-sm text-gray-500">Loading...</div>
+                        <div className="p-4 text-center text-sm text-gray-500 flex items-center justify-center gap-2">
+                            <div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+                            Loading...
+                        </div>
                     ) : filteredOptions.length === 0 ? (
                         <div className="p-4 text-center text-sm text-gray-500">{emptyText}</div>
                     ) : (
@@ -191,7 +234,8 @@ export function Combobox({
                             ))}
                         </div>
                     )}
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     )

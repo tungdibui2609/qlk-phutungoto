@@ -182,7 +182,15 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                 {lot.productions && (lot.productions as any).production_lots && (lot.productions as any).production_lots.length > 0 && (
                                     <div className="flex flex-wrap gap-1">
                                         {(lot.productions as any).production_lots
-                                            .filter((pl: any) => lot.lot_items?.some(i => i.product_id === pl.product_id))
+                                            .filter((pl: any) => {
+                                                const selectedLotId = (lot as any).production_lot_id;
+                                                // If we have a specific lot link, only show that one
+                                                if (selectedLotId) {
+                                                    return pl.id === selectedLotId;
+                                                }
+                                                // Fallback for legacy data: match by product
+                                                return lot.lot_items?.some(i => i.product_id === pl.product_id);
+                                            })
                                             .map((pl: any, idx: number) => (
                                                 <span key={idx} className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-[9px] font-black border border-blue-100 dark:border-blue-800/50 uppercase tracking-tight">
                                                     Lot SX: {pl.lot_code}

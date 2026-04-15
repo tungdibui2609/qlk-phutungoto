@@ -119,6 +119,20 @@ export default function ProductionPage() {
         }
     }
 
+    async function handleLotLockToggle(lotId: string, currentLocked: boolean) {
+        const { error } = await (supabase as any)
+            .from('production_lots')
+            .update({ is_locked: !currentLocked })
+            .eq('id', lotId)
+        
+        if (error) {
+            showToast('Lỗi: ' + error.message, 'error')
+        } else {
+            showToast(`Đã ${!currentLocked ? 'khóa' : 'mở khóa'} mã lot thành công`, 'success')
+            enhancedRefresh()
+        }
+    }
+
     return (
         <div className="space-y-6">
             <PageHeader
@@ -166,6 +180,7 @@ export default function ProductionPage() {
                     onEdit={handleEdit} 
                     onDelete={handleDelete} 
                     onStatusToggle={handleStatusToggle}
+                    onLotLockToggle={handleLotLockToggle}
                     onView={handleView}
                 />
             )}
