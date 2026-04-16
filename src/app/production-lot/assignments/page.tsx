@@ -49,6 +49,7 @@ export default function AssignmentApprovalPage() {
     const [rejectedList, setRejectedList] = useState<PendingAssignment[]>([])
     const [lotsInDay, setLotsInDay] = useState<Lot[]>([])
     const [lotSearchTerm, setLotSearchTerm] = useState('')
+    const [showOnlyUnassigned, setShowOnlyUnassigned] = useState(true)
     
     // History state
     const [showHistory, setShowHistory] = useState(false)
@@ -336,7 +337,80 @@ export default function AssignmentApprovalPage() {
         }
     }
 
+    const validBulkCount = useMemo(() => {
+        let count = 0;
+        const seenLots = new Set()
+        pendingList.forEach(ass => {
+            const targetStt = manualEdits[ass.id]?.lot_stt || ass.lot_stt
+            const allMatchedLotsRaw = lotsInDay.filter(l => l.daily_seq === targetStt)
+            const allMatchedLots = showOnlyUnassigned ? allMatchedLotsRaw.filter(l => !l.positions?.[0]) : allMatchedLotsRaw
+            const dateMatchedLots = allMatchedLots.filter(l => l.inbound_date?.split('T')[0] === ass.production_date)
+            const perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
+            
+            if (perfectMatch && !perfectMatch.positions?.[0]) {
+                if (!seenLots.has(perfectMatch.id)) {
+                    seenLots.add(perfectMatch.id)
+                    count++;
+                }
+            }
+        })
+        return count;
+    }, [pendingList, lotsInDay, manualEdits, showOnlyUnassigned])
+
+    const handleApproveAll = async () => {
+        const validPairs: {ass: PendingAssignment, lot: Lot}[] = []
+        const seenLots = new Set()
+        
+        pendingList.forEach(ass => {
+            const targetStt = manualEdits[ass.id]?.lot_stt || ass.lot_stt
+            const allMatchedLotsRaw = lotsInDay.filter(l => l.daily_seq === targetStt)
+            const allMatchedLots = showOnlyUnassigned ? allMatchedLotsRaw.filter(l => !l.positions?.[0]) : allMatchedLotsRaw
+            const dateMatchedLots = allMatchedLots.filter(l => l.inbound_date?.split('T')[0] === ass.production_date)
+            const perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
+            
+            if (perfectMatch && !perfectMatch.positions?.[0]) {
+                if (!seenLots.has(perfectMatch.id)) {
+                    seenLots.add(perfectMatch.id)
+                    validPairs.push({ ass, lot: perfectMatch })
+                }
+            }
+        })
+        
+        if (validPairs.length === 0) return;
+        
+        const confirmed = await showConfirm(`Duyệt tự động ${validPairs.length} yêu cầu hợp lệ này?`)
+        if (!confirmed) return;
+        
+        setActionLoading('bulk');
+        try {
+            let successCount = 0;
+            for (const {ass, lot} of validPairs) {
+                let targetPosId = ass.position_id;
+                const manual = manualEdits[ass.id];
+                if (manual) {
+                    const { data: matchedPos } = await (supabase.from('positions') as any)
+                        .select('id').eq('system_type', currentSystem?.code).ilike('code', manual.position_code.trim()).limit(1).single()
+                    if (matchedPos) targetPosId = matchedPos.id
+                }
+                
+                const { data: targetPosInfo } = await (supabase.from('positions') as any).select('lot_id').eq('id', targetPosId).single()
+                if (targetPosInfo?.lot_id && targetPosInfo.lot_id !== lot.id) continue;
+                
+                await (supabase.from('positions') as any).update({ lot_id: lot.id }).eq('id', targetPosId)
+                await (supabase.from('pending_assignments') as any).update({ status: 'approved', position_id: targetPosId, lot_stt: manual?.lot_stt || ass.lot_stt }).eq('id', ass.id)
+                successCount++;
+            }
+            showToast(`Đã duyệt thành công ${successCount}/${validPairs.length} yêu cầu.`, successCount > 0 ? 'success' : 'error')
+            fetchData();
+        } catch (e: any) {
+            showToast('Có lỗi: ' + e.message, 'error')
+        } finally {
+            setActionLoading(null)
+        }
+    }
+
     return (
+
         <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-zinc-950 p-6 h-full transition-colors">
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
@@ -348,6 +422,19 @@ export default function AssignmentApprovalPage() {
                     <p className="text-zinc-500 dark:text-zinc-400 mt-1 font-medium">Kết nối dữ liệu thực tế với báo cáo từ Mobile.</p>
                 </div>
                 <div className="flex items-center gap-3">
+                    <button 
+                        onClick={() => setShowOnlyUnassigned(!showOnlyUnassigned)}
+                        className={`px-4 py-2.5 rounded-[12px] text-xs font-black uppercase flex items-center gap-2 border transition-all ${showOnlyUnassigned ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}
+                    >
+                        {showOnlyUnassigned ? <CheckCircle2 size={16} /> : <Filter size={16} />}
+                        Lô Chưa Gán
+                    </button>
+                    {validBulkCount > 0 && (
+                        <button onClick={handleApproveAll} disabled={!!actionLoading} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase rounded-xl flex items-center gap-2 shadow-lg shadow-blue-600/20 active:scale-95 transition-all">
+                            {actionLoading === 'bulk' ? <Loader2 size={16} className="animate-spin" /> : <Check size={16}/>}
+                            Duyệt Nhanh ({validBulkCount})
+                        </button>
+                    )}
                     <div className="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center">
                         <Calendar size={16} className="text-zinc-400 mx-2" />
                         <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="bg-transparent border-none outline-none font-bold text-xs text-zinc-900 dark:text-white" />
@@ -377,10 +464,13 @@ export default function AssignmentApprovalPage() {
                     ) : (
                         <div className="space-y-4">
                             {pendingList.map((ass) => {
-                                const allMatchedLots = lotsInDay.filter(l => l.daily_seq === ass.lot_stt)
-                                const perfectMatch = allMatchedLots.find(l => l.inbound_date?.split('T')[0] === ass.production_date)
+                                const targetStt = manualEdits[ass.id]?.lot_stt || ass.lot_stt
+                                const allMatchedLotsRaw = lotsInDay.filter(l => l.daily_seq === targetStt)
+                                const allMatchedLots = showOnlyUnassigned ? allMatchedLotsRaw.filter(l => !l.positions?.[0]) : allMatchedLotsRaw
+                                const dateMatchedLots = allMatchedLots.filter(l => l.inbound_date?.split('T')[0] === ass.production_date)
+                                const perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
                                 const hasOtherMatches = allMatchedLots.length > 0
-                                
+
                                 return (
                                     <div key={ass.id} className="bg-white dark:bg-zinc-900 border-2 border-zinc-100 dark:border-zinc-800 rounded-[28px] p-6 shadow-sm hover:shadow-md transition-all group">
                                         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
@@ -421,15 +511,30 @@ export default function AssignmentApprovalPage() {
 
                                             <div className="flex-1 w-full min-w-0">
                                                 {perfectMatch ? (
-                                                    <div className="p-5 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 rounded-[24px] flex items-center justify-between">
-                                                        <div className="min-w-0 pr-4">
-                                                            <div className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase mb-1 tracking-widest flex items-center gap-2"><CheckCircle2 size={14} /> KHỚP TỰ ĐỘNG (100%)</div>
-                                                            <div className="text-sm font-black text-zinc-900 dark:text-white mb-0.5">{perfectMatch.code}</div>
-                                                            <div className="text-[10px] text-zinc-600 dark:text-zinc-400 font-bold leading-relaxed">{perfectMatch.product_names?.join(', ')}</div>
+                                                    <div className="p-5 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 rounded-[24px] flex flex-col justify-center gap-3">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest flex items-center gap-2">
+                                                                <CheckCircle2 size={14} /> KHỚP STT & NGÀY SẢN XUẤT
+                                                            </div>
+                                                            {perfectMatch.positions?.[0] ? (
+                                                                <div className="px-2 py-1 bg-amber-100 text-amber-700 text-[10px] font-black rounded-lg flex items-center gap-1 border border-amber-200">
+                                                                    <AlertTriangle size={12}/> ĐÃ GÁN VỊ TRÍ: {perfectMatch.positions[0].code}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="px-2 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-lg flex items-center gap-1 border border-emerald-200">
+                                                                    <CheckCircle2 size={12}/> CHƯA CÓ VỊ TRÍ
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                        <div className="flex gap-2 shrink-0">
-                                                            <button onClick={() => handleApprove(ass, perfectMatch.id)} disabled={!!actionLoading} className="px-8 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl text-xs font-black uppercase shadow-lg shadow-emerald-500/20 active:scale-95 transition-all">DUYỆT NGAY</button>
-                                                            <button onClick={() => handleReject(ass)} className="p-3 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={20} /></button>
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="min-w-0 pr-4">
+                                                                <div className="text-sm font-black text-zinc-900 dark:text-white mb-0.5">{perfectMatch.code}</div>
+                                                                <div className="text-[10px] text-zinc-600 dark:text-zinc-400 font-bold leading-relaxed">{perfectMatch.product_names?.join(', ')}</div>
+                                                            </div>
+                                                            <div className="flex gap-2 shrink-0">
+                                                                <button onClick={() => handleApprove(ass, perfectMatch.id)} disabled={!!actionLoading} className="px-8 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl text-xs font-black uppercase shadow-lg shadow-emerald-500/20 active:scale-95 transition-all">DUYỆT NGAY</button>
+                                                                <button onClick={() => handleReject(ass)} className="p-3 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={20} /></button>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 ) : hasOtherMatches ? (
@@ -442,14 +547,19 @@ export default function AssignmentApprovalPage() {
                                                             </div>
                                                         </div>
                                                         <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto scrollbar-thin pr-1">
-                                                            {allMatchedLots.sort((a,b)=>new Date(b.inbound_date||'').getTime()-new Date(a.inbound_date||'').getTime()).map(l=>(
+                                                            {allMatchedLots.sort((a,b)=>{
+                                                                const aHasPos = a.positions?.[0] ? 1 : 0;
+                                                                const bHasPos = b.positions?.[0] ? 1 : 0;
+                                                                if (aHasPos !== bHasPos) return aHasPos - bHasPos;
+                                                                return new Date(b.inbound_date||'').getTime()-new Date(a.inbound_date||'').getTime();
+                                                            }).map(l=>(
                                                                 <button key={l.id} onClick={() => handleApprove(ass, l.id)} className="w-full text-left p-4 bg-white dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 hover:border-blue-500 dark:hover:border-blue-600 rounded-2xl transition-all group relative overflow-hidden">
                                                                     <div className="flex justify-between items-start mb-2">
                                                                         <div className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-[9px] font-black rounded-lg border border-blue-100 dark:border-blue-900/30">SX: {format(new Date(l.inbound_date||''), 'dd/MM/yyyy')}</div>
                                                                         {l.positions?.[0] ? (
-                                                                            <div className="text-[9px] font-black text-emerald-600 flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-lg"><MapPin size={10} /> {l.positions[0].code}</div>
+                                                                            <div className="text-[10px] font-black text-amber-700 flex items-center gap-1 bg-amber-100 border border-amber-200 px-2 py-1 rounded-lg"><MapPin size={12} className="text-amber-500" /> ĐÃ GÁN: {l.positions[0].code}</div>
                                                                         ) : (
-                                                                            <div className="text-[9px] font-black text-blue-600 flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-lg">⭐ LÔ MỚI</div>
+                                                                            <div className="text-[10px] font-black text-emerald-700 flex items-center gap-1 bg-emerald-100 border border-emerald-200 px-2 py-1 rounded-lg"><CheckCircle2 size={12} className="text-emerald-500" /> CHƯA CÓ VỊ TRÍ</div>
                                                                         )}
                                                                     </div>
                                                                     <div className="text-xs font-black text-zinc-900 dark:text-white mb-1">{l.code}</div>
@@ -464,32 +574,22 @@ export default function AssignmentApprovalPage() {
                                                 ) : (
                                                     <div className="space-y-3">
                                                         <div className="flex items-center justify-between px-2">
-                                                            <div className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest flex items-center gap-2"><AlertCircle size={14} />DỮ LIỆU CẦN KẾT NỐI THỦ CÔNG</div>
+                                                            <div className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest flex items-center gap-2">
+                                                                <AlertCircle size={14} /> KHÔNG TÌM THẤY LÔ HÀNG
+                                                            </div>
                                                             <div className="flex gap-2">
                                                                 <button onClick={() => startEdit(ass)} className="p-1.5 text-zinc-400 hover:text-blue-500 transition-colors"><Edit2 size={16} /></button>
                                                                 <button onClick={() => handleReject(ass)} className="p-1.5 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
                                                             </div>
                                                         </div>
-                                                        <div className="bg-amber-50 dark:bg-amber-900/5 border border-amber-100 dark:border-amber-900/20 rounded-3xl p-4">
-                                                            <p className="text-[10px] text-zinc-500 font-bold mb-3 uppercase tracking-tighter text-center">Tìm lô hàng tương ứng để kết nối:</p>
-                                                            <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto scrollbar-thin pr-1">
-                                                                {lotsInDay.filter(l=>!l.positions?.[0]).slice(0, 10).map(l=>(
-                                                                    <button key={l.id} onClick={() => handleApprove(ass, l.id)} className="w-full text-left p-4 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-amber-500 rounded-2xl transition-all relative group">
-                                                                        <div className="flex justify-between items-center mb-1">
-                                                                            <span className="text-[10px] font-black text-zinc-400">STT #{l.daily_seq}</span>
-                                                                            <span className="text-[9px] font-black text-zinc-400 uppercase">{format(new Date(l.inbound_date||''), 'dd/MM/yyyy')}</span>
-                                                                        </div>
-                                                                        <div className="text-xs font-black text-zinc-900 dark:text-white mb-1">{l.code}</div>
-                                                                        <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-bold leading-tight">{l.product_names?.join(', ')}</div>
-                                                                        <div className="absolute top-0 right-0 h-full w-8 bg-amber-500/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                            <Plus size={16} className="text-amber-600" />
-                                                                        </div>
-                                                                    </button>
-                                                                ))}
-                                                                {lotsInDay.filter(l=>!l.positions?.[0]).length > 10 && (
-                                                                    <p className="text-[9px] text-center text-zinc-400 py-2 italic font-bold">Dùng thanh "Tìm mã số LOT" bên phải để thấy nhiều hơn...</p>
-                                                                )}
-                                                            </div>
+                                                        <div className="bg-amber-50 dark:bg-amber-900/5 border border-amber-100 dark:border-amber-900/20 rounded-3xl p-6 text-center">
+                                                            <XCircle size={32} className="mx-auto text-amber-400 mb-3 opacity-50" />
+                                                            <p className="text-sm font-black text-zinc-900 dark:text-white mb-1">
+                                                                Không có lô hàng mang STT #{targetStt}
+                                                            </p>
+                                                            <p className="text-[10px] text-zinc-500 font-bold max-w-[250px] mx-auto">
+                                                                Vui lòng dùng công cụ chỉnh sửa để đổi số STT cho khớp, hoặc tạo Lô hàng tương ứng bên mục "Tạo Lô Hàng".
+                                                            </p>
                                                         </div>
                                                     </div>
                                                 )}
@@ -546,7 +646,10 @@ export default function AssignmentApprovalPage() {
                             <input placeholder="Tìm mã số LOT..." value={lotSearchTerm} onChange={e => setLotSearchTerm(e.target.value)} className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl py-2.5 pl-10 pr-4 text-xs font-black text-zinc-900 dark:text-white outline-none focus:border-blue-500 shadow-inner" />
                         </div>
                         <div className="max-h-[600px] overflow-y-auto space-y-2.5 pr-1 scrollbar-thin">
-                            {lotsInDay.filter(l => !lotSearchTerm || l.code.toLowerCase().includes(lotSearchTerm.toLowerCase())).map(lot => (
+                            {lotsInDay
+                                .filter(l => !lotSearchTerm || l.code.toLowerCase().includes(lotSearchTerm.toLowerCase()))
+                                .filter(l => showOnlyUnassigned ? !l.positions?.[0] : true)
+                                .map(lot => (
                                 <div key={lot.id} className="p-4 bg-zinc-50/50 dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-800 hover:border-blue-200 dark:hover:border-blue-900 transition-all flex items-center justify-between group">
                                     <div className="flex items-center gap-4">
                                         <div className="w-10 h-10 bg-zinc-100 dark:bg-zinc-900 rounded-xl flex items-center justify-center font-black text-xs text-zinc-900 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 shadow-sm group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 transition-all">#{lot.daily_seq}</div>

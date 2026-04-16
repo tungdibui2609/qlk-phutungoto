@@ -60,8 +60,6 @@ export default function MobileAssignTab() {
     const [suggestedPos, setSuggestedPos] = useState<LocalPosition | null>(null)
     const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set())
     const [currentStt, setCurrentStt] = useState('')
-    const [matchingLots, setMatchingLots] = useState<LocalLot[]>([])
-    const [showMatchPicker, setShowMatchPicker] = useState(false)
 
     // Re-calculate grouped data when zones/positions in context change
     useEffect(() => {
@@ -198,32 +196,18 @@ export default function MobileAssignTab() {
         } finally { setLoading(false) }
     }
 
-    async function handleConfirmStt(selectedLotFromPool?: LocalLot) {
-        if (!suggestedPos || (!currentStt && !selectedLotFromPool)) return
+    async function handleConfirmStt() {
+        if (!suggestedPos || !currentStt) return
         setLoading(true)
         try {
-            const sttNum = parseInt(currentStt)
-            let targetLot = selectedLotFromPool;
-            if (!targetLot) {
-                const matches = localLots.filter((l: any) => l.daily_seq === sttNum)
-                if (matches.length > 1) {
-                    setMatchingLots(matches)
-                    setShowMatchPicker(true)
-                    setLoading(false)
-                    return
-                }
-                targetLot = matches[0]
-            }
-
-            const finalInboundDate = targetLot?.inbound_date || new Date().toISOString().split('T')[0]
             const newAssignment: PendingAssignment = {
-                lotId: targetLot?.id || null,
-                lotCode: targetLot?.code || `STT #${currentStt} (Gán mù)`,
-                productNames: targetLot?.product_names || ['Hàng chờ khớp'],
+                lotId: null, // LUÔN GÁN MÙ
+                lotCode: `STT #${currentStt} (Gán mù)`,
+                productNames: ['Hàng chờ khớp'],
                 positionId: suggestedPos.id,
                 positionCode: suggestedPos.code,
-                stt: currentStt || (targetLot?.daily_seq?.toString() || ''),
-                productionDate: finalInboundDate,
+                stt: currentStt,
+                productionDate: new Date().toISOString().split('T')[0],
                 timestamp: Date.now()
             }
             
@@ -233,8 +217,6 @@ export default function MobileAssignTab() {
             const currentPositionId = suggestedPos.id
             setCurrentStt('')
             setSuggestedPos(null)
-            setShowMatchPicker(false)
-            setMatchingLots([])
             
             setTimeout(() => {
                 suggestNextPosition(new Set([currentPositionId]))
@@ -346,9 +328,9 @@ export default function MobileAssignTab() {
                 {step === 'setup' ? (
                     <div className="mobile-card-premium p-6 space-y-6">
                         <div className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 rounded-2xl p-4">
-                            <h3 className="text-xs font-black text-emerald-700 dark:text-emerald-400 uppercase mb-1">Quy trình thông minh</h3>
+                            <h3 className="text-xs font-black text-emerald-700 dark:text-emerald-400 uppercase mb-1">Chế độ gán nhanh</h3>
                             <p className="text-[10px] text-emerald-600 dark:text-emerald-500 font-medium leading-relaxed uppercase tracking-tight">
-                                Bạn chỉ cần nhập STT. Hệ thống sẽ tự động gửi yêu cầu kết nối đến Admin.
+                                Quét vị trí & nhập số STT. Việc khớp sản phẩm sẽ được Admin xử lý sau.
                             </p>
                         </div>
 
@@ -461,20 +443,13 @@ export default function MobileAssignTab() {
                                     <div className="text-[8px] font-black text-zinc-400 uppercase tracking-widest mt-1 opacity-0 group-hover:opacity-100 transition-opacity">Nhấn vào để sửa kệ</div>
                                 </div>
                                 
-                                {currentStt && !showMatchPicker && (
-                                    <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                        {(() => {
-                                            const match = localLots.find(l => l.daily_seq === parseInt(currentStt))
-                                            if (!match) return null
-                                            return (
-                                                <div className="bg-emerald-50 dark:bg-emerald-900/5 rounded-xl p-3 border border-emerald-100 dark:border-emerald-900/10">
-                                                    <div className="text-[10px] font-black text-emerald-600 uppercase mb-1">Khớp chính xác lô hàng</div>
-                                                    <div className="text-[11px] font-black text-zinc-900 dark:text-zinc-100 truncate">{match.product_names.join(', ')}</div>
-                                                </div>
-                                            )
-                                        })()}
+                                {/* Fast Mode Info */}
+                                <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    <div className="bg-emerald-50 dark:bg-emerald-900/5 rounded-xl p-3 border border-emerald-100 dark:border-emerald-900/10">
+                                        <div className="text-[10px] font-black text-emerald-600 uppercase mb-1">Chế độ Gán mù</div>
+                                        <div className="text-[11px] font-black text-zinc-900 dark:text-zinc-100 truncate">Sản phẩm sẽ được khớp tại máy Admin</div>
                                     </div>
-                                )}
+                                </div>
 
                                 <button 
                                     onClick={() => {
@@ -546,40 +521,6 @@ export default function MobileAssignTab() {
                     </div>
                 )}
 
-                {/* Match Picker Modal */}
-                {showMatchPicker && (
-                    <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-4">
-                        <div className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-[40px] overflow-hidden animate-in slide-in-from-bottom duration-300 border border-zinc-100 dark:border-zinc-800 shadow-2xl">
-                            <div className="p-8 border-b border-zinc-100 dark:border-zinc-800">
-                                <div className="flex justify-between items-center mb-3">
-                                    <h3 className="text-2xl font-black text-zinc-900 dark:text-white tracking-tighter">TRÙNG STT #{currentStt}</h3>
-                                    <button onClick={() => setShowMatchPicker(false)} className="p-2 text-zinc-400"><X size={32} /></button>
-                                </div>
-                                <p className="text-xs text-zinc-500 font-bold uppercase tracking-tight leading-relaxed">Chọn chính xác lô hàng:</p>
-                            </div>
-                            <div className="max-h-[50vh] overflow-y-auto p-6 space-y-3 scrollbar-thin">
-                                {matchingLots.map((l) => (
-                                    <button 
-                                        key={l.id} 
-                                        onClick={() => handleConfirmStt(l)}
-                                        className="w-full text-left p-5 bg-zinc-50 dark:bg-zinc-950 rounded-3xl border-2 border-transparent hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/10 transition-all group"
-                                    >
-                                        <div className="flex justify-between items-start mb-2">
-                                            <div className="px-2.5 py-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 rounded-lg text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest">SX: {new Date(l.inbound_date).toLocaleDateString('vi-VN')}</div>
-                                            <div className="text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity"><CheckCircle2 size={24} /></div>
-                                        </div>
-                                        <div className="text-sm font-black text-zinc-900 dark:text-white leading-snug mb-1">{l.product_names.join(', ')}</div>
-                                        <div className="text-[10px] text-zinc-400 font-bold tracking-tight uppercase">Mã lô: {l.code}</div>
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="p-6 bg-zinc-50 dark:bg-zinc-950 border-t border-zinc-100 dark:border-zinc-800 flex gap-4">
-                                <button onClick={() => {setShowMatchPicker(false); handleConfirmStt();}} className="flex-1 py-4 bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 text-xs font-black uppercase tracking-widest rounded-2xl active:scale-95 transition-all">Gán mù</button>
-                                <button onClick={() => setShowMatchPicker(false)} className="flex-1 py-4 bg-zinc-900 dark:bg-zinc-700 text-white text-xs font-black uppercase tracking-widest rounded-2xl active:scale-95 transition-all">Đóng</button>
-                            </div>
-                        </div>
-                    </div>
-                )}
 
                 {/* Full History Section */}
                 {assignments.length > 0 && (
