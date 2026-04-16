@@ -23,16 +23,135 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
     const [selectedItems, setSelectedItems] = useState<Record<string, number>>({}) // itemId -> quantity to merge
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    const { hasModule } = useSystem()
+    const [modalLots, setModalLots] = useState<Lot[]>(lots)
+    const [starredLots, setStarredLots] = useState<Lot[]>([])
+    const [isSearching, setIsSearching] = useState(false)
+    const { currentSystem, hasModule } = useSystem()
     const showInternal = hasModule('internal_products')
 
     // Confirm Dialog State
     const [showConfirm, setShowConfirm] = useState(false)
     const [confirmData, setConfirmData] = useState<{ lotIds: string[] } | null>(null)
 
+    // 0. Fetch Source Lots From DB if searching
+    React.useEffect(() => {
+        if (!searchTerm) {
+            setModalLots(lots)
+            return
+        }
+
+        const fetchSearchedLots = async () => {
+            if (!currentSystem?.code) return
+            
+            setIsSearching(true)
+            try {
+                // Find products first (to match SKU or internal code)
+                const term = `%${searchTerm}%`
+                const { data: prods } = await supabase.from('products')
+                    .select('id')
+                    .or(`name.ilike.${term},sku.ilike.${term},internal_code.ilike.${term},internal_name.ilike.${term}`)
+                    .eq('system_type', currentSystem.code)
+                
+                const pIds = (prods as any[])?.map(p => p.id) || []
+                
+                let matchLotIds: string[] = []
+                if (pIds.length > 0) {
+                    const { data: items } = await supabase.from('lot_items').select('lot_id').in('product_id', pIds)
+                    if (items) matchLotIds = (items as any[]).map(i => i.lot_id)
+                }
+
+                // Query lots
+                let query = supabase.from('lots')
+                    .select(`
+                        *,
+                        positions(id, code),
+                        lot_items(
+                            id, quantity, product_id, unit,
+                            products(name, sku, internal_name, internal_code, unit)
+                        ),
+                        suppliers(name),
+                        qc_info(name)
+                    `)
+                    .eq('system_code', currentSystem.code)
+                    .neq('status', 'hidden')
+                    .neq('status', 'exported')
+                    .neq('id', targetLot.id)
+                
+                if (matchLotIds.length > 0) {
+                    query = query.or(`code.ilike.${term},id.in.(${matchLotIds.join(',')})`)
+                } else {
+                    query = query.ilike('code', term)
+                }
+
+                const { data, error } = await query.order('created_at', { ascending: false }).limit(50)
+                
+                if (!error && data) {
+                    setModalLots(data as any)
+                }
+            } catch (err) {
+                console.error(err)
+            } finally {
+                setIsSearching(false)
+            }
+        }
+
+        const timer = setTimeout(fetchSearchedLots, 500)
+        return () => clearTimeout(timer)
+    }, [searchTerm, currentSystem?.code, targetLot.id])
+
+    // Update modalLots if the parent 'lots' reference changes and we are not searching
+    React.useEffect(() => {
+        if (!searchTerm) {
+            // Merge unique lots from prop and starred fetched lots
+            const combined = [...lots]
+            starredLots.forEach(sl => {
+                if (!combined.some(l => l.id === sl.id)) {
+                    combined.push(sl)
+                }
+            })
+            setModalLots(combined)
+        }
+    }, [lots, searchTerm, starredLots])
+
+    // Load Starred Lots on mount
+    React.useEffect(() => {
+        const fetchStarred = async () => {
+            if (!currentSystem?.code) return
+            try {
+                // Use .contains() for JSONB filtering - most stable and robust way in Supabase
+                const { data, error } = await supabase.from('lots')
+                    .select(`
+                        *,
+                        positions!positions_lot_id_fkey(id, code),
+                        lot_items(
+                            id, quantity, product_id, unit,
+                            products(name, sku, internal_name, internal_code, unit)
+                        ),
+                        suppliers(name),
+                        qc_info(name)
+                    `)
+                    .eq('system_code', currentSystem.code)
+                    .neq('status', 'hidden')
+                    .neq('status', 'exported')
+                    .contains('metadata', { is_starred: true })
+                
+                if (error) {
+                    console.error('Supabase error fetching starred:', error.message || error)
+                }
+                if (data) {
+                    setStarredLots(data as any)
+                }
+            } catch (err) {
+                console.error('Error fetching starred lots:', err)
+            }
+        }
+        fetchStarred()
+    }, [currentSystem?.code])
+
+
     // 1. Filter Source Lots (exclude target lot)
     const sourceLots = useMemo(() => {
-        let filtered = lots.filter(l => l.id !== targetLot.id)
+        let filtered = modalLots.filter(l => l.id !== targetLot.id)
 
         // Tab Filter
         if (filterTab === 'unplaced') {
@@ -43,7 +162,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
             filtered = filtered.filter(l => l.metadata?.is_starred)
         }
 
-        // Search Filter
+        // Filter is already handled mostly by server if searching
         if (searchTerm) {
             const lowerSearch = searchTerm.toLowerCase()
             filtered = filtered.filter(l =>
@@ -58,17 +177,17 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
         }
 
         return filtered
-    }, [lots, targetLot.id, filterTab, searchTerm])
+    }, [modalLots, targetLot.id, filterTab, searchTerm])
 
     // Stats for Tabs
     const stats = useMemo(() => {
-        const others = lots.filter(l => l.id !== targetLot.id)
+        const others = modalLots.filter(l => l.id !== targetLot.id)
         return {
             unplaced: others.filter(l => !l.positions || l.positions.length === 0).length,
             placed: others.filter(l => l.positions && l.positions.length > 0).length,
             starred: others.filter(l => l.metadata?.is_starred).length
         }
-    }, [lots, targetLot.id])
+    }, [modalLots, targetLot.id])
 
     const toggleExpand = (lotId: string) => {
         setExpandedLots(prev => ({ ...prev, [lotId]: !prev[lotId] }))
@@ -115,7 +234,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
 
         // Group selected items by lot to check for empty lots
         const lotMap: Record<string, string[]> = {}
-        lots.forEach(l => {
+        modalLots.forEach(l => {
             if (!l.lot_items) return
             const selectedInLot = l.lot_items.filter(item => selectedItems[item.id] === item.quantity)
             if (selectedInLot.length === l.lot_items.length && selectedInLot.length > 0) {
@@ -144,7 +263,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
 
             for (const entry of itemsToMerge) {
                 // Find source item and its lot
-                const sourceLot = lots.find(l => l.lot_items?.some(i => i.id === entry.itemId));
+                const sourceLot = modalLots.find(l => l.lot_items?.some(i => i.id === entry.itemId));
                 if (!sourceLot) continue;
 
                 const sourceItem = sourceLot.lot_items?.find(i => i.id === entry.itemId);
@@ -169,9 +288,9 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                 // 1. Decrement Source
                 const sourceQty = sourceItem.quantity || 0;
                 if (entry.qty >= sourceQty) {
-                    await supabase.from('lot_items').delete().eq('id', sourceItem.id);
+                    await (supabase.from('lot_items') as any).delete().eq('id', sourceItem.id);
                 } else {
-                    await supabase.from('lot_items').update({ quantity: sourceQty - entry.qty }).eq('id', sourceItem.id);
+                    await (supabase.from('lot_items') as any).update({ quantity: sourceQty - entry.qty }).eq('id', sourceItem.id);
                 }
 
                 // 2. Insert into Target
@@ -199,10 +318,10 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
 
             Object.assign(targetMetadata.system_history.item_history, newItemHistories)
 
-            await supabase.from('lots').update({ metadata: targetMetadata }).eq('id', targetLot.id)
+            await (supabase.from('lots') as any).update({ metadata: targetMetadata }).eq('id', targetLot.id)
 
             // Clean up positions for lots that became empty
-            const sourceLotIdsAffected = Array.from(new Set(lots.filter(l => l.lot_items?.some(i => selectedItems[i.id])).map(l => l.id)));
+            const sourceLotIdsAffected = Array.from(new Set(modalLots.filter(l => l.lot_items?.some(i => selectedItems[i.id])).map(l => l.id)));
 
             for (const lid of sourceLotIdsAffected) {
                 const { count } = await supabase
@@ -211,15 +330,15 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                     .eq('lot_id', lid)
 
                 if (count === 0) {
-                    await supabase.from('positions').update({ lot_id: null }).eq('lot_id', lid)
+                    await (supabase.from('positions') as any).update({ lot_id: null }).eq('lot_id', lid)
 
                     // Add MERGED_TO reference to the source lot metadata
                     const { data: sLot } = await supabase.from('lots').select('metadata').eq('id', lid).single();
                     if (sLot) {
-                        const sMeta = sLot.metadata ? { ...sLot.metadata as any } : {}
+                        const sMeta = (sLot as any).metadata ? { ...(sLot as any).metadata as any } : {}
                         if (!sMeta.system_history) sMeta.system_history = {}
                         sMeta.system_history.merged_to = targetLot.code
-                        await supabase.from('lots').update({
+                        await (supabase.from('lots') as any).update({
                             metadata: sMeta,
                             status: 'exported',
                             quantity: 0
@@ -261,11 +380,16 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors" size={18} />
                             <input
                                 type="text"
-                                placeholder="Tìm kiếm mã LOT, SKU, tên sản phẩm..."
+                                placeholder="Tìm kiếm mã LOT, SKU, tên sản phẩm... (Trên toàn hệ thống)"
                                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-emerald-500 outline-none transition-all placeholder:text-slate-400 text-sm"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                             />
+                            {isSearching && (
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                    <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex p-1 bg-slate-100 dark:bg-slate-800/50 rounded-xl gap-1">
