@@ -88,7 +88,28 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                 // 2a. Check if inward (created in range)
                 const createdAt = new Date(lot.created_at)
                 if (createdAt >= start && createdAt <= end) {
-                    inward.push(lot)
+                    let validItems = lot.lot_items || []
+                    validItems = validItems.filter((item: any) => {
+                        const itemHistory = lot.metadata?.system_history?.item_history?.[item.id]
+                        if (itemHistory && (itemHistory.type === 'merge' || itemHistory.type === 'split')) {
+                            return false; // Không tính lượng hàng từ Gộp/Tách vào báo cáo nhập mới
+                        }
+                        const originTag = lot.lot_tags?.find((t: any) => t.lot_item_id === item.id && (t.tag.startsWith('MERGED_') || t.tag.startsWith('SPLIT_')))
+                        if (originTag) {
+                            return false;
+                        }
+                        return true;
+                    })
+
+                    if (lot.lot_items && lot.lot_items.length > 0 && validItems.length === 0) {
+                        return; // Lot này không có lượng nhập mới, toàn là luân chuyển nội bộ
+                    } 
+                    
+                    if (lot.lot_items && lot.lot_items.length > 0) {
+                        inward.push({ ...lot, lot_items: validItems })
+                    } else {
+                        inward.push(lot)
+                    }
                 }
 
                 // 2b. Check if has exports in range (metadata path - from QuickBulkExport)
