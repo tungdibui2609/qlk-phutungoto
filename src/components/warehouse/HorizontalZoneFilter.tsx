@@ -136,8 +136,8 @@ export default function HorizontalZoneFilter({
     // Helper to get children of a parent
     function getChildren(parentId: string | null) {
         return zones.filter(z => z.parent_id === parentId).sort((a, b) => {
-            const oa = a.display_order ?? 0
-            const ob = b.display_order ?? 0
+            const oa = (a as any).display_order ?? 0
+            const ob = (b as any).display_order ?? 0
             if (oa !== ob) return oa - ob
             return (a.code || '').localeCompare(b.code || '')
         })
@@ -190,13 +190,18 @@ export default function HorizontalZoneFilter({
     let currentParentForDeep = activeLevel1
     let depth = 2
 
+    // Build a Set of selectedPath zone IDs for fast lookup
+    const selectedPathIds = new Set(selectedPath.map(z => z.id))
+
     // We iterate until we find no children or exceed a reasonable depth
     while (currentParentForDeep && depth < 6) {
         const children = getChildren(currentParentForDeep.id)
         if (children.length === 0) break
 
-        // Check if one of these children is in our selected path
-        const activeChild = selectedPath.find(z => z.level === depth)
+        // Find active child by parent-child relationship, NOT by rigid level number.
+        // Virtual zones from groupWarehouseData may not have matching level values,
+        // so we check if any child of the current parent is in selectedPath.
+        const activeChild = children.find(c => selectedPathIds.has(c.id))
 
         deeperLevels.push({
             level: depth,
@@ -205,13 +210,10 @@ export default function HorizontalZoneFilter({
             activeId: activeChild?.id || ''
         })
 
-        // Prepare for next iteration
-        currentParentForDeep = activeChild || (activeChild === undefined ? undefined : undefined) // If no child selected at this level, stop expanding further dropdowns? 
-        // Actually, if I select "All" at Level 2, I don't show Level 3 dropdown usually, or I show it disabled?
-        // Use case: I want to see everything in Level 2. So Level 3 is irrelevant (it's mixed).
-        // So we stop if no active child.
+        // Stop if no active child — deeper dropdowns are irrelevant
         if (!activeChild) break
 
+        currentParentForDeep = activeChild
         depth++
     }
 
