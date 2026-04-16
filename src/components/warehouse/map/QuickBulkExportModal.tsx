@@ -48,6 +48,67 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
     const [productionSearch, setProductionSearch] = useState('')
     const [showProductionSuggestions, setShowProductionSuggestions] = useState(false)
 
+    const [exportQuantities, setExportQuantities] = useState<Record<string, number>>({})
+
+    const flatLotItems = React.useMemo(() => {
+        const items: Array<{
+            lotId: string,
+            lotCode: string,
+            uid: string,
+            sku: string,
+            name: string,
+            unit: string,
+            maxQty: number
+        }> = []
+        
+        lotIds.forEach(id => {
+            const info = lotInfo[id]
+            if (!info) return
+            info.items.forEach((item, idx) => {
+                const uid = `${id}_${item.sku}_${item.unit}_${idx}`
+                items.push({
+                    lotId: id,
+                    lotCode: info.code || 'N/A',
+                    uid: uid,
+                    sku: item.sku,
+                    name: item.product_name,
+                    unit: item.unit,
+                    maxQty: item.quantity
+                })
+            })
+        })
+        return items
+    }, [lotIds, lotInfo])
+
+    useEffect(() => {
+        const initialMap: Record<string, number> = {}
+        flatLotItems.forEach(item => {
+            initialMap[item.uid] = item.maxQty
+        })
+        setExportQuantities(initialMap)
+    }, [flatLotItems])
+
+    const handleAutoAllocate = (sku: string, unit: string, targetAmount: number) => {
+        setExportQuantities(prev => {
+            const next = { ...prev }
+            let remaining = targetAmount
+            
+            const items = flatLotItems.filter(i => i.sku === sku && i.unit === unit)
+            
+            items.forEach(item => {
+                if (remaining > 0) {
+                    const take = Math.min(item.maxQty, remaining)
+                    next[item.uid] = take
+                    remaining -= take
+                } else {
+                    next[item.uid] = 0
+                }
+            })
+            
+            return next
+        })
+    }
+
     // Aggregate items for display
     const aggregatedDisplayItems = React.useMemo(() => {
         const groups: Record<string, { sku: string, name: string, unit: string, totalQty: number }> = {}
@@ -121,18 +182,38 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
 
                 const exportItemsData: Record<string, any> = {}
                 const lotItems = lot.lot_items || []
+                let totalLotRemaining = 0;
+
+                const currentLotFlatItems = flatLotItems.filter(f => f.lotId === lot.id)
 
                 // 2. Prepare export history data & Production inputs
-                lotItems.forEach((item: any) => {
+                for (const item of lotItems) {
                     const baseUnit = item.products?.unit || ''
                     const selectedUnit = item.unit || baseUnit
-                    const weightKg = toBaseAmount(item.product_id, selectedUnit, item.quantity, baseUnit)
+                    
+                    const matchedFlatItem = currentLotFlatItems.find(f => f.sku === item.products?.sku && f.unit === selectedUnit)
+                    
+                    let exportQty = item.quantity;
+                    if (matchedFlatItem && exportQuantities[matchedFlatItem.uid] !== undefined) {
+                        exportQty = exportQuantities[matchedFlatItem.uid]
+                    }
+
+                    if (exportQty <= 0) {
+                        totalLotRemaining += item.quantity;
+                        continue;
+                    }
+
+                    if (exportQty > item.quantity) {
+                        throw new Error(`Số lượng xuất vượt quá tồn (${exportQty} > ${item.quantity}) đối với mã ${item.products?.name}`)
+                    }
+
+                    const weightKg = toBaseAmount(item.product_id, selectedUnit, exportQty, baseUnit)
 
                     exportItemsData[item.id] = {
                         product_id: item.product_id,
                         product_sku: item.products?.sku,
                         product_name: item.products?.name,
-                        exported_quantity: item.quantity,
+                        exported_quantity: exportQty,
                         unit: selectedUnit,
                         cost_price: item.products?.cost_price || 0,
                         production_id: selectedProductionId
@@ -144,13 +225,28 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                             lot_id: lot.id,
                             lot_item_id: item.id,
                             product_id: item.product_id,
-                            quantity: item.quantity,
+                            quantity: exportQty,
                             unit: selectedUnit,
                             weight_kg: weightKg,
                             system_code: currentSystem?.code
                         })
                     }
-                })
+
+                    const remainingQty = item.quantity - exportQty;
+                    totalLotRemaining += remainingQty;
+
+                    if (remainingQty === 0) {
+                        const { error: itemsDelError } = await (supabase.from('lot_items') as any).delete().eq('id', item.id)
+                        if (itemsDelError) throw itemsDelError
+                    } else {
+                        const { error: itemsUpdError } = await (supabase.from('lot_items') as any).update({ quantity: remainingQty }).eq('id', item.id)
+                        if (itemsUpdError) throw itemsUpdError
+                    }
+                }
+
+                if (Object.keys(exportItemsData).length === 0) {
+                    continue; // Skip if nothing to export
+                }
 
                 // 3. Update metadata with history
                 const newMetadata = await lotService.addExportToHistory({
@@ -167,33 +263,50 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                 })
 
                 // 4. Perform full export updates in database
-                // Update LOT status and quantity
-                const { error: lotUpdError } = await (supabase.from('lots') as any).update({
-                    quantity: 0,
-                    metadata: newMetadata,
-                    status: 'exported',
-                    system_code: lot.system_code // Explicitly preserve system_code
-                }).eq('id', lot.id)
-                if (lotUpdError) throw lotUpdError
+                if (totalLotRemaining === 0) {
+                    // Update LOT status and quantity
+                    const { error: lotUpdError } = await (supabase.from('lots') as any).update({
+                        quantity: 0,
+                        metadata: newMetadata,
+                        status: 'exported',
+                        system_code: lot.system_code // Explicitly preserve system_code
+                    }).eq('id', lot.id)
+                    if (lotUpdError) throw lotUpdError
 
-                // Delete lot_items (as we are exporting everything)
-                const { error: itemsDelError } = await (supabase.from('lot_items') as any).delete().eq('lot_id', lot.id)
-                if (itemsDelError) throw itemsDelError
+                    // Clear positions
+                    const { error: posUpdError } = await (supabase.from('positions') as any).update({ lot_id: null }).eq('lot_id', lot.id)
+                    if (posUpdError) throw posUpdError
 
-                // Clear positions
-                const { error: posUpdError } = await (supabase.from('positions') as any).update({ lot_id: null }).eq('lot_id', lot.id)
-                if (posUpdError) throw posUpdError
+                    // Audit log export action on lot
+                    await logActivity({
+                        supabase,
+                        tableName: 'lots',
+                        recordId: lot.id,
+                        action: 'UPDATE',
+                        oldData: { quantity: lot.quantity, status: lot.status },
+                        newData: { quantity: 0, status: 'exported' },
+                        systemCode: lot.system_code
+                    })
+                } else {
+                    // Update LOT quantity only
+                    const { error: lotUpdError } = await (supabase.from('lots') as any).update({
+                        quantity: totalLotRemaining,
+                        metadata: newMetadata,
+                        system_code: lot.system_code 
+                    }).eq('id', lot.id)
+                    if (lotUpdError) throw lotUpdError
 
-                // Audit log export action on lot
-                await logActivity({
-                    supabase,
-                    tableName: 'lots',
-                    recordId: lot.id,
-                    action: 'UPDATE',
-                    oldData: { quantity: lot.quantity, status: lot.status },
-                    newData: { quantity: 0, status: 'exported' },
-                    systemCode: lot.system_code
-                })
+                    // Audit log export action on lot
+                    await logActivity({
+                        supabase,
+                        tableName: 'lots',
+                        recordId: lot.id,
+                        action: 'UPDATE',
+                        oldData: { quantity: lot.quantity },
+                        newData: { quantity: totalLotRemaining },
+                        systemCode: lot.system_code
+                    })
+                }
             }
 
             // Save Production Inputs
@@ -238,23 +351,93 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                 </div>
 
                 <div className="px-6 py-2 border-t border-slate-100 dark:border-slate-800 flex-1 overflow-y-auto custom-scrollbar">
+                    {/* Auto Allocation Summary */}
+                    {aggregatedDisplayItems.length > 0 && (
+                        <div className="mt-4 bg-orange-50 dark:bg-orange-950/30 rounded-2xl p-4 border border-orange-200 dark:border-orange-900/50">
+                            <h4 className="text-xs font-bold text-orange-600 dark:text-orange-400 uppercase mb-3 flex items-center gap-2">
+                                Nhập Tự Động Phân Bổ Số Lượng
+                            </h4>
+                            <div className="space-y-2">
+                                {aggregatedDisplayItems.map((group, idx) => {
+                                    const currentAllocated = flatLotItems
+                                        .filter(i => i.sku === group.sku && i.unit === group.unit)
+                                        .reduce((sum, i) => sum + (exportQuantities[i.uid] || 0), 0)
+
+                                    return (
+                                        <div key={idx} className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-sm py-2 border-b border-orange-100 dark:border-orange-900/30 last:border-0 gap-3">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <span className="px-1.5 py-0.5 bg-orange-200 dark:bg-orange-900 text-orange-800 dark:text-orange-200 rounded text-[10px] font-bold font-mono shrink-0">
+                                                    {group.sku}
+                                                </span>
+                                                <span className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                                    {group.name}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-2 shrink-0 bg-white dark:bg-slate-900 border border-orange-300 dark:border-orange-700/50 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-orange-500 focus-within:border-orange-500 transition-all shadow-sm">
+                                                <input 
+                                                    type="number" 
+                                                    min={0}
+                                                    max={group.totalQty}
+                                                    value={Math.round(currentAllocated * 1000) / 1000} // prevent floating point issues display
+                                                    onChange={(e) => {
+                                                        const val = parseFloat(e.target.value)
+                                                        if (!isNaN(val)) {
+                                                            handleAutoAllocate(group.sku, group.unit, Math.max(0, val))
+                                                        } else {
+                                                            handleAutoAllocate(group.sku, group.unit, 0)
+                                                        }
+                                                    }}
+                                                    className="w-24 px-3 py-2 text-right font-bold text-orange-600 bg-transparent focus:outline-none appearance-none"
+                                                    placeholder="Gõ số tổng..."
+                                                />
+                                                <span className="text-slate-400 font-bold whitespace-nowrap pr-3 text-[10px] uppercase">
+                                                    / {formatQuantityFull(group.totalQty)} {group.unit}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Items Summary */}
                     <div className="mt-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 border border-slate-200 dark:border-slate-700">
-                        <h4 className="text-xs font-bold text-slate-400 uppercase mb-3 px-1">Danh sách hàng xuất</h4>
-                        <div className="space-y-2">
-                            {aggregatedDisplayItems.map((item, idx) => (
-                                <div key={idx} className="flex items-center justify-between text-sm py-1 border-b border-slate-100 dark:border-slate-700 last:border-0">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <span className="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded text-[10px] font-bold font-mono shrink-0">
-                                            {item.sku}
-                                        </span>
-                                        <span className="font-bold text-slate-700 dark:text-slate-200 truncate">
-                                            {item.name}
+                        <h4 className="text-xs font-bold text-slate-400 uppercase mb-3 px-1">Chi Tiết Từng Lô Hàng Khảo Sát</h4>
+                        <div className="space-y-3 max-h-56 overflow-y-auto custom-scrollbar pr-2">
+                            {flatLotItems.map((item) => (
+                                <div key={item.uid} className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-sm py-3 border-b border-slate-100 dark:border-slate-700 last:border-0 gap-3">
+                                    <div className="flex flex-col min-w-0 flex-1">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded text-[10px] font-bold font-mono shrink-0">
+                                                {item.sku}
+                                            </span>
+                                            <span className="font-bold text-slate-700 dark:text-slate-200 truncate">
+                                                {item.name}
+                                            </span>
+                                        </div>
+                                        <div className="text-xs text-slate-400 font-mono">LOT: <span className="font-bold text-slate-500">{item.lotCode}</span></div>
+                                    </div>
+                                    <div className="flex items-center gap-2 max-w-[200px] shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-rose-500 focus-within:border-rose-500 transition-all">
+                                        <input 
+                                            type="number" 
+                                            min={0}
+                                            max={item.maxQty}
+                                            value={exportQuantities[item.uid] !== undefined ? exportQuantities[item.uid] : item.maxQty}
+                                            onChange={(e) => {
+                                                const val = parseFloat(e.target.value)
+                                                if (!isNaN(val)) {
+                                                    setExportQuantities(prev => ({...prev, [item.uid]: Math.min(Math.max(0, val), item.maxQty)}))
+                                                } else {
+                                                    setExportQuantities(prev => ({...prev, [item.uid]: 0}))
+                                                }
+                                            }}
+                                            className="w-20 px-3 py-2 text-right font-bold text-rose-600 bg-transparent focus:outline-none appearance-none"
+                                        />
+                                        <span className="text-slate-400 font-bold whitespace-nowrap pr-3 text-xs">
+                                            / {formatQuantityFull(item.maxQty)} {item.unit}
                                         </span>
                                     </div>
-                                    <span className="text-rose-600 dark:text-rose-400 font-bold shrink-0 ml-4">
-                                        {formatQuantityFull(item.totalQty)} {item.unit}
-                                    </span>
                                 </div>
                             ))}
                         </div>
