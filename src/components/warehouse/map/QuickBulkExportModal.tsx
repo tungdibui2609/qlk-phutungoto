@@ -14,13 +14,13 @@ interface QuickBulkExportModalProps {
     lotIds: string[]
     lotInfo: Record<string, {
         code: string,
-        items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>,
+        items: Array<{ task_item_id?: string, product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>,
         positions?: { code: string }[]
     }>
     defaultCustomer?: string
     defaultDescription?: string
     onClose: () => void
-    onSuccess: () => void
+    onSuccess: (processedItems?: Array<{ task_item_id: string, export_qty: number }>) => void
 }
 
 export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({ 
@@ -55,6 +55,7 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
             lotId: string,
             lotCode: string,
             uid: string,
+            task_item_id?: string,
             sku: string,
             name: string,
             unit: string,
@@ -70,6 +71,7 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                     lotId: id,
                     lotCode: info.code || 'N/A',
                     uid: uid,
+                    task_item_id: item.task_item_id,
                     sku: item.sku,
                     name: item.product_name,
                     unit: item.unit,
@@ -165,6 +167,7 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
 
         try {
             const allProductionInputs: any[] = []
+            const processedTaskItems: Array<{ task_item_id: string, export_qty: number }> = []
 
             // Process each LOT one by one
             for (const lotId of lotIds) {
@@ -201,6 +204,14 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                     if (exportQty <= 0) {
                         totalLotRemaining += item.quantity;
                         continue;
+                    }
+
+                    // Track this processed item for upstream page update
+                    if (matchedFlatItem?.task_item_id) {
+                        processedTaskItems.push({
+                            task_item_id: matchedFlatItem.task_item_id,
+                            export_qty: exportQty
+                        })
                     }
 
                     if (exportQty > item.quantity) {
@@ -316,7 +327,7 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
             }
 
             showToast(`Đã xuất thành công ${lotIds.length} lô hàng`, 'success')
-            onSuccess()
+            onSuccess(processedTaskItems)
         } catch (e: any) {
             console.error('Bulk export error:', e)
             setError(e.message || 'Có lỗi xảy ra khi xuất hàng loạt')

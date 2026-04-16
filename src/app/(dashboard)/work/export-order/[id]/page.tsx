@@ -40,6 +40,7 @@ interface ExportOrderItem {
     full_position_path?: string | null
     lot_tags?: { tag: string; lot_item_id: string | null }[] | null
     part_number?: string | null
+    exported_quantity?: number | null
 }
 
 interface ExportTask {
@@ -170,6 +171,7 @@ function ExportOrderDetailContent() {
                     items:export_task_items(
                         id,
                         quantity,
+                        exported_quantity,
                         unit,
                         status,
                         priority,
@@ -645,6 +647,7 @@ function ExportOrderDetailContent() {
                                 <th className="px-6 py-4">Vị trí</th>
                                 <th className="px-6 py-4">Sản phẩm</th>
                                 <th className="px-6 py-4 text-right">SL</th>
+                                <th className="px-6 py-4 text-right">Đã xuất</th>
                                 <th className="px-6 py-4 text-right">Trạng thái</th>
                             </tr>
                         </thead>
@@ -712,7 +715,14 @@ function ExportOrderDetailContent() {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right">
-                                        <span className="font-bold text-lg text-stone-900">{item.quantity}</span> <span className="text-xs text-stone-500">{item.unit}</span>
+                                        <span className="font-bold text-lg text-stone-900 dark:text-stone-100">{item.quantity}</span> <span className="text-xs text-stone-500 dark:text-stone-400">{item.unit}</span>
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        {item.exported_quantity !== undefined && item.exported_quantity !== null ? (
+                                            <span className="font-bold text-lg text-purple-600 dark:text-purple-400">{item.exported_quantity}</span>
+                                        ) : (
+                                            <span className="text-stone-400 text-sm">—</span>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <button
@@ -934,6 +944,9 @@ function ExportOrderDetailContent() {
                         const info: Record<string, any> = {}
                         task?.items?.forEach(item => {
                             if (!item.lot_id) return
+                            // Only include task items that are currently selected in the UI
+                            if (!selectedPositionIds.has(item.id || '')) return
+                            
                             if (!info[item.lot_id]) {
                                 info[item.lot_id] = {
                                     code: item.lot_code,
@@ -942,6 +955,7 @@ function ExportOrderDetailContent() {
                                 }
                             }
                             info[item.lot_id].items.push({
+                                task_item_id: item.id,
                                 product_name: item.product_name,
                                 sku: item.sku,
                                 unit: item.unit,
@@ -953,13 +967,24 @@ function ExportOrderDetailContent() {
                     onClose={() => setIsBulkExportOpen(false)}
                     defaultDescription={`Xuất theo lệnh ${task?.code}`}
                     defaultCustomer={(task as any)?.customer_name || ""}
-                    onSuccess={async () => {
+                    onSuccess={async (processedItems) => {
                         setIsBulkExportOpen(false)
-                        // Wait for completion, then mark task items as Exported
-                        const idsToUpdate = Array.from(selectedPositionIds).filter(id => task?.items?.find(i => i.id === id)?.status !== 'Exported')
-                        if (idsToUpdate.length > 0) {
-                            await (supabase.from('export_task_items') as any).update({ status: 'Exported' }).in('id', idsToUpdate)
+                        // Update task items with their actual exported quantity
+                        if (processedItems && processedItems.length > 0) {
+                            const updatePromises = processedItems.map(p => 
+                                (supabase.from('export_task_items') as any)
+                                .update({ status: 'Exported', exported_quantity: p.export_qty })
+                                .eq('id', p.task_item_id)
+                            )
+                            await Promise.all(updatePromises)
+                        } else {
+                            // Fallback mostly unused but keeps typings safe
+                            const idsToUpdate = Array.from(selectedPositionIds).filter(id => task?.items?.find(i => i.id === id)?.status !== 'Exported')
+                            if (idsToUpdate.length > 0) {
+                                await (supabase.from('export_task_items') as any).update({ status: 'Exported' }).in('id', idsToUpdate)
+                            }
                         }
+                        
                         setSelectedPositionIds(new Set())
                         fetchTaskDetails()
                     }}
