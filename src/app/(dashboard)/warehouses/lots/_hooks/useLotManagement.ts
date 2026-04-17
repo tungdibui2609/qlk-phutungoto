@@ -228,116 +228,48 @@ export function useLotManagement() {
 
             let query: any;
 
-            // === PRE-STEP: Zone filter — resolve lot IDs BEFORE building main query ===
-            // This 2-step approach ensures pagination works correctly.
-            // PostgREST nested !inner filters + pagination cause incorrect counts,
-            // so we first find lot_ids from positions, then filter lots by id.
+            // === PRE-STEP: Zone filter — resolve lot IDs via server-side RPC ===
+            // Previously this used 3 separate paginated client-side fetches (zones, zone_positions, positions)
+            // which was slow and caused "Bad Request" errors from URL length limits.
+            // Now uses a single RPC call that runs server-side via POST.
             let zoneLotIds: string[] | null = null;
             if (selectedZoneId && positionFilter !== 'unassigned') {
-                // Strategy: MIRROR the warehouse map's logic exactly.
-                // Use MANUAL pagination for zone_positions (same as map's fetchAllZonesPos)
+                let realZoneIds: string[] = [];
 
-                // 1. Fetch ALL zones (PAGINATED — Supabase defaults to 1000 max!)
-                let rawZones: any[] = []
-                let zoneFrom = 0
-                const ZONE_PAGE = 1000
-                while (true) {
-                    const { data: zonePage, error: zoneErr } = await supabase
-                        .from('zones')
-                        .select('id, parent_id, system_type')
-                        .eq('system_type', currentSystem.code)
-                        .order('id')
-                        .range(zoneFrom, zoneFrom + ZONE_PAGE - 1)
-                    if (zoneErr) { console.error('[Zone Filter] Error fetching zones:', zoneErr); break }
-                    if (!zonePage || zonePage.length === 0) break
-                    rawZones = [...rawZones, ...zonePage]
-                    if (zonePage.length < ZONE_PAGE) break
-                    zoneFrom += ZONE_PAGE
-                }
+                // Check if this is a virtual zone (created by groupWarehouseData, e.g. "v-bin-xxx")
+                const isVirtualZone = selectedZoneId.startsWith('v-');
 
-                // 2. Fetch ALL zone_positions (manual pagination, matching map exactly)
-                let allZpData: any[] = []
-                let zpFrom = 0
-                const ZP_PAGE = 1000
-                while (true) {
-                    const { data: zpPage, error: zpErr } = await supabase
-                        .from('zone_positions')
-                        .select('zone_id, position_id, positions!inner(system_type)')
-                        .eq('positions.system_type' as any, currentSystem.code)
-                        .order('zone_id', { ascending: true })
-                        .order('position_id', { ascending: true })
-                        .range(zpFrom, zpFrom + ZP_PAGE - 1) as any
-                    if (zpErr) { console.error('[Zone Filter] Error fetching zone_positions:', zpErr); break }
-                    if (!zpPage || zpPage.length === 0) break
-                    allZpData = [...allZpData, ...zpPage]
-                    if (zpPage.length < ZP_PAGE) break
-                    zpFrom += ZP_PAGE
-                }
-
-                // 3. Fetch ALL positions with lot_id (manual pagination)
-                let allOccupiedPosData: any[] = []
-                let posFrom = 0
-                const POS_PAGE = 1000
-                while (true) {
-                    const { data: posPage, error: posErr } = await (supabase
-                        .from('positions') as any)
-                        .select('id, lot_id')
-                        .eq('system_type', currentSystem.code)
-                        .not('lot_id', 'is', null)
-                        .range(posFrom, posFrom + POS_PAGE - 1)
-                    if (posErr) { console.error('[Zone Filter] Error fetching positions:', posErr); break }
-                    if (!posPage || posPage.length === 0) break
-                    allOccupiedPosData = [...allOccupiedPosData, ...posPage]
-                    if (posPage.length < POS_PAGE) break
-                    posFrom += POS_PAGE
-                }
-
-                // Build zpLookup: position_id → zone_id (same as map)
-                const zpLookup: Record<string, string> = {}
-                allZpData.forEach((zp: any) => {
-                    if (zp.position_id && zp.zone_id) zpLookup[zp.position_id] = zp.zone_id
-                })
-
-                // Resolve target zone IDs (selected zone + all descendants)
-                const selectedIsRealZone = (rawZones as any[]).some((z: any) => z.id === selectedZoneId)
-                let allTargetZoneIds = new Set<string>()
-
-                const getDescendantIds = (parentId: string): string[] => {
-                    const children = (rawZones as any[]).filter(z => z.parent_id === parentId)
-                    const descendantIds = children.map(z => z.id)
-                    children.forEach(child => {
-                        descendantIds.push(...getDescendantIds(child.id))
-                    })
-                    return descendantIds
-                }
-
-                if (selectedIsRealZone) {
-                    allTargetZoneIds.add(selectedZoneId)
-                    getDescendantIds(selectedZoneId).forEach(dId => allTargetZoneIds.add(dId))
+                if (isVirtualZone) {
+                    // Virtual zones don't exist in DB — resolve to real zone IDs
+                    const rawZones = await fetchAllPaginated('zones',
+                        q => q.eq('system_type', currentSystem.code).order('level').order('name'),
+                        'id, parent_id, name, code, level, display_order, system_type'
+                    );
+                    const { virtualToRealMap } = groupWarehouseData(rawZones as any[], []);
+                    const mapped = virtualToRealMap?.get(selectedZoneId);
+                    realZoneIds = mapped && mapped.length > 0 ? [...mapped] : [];
                 } else {
-                    // Virtual zone — resolve via groupWarehouseData
-                    const allPosForGrouping = await fetchAllPaginated('positions',
-                        q => (q as any).eq('system_type', currentSystem.code),
-                        'id, code, system_type'
-                    )
-                    const { virtualToRealMap } = groupWarehouseData(rawZones as any[], allPosForGrouping as any[])
-                    const mapped = virtualToRealMap?.get(selectedZoneId)
-                    const baseRealIds = mapped ? mapped : [selectedZoneId]
-                    baseRealIds.forEach(id => {
-                        allTargetZoneIds.add(id)
-                        getDescendantIds(id).forEach(dId => allTargetZoneIds.add(dId))
-                    })
+                    realZoneIds = [selectedZoneId];
                 }
-                // Filter occupied positions by zone membership
-                const allLotIds = new Set<string>()
-                allOccupiedPosData.forEach((pos: any) => {
-                    const posZoneId = zpLookup[pos.id]
-                    if (posZoneId && allTargetZoneIds.has(posZoneId) && pos.lot_id) {
-                        allLotIds.add(pos.lot_id)
-                    }
-                })
 
-                zoneLotIds = Array.from(allLotIds)
+                if (realZoneIds.length > 0) {
+                    // RPC handles: zone descendants (recursive CTE) + zone_positions + positions
+                    // All server-side, single call, no URL length issues
+                    const { data: rpcData, error: rpcError } = await (supabase.rpc as any)(
+                        'get_lot_ids_in_zone',
+                        { p_system_code: currentSystem.code, p_zone_ids: realZoneIds }
+                    );
+
+                    if (rpcError) {
+                        console.error('[Zone Filter RPC] Error:', rpcError);
+                        zoneLotIds = [];
+                    } else {
+                        zoneLotIds = (rpcData || []).map((r: any) => r.lot_id);
+                    }
+                } else if (isVirtualZone) {
+                    // Virtual zone not found in mapping → no results
+                    zoneLotIds = [];
+                }
             }
 
             if (positionFilter === 'unassigned') {
@@ -371,7 +303,9 @@ export function useLotManagement() {
                         query = query.eq('id', '00000000-0000-0000-0000-000000000000')
                     } else {
                         // Filter by the resolved lot IDs
-                        query = query.in('id', zoneLotIds.slice(0, 1000))
+                        // PostgREST uses GET requests — URL limit ~8KB.
+                        // Each UUID = 36 chars, so max ~150 IDs to stay safe.
+                        query = query.in('id', zoneLotIds.slice(0, 150))
                     }
                 }
             }
@@ -434,7 +368,7 @@ export function useLotManagement() {
                                 
                                 if (foundLots && foundLots.length > 0) {
                                     const matchingIds = foundLots.map((l: any) => l.id);
-                                    query = query.in('id', matchingIds);
+                                    query = query.in('id', matchingIds.slice(0, 150));
                                     
                                     // Skip the rest of regular search logic
                                     const { data, error, count } = await query
@@ -679,7 +613,7 @@ export function useLotManagement() {
                     }
 
                     if (groupLotIds && groupLotIds.length > 0) {
-                        finalOrConditions.push(`id.in.(${groupLotIds.slice(0, 500).join(',')})`);
+                        finalOrConditions.push(`id.in.(${groupLotIds.slice(0, 150).join(',')})`);
                     } else if (andParts.length > 0) {
                         // If no lots match this AND group, we add a dummy filter so the OR doesn't ignore the failure
                         finalOrConditions.push(`id.eq.00000000-0000-0000-0000-000000000000`);
