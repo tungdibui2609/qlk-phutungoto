@@ -57,8 +57,6 @@ const menuItems: MenuItem[] = [
         children: [
             { id: 'infrastructure', name: 'Hạ tầng', href: '/warehouses', icon: Warehouse, requiredPermission: 'warehouse.view' },
             { id: 'warehouse_map', name: 'Sơ đồ kho', href: '/warehouses/map', icon: Map, requiredPermission: 'warehousemap.manage' },
-            { id: 'warehouse_status', name: 'Trạng thái kho', href: '/warehouses/status', icon: BarChart3, requiredPermission: 'warehouse.view' },
-            { id: 'hall_summary', name: 'Thống kê sảnh', href: '/warehouses/hall-summary', icon: BarChart3, requiredPermission: 'warehouse.view' },
             { id: 'lots', name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes, requiredPermission: 'warehouse_lot.view' },
             { id: 'assignment_approval', name: 'Duyệt gán vị trí', href: '/production-lot/assignments', icon: ClipboardCheck, requiredPermission: 'warehouse.view' },
             { id: 'requisitions', name: 'Phiếu xuất SX', href: '/warehouses/requisitions', icon: ArrowUpFromLine, requiredPermission: 'inventory.manage' },
@@ -122,6 +120,8 @@ const menuItems: MenuItem[] = [
         icon: BarChart3,
         children: [
             { id: 'inventory_report', name: 'Tồn kho', href: '/inventory', icon: Package, requiredPermission: 'inventory.view' },
+            { id: 'warehouse_status', name: 'Trạng thái kho', href: '/warehouses/status', icon: BarChart3, requiredPermission: 'warehouse.view' },
+            { id: 'hall_summary', name: 'Thống kê sảnh', href: '/warehouses/hall-summary', icon: BarChart3, requiredPermission: 'warehouse.view' },
             { id: 'history', name: 'Lịch sử thao tác', href: '/operation-history', icon: Activity, requiredPermission: 'report.view' },
             { id: 'customer_docs', name: 'Chứng từ khách hàng', href: '/reports/customer-docs', icon: FileText, requiredPermission: 'report.view' },
             { id: 'supplier_debts', name: 'Công nợ NCC', href: '/reports/supplier-debts', icon: DollarSign, requiredPermission: 'report.view' },

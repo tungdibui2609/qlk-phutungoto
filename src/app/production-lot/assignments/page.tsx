@@ -142,10 +142,20 @@ export default function AssignmentApprovalPage() {
 
             if (lErr) throw lErr
 
-            const formattedLots: Lot[] = (lData || []).map((l: any) => ({
+            const fetchedLots = lData || []
+            const lotIds = fetchedLots.map((l: any) => l.id)
+            
+            // Explicitly fetch the positions for THESE lots to bypass the 1000 row limit on allPosData
+            let assignedPosData: any[] = []
+            if (lotIds.length > 0) {
+                const { data } = await supabase.from('positions').select('id, code, lot_id').in('lot_id', lotIds)
+                assignedPosData = data || []
+            }
+
+            const formattedLots: Lot[] = fetchedLots.map((l: any) => ({
                 ...l,
                 product_names: l.lot_items?.map((li: any) => li.products?.name).filter(Boolean) || [],
-                positions: safePosData.filter((p: any) => p.lot_id === l.id)
+                positions: assignedPosData.filter((p: any) => p.lot_id === l.id)
             }))
 
             setLotsInDay(formattedLots)
