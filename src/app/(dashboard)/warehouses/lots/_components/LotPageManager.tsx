@@ -159,11 +159,11 @@ export function LotPageManager() {
 
                 <div className="flex flex-wrap items-center gap-3">
                     <Link
-                        href="/warehouses/map"
+                        href="/warehouses/lots/export"
                         className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm flex items-center gap-2"
                     >
-                        <MapPin size={18} />
-                        Sơ đồ vị trí
+                        <ArrowUpDown size={18} className="text-blue-500" />
+                        Xuất kho
                     </Link>
 
                     <button
@@ -451,6 +451,7 @@ export function LotPageManager() {
                     onClose={() => setShowReportModal(false)}
                 />
             )}
+
 
         </section>
     )

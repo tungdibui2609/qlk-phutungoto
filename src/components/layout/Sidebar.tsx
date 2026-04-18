@@ -127,6 +127,7 @@ const menuItems: MenuItem[] = [
             { id: 'supplier_debts', name: 'Công nợ NCC', href: '/reports/supplier-debts', icon: DollarSign, requiredPermission: 'report.view' },
             { id: 'accounting_history', name: 'Nhật ký xuất nhập', href: '/reports/accounting-history', icon: ArrowRightLeft, requiredPermission: 'report.view' },
             { id: 'lot_history', name: 'Nhật ký xuất nhập LOT', href: '/reports/lot-history', icon: History, requiredPermission: 'report.view' },
+            { id: 'picking_productivity', name: 'Năng suất lấy hàng', href: '/reports/picking-productivity', icon: BarChart3, requiredPermission: 'report.view' },
             { id: 'linked_journal', name: 'Nhật ký liên kết', href: '/reports/linked-journal', icon: ArrowRightLeft, requiredPermission: 'report.view' },
         ]
     },

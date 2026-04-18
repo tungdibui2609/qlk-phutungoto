@@ -1,7 +1,7 @@
 'use client'
 
 import React, { Suspense, useState, useEffect, useMemo, useRef } from 'react'
-import { FileText, ArrowLeft, Loader2, Printer, Trash2, CheckCircle2, RotateCcw, X, ArrowDownToLine, PackageMinus, BarChart3, Calendar } from 'lucide-react'
+import { FileText, ArrowLeft, Loader2, Printer, Trash2, CheckCircle2, RotateCcw, X, ArrowDownToLine, PackageMinus, BarChart3, Calendar, Undo2, LockOpen, PackageCheck, ShieldAlert } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { format } from 'date-fns'
@@ -16,6 +16,7 @@ import { ExportOrderStatsModal } from '@/components/export/ExportOrderStatsModal
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { logActivity } from '@/lib/audit'
 import { BulkEditLotDatesModal } from '@/components/export/BulkEditLotDatesModal'
+import { lotService } from '@/services/warehouse/lotService'
 
 interface ExportOrderItem {
     id?: string
@@ -28,11 +29,11 @@ interface ExportOrderItem {
     lot_id?: string
     position_id?: string
     product_id?: string
-    status: 'Pending' | 'Exported'
+    status: 'Pending' | 'Picked' | 'Exported'
     notes?: string | null
     product_image?: string | null
     lot_inbound_date?: string | null
-    display_status?: 'Pending' | 'Exported' | 'Moved to Hall' | 'Changed Position'
+    display_status?: 'Pending' | 'Exported' | 'Picked' | 'Moved to Hall' | 'Changed Position'
     current_position_name?: string
     is_hall?: boolean
     priority?: number | null
@@ -41,12 +42,13 @@ interface ExportOrderItem {
     lot_tags?: { tag: string; lot_item_id: string | null }[] | null
     part_number?: string | null
     exported_quantity?: number | null
+    metadata?: any
 }
 
 interface ExportTask {
     id: string
     code: string
-    status: 'Pending' | 'In Progress' | 'Completed' | 'Cancelled'
+    status: 'Pending' | 'In Progress' | 'Picked' | 'Completed' | 'Cancelled'
     created_at: string
     created_by_name?: string | null
     items_count?: number
@@ -71,6 +73,7 @@ function ExportOrderDetailContent() {
     const [qrLot, setQrLot] = useState<any>(null)
     const [isStatsOpen, setIsStatsOpen] = useState(false)
     const [isEditDatesOpen, setIsEditDatesOpen] = useState(false)
+    const [isFinalizing, setIsFinalizing] = useState(false)
 
     const taskId = params.id as string
 
@@ -176,6 +179,7 @@ function ExportOrderDetailContent() {
                         status,
                         priority,
                         position_id,
+                        product_id,
                         positions!export_task_items_position_id_fkey (
                             code,
                             zone_positions(zone_id)
@@ -271,7 +275,13 @@ function ExportOrderDetailContent() {
                     const fullPosPath = zonePath.length > 0 ? `${zonePath.join(' - ')} - ${originalPosCode.includes('-') ? originalPosCode.split('-').pop() : originalPosCode}` : null
 
                     // Determine display status
-                    let displayStatus: ExportOrderItem['display_status'] = item.status === 'Exported' ? 'Exported' : 'Pending'
+                    let displayStatus: ExportOrderItem['display_status'] = item.status === 'Exported' ? 'Exported' : item.status === 'Picked' ? 'Picked' : 'Pending'
+                    
+                    // Nếu đang Pending nhưng đã có lịch sử xuất (ca trước đã làm), hiện là 'Đã lấy'
+                    if (displayStatus === 'Pending' && (item.metadata?.processed_picks?.length || 0) > 0) {
+                        displayStatus = 'Picked'
+                    }
+
                     if (displayStatus === 'Pending' && originalPosCode !== currentPosCode) {
                         displayStatus = isHall ? 'Moved to Hall' : 'Changed Position'
                     }
@@ -287,8 +297,10 @@ function ExportOrderDetailContent() {
                         is_hall: isHall,
                         product_name: item.products?.name || 'Sản phẩm không tên',
                         sku: item.products?.sku || 'N/A',
+                        product_id: item.product_id,
                         product_image: item.products?.image_url,
                         quantity: item.quantity,
+                        exported_quantity: item.exported_quantity ?? null,
                         unit: item.unit,
                         status: item.status || 'Pending',
                         display_status: displayStatus,
@@ -354,6 +366,248 @@ function ExportOrderDetailContent() {
             fetchTaskDetails()
         } catch (error: any) {
             showToast('Lỗi khi hủy: ' + error.message, 'error')
+            setLoading(false)
+        }
+    }
+
+    async function handleRevokeItemStatus(item: any) {
+        if (!await showConfirm(`Bạn có muốn hủy trạng thái "Đã xuất" của mặt hàng ${item.sku}? Mặt hàng sẽ quay về trạng thái "Đã chốt ca" để bạn có thể duyệt xuất lại.`)) {
+            return
+        }
+
+        setLoading(true)
+        try {
+            const { error } = await (supabase.from('export_task_items') as any)
+                .update({ status: 'Picked' })
+                .eq('id', item.id)
+
+            if (error) throw error
+            showToast('Đã chuyển trạng thái về "Đã chốt ca"', 'success')
+            fetchTaskDetails()
+        } catch (error: any) {
+            showToast('Lỗi: ' + error.message, 'error')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    async function handleFinalizeExport() {
+        if (!task || !task.items) return
+        
+        const pickedItems = task.items.filter(i => i.status === 'Picked')
+        if (pickedItems.length === 0) {
+            showToast('Không có mặt hàng nào đang ở trạng thái "Đã chốt ca" để xuất kho', 'warning')
+            return
+        }
+
+        const totalQty = pickedItems.reduce((sum, i) => sum + (i.exported_quantity || 0), 0)
+        if (!await showConfirm(`Bạn có chắc chắn muốn DUYỆT XUẤT thực tế ${totalQty} ${pickedItems[0].unit}? Hệ thống sẽ trừ tồn kho và giải phóng vị trí kệ ngay lập tức.`)) {
+            return
+        }
+
+        setIsFinalizing(true)
+        try {
+            const errors: string[] = []
+            let successCount = 0
+
+            // 1. Tính tổng số lượng mới được nhân viên chốt ca (pick) cho từng loại sản phẩm.
+            // Vì Mobile thường gộp các mặt hàng có cùng vị trí/sản phẩm vào 1 row để điền.
+            const sumPicksByProduct: Record<string, number> = {}
+            for (const item of pickedItems) {
+                const picks = item.metadata?.picks || []
+                const pickQty = picks.reduce((sum: number, p: any) => sum + p.qty, 0)
+                if (pickQty > 0) {
+                    const groupKey = item.product_id || item.sku || 'unknown'
+                    sumPicksByProduct[groupKey] = (sumPicksByProduct[groupKey] || 0) + pickQty
+                }
+            }
+
+            // 2. Chạy từ trên xuống dưới (đúng y nguyên List hiển thị) - CUỐN CHIẾU THEO ITEM LỆNH
+            const itemsList = task.items || [] // Dùng list gốc của task, không sort fifo
+
+            // Chỉ duyệt những item đang ở trạng thái Cần duyệt (Picked hoặc Pending nhưng có xuất chưa đủ)
+            for (const item of itemsList) {
+                const groupKey = item.product_id || item.sku || 'unknown'
+                let remainingToDistribute = sumPicksByProduct[groupKey] || 0
+                
+                // Nếu sản phẩm này không có số lượng nào được nhân viên cập nhật thêm, bỏ qua dòng này
+                if (remainingToDistribute <= 0) continue
+
+                // Số lượng tối đa dòng LỆNH này còn cần = Tổng y/c - Lượng đã xuất cũ
+                const currentExported = item.exported_quantity || 0
+                const itemCapacity = Math.max(0, item.quantity - currentExported)
+
+                if (itemCapacity <= 0.000001) {
+                    // Dòng này đã xuất đủ trước đó, bỏ qua để dồn cho dòng dưới
+                    continue
+                }
+
+                // Chốt lấy lượng take (ít hơn hoặc bằng số cần)
+                const takeFromThisLine = Math.min(remainingToDistribute, itemCapacity)
+                
+                // ===== TRỪ KHO =====
+                const { data: latestLot, error: lotErr } = await supabase
+                    .from('lots')
+                    .select('*, lot_items(*)')
+                    .eq('id', item.lot_id!)
+                    .single()
+
+                if (lotErr || !latestLot) {
+                    errors.push(`Không tìm thấy nguyên liệu trong Lô: ${item.lot_code}`)
+                    continue
+                }
+
+                const lot = latestLot as any
+                // TÌM KIẾM LINH HOẠT TRONG LÔ (Tránh lỗi lệch SKU của CSDL cũ)
+                let matchingLotItem = null
+                if (lot.lot_items.length === 1) {
+                    // Nếu Lô chỉ có 1 mặt hàng, mặc định lấy nó luôn
+                    matchingLotItem = lot.lot_items[0]
+                } else {
+                    // Lô nhiều mặt hàng, tìm chính xác theo product_id
+                    matchingLotItem = lot.lot_items.find((li: any) => li.product_id === item.product_id)
+                }
+
+                if (!matchingLotItem || matchingLotItem.quantity < takeFromThisLine - 0.000001) {
+                    errors.push(`Mặt hàng ở vị trí ${item.position_name} lô ${item.lot_code} không đủ tồn kho (Cần: ${takeFromThisLine}, Có: ${matchingLotItem?.quantity || 0})`)
+                    continue
+                }
+
+                const remainingInLotItem = matchingLotItem.quantity - takeFromThisLine
+                
+                if (remainingInLotItem <= 0.000001) {
+                    await (supabase.from('lot_items') as any).delete().eq('id', matchingLotItem.id)
+                } else {
+                    await (supabase.from('lot_items') as any).update({ quantity: remainingInLotItem }).eq('id', matchingLotItem.id)
+                }
+
+                const totalLotQty = lot.quantity - takeFromThisLine
+                const newMetadata = await lotService.addExportToHistory({
+                    supabase,
+                    lotId: lot.id,
+                    originalMetadata: lot.metadata,
+                    exportData: {
+                        id: crypto.randomUUID(),
+                        customer: 'Duyệt lệnh ' + task.code,
+                        description: `Duyệt xuất kho ca lấy hàng. ${remainingInLotItem > 0 ? '(Còn dư vị trí)' : '(Sạch kho)'}`,
+                        location_code: item.position_name,
+                        items: {
+                            [matchingLotItem.id]: {
+                                product_id: matchingLotItem.product_id, // Lấy ID thực tế trong Lot để an toàn
+                                product_sku: item.sku,
+                                exported_quantity: takeFromThisLine,
+                                unit: item.unit
+                            }
+                        }
+                    }
+                })
+
+                await (supabase.from('lots') as any).update({
+                    quantity: Math.max(0, totalLotQty),
+                    metadata: newMetadata,
+                    status: totalLotQty <= 0.000001 ? 'exported' : lot.status
+                }).eq('id', lot.id)
+
+                // CẬP NHẬT TRẠNG THÁI lệnh ITEM
+                const newTotalExported = currentExported + takeFromThisLine
+                const newItemStatus = newTotalExported >= item.quantity - 0.000001 ? 'Exported' : 'Pending'
+                
+                const currentMetadata = item.metadata || {}
+                const currentPicks = currentMetadata.picks || []
+                const oldProcessed = currentMetadata.processed_picks || []
+                
+                // Mặc định dòng này đã gánh takeFromThisLine, nếu Mobile có rải thừa thì ta xóa sạch, chỉ ghi log
+                const updatedItemMetadata = {
+                    ...currentMetadata,
+                    picks: [],
+                    processed_picks: [...oldProcessed, ...currentPicks]
+                }
+
+                await (supabase.from('export_task_items') as any).update({
+                    status: newItemStatus,
+                    exported_quantity: newTotalExported,
+                    metadata: updatedItemMetadata
+                }).eq('id', item.id)
+
+                if (totalLotQty <= 0.000001) {
+                    await (supabase.from('positions') as any).update({ lot_id: null }).eq('lot_id', lot.id)
+                }
+
+                await logActivity({
+                    supabase,
+                    tableName: 'lots',
+                    recordId: lot.id,
+                    action: 'UPDATE',
+                    oldData: { quantity: lot.quantity },
+                    newData: { quantity: totalLotQty },
+                    systemCode: currentSystem?.code || ''
+                })
+                
+                // Cập nhật lại số lượng có thể rải cho dòng Lệnh TIẾP THEO ở bên dưới
+                sumPicksByProduct[groupKey] -= takeFromThisLine
+                successCount++
+            }
+
+            if (errors.length > 0) {
+                showToast(`Đã duyệt ${successCount} mục. Lỗi: ${errors.join(', ')}`, 'warning')
+            } else {
+                showToast(`Đã duyệt dứt điểm thành công ${successCount} mặt hàng`, 'success')
+            }
+
+            // Kiểm tra xem đã hoàn thành hết chưa để đóng lệnh
+            const { data: checkItems } = await (supabase.from('export_task_items') as any).select('status').eq('task_id', taskId)
+            if (checkItems && (checkItems as any[]).every(i => i.status === 'Exported')) {
+                 await (supabase.from('export_tasks') as any).update({ status: 'Completed' }).eq('id', taskId)
+                 showToast('Lệnh xuất đã hoàn thành!', 'success')
+            }
+
+            fetchTaskDetails()
+        } catch (error: any) {
+            showToast('Lỗi hệ thống khi duyệt: ' + error.message, 'error')
+        } finally {
+            setIsFinalizing(false)
+        }
+    }
+
+    async function handleUnlockPicks() {
+        if (!task || !task.items) return
+        const pickedItems = task.items.filter(i => i.status === 'Picked')
+        
+        // Cho phép mở chốt nếu có item bị khóa HOẶC task đang ở trạng thái In Progress
+        if (pickedItems.length === 0 && task.status !== 'In Progress') {
+            showToast('Lệnh này hiện không bị khóa chốt', 'info')
+            return
+        }
+
+        if (!await showConfirm('Mở lại chốt ca sẽ đưa lệnh về trạng thái "Chờ xử lý" và cho phép nhân viên vận hành sửa đổi. Bạn có chắc chắn?')) {
+            return
+        }
+
+        setLoading(true)
+        try {
+            // 1. Mở khóa các item đang ở trạng thái Picked
+            if (pickedItems.length > 0) {
+                const idsToUnlock = pickedItems.map(i => i.id).filter(Boolean) as string[]
+                const { error: itemError } = await (supabase
+                    .from('export_task_items') as any)
+                    .update({ status: 'Pending' })
+                    .in('id', idsToUnlock)
+
+                if (itemError) throw itemError
+            }
+
+            // 2. Luôn đưa task status về Pending để lệnh xuất hiện lại ở danh sách "Chờ xử lý" của nhân viên
+            const { error: taskError } = await (supabase
+                .from('export_tasks') as any)
+                .update({ status: 'Pending' })
+                .eq('id', task.id)
+
+            if (taskError) throw taskError
+
+            showToast('Đã mở khóa lệnh và đưa về trạng thái "Chờ xử lý"', 'success')
+            fetchTaskDetails()
+        } catch (error: any) {
+            showToast('Lỗi khi mở khóa: ' + error.message, 'error')
             setLoading(false)
         }
     }
@@ -597,13 +851,36 @@ function ExportOrderDetailContent() {
                         In phiếu
                     </button>
                     {task.status !== 'Completed' && task.status !== 'Cancelled' && (
-                        <button
-                            onClick={handleCompleteTask}
-                            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-emerald-700 transition-colors"
-                        >
-                            <CheckCircle2 size={16} />
-                            Hoàn thành
-                        </button>
+                        <div className="flex items-center gap-2">
+                            {(task.items?.some(i => i.status === 'Picked') || task.status === 'In Progress') && (
+                                <>
+                                    <button
+                                        onClick={handleUnlockPicks}
+                                        disabled={loading}
+                                        className="flex items-center gap-2 px-4 py-2 bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 text-sm font-bold rounded-lg hover:bg-slate-300 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50"
+                                        title="Mở khóa để nhân viên kho sửa lại lượt lấy"
+                                    >
+                                        <LockOpen size={16} />
+                                        Mở chốt
+                                    </button>
+                                    <button
+                                        onClick={handleFinalizeExport}
+                                        disabled={loading || isFinalizing || !task.items?.some(i => i.status === 'Picked')}
+                                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg shadow-md hover:bg-blue-700 transition-all transform active:scale-95 disabled:opacity-50"
+                                    >
+                                        {isFinalizing ? <Loader2 size={16} className="animate-spin" /> : <PackageCheck size={16} />}
+                                        Duyệt Xuất Kho
+                                    </button>
+                                </>
+                            )}
+                            <button
+                                onClick={handleCompleteTask}
+                                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-emerald-700 transition-colors"
+                            >
+                                <CheckCircle2 size={16} />
+                                Hoàn thành
+                            </button>
+                        </div>
                     )}
                     {task.status === 'Completed' && (
                         <button
@@ -728,17 +1005,24 @@ function ExportOrderDetailContent() {
                                         <button
                                             onClick={() => item.id && toggleItemStatus(item.id, item.status)}
                                             className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all active:scale-95 whitespace-nowrap ${item.display_status === 'Exported'
-                                                ? 'bg-purple-100 text-purple-700 border-purple-200 hover:bg-purple-200'
-                                                : item.display_status === 'Moved to Hall'
+                                                ? 'bg-purple-100 text-purple-700 border-purple-200 cursor-default'
+                                                : item.display_status === 'Picked'
                                                     ? 'bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-200'
-                                                    : item.display_status === 'Changed Position'
-                                                        ? 'bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200'
-                                                        : 'bg-stone-100 text-stone-500 border-stone-200 hover:bg-stone-200 hover:text-stone-700'
+                                                    : item.display_status === 'Moved to Hall'
+                                                        ? 'bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200'
+                                                        : item.display_status === 'Changed Position'
+                                                            ? 'bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200'
+                                                            : 'bg-stone-100 text-stone-500 border-stone-200 hover:bg-stone-200 hover:text-stone-700'
                                                 }`}
                                         >
-                                            {item.display_status === 'Exported' ? 'Đã xuất' :
-                                                item.display_status === 'Moved to Hall' ? 'Hạ sảnh' :
-                                                    item.display_status === 'Changed Position' ? 'Đổi vị trí' : 'Chưa hạ'}
+                                            {item.display_status === 'Exported' ? (
+                                                <span className="flex items-center justify-center gap-1 cursor-pointer" onClick={(e) => { e.stopPropagation(); handleRevokeItemStatus(item); }}>
+                                                    Đã xuất <Undo2 size={12} className="ml-0.5 text-purple-400 hover:text-purple-600" />
+                                                </span>
+                                            ) : 
+                                                item.display_status === 'Picked' ? 'Đã lấy' :
+                                                    item.display_status === 'Moved to Hall' ? 'Hạ sảnh' :
+                                                        item.display_status === 'Changed Position' ? 'Đổi vị trí' : 'Chưa hạ'}
                                         </button>
                                     </td>
                                 </tr>
@@ -824,6 +1108,14 @@ function ExportOrderDetailContent() {
                                     >
                                         <Calendar size={16} className="group-hover:scale-110 transition-transform" />
                                         <span>Sửa ngày LOT</span>
+                                    </button>
+                                    <button
+                                        onClick={() => setIsBulkExportOpen(true)}
+                                        className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-all active:scale-95 group whitespace-nowrap"
+                                        title="Xuất nhanh các lô đã chọn"
+                                    >
+                                        <PackageMinus size={16} className="group-hover:scale-110 transition-transform" />
+                                        <span>Xuất kho</span>
                                     </button>
                                     <button
                                         onClick={() => {
