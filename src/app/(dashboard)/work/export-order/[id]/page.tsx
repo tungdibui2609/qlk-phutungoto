@@ -276,16 +276,16 @@ function ExportOrderDetailContent() {
 
                     // Determine display status
                     let displayStatus: ExportOrderItem['display_status'] = item.status === 'Exported' ? 'Exported' : item.status === 'Picked' ? 'Picked' : 'Pending'
-                    
-                    // Nếu đang Pending nhưng đã có lịch sử xuất (ca trước đã làm), hiện là 'Đã lấy'
-                    if (displayStatus === 'Pending' && (item.metadata?.processed_picks?.length || 0) > 0) {
-                        displayStatus = 'Picked'
-                    }
 
-                    if (displayStatus === 'Pending' && originalPosCode !== currentPosCode) {
+                    const isFullyExported = (item.exported_quantity || 0) >= item.quantity - 0.000001
+                    const statusVal = isFullyExported ? 'Exported' : (item.metadata?.picks?.length > 0 ? 'Picked' : item.status)
+
+                    if (statusVal === 'Pending' && originalPosCode !== currentPosCode) {
                         displayStatus = isHall ? 'Moved to Hall' : 'Changed Position'
+                    } else {
+                        displayStatus = statusVal
                     }
-
+                    
                     return {
                         id: item.id,
                         lot_id: item.lots?.id,
