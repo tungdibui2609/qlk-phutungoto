@@ -8,6 +8,7 @@ import { format } from 'date-fns'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { CreateExportTaskModal } from '@/components/export/CreateExportTaskModal'
+import { logActivity } from '@/lib/audit'
 
 // Types for DB Data
 interface ExportOrderItem {
@@ -45,6 +46,7 @@ function ExportOrderContent() {
     const searchParams = useSearchParams()
     const router = useRouter()
     const { showToast, showConfirm } = useToast()
+    const { currentSystem } = useSystem()
 
     // State
     const [tasks, setTasks] = useState<ExportTask[]>([])
@@ -98,7 +100,7 @@ function ExportOrderContent() {
                     .in('id', positionIds)
 
                 if (posData) {
-                    posData.forEach(p => {
+                    posData.forEach((p: any) => {
                         if (p.lot_id) {
                             finalLotIds.add(p.lot_id)
                             lotToPositionMap[p.lot_id] = p.id
@@ -183,7 +185,7 @@ function ExportOrderContent() {
             if (tasksError) throw tasksError
 
             // 2. Extract unique creator IDs
-            const userIds = Array.from(new Set((tasksData || []).map(t => t.created_by).filter(Boolean)))
+            const userIds = Array.from(new Set((tasksData || []).map((t: any) => t.created_by).filter(Boolean)))
 
             // 3. Fetch user profiles safely
             let userMap: Record<string, string> = {}
@@ -200,7 +202,7 @@ function ExportOrderContent() {
             }
 
             // 4. Map data
-            const formattedTasks: ExportTask[] = (tasksData || []).map((t) => {
+            const formattedTasks: ExportTask[] = (tasksData || []).map((t: any) => {
                 const task = t
                 return {
                     id: task.id,
@@ -230,6 +232,13 @@ function ExportOrderContent() {
 
         if (confirmed) {
             try {
+                // Fetch the task and items before deletion to log it
+                const { data: oldTask } = await supabase
+                    .from('export_tasks')
+                    .select('*, export_task_items(*)')
+                    .eq('id', id)
+                    .single()
+
                 // Delete items first (cascade should handle but manual is safer)
                 const { error: itemsError } = await supabase
                     .from('export_task_items')
@@ -244,6 +253,18 @@ function ExportOrderContent() {
                     .eq('id', id)
 
                 if (error) throw error
+
+                // Log the deletion action
+                if (oldTask) {
+                    await logActivity({
+                        supabase,
+                        tableName: 'export_tasks',
+                        recordId: id,
+                        action: 'DELETE',
+                        oldData: oldTask,
+                        systemCode: currentSystem?.code || null
+                    })
+                }
 
                 showToast('Đã xóa lệnh xuất kho', 'success')
                 fetchTasks()
@@ -261,8 +282,8 @@ function ExportOrderContent() {
 
         if (confirmed) {
             try {
-                const { error } = await supabase
-                    .from('export_tasks')
+                const { error } = await (supabase
+                    .from('export_tasks') as any)
                     .update({ status: 'Completed' })
                     .eq('id', id)
 
@@ -284,8 +305,8 @@ function ExportOrderContent() {
 
         if (confirmed) {
             try {
-                const { error } = await supabase
-                    .from('export_tasks')
+                const { error } = await (supabase
+                    .from('export_tasks') as any)
                     .update({ status: 'Pending' })
                     .eq('id', id)
 

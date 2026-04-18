@@ -730,8 +730,28 @@ function ExportOrderDetailContent() {
         if (!confirmed) return
 
         try {
+            // Fetch the task and items before deletion to log it
+            const { data: oldTask } = await supabase
+                .from('export_tasks')
+                .select('*, export_task_items(*)')
+                .eq('id', taskId)
+                .single()
+
             const { error } = await supabase.from('export_tasks').delete().eq('id', taskId)
             if (error) throw error
+
+            // Log the deletion action
+            if (oldTask) {
+                await logActivity({
+                    supabase,
+                    tableName: 'export_tasks',
+                    recordId: taskId,
+                    action: 'DELETE',
+                    oldData: oldTask,
+                    systemCode: currentSystem?.code || null
+                })
+            }
+
             showToast('Đã xóa lệnh thành công', 'success')
             router.push('/work/export-order')
         } catch (error: any) {
