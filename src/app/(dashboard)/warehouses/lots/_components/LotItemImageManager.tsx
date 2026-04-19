@@ -32,7 +32,6 @@ export function LotItemImageManager({ lot, item, triggerOpen = false, onCloseTri
         input.type = 'file'
         input.accept = "image/*"
         input.multiple = true
-        input.setAttribute('capture', 'environment')
         input.onchange = async (ev: any) => {
             const files = ev.target.files
             if (!files || files.length === 0) return
