@@ -83,9 +83,19 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
 
                         // Production Order
                         if (mode === 'all' || mode === 'production') {
+                            if (lot.production_code) res.push(lot.production_code)
                             if (lot.productions?.code) res.push(lot.productions.code)
                             if (lot.productions?.name) res.push(lot.productions.name)
                             lot.production_lot_codes?.forEach((code: string) => res.push(code))
+                            
+                            // Include item product info directly so advanced combo search (e.g. LSX & Product) works
+                            if (mode === 'production') {
+                                lot.items?.forEach((it: any) => {
+                                    if (it.product_name) res.push(it.product_name)
+                                    if (it.sku) res.push(it.sku)
+                                    if (it.internal_code) res.push(it.internal_code)
+                                })
+                            }
                         }
 
                         // Other fields

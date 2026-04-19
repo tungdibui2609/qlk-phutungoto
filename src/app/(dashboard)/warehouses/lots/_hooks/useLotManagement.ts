@@ -448,16 +448,27 @@ export function useLotManagement() {
                     
                     let groupLotIds: string[] | null = null;
 
-                    for (const part of andParts) {
+                    for (const rawPart of andParts) {
+                        let isExact = false;
+                        let part = rawPart;
+                        if ((part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"))) {
+                            isExact = true;
+                            part = part.substring(1, part.length - 1).trim();
+                        } else if (part.startsWith('=')) {
+                            isExact = true;
+                            part = part.substring(1).trim();
+                        }
+
                         const partNormalized = normalizeSearchString(part);
-                        const partTerm = `%${part}%`;
-                        const partUnaccented = `%${normalizeSearchString(part, true)}%`;
+                        // If exact match, we do not use % wrapping
+                        const partTerm = isExact ? part : `%${part}%`;
+                        const partUnaccented = isExact ? normalizeSearchString(part, true) : `%${normalizeSearchString(part, true)}%`;
                         
                         let currentMatchIds: string[] = [];
 
                         if (searchMode === 'all') {
                             // Fetch all IDs for this part
-                            const { data: pMatched } = await (supabase.from('products') as any).select('id').or(`name.ilike.${partTerm},sku.ilike.${partTerm},internal_code.ilike.${partTerm}`).eq('system_code', currentSystem.code);
+                            const { data: pMatched } = await (supabase.from('products') as any).select('id').or(`name.ilike.${partTerm},sku.ilike.${partTerm},internal_code.ilike.${partTerm}`).eq('system_type', currentSystem.code);
                             const pIds = pMatched?.map((p: any) => p.id) || [];
                             
                             const tagLots = await fetchAllPaginated('lot_tags', (q) => (q as any).ilike('tag', `%${partNormalized}%`), 'lot_id');
@@ -557,6 +568,20 @@ export function useLotManagement() {
                                         if (matchingItems) currentMatchIds.push(...matchingItems.map((mi: any) => mi.lot_id));
                                     }
                                 }
+                            }
+                            
+                            // Include direct lot production_code matches
+                            const { data: lotsProdCode } = await (supabase.from('lots') as any).select('id').ilike('production_code', partTerm).eq('system_code', currentSystem.code);
+                            if (lotsProdCode) currentMatchIds.push(...lotsProdCode.map((l: any) => l.id));
+
+                            // Include products to support "Production & Product" combination queries
+                            const { data: pMatched } = await (supabase.from('products') as any).select('id').or(`name.ilike.${partTerm},sku.ilike.${partTerm},internal_code.ilike.${partTerm}`).eq('system_type', currentSystem.code);
+                            const pIdsProd = pMatched?.map((p: any) => p.id) || [];
+                            if (pIdsProd.length > 0) {
+                                const { data: items } = await (supabase.from('lot_items') as any).select('lot_id').in('product_id', pIdsProd);
+                                if (items) currentMatchIds.push(...items.map((i: any) => i.lot_id));
+                                const { data: directProductLots } = await (supabase.from('lots') as any).select('id').in('product_id', pIdsProd).eq('system_code', currentSystem.code);
+                                if (directProductLots) currentMatchIds.push(...directProductLots.map((l: any) => l.id));
                             }
                         }
                         else if (searchMode === 'name') {

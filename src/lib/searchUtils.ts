@@ -90,8 +90,18 @@ export function advancedMatchSearch(vals: string | string[] | null | undefined, 
         
         // Tất cả các phần AND phải được tìm thấy trong tập hợp normalizedVals
         return andParts.every(andPart => {
-            const nPart = normalize(andPart);
-            return normalizedVals.some(v => v.includes(nPart));
+            let isExact = false;
+            let term = andPart;
+            if ((term.startsWith('"') && term.endsWith('"')) || (term.startsWith("'") && term.endsWith("'"))) {
+                isExact = true;
+                term = term.substring(1, term.length - 1).trim();
+            } else if (term.startsWith('=')) {
+                isExact = true;
+                term = term.substring(1).trim();
+            }
+
+            const nPart = normalize(term);
+            return normalizedVals.some(v => isExact ? v === nPart : v.includes(nPart));
         });
     });
 }
