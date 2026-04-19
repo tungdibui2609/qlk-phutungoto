@@ -1,5 +1,6 @@
 import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy } from 'lucide-react'
 import { useState } from 'react'
+import { LotItemImageManager } from './LotItemImageManager'
 import { Lot } from '../_hooks/useLotManagement'
 import { useRouter, usePathname } from 'next/navigation'
 import { TagDisplay } from '@/components/lots/TagDisplay'
@@ -33,6 +34,8 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
     const pathname = usePathname()
     const [isExpanded, setIsExpanded] = useState(false)
     const [historyData, setHistoryData] = useState<any>(null)
+    const [showMergeHistory, setShowMergeHistory] = useState(false)
+    const [openImageItemId, setOpenImageItemId] = useState<string | null>(null)
     const [isHighlighting, setIsHighlighting] = useState(false)
     const showInternal = isModuleEnabled('internal_products')
     const isSanxuat = pathname.startsWith('/sanxuat')
@@ -361,15 +364,19 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                                 <div
                                                     key={item.id}
                                                     onClick={() => {
-                                                        if (parsedHistory) setHistoryData(parsedHistory);
-                                                        else if (originTag && !parsedHistory) {
+                                                        const itemImages = (lot.metadata as any)?.item_images?.[item.id] || []
+                                                        if (itemImages.length > 0) {
+                                                            setOpenImageItemId(item.id)
+                                                        } else if (parsedHistory) {
+                                                            setHistoryData(parsedHistory);
+                                                        } else if (originTag && !parsedHistory) {
                                                             const originInfo = originTag.tag.startsWith('MERGED_FROM:')
                                                                 ? `Sản phẩm được gộp từ Lot: ${originTag.tag.replace('MERGED_FROM:', '')}`
                                                                 : `Sản phẩm được tách từ Lot: ${originTag.tag.replace('SPLIT_FROM:', '')}`;
                                                             alert(`${originInfo}. (Dữ liệu cũ chi tiết không khả dụng cho Lot này)`);
                                                         }
                                                     }}
-                                                    className={`text-sm text-slate-800 dark:text-slate-200 flex items-center justify-between gap-2 py-2 px-2 rounded-lg border-b border-dashed border-slate-100 dark:border-slate-800 last:border-0 ${hasHistory ? 'bg-indigo-50/60 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-800/30 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/20 transition-colors' : (index % 2 === 1 ? 'bg-white/60 dark:bg-white/5' : '')}`}
+                                                    className={`text-sm text-slate-800 dark:text-slate-200 flex items-center justify-between gap-2 py-2 px-2 rounded-lg border-b border-dashed border-slate-100 dark:border-slate-800 last:border-0 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors ${hasHistory ? 'bg-indigo-50/60 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-800/30' : (index % 2 === 1 ? 'bg-white/60 dark:bg-white/5' : '')}`}
                                                 >
                                                     <div className="flex flex-col flex-1 min-w-0 gap-1">
                                                         <div className="flex flex-col gap-1.5">
@@ -394,6 +401,27 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                                                         </span>
                                                                     </div>
                                                                 )}
+
+                                                                {/* Action Icons moved here */}
+                                                                <div className="flex items-center gap-1 ml-auto">
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            onQr(lot);
+                                                                        }}
+                                                                        className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-800 hover:bg-white dark:hover:bg-zinc-800 shadow-sm transition-all border border-transparent hover:border-zinc-200 shrink-0"
+                                                                        title="Mã QR Item"
+                                                                    >
+                                                                        <QrIcon size={12} />
+                                                                    </button>
+                                                                    <LotItemImageManager 
+                                                                        lot={lot} 
+                                                                        item={item} 
+                                                                        triggerOpen={openImageItemId === item.id}
+                                                                        onCloseTrigger={() => setOpenImageItemId(null)}
+                                                                        compact={true}
+                                                                    />
+                                                                </div>
                                                             </div>
                                                             <span className="truncate font-bold text-sm text-slate-900 dark:text-slate-100 leading-tight" title={showInternal && item.products?.internal_name ? item.products.internal_name : item.products?.name}>{showInternal && item.products?.internal_name ? item.products.internal_name : item.products?.name}</span>
                                                         </div>
@@ -418,17 +446,6 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                                             </div>
                                                         )}
                                                     </div>
-
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            onQr(lot);
-                                                        }}
-                                                        className="w-8 h-8 flex items-center justify-center rounded-full text-zinc-400 hover:text-zinc-800 hover:bg-white dark:hover:bg-zinc-800 shadow-sm transition-all border border-transparent hover:border-zinc-200 shrink-0"
-                                                        title="Mã QR Item"
-                                                    >
-                                                        <QrIcon size={14} />
-                                                    </button>
                                                 </div>
                                             )
                                         })
