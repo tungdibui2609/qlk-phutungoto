@@ -332,21 +332,16 @@ export default function PrintInventoryPage() {
                 while (true) {
                     let query = supabase.from('lots').select(`
                             *,
-                            lot_items (
-                                id, quantity, unit, product_id,
-                                products (name, unit, sku, product_code:id, internal_code, internal_name, system_type, category_id),
-                                lot_tags(tag)
-                            ),
-                            products(name, unit, product_code:id, sku, system_type, internal_code, internal_name, category_id),
+                            products(name, unit, sku, system_type, internal_code, internal_name, category_id),
                             suppliers(name),
+                            productions(code),
                             lot_tags(tag),
+                            lot_items(id, quantity, unit, product_id, lot_tags(tag), products(name, sku, unit)),
                             positions!positions_lot_id_fkey(id, code)
                         `)
                         .eq('status', 'active')
                         .order('created_at', { ascending: false })
                         .range(lotsFrom, lotsFrom + PAGE_SIZE_FIXED - 1)
-
-                    if (warehouse && warehouse !== 'Tất cả') query = query.eq('warehouse_name', warehouse)
 
                     const { data: pageData, error: pageError } = await query
                     if (pageError) throw pageError
@@ -360,11 +355,19 @@ export default function PrintInventoryPage() {
                     let mapped: LotItem[] = allLots.flatMap((lot: any) => {
                         let systemTypeMatch = true
                         if (systemType) {
-                            const mainMatch = lot.products && lot.products.system_type === systemType
-                            const itemMatch = lot.lot_items?.some((item: any) => item.products?.system_type === systemType)
-                            systemTypeMatch = mainMatch || itemMatch
+                            const sysCode = systemType.trim().toUpperCase()
+                            const lotSys = (lot.system_code || '').trim().toUpperCase()
+                            if (sysCode && lotSys && lotSys !== sysCode) {
+                                systemTypeMatch = false
+                            }
                         }
                         if (!systemTypeMatch) return []
+
+                        if (warehouse && warehouse !== 'Tất cả') {
+                            const lotWarehouse = (lot.warehouse_name || '').trim()
+                            const targetBranch = warehouse.trim()
+                            if (lotWarehouse !== targetBranch) return []
+                        }
 
                         const lotTags = (lot.lot_tags || []).map((t: any) => t.tag).filter(Boolean) as string[]
                         const sxCode = lot.production_code || lot.batch_code || lot.productions?.code;
@@ -399,7 +402,7 @@ export default function PrintInventoryPage() {
                                         ...(prodToCatMap.get(item.product_id || item.products?.product_code || '') || [])
                                     ])),
                                     baseUnit: item.products?.unit || '',
-                                    tags: itemTags.length > 0 ? itemTags : lotTags
+                                    tags: Array.from(new Set([...itemTags, ...lotTags])) 
                                 }
                             })
                         } else if (lot.products) {
@@ -655,7 +658,15 @@ export default function PrintInventoryPage() {
         g.totalKg += item.kg || 0
         g.items.push(item)
 
-        const cleanTags = item.tags.map(t => t.replace(/@/g, '').replace(/>+/g, '; ').trim()).filter(Boolean);
+        // Ensure LSX is included in tags if available (Sync with Web logic)
+        let finalTags = [...(item.tags || [])];
+        if (item.lotCode) {
+            // We need to find the production code for this lot. 
+            // Since we're in the groupsMap context, let's assume the item object carries it or we fallback to what's in tags.
+            // But wait, the item already has tags assigned in fetchData.
+        }
+        
+        const cleanTags = finalTags.map(t => t.replace(/@/g, '').replace(/>+/g, '; ').trim()).filter(Boolean);
         const compositeTag = cleanTags.length > 0 ? cleanTags.join('; ') : 'Không có mã phụ'
         const currentV = g.variants.get(compositeTag) || { totalQuantity: 0, totalKg: 0, items: [] }
         g.variants.set(compositeTag, {
@@ -992,29 +1003,88 @@ export default function PrintInventoryPage() {
                                                 <td className="border border-black p-2 text-right text-stone-700 font-bold bg-stone-50/50">{formatQuantityFull(group.totalKg)}</td>
                                             </tr>
 
-                                            {/* 2. Simplified Variant Rows (Show only total for each tag) */}
-                                            {type !== 'category' && hasRealVariants && variantEntries.map(([tag, data], vIdx) => {
-                                                return (
-                                                    <tr key={`${group.key}-v-${vIdx}`} className="bg-stone-50/30 h-8">
-                                                        <td className="border border-black p-1 text-[9px] text-stone-400 font-bold uppercase text-center bg-stone-50/50">
-                                                            {vIdx + 1}
-                                                        </td>
-                                                        <td className="border border-black p-2 text-xs font-bold text-stone-600 bg-white" colSpan={3}>
-                                                            <span className="text-stone-300 mr-2 ml-4 font-mono">└</span>
-                                                            {tag === 'Không có mã phụ' ? 'Gốc ( còn lại )' : tag}
-                                                        </td>
-                                                        <td className="border border-black p-2 text-center text-stone-600 font-bold">
-                                                            <div>{group.productUnit}</div>
-                                                        </td>
-                                                        <td className="border border-black p-2 text-right text-stone-600 font-medium">
-                                                            {formatQuantityFull(data.totalQuantity)}
-                                                        </td>
-                                                        <td className="border border-black p-2 text-right text-stone-600 font-bold bg-white">
-                                                            {formatQuantityFull(data.totalKg)}
-                                                        </td>
-                                                    </tr>
-                                                )
-                                            })}
+                                            {/* 2. Detail Rows (Variants/Lots) with LSX Support */}
+                                            {type !== 'category' && hasRealVariants && (() => {
+                                                const lsxGroups = new Map<string, { totalQty: number, totalKg: number, items: { tag: string, qty: number, kg: number }[] }>()
+                                                const nonLsxItems: { tag: string, qty: number, kg: number }[] = []
+
+                                                variantEntries.forEach(([tagStr, vData]: [string, any]) => {
+                                                    const qty = vData.totalQuantity || 0
+                                                    const kg = vData.totalKg || 0
+
+                                                    if (tagStr.includes('LSX: ')) {
+                                                        const parts = tagStr.split('; ').map((p: string) => p.trim())
+                                                        const lsxPart = parts.find((p: string) => p.startsWith('LSX: '))
+                                                        if (lsxPart) {
+                                                            const otherParts = parts.filter((p: string) => !p.startsWith('LSX: '))
+                                                            const subTags = otherParts.length > 0 ? otherParts.join('; ') : 'Không có mã phụ'
+                                                            if (!lsxGroups.has(lsxPart)) {
+                                                                lsxGroups.set(lsxPart, { totalQty: 0, totalKg: 0, items: [] })
+                                                            }
+                                                            const vGroup = lsxGroups.get(lsxPart)!
+                                                            vGroup.totalQty += qty
+                                                            vGroup.totalKg += kg
+                                                            vGroup.items.push({ tag: subTags, qty, kg })
+                                                            return
+                                                        }
+                                                    }
+                                                    nonLsxItems.push({ tag: tagStr, qty, kg })
+                                                })
+
+                                                const rows: React.ReactNode[] = []
+
+                                                // Render LSX Groups
+                                                Array.from(lsxGroups.entries()).sort((a, b) => b[1].totalQty - a[1].totalQty).forEach(([lsxName, vGroup], idx) => {
+                                                    rows.push(
+                                                        <tr key={`lsx-${idx}`} className="bg-orange-50 font-bold border-l-4 border-orange-400 h-9">
+                                                            <td className="border border-black p-1 text-center font-mono text-[9px] bg-orange-100/50">{idx + 1}</td>
+                                                            <td className="border border-black p-1 pl-4 text-orange-800" colSpan={3}>
+                                                                <div className="flex items-center gap-1">
+                                                                    <span>◆ {lsxName}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="border border-black p-1 text-center italic text-stone-500">{group.productUnit}</td>
+                                                            <td className="border border-black p-1 text-right text-orange-700">{formatQuantityFull(vGroup.totalQty)}</td>
+                                                            <td className="border border-black p-1 text-right text-orange-700 font-bold">{formatQuantityFull(vGroup.totalKg)}</td>
+                                                        </tr>
+                                                    )
+
+                                                    vGroup.items.sort((a, b) => (a.tag === 'Không có mã phụ' ? 1 : b.tag === 'Không có mã phụ' ? -1 : b.qty - a.qty)).forEach((sub, sIdx) => {
+                                                        const isNoTag = sub.tag === 'Không có mã phụ'
+                                                        rows.push(
+                                                            <tr key={`lsx-${idx}-sub-${sIdx}`} className="bg-white border-l-4 border-orange-200 h-8">
+                                                                <td className="border border-black p-1"></td>
+                                                                <td className="border border-black p-1 pl-10 italic text-stone-500" colSpan={3}>
+                                                                    <span>↳ {isNoTag ? '(Gốc / Không mã phụ)' : sub.tag}</span>
+                                                                </td>
+                                                                <td className="border border-black p-1 text-center text-stone-400">{group.productUnit}</td>
+                                                                <td className="border border-black p-1 text-right text-stone-600">{formatQuantityFull(sub.qty)}</td>
+                                                                <td className="border border-black p-1 text-right text-stone-600 font-medium">{formatQuantityFull(sub.kg)}</td>
+                                                            </tr>
+                                                        )
+                                                    })
+                                                })
+
+                                                // Render Non-LSX Items
+                                                nonLsxItems.sort((a, b) => (a.tag === 'Không có mã phụ' ? 1 : b.tag === 'Không có mã phụ' ? -1 : b.qty - a.qty)).forEach((sub, sIdx) => {
+                                                    const isNoTag = sub.tag === 'Không có mã phụ'
+                                                    rows.push(
+                                                        <tr key={`nonlsx-${sIdx}`} className={isNoTag ? "bg-amber-50 font-semibold border-l-4 border-amber-300 h-8" : "bg-white h-8"}>
+                                                            <td className="border border-black p-1"></td>
+                                                            <td className="border border-black p-1 pl-4" colSpan={3}>
+                                                                <span className={isNoTag ? "italic text-amber-700" : "text-stone-600"}>
+                                                                    {isNoTag ? 'Gốc ( còn lại )' : `▪ ${sub.tag}`}
+                                                                </span>
+                                                            </td>
+                                                            <td className="border border-black p-1 text-center text-stone-400">{group.productUnit}</td>
+                                                            <td className="border border-black p-1 text-right font-medium text-stone-800">{formatQuantityFull(sub.qty)}</td>
+                                                            <td className="border border-black p-1 text-right font-medium text-stone-800">{formatQuantityFull(sub.kg)}</td>
+                                                        </tr>
+                                                    )
+                                                })
+
+                                                return <>{rows}</>
+                                            })()}
                                         </React.Fragment>
                                     )
                                 })

@@ -272,37 +272,117 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
                 mainRow.getCell(col).numFmt = '#,##0';
             });
 
-            // Variants
-            let variantEntries = Array.from(group.variants.entries() as any[]);
+            // Variants logic synced with Web (InventoryTable.tsx)
+            // Note: variants is Map<string, { totalQuantity: number, totalKg: number, items: any[] }>
+            const variantEntries = Array.from(group.variants.entries() as [string, any][]);
             const hasRealVariants = variantEntries.length > 1 || (variantEntries.length === 1 && variantEntries[0][0] !== 'Không có mã phụ');
             
             if (hasRealVariants && data.type !== 'category') {
-                // Sort to put 'Không có mã phụ' at the end
-                variantEntries.sort((a, b) => {
-                    if (a[0] === 'Không có mã phụ') return 1;
-                    if (b[0] === 'Không có mã phụ') return -1;
-                    return a[0].localeCompare(b[0]);
+                const lsxGroups = new Map<string, { totalQty: number, totalKg: number, items: { tag: string, qty: number, kg: number }[] }>();
+                const nonLsxItems: { tag: string, qty: number, kg: number }[] = [];
+
+                variantEntries.forEach(([tagStr, vData]) => {
+                    const qty = vData.totalQuantity || 0;
+                    const kg = vData.totalKg || 0;
+
+                    if (tagStr.includes('LSX: ')) {
+                        const parts = tagStr.split('; ').map(p => p.trim());
+                        const lsxPart = parts.find(p => p.startsWith('LSX: '));
+                        if (lsxPart) {
+                            const otherParts = parts.filter(p => !p.startsWith('LSX: '));
+                            const subTags = otherParts.length > 0 ? otherParts.join('; ') : 'Không có mã phụ';
+                            if (!lsxGroups.has(lsxPart)) {
+                                lsxGroups.set(lsxPart, { totalQty: 0, totalKg: 0, items: [] });
+                            }
+                            const vGroup = lsxGroups.get(lsxPart)!;
+                            vGroup.totalQty += qty;
+                            vGroup.totalKg += kg;
+                            vGroup.items.push({ tag: subTags, qty, kg });
+                            return;
+                        }
+                    }
+                    nonLsxItems.push({ tag: tagStr, qty, kg });
                 });
 
-                variantEntries.forEach(([tag, vData]: any) => {
-                    const vRow = worksheet.addRow([
-                        '',
-                        '',
-                        '',
-                        tag === 'Không có mã phụ' ? 'Gốc ( còn lại )' : tag,
-                        group.productUnit,
-                        cleanNum(vData.totalQuantity),
-                        cleanNum(vData.totalKg)
-                    ]);
-                    vRow.eachCell(cell => {
-                        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                // 1. Render LSX Groups
+                Array.from(lsxGroups.entries())
+                    .sort((a, b) => b[1].totalQty - a[1].totalQty)
+                    .forEach(([lsxName, vGroup]) => {
+                        // LSX Header Row
+                        const lsxRow = worksheet.addRow([
+                            '',
+                            '',
+                            '',
+                            lsxName, // Tag column
+                            group.productUnit,
+                            cleanNum(vGroup.totalQty),
+                            cleanNum(vGroup.totalKg)
+                        ]);
+                        lsxRow.font = { bold: true, color: { argb: 'C65911' } }; // Dark orange
+                        lsxRow.eachCell((cell, colIdx) => {
+                            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                            if (colIdx === 4) cell.alignment = { horizontal: 'left' };
+                            if (colIdx >= 6) {
+                                cell.alignment = { horizontal: 'right' };
+                                cell.numFmt = '#,##0.###';
+                            }
+                        });
+                        lsxRow.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2CC' } };
+
+                        // LSX Sub-items
+                        vGroup.items
+                            .sort((a, b) => (a.tag === 'Không có mã phụ' ? 1 : b.tag === 'Không có mã phụ' ? -1 : b.qty - a.qty))
+                            .forEach((subItem) => {
+                                const isNoTag = subItem.tag === 'Không có mã phụ';
+                                const subRow = worksheet.addRow([
+                                    '',
+                                    '',
+                                    '',
+                                    isNoTag ? '   (Không có mã phụ)' : `   ${subItem.tag.replace(/@/g, group.productSku)}`,
+                                    group.productUnit,
+                                    cleanNum(subItem.qty),
+                                    cleanNum(subItem.kg)
+                                ]);
+                                subRow.eachCell((cell, colIdx) => {
+                                    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                                    if (colIdx === 4) cell.font = { italic: true, color: { argb: isNoTag ? 'BFBFBF' : '404040' } };
+                                    if (colIdx >= 6) {
+                                        cell.alignment = { horizontal: 'right' };
+                                        cell.numFmt = '#,##0.###';
+                                    }
+                                });
+                            });
                     });
-                    [6, 7].forEach(col => {
-                        vRow.getCell(col).alignment = { horizontal: 'right' };
-                        vRow.getCell(col).numFmt = '#,##0';
+
+                // 2. Render Non-LSX Items
+                nonLsxItems
+                    .sort((a, b) => (a.tag === 'Không có mã phụ' ? 1 : b.tag === 'Không có mã phụ' ? -1 : b.qty - a.qty))
+                    .forEach((subItem) => {
+                        const isNoTag = subItem.tag === 'Không có mã phụ';
+                        const vRow = worksheet.addRow([
+                            '',
+                            '',
+                            '',
+                            isNoTag ? 'Gốc ( còn lại )' : subItem.tag.replace(/@/g, group.productSku),
+                            group.productUnit,
+                            cleanNum(subItem.qty),
+                            cleanNum(subItem.kg)
+                        ]);
+
+                        if (isNoTag) {
+                            vRow.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9C4' } }; // Very light yellow
+                            vRow.getCell(4).font = { italic: true, bold: true };
+                        }
+
+                        vRow.eachCell((cell, colIdx) => {
+                            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                            if (colIdx === 4 && !isNoTag) cell.font = { italic: true };
+                            if (colIdx >= 6) {
+                                cell.alignment = { horizontal: 'right' };
+                                cell.numFmt = '#,##0.###';
+                            }
+                        });
                     });
-                    vRow.getCell(4).font = { italic: true };
-                });
             }
         });
     } else {
