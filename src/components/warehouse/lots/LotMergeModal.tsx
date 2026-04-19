@@ -69,6 +69,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                             id, quantity, product_id, unit,
                             products(name, sku, internal_name, internal_code, unit)
                         ),
+                        lot_tags(tag, lot_item_id),
                         suppliers(name),
                         qc_info(name)
                     `)
@@ -127,6 +128,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                             id, quantity, product_id, unit,
                             products(name, sku, internal_name, internal_code, unit)
                         ),
+                        lot_tags(tag, lot_item_id),
                         suppliers(name),
                         qc_info(name)
                     `)
@@ -303,11 +305,31 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
 
                 if (insertError) throw new Error('Lỗi khi gộp: ' + insertError.message);
 
+                // 2.2. Move Tags if any
+                const sourceTags = sourceLot.lot_tags?.filter(t => t.lot_item_id === sourceItem.id) || [];
+                if (sourceTags.length > 0) {
+                    const tagNames = sourceTags.map(t => t.tag);
+                    const { error: tagMoveError } = await (supabase.from('lot_tags') as any)
+                        .update({
+                            lot_id: targetLot.id,
+                            lot_item_id: newItem.id
+                        })
+                        .in('tag', tagNames)
+                        .eq('lot_id', sourceLot.id)
+                        .eq('lot_item_id', sourceItem.id);
+
+                    if (tagMoveError) {
+                        console.error('Error moving tags:', tagMoveError);
+                        // We don't throw here to avoid rolling back the item insert, but we log it
+                    }
+                }
+
                 // Save history in item-level metadata map
                 newItemHistories[newItem.id] = {
                     type: 'merge',
                     source_code: sourceLot.code,
-                    snapshot: snapshot
+                    snapshot: snapshot,
+                    tags: sourceTags.map(t => t.tag)
                 }
             }
 
@@ -491,14 +513,31 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                                                             className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500"
                                                         />
                                                         <div className="flex-1 min-w-0">
-                                                            <div className="text-xs font-bold truncate text-slate-700 dark:text-slate-300">{showInternal && item.products?.internal_name ? item.products.internal_name : item.products?.name}</div>
-                                                            <div className="text-[10px] text-slate-400 font-mono">{showInternal && item.products?.internal_code ? item.products.internal_code : item.products?.sku}</div>
+                                                            <div className="text-xs font-bold truncate text-slate-700 dark:text-slate-300">
+                                                                {showInternal && item.products?.internal_name ? item.products.internal_name : item.products?.name}
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[10px] text-slate-400 font-mono">{showInternal && item.products?.internal_code ? item.products.internal_code : item.products?.sku}</span>
+                                                                {(() => {
+                                                                    const itemTags = lot.lot_tags?.filter(t => t.lot_item_id === item.id).map(t => t.tag);
+                                                                    if (!itemTags || itemTags.length === 0) return null;
+                                                                    return (
+                                                                        <div className="flex gap-1">
+                                                                            {itemTags.map((tag, tIdx) => (
+                                                                                <span key={tIdx} className="px-1 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 text-[8px] font-bold rounded border border-orange-200 dark:border-orange-800 uppercase font-mono">
+                                                                                    {tag}
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+                                                                    )
+                                                                })()}
+                                                            </div>
                                                         </div>
                                                         <div className="flex items-center gap-2">
                                                             {selectedItems[item.id] !== undefined ? (
                                                                 <QuantityInput
                                                                     value={selectedItems[item.id]}
-                                                                    onChange={(val) => handleQuantityChange(item.id, item.quantity || 0, val)}
+                                                                    onChange={(val: number) => handleQuantityChange(item.id, item.quantity || 0, val)}
                                                                     className="w-20 p-1 text-xs font-bold text-center border border-emerald-200 rounded-lg focus:outline-none focus:border-emerald-500 bg-white"
                                                                 />
                                                             ) : (
