@@ -23,9 +23,10 @@ import { MapHeader } from './_components/MapHeader'
 import { MapBanners } from './_components/MapBanners'
 import { ZoneCollapseControls } from './_components/ZoneCollapseControls'
 import { MapSearchStats } from './_components/MapSearchStats'
+import { LotBulkPrintModal } from '@/components/warehouse/map/LotBulkPrintModal'
+import { SelectWarehouseModal } from '@/components/warehouse/map/SelectWarehouseModal'
 import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
 import { SelectMoveDestinationModal } from '@/components/warehouse/map/SelectMoveDestinationModal'
-import { LotBulkPrintModal } from '@/components/warehouse/map/LotBulkPrintModal'
 import { groupWarehouseData, sortPositionsByBinPriority } from '@/lib/warehouseUtils'
 
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -89,6 +90,7 @@ function WarehouseMapContent() {
     const [selectedPositionIds, setSelectedPositionIds] = useState<Set<string>>(new Set())
     const [isBulkExportOpen, setIsBulkExportOpen] = useState(false)
     const [isSelectHallOpen, setIsSelectHallOpen] = useState(false)
+    const [isAutoAssignModalOpen, setIsAutoAssignModalOpen] = useState(false)
     const [isMoveModalOpen, setIsMoveModalOpen] = useState(false)
     const [taggingLotIds, setTaggingLotIds] = useState<string[] | null>(null)
     const [viewingLot, setViewingLot] = useState<any>(null)
@@ -605,6 +607,113 @@ function WarehouseMapContent() {
         }
     }
 
+    async function handleAutoAssignWarehouse(warehouseId: string) {
+        setIsAutoAssignModalOpen(false)
+        if (selectedPositionIds.size === 0) return
+
+        // 1. Get unique lots from selected positions
+        const lotIdsToMove = new Set<string>()
+        selectedPositions.forEach(p => {
+            if (p.lot_id) lotIdsToMove.add(p.lot_id)
+        })
+
+        if (lotIdsToMove.size === 0) {
+            showToast('Không có LOT nào trong các ô được chọn.', 'warning')
+            return
+        }
+
+        // 2. Find all Halls under the selected Warehouse (Root Zone)
+        // Get all descendant zones first
+        const allDescendants = new Set<string>([warehouseId])
+        let added = true
+        while (added) {
+            added = false
+            for (const z of zones) {
+                if (z.parent_id && allDescendants.has(z.parent_id) && !allDescendants.has(z.id)) {
+                    allDescendants.add(z.id)
+                    added = true
+                }
+            }
+        }
+
+        // Filter Halls among descendants and sort by name
+        const warehouseHalls = zones
+            .filter(z => allDescendants.has(z.id) && (z as any).is_hall)
+            .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }))
+
+        if (warehouseHalls.length === 0) {
+            showToast('Kho này chưa được cấu hình Sảnh.', 'error')
+            return
+        }
+
+        // 3. Collect empty positions from each hall sequentially
+        let availablePositions: any[] = []
+        for (const hall of warehouseHalls) {
+            // Find all descendant zones of this hall
+            const hallZoneIds = new Set<string>([hall.id])
+            let hAdded = true
+            while (hAdded) {
+                hAdded = false
+                for (const z of zones) {
+                    if (z.parent_id && hallZoneIds.has(z.parent_id) && !hallZoneIds.has(z.id)) {
+                        hallZoneIds.add(z.id)
+                        hAdded = true
+                    }
+                }
+            }
+
+            const rawHallPositions = positions.filter(p => p.zone_id && hallZoneIds.has(p.zone_id) && !p.lot_id)
+            const sortedHallPositions = sortPositionsByBinPriority(rawHallPositions as any[])
+            availablePositions = [...availablePositions, ...sortedHallPositions]
+
+            if (availablePositions.length >= lotIdsToMove.size) break
+        }
+
+        if (availablePositions.length < lotIdsToMove.size) {
+            showToast(`Không đủ vị trí trống trong Kho này. Cần ${lotIdsToMove.size}, nhưng chỉ còn ${availablePositions.length} vị trí.`, 'error')
+            return
+        }
+
+        const lotsArr = Array.from(lotIdsToMove)
+        const oldPosIdsToClear = selectedPositions.filter(p => p.lot_id).map(p => p.id)
+
+        const clearUpdates: any[] = oldPosIdsToClear.map(id => ({ id, lot_id: null }))
+        const assignUpdates: any[] = lotsArr.map((lotId, i) => ({ id: availablePositions[i].id, lot_id: lotId }))
+
+        // 4. Execute Updates
+        try {
+            const chunkSize = 20;
+
+            // Phase 1: Clear old positions
+            for (let i = 0; i < clearUpdates.length; i += chunkSize) {
+                const chunk = clearUpdates.slice(i, i + chunkSize);
+                const results = await Promise.all(
+                    (chunk as any[]).map((u: any) => ((supabase as any).from('positions').update({ lot_id: null }).eq('id', u.id) as any))
+                )
+                const error = (results as any).find((r: any) => r.error)?.error
+                if (error) throw error
+            }
+
+            // Phase 2: Assign to new positions
+            for (let i = 0; i < assignUpdates.length; i += chunkSize) {
+                const chunk = assignUpdates.slice(i, i + chunkSize);
+                const results = await Promise.all(
+                    (chunk as any[]).map((u: any) => ((supabase as any).from('positions').update({ lot_id: u.lot_id }).eq('id', u.id) as any))
+                )
+                const error = (results as any).find((r: any) => r.error)?.error
+                if (error) throw error
+            }
+
+            showToast(`Đã gán thành công ${lotsArr.length} LOT vào Kho mới!`, 'success')
+            setSelectedPositionIds(new Set())
+            fetchData()
+        } catch (error: any) {
+            console.error('Auto Assign error:', error)
+            showToast('Lỗi khi gán tự động: ' + (error.message || 'Không xác định'), 'error')
+            fetchData()
+        }
+    }
+
     const handleTogglePageBreak = (zoneId: string) => {
         setPageBreakZoneIds(prev => {
             const next = new Set(prev)
@@ -896,6 +1005,14 @@ function WarehouseMapContent() {
                 onDeleteLot={handleBulkDeleteLot}
                 onOpenSelectHall={() => setIsSelectHallOpen(true)}
                 onOpenMove={() => setIsMoveModalOpen(true)}
+                onOpenAutoAssignWarehouse={() => setIsAutoAssignModalOpen(true)}
+            />
+
+            <SelectWarehouseModal
+                isOpen={isAutoAssignModalOpen}
+                onClose={() => setIsAutoAssignModalOpen(false)}
+                onConfirm={handleAutoAssignWarehouse}
+                zones={zones}
             />
 
             <SelectHallModal

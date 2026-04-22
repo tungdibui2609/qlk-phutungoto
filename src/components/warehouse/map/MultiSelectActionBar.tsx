@@ -1,6 +1,6 @@
 'use client'
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown, Printer } from 'lucide-react'
+import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown, Printer, Zap } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 
 type Position = Database['public']['Tables']['positions']['Row']
@@ -26,6 +26,7 @@ interface MultiSelectActionBarProps {
     onExportOrder: (positionIds: string[], lotIds: string[]) => void
     onOpenSelectHall?: () => void
     onOpenMove?: () => void
+    onOpenAutoAssignWarehouse?: () => void
 }
 
 export default function MultiSelectActionBar({
@@ -40,7 +41,8 @@ export default function MultiSelectActionBar({
     onBulkPrint,
     onExportOrder,
     onOpenSelectHall,
-    onOpenMove
+    onOpenMove,
+    onOpenAutoAssignWarehouse
 }: MultiSelectActionBarProps) {
     const [isTagMenuOpen, setIsTagMenuOpen] = useState(false)
     const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
@@ -190,6 +192,15 @@ export default function MultiSelectActionBar({
                             >
                                 <ArrowDownToLine size={14} className="text-orange-500 group-hover:scale-110 transition-transform" />
                                 <span>Hạ sảnh</span>
+                            </button>
+
+                            <button
+                                onClick={onOpenAutoAssignWarehouse}
+                                className="flex items-center gap-2 px-2 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all active:scale-95 group whitespace-nowrap"
+                                title="Gán sảnh tự động"
+                            >
+                                <Zap size={14} className="text-yellow-500 group-hover:scale-110 transition-transform" />
+                                <span>Gán sảnh tự động</span>
                             </button>
 
                             <button

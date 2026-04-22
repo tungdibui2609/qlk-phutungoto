@@ -20,7 +20,7 @@ export function SelectHallModal({ isOpen, onClose, onConfirm, zones }: SelectHal
     const [selectedHallId, setSelectedHallId] = useState<string>('')
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
-    const halls = zones.filter(z => z.is_hall)
+    const halls = zones.filter(z => (z as any).is_hall)
 
     useEffect(() => {
         if (isOpen && halls.length > 0 && !selectedHallId) {
