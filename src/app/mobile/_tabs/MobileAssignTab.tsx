@@ -447,7 +447,7 @@ export default function MobileAssignTab() {
                                 <div className="text-[10px] font-black text-emerald-600 dark:text-emerald-500 uppercase tracking-[0.2em] mb-3">VỊ TRÍ ĐẶT HÀNG</div>
                                 
                                 {/* Smart Position Input with Autocomplete */}
-                                <div className="relative max-w-[280px] mx-auto group">
+                                <div className="relative max-w-[280px] mx-auto group mb-2">
                                     <input
                                         type="text"
                                         value={posSearchTerm}
@@ -456,10 +456,10 @@ export default function MobileAssignTab() {
                                             setShowPosSuggestions(true)
                                         }}
                                         onFocus={() => setShowPosSuggestions(true)}
-                                        className="w-full bg-transparent text-5xl font-black text-zinc-900 dark:text-white tracking-tighter text-center border-none outline-none focus:ring-0 placeholder:text-zinc-200"
-                                        placeholder="..."
+                                        className="w-full bg-white/50 dark:bg-zinc-800/50 text-3xl font-black text-black dark:text-white tracking-tighter text-center border-b-2 border-emerald-500/30 outline-none focus:border-emerald-500 focus:ring-0 py-2 px-4 transition-all opacity-100"
+                                        placeholder="NHẬP MÃ KỆ"
                                     />
-                                    <div className="text-[8px] font-black text-zinc-400 uppercase tracking-widest mt-1">Nhấn để sửa mã kệ</div>
+                                    <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mt-2">Nhấn để sửa mã kệ thực tế</div>
 
                                     {/* Suggestions Dropdown */}
                                     {showPosSuggestions && posSuggestions.length > 0 && (
@@ -487,10 +487,10 @@ export default function MobileAssignTab() {
                                 )}
                                 
                                 {/* Fast Mode Info */}
-                                <div className="mt-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                    <div className="bg-emerald-50 dark:bg-emerald-900/5 rounded-xl p-3 border border-emerald-100 dark:border-emerald-900/10 max-w-[240px] mx-auto">
-                                        <div className="text-[10px] font-black text-emerald-600 uppercase mb-1">Chế độ Gán mù</div>
-                                        <div className="text-[11px] font-black text-zinc-900 dark:text-zinc-100 truncate">Hàng sẽ được khớp tại máy Admin</div>
+                                <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    <div className="bg-zinc-50 dark:bg-zinc-900/50 rounded-2xl p-2.5 border border-zinc-100 dark:border-zinc-800 max-w-[200px] mx-auto">
+                                        <div className="text-[9px] font-black text-emerald-600 uppercase mb-0.5">Chế độ Gán mù</div>
+                                        <div className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 leading-tight">Hàng sẽ được khớp sau</div>
                                     </div>
                                 </div>
 
@@ -521,7 +521,7 @@ export default function MobileAssignTab() {
                                         value={currentStt} 
                                         onChange={e => setCurrentStt(e.target.value)} 
                                         placeholder="Số STT..." 
-                                        className="w-full bg-zinc-50 dark:bg-zinc-950 border-2 border-zinc-100 dark:border-zinc-800 focus:border-emerald-500 rounded-2xl py-6 pl-14 pr-6 text-3xl font-black text-zinc-900 dark:text-white outline-none transition-all placeholder:text-zinc-300" 
+                                        className="w-full bg-zinc-50 dark:bg-zinc-950 border-2 border-zinc-100 dark:border-zinc-800 focus:border-emerald-500 rounded-2xl py-4 pl-14 pr-6 text-2xl font-black text-zinc-900 dark:text-white outline-none transition-all placeholder:text-zinc-300" 
                                         autoFocus 
                                         id="mobile-stt-input"
                                         onKeyDown={(e) => e.key === 'Enter' && currentStt && handleConfirmStt()}
