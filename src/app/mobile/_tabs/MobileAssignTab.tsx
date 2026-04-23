@@ -60,6 +60,8 @@ export default function MobileAssignTab() {
     const [suggestedPos, setSuggestedPos] = useState<LocalPosition | null>(null)
     const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set())
     const [currentStt, setCurrentStt] = useState('')
+    const [posSearchTerm, setPosSearchTerm] = useState('')
+    const [showPosSuggestions, setShowPosSuggestions] = useState(false)
 
     // Re-calculate grouped data when zones/positions in context change
     useEffect(() => {
@@ -185,10 +187,15 @@ export default function MobileAssignTab() {
 
             if (nextPos) {
                 setSuggestedPos(nextPos)
+                setPosSearchTerm(nextPos.code)
                 updateSelection({ step: 'working' })
                 setCurrentStt('')
                 // Focus back to input
-                setTimeout(() => document.getElementById('mobile-stt-input')?.focus(), 100);
+                setTimeout(() => {
+                    document.getElementById('mobile-stt-input')?.focus()
+                    // Scroll to ensure the position area is visible
+                    document.getElementById('pos-suggest-area')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                }, 300);
             } else {
                 showToast('Không còn vị trí trống trong khu vực này!', 'error')
                 updateSelection({ step: 'setup' })
@@ -220,7 +227,7 @@ export default function MobileAssignTab() {
             
             setTimeout(() => {
                 suggestNextPosition(new Set([currentPositionId]))
-            }, 50)
+            }, 100)
         } catch (e: any) {
             showToast('Lỗi khi lưu: ' + e.message, 'error')
         } finally { setLoading(false) }
@@ -286,6 +293,16 @@ export default function MobileAssignTab() {
 
     const getZoneName = (id: string | null) => activeZones.find(z => z.id === id)?.name || ''
     const effectiveZoneId = selectedTierId || selectedSlotId || selectedAisleId || selectedWarehouseId
+
+    // Filter suggestions based on search term
+    const posSuggestions = useMemo(() => {
+        if (!posSearchTerm || !showPosSuggestions) return []
+        const term = posSearchTerm.toUpperCase()
+        const assignedPosIds = new Set(assignments.map((a: any) => a.positionId))
+        return localPositions
+            .filter(p => !assignedPosIds.has(p.id) && p.code.toUpperCase().includes(term))
+            .slice(0, 5)
+    }, [posSearchTerm, showPosSuggestions, localPositions, assignments])
 
     const breadcrumbs = [
         { label: 'Kho', id: selectedWarehouseId, setStep: () => updateSelection({ selectionStep: 'warehouse', aisleId: null, slotId: null, tierId: null }) },
@@ -425,29 +442,55 @@ export default function MobileAssignTab() {
                                 <div className="px-3 py-1 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-full text-[10px] font-black uppercase tracking-wider">VỊ TRÍ ĐẶT HÀNG</div>
                                 <button onClick={() => updateSelection({ step: 'setup' })} className="p-1 text-zinc-300 dark:text-zinc-700"><X size={24} /></button>
                             </div>
-                            <div className="text-center py-6">
+                            <div className="text-center py-6" id="pos-suggest-area">
                                 <div className="mx-auto w-20 h-20 bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 rounded-[28px] flex items-center justify-center mb-4 border border-emerald-100 dark:border-emerald-900/20"><MapPin size={40} /></div>
-                                <div className="text-[10px] font-black text-emerald-600 dark:text-emerald-500 uppercase tracking-[0.2em] mb-1">HÃY ĐẶT HÀNG VÀO</div>
+                                <div className="text-[10px] font-black text-emerald-600 dark:text-emerald-500 uppercase tracking-[0.2em] mb-3">VỊ TRÍ ĐẶT HÀNG</div>
                                 
-                                {/* Quick Position Edit */}
-                                <div className="relative inline-block group" onClick={() => {
-                                    const newCode = prompt('Nhập mã kệ thực tế:', suggestedPos?.code);
-                                    if (newCode && suggestedPos) {
-                                        setSuggestedPos({ ...suggestedPos, code: newCode.toUpperCase() });
-                                    }
-                                }}>
-                                    <div className="text-5xl font-black text-zinc-900 dark:text-white tracking-tighter flex items-center gap-2 cursor-pointer transition-transform active:scale-95">
-                                        {suggestedPos?.code}
-                                        <div className="w-8 h-8 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-300 dark:text-zinc-600"><RotateCcw size={14} /></div>
-                                    </div>
-                                    <div className="text-[8px] font-black text-zinc-400 uppercase tracking-widest mt-1 opacity-0 group-hover:opacity-100 transition-opacity">Nhấn vào để sửa kệ</div>
+                                {/* Smart Position Input with Autocomplete */}
+                                <div className="relative max-w-[280px] mx-auto group">
+                                    <input
+                                        type="text"
+                                        value={posSearchTerm}
+                                        onChange={(e) => {
+                                            setPosSearchTerm(e.target.value.toUpperCase())
+                                            setShowPosSuggestions(true)
+                                        }}
+                                        onFocus={() => setShowPosSuggestions(true)}
+                                        className="w-full bg-transparent text-5xl font-black text-zinc-900 dark:text-white tracking-tighter text-center border-none outline-none focus:ring-0 placeholder:text-zinc-200"
+                                        placeholder="..."
+                                    />
+                                    <div className="text-[8px] font-black text-zinc-400 uppercase tracking-widest mt-1">Nhấn để sửa mã kệ</div>
+
+                                    {/* Suggestions Dropdown */}
+                                    {showPosSuggestions && posSuggestions.length > 0 && (
+                                        <div className="absolute z-50 left-0 right-0 mt-2 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150">
+                                            {posSuggestions.map(p => (
+                                                <button
+                                                    key={p.id}
+                                                    onClick={() => {
+                                                        setSuggestedPos(p)
+                                                        setPosSearchTerm(p.code)
+                                                        setShowPosSuggestions(false)
+                                                    }}
+                                                    className="w-full px-4 py-3 text-left hover:bg-emerald-50 dark:hover:bg-emerald-900/20 border-b border-zinc-50 dark:border-zinc-800 last:border-0 flex justify-between items-center"
+                                                >
+                                                    <span className="font-black text-sm text-zinc-900 dark:text-zinc-100">{p.code}</span>
+                                                    <span className="text-[9px] font-bold text-emerald-600 uppercase">Trống</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                                 
+                                {showPosSuggestions && (
+                                    <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setShowPosSuggestions(false)} />
+                                )}
+                                
                                 {/* Fast Mode Info */}
-                                <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                    <div className="bg-emerald-50 dark:bg-emerald-900/5 rounded-xl p-3 border border-emerald-100 dark:border-emerald-900/10">
+                                <div className="mt-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    <div className="bg-emerald-50 dark:bg-emerald-900/5 rounded-xl p-3 border border-emerald-100 dark:border-emerald-900/10 max-w-[240px] mx-auto">
                                         <div className="text-[10px] font-black text-emerald-600 uppercase mb-1">Chế độ Gán mù</div>
-                                        <div className="text-[11px] font-black text-zinc-900 dark:text-zinc-100 truncate">Sản phẩm sẽ được khớp tại máy Admin</div>
+                                        <div className="text-[11px] font-black text-zinc-900 dark:text-zinc-100 truncate">Hàng sẽ được khớp tại máy Admin</div>
                                     </div>
                                 </div>
 
@@ -456,6 +499,7 @@ export default function MobileAssignTab() {
                                         if (suggestedPos) {
                                             setSkippedIds(prev => new Set(prev).add(suggestedPos.id));
                                             setSuggestedPos(null);
+                                            setPosSearchTerm('');
                                             setTimeout(() => suggestNextPosition(new Set([suggestedPos.id])), 10);
                                         }
                                     }}
