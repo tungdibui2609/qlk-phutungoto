@@ -1,0 +1,43 @@
+-- Migration: Create pick_requests table
+-- Created at: 2026-04-24 08:00:00
+
+CREATE TABLE IF NOT EXISTS "public"."pick_requests" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "position_id" "uuid" NOT NULL REFERENCES "public"."positions"("id"),
+    "requested_by" "uuid" NOT NULL REFERENCES "auth"."users"("id"),
+    "status" "text" DEFAULT 'Pending' NOT NULL,
+    "system_code" "text" NOT NULL,
+    "company_id" "uuid" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    
+    CONSTRAINT "pick_requests_pkey" PRIMARY KEY ("id")
+);
+
+-- Enable RLS
+ALTER TABLE "public"."pick_requests" ENABLE ROW LEVEL SECURITY;
+
+-- Policies
+CREATE POLICY "Users can view pick requests in their company" 
+ON "public"."pick_requests" 
+FOR SELECT 
+USING (
+    "company_id" = (SELECT company_id FROM user_profiles WHERE id = auth.uid())
+);
+
+CREATE POLICY "Users can insert pick requests" 
+ON "public"."pick_requests" 
+FOR INSERT 
+WITH CHECK (
+    "requested_by" = auth.uid()
+);
+
+CREATE POLICY "Users can update pick requests in their company" 
+ON "public"."pick_requests" 
+FOR UPDATE 
+USING (
+    "company_id" = (SELECT company_id FROM user_profiles WHERE id = auth.uid())
+);
+
+-- Enable Realtime
+ALTER PUBLICATION supabase_realtime ADD TABLE "public"."pick_requests";
+筋

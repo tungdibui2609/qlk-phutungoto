@@ -1,7 +1,7 @@
 'use client'
 
 import React, { Suspense, useState, useEffect, useMemo } from 'react'
-import { FileText, LayoutList, Loader2, Trash2, Printer, CheckCircle, RotateCcw } from 'lucide-react'
+import { FileText, LayoutList, Loader2, Trash2, Printer, CheckCircle, RotateCcw, PackageCheck, XCircle, MapPin, Clock, User } from 'lucide-react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { format } from 'date-fns'
@@ -42,6 +42,22 @@ interface ExportTask {
     export_task_items?: { count: number }[] | null
 }
 
+interface PickRequestGroup {
+    key: string
+    requested_by: string
+    requested_by_name: string
+    created_at: string
+    requests: Array<{
+        id: string
+        position_id: string
+        position_code: string
+        lot_id: string | null
+        lot_code: string
+        production_code?: string
+        items: Array<{ product_name: string; sku: string; quantity: number; unit: string; product_id: string }>
+    }>
+}
+
 function ExportOrderContent() {
     const searchParams = useSearchParams()
     const router = useRouter()
@@ -51,10 +67,14 @@ function ExportOrderContent() {
     // State
     const [tasks, setTasks] = useState<ExportTask[]>([])
     const [loading, setLoading] = useState(true)
+    const [pickGroups, setPickGroups] = useState<PickRequestGroup[]>([])
+    const [loadingPicks, setLoadingPicks] = useState(false)
+    const [approvingGroup, setApprovingGroup] = useState<string | null>(null)
 
     useEffect(() => {
         fetchTasks()
-    }, [])
+        fetchPickRequests()
+    }, [currentSystem])
 
     // Check for creation params
     const posIds = searchParams.get('posIds')
@@ -225,6 +245,128 @@ function ExportOrderContent() {
         }
     }
 
+    // ========== PICK REQUESTS ==========
+    async function fetchPickRequests() {
+        if (!currentSystem?.code) return
+        setLoadingPicks(true)
+        try {
+            const { data: rawPicks, error } = await (supabase
+                .from('pick_requests' as any) as any)
+                .select('*')
+                .eq('system_code', currentSystem.code)
+                .eq('status', 'Pending')
+                .order('created_at', { ascending: false })
+
+            if (error) throw error
+            if (!rawPicks || rawPicks.length === 0) { setPickGroups([]); return }
+
+            // Fetch user names
+            const userIds = Array.from(new Set(rawPicks.map((p: any) => p.requested_by).filter(Boolean)))
+            let userMap: Record<string, string> = {}
+            if (userIds.length > 0) {
+                const { data: usersData } = await supabase.from('user_profiles').select('id, full_name').in('id', userIds as string[])
+                usersData?.forEach((u: any) => { userMap[u.id] = u.full_name })
+            }
+
+            // Fetch position details + lot info
+            const posIds = rawPicks.map((p: any) => p.position_id)
+            const { data: posData } = await supabase
+                .from('positions')
+                .select(`id, code, lot_id, lots:lots!positions_lot_id_fkey(
+                    id, code, production_code,
+                    lot_items:lot_items!lot_items_lot_id_fkey(
+                        quantity, unit, product_id,
+                        products:products!lot_items_product_id_fkey(name, sku)
+                    )
+                )`)
+                .in('id', posIds)
+
+            const posMap: Record<string, any> = {}
+            posData?.forEach((p: any) => { posMap[p.id] = p })
+
+            // Group by requested_by + rounded timestamp (10 min window)
+            const groups: Record<string, PickRequestGroup> = {}
+            rawPicks.forEach((pr: any) => {
+                const ts = new Date(pr.created_at)
+                const roundedTs = new Date(Math.floor(ts.getTime() / (10 * 60 * 1000)) * (10 * 60 * 1000)).toISOString()
+                const key = `${pr.requested_by}_${roundedTs}`
+
+                if (!groups[key]) {
+                    groups[key] = {
+                        key,
+                        requested_by: pr.requested_by,
+                        requested_by_name: userMap[pr.requested_by] || 'Không rõ',
+                        created_at: pr.created_at,
+                        requests: []
+                    }
+                }
+
+                const pos = posMap[pr.position_id]
+                const lot = pos?.lots
+                const items = (lot?.lot_items || []).map((li: any) => ({
+                    product_name: li.products?.name || '',
+                    sku: li.products?.sku || '',
+                    quantity: li.quantity,
+                    unit: li.unit,
+                    product_id: li.product_id
+                }))
+
+                groups[key].requests.push({
+                    id: pr.id,
+                    position_id: pr.position_id,
+                    position_code: pos?.code || '---',
+                    lot_id: pos?.lot_id || null,
+                    lot_code: lot?.code || '---',
+                    production_code: lot?.production_code,
+                    items
+                })
+            })
+
+            setPickGroups(Object.values(groups))
+        } catch (err: any) {
+            console.error('Error fetching pick requests:', err)
+        } finally {
+            setLoadingPicks(false)
+        }
+    }
+
+    async function handleApproveGroup(group: PickRequestGroup) {
+        setApprovingGroup(group.key)
+        try {
+            // Prepare data for CreateExportTaskModal
+            const positionIds = group.requests.map(r => r.position_id)
+            const lotIds = group.requests.map(r => r.lot_id).filter(Boolean) as string[]
+            const items = group.requests.flatMap(r => r.items.map(item => ({
+                ...item,
+                lot_id: r.lot_id,
+                position_id: r.position_id
+            })))
+
+            setCreateModalData({ positionIds, lotIds, items })
+            // Store pick request IDs to update after export task is created
+            ;(window as any).__pendingPickRequestIds = group.requests.map(r => r.id)
+            setIsCreateModalOpen(true)
+        } finally {
+            setApprovingGroup(null)
+        }
+    }
+
+    async function handleRejectGroup(group: PickRequestGroup) {
+        const confirmed = await showConfirm(`Từ chối ${group.requests.length} yêu cầu lấy từ ${group.requested_by_name}?`)
+        if (!confirmed) return
+        try {
+            const ids = group.requests.map(r => r.id)
+            const { error } = await (supabase.from('pick_requests' as any) as any)
+                .update({ status: 'Cancelled' })
+                .in('id', ids)
+            if (error) throw error
+            showToast('Đã từ chối yêu cầu lấy', 'success')
+            fetchPickRequests()
+        } catch (err: any) {
+            showToast('Lỗi: ' + err.message, 'error')
+        }
+    }
+
     const handleDeleteTask = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation()
 
@@ -333,6 +475,97 @@ function ExportOrderContent() {
                     <p className="text-stone-500 dark:text-stone-400 mt-1">Quản lý các yêu cầu xuất hàng từ kho</p>
                 </div>
             </div>
+
+            {/* Pick Requests Pending Approval */}
+            {pickGroups.length > 0 && (
+                <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-amber-100 dark:bg-amber-900 rounded-lg">
+                            <PackageCheck size={20} className="text-amber-600 dark:text-amber-300" />
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-bold text-stone-800 dark:text-stone-100">Yêu cầu lấy chờ duyệt</h2>
+                            <p className="text-sm text-stone-500">{pickGroups.reduce((s, g) => s + g.requests.length, 0)} vị trí từ {pickGroups.length} nhóm yêu cầu</p>
+                        </div>
+                    </div>
+
+                    {loadingPicks ? (
+                        <div className="flex justify-center p-8"><Loader2 className="animate-spin text-amber-500" size={28} /></div>
+                    ) : (
+                        <div className="grid gap-4">
+                            {pickGroups.map(group => (
+                                <div key={group.key} className="bg-white dark:bg-zinc-800 rounded-xl border-2 border-amber-200 dark:border-amber-700 shadow-sm overflow-hidden">
+                                    {/* Group Header */}
+                                    <div className="p-4 bg-amber-50 dark:bg-amber-900/30 border-b border-amber-100 dark:border-amber-800">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <User size={16} className="text-amber-600" />
+                                                <span className="font-bold text-stone-800 dark:text-stone-200">{group.requested_by_name}</span>
+                                                <span className="text-xs text-stone-400 flex items-center gap-1">
+                                                    <Clock size={12} />
+                                                    {format(new Date(group.created_at), 'HH:mm dd/MM/yyyy')}
+                                                </span>
+                                                <span className="bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 text-xs font-bold px-2 py-0.5 rounded-full">
+                                                    {group.requests.length} vị trí
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => handleApproveGroup(group)}
+                                                    disabled={approvingGroup === group.key}
+                                                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                                                >
+                                                    {approvingGroup === group.key ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                                                    Duyệt
+                                                </button>
+                                                <button
+                                                    onClick={() => handleRejectGroup(group)}
+                                                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-white dark:bg-zinc-700 text-red-500 border border-red-200 dark:border-red-800 rounded-lg text-sm font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                                >
+                                                    <XCircle size={14} />
+                                                    Từ chối
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Request Items */}
+                                    <div className="divide-y divide-stone-100 dark:divide-zinc-700">
+                                        {group.requests.map(req => (
+                                            <div key={req.id} className="p-3 flex items-start gap-3">
+                                                <div className="p-1.5 bg-blue-50 dark:bg-blue-900/30 rounded-md mt-0.5">
+                                                    <MapPin size={14} className="text-blue-500" />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <span className="font-mono font-bold text-sm text-stone-800 dark:text-stone-200">{req.position_code}</span>
+                                                        <span className="text-xs bg-stone-100 dark:bg-zinc-700 text-stone-500 dark:text-stone-400 px-1.5 py-0.5 rounded font-medium">LOT: {req.lot_code}</span>
+                                                        {req.production_code && (
+                                                            <span className="text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded font-medium">LSX: {req.production_code}</span>
+                                                        )}
+                                                    </div>
+                                                    {req.items.length > 0 ? (
+                                                        <div className="mt-1 space-y-0.5">
+                                                            {req.items.map((item, idx) => (
+                                                                <div key={idx} className="text-xs text-stone-500 dark:text-stone-400 flex items-center justify-between">
+                                                                    <span>{item.product_name} <span className="text-stone-400">({item.sku})</span></span>
+                                                                    <span className="font-bold text-stone-700 dark:text-stone-300">{item.quantity} {item.unit}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-xs text-stone-400 italic mt-0.5">Vị trí trống</div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* List */}
             {loading ? (
@@ -443,13 +676,24 @@ function ExportOrderContent() {
                     url.searchParams.delete('lotIds')
                     router.replace(url.pathname)
                 }}
-                onSuccess={(newId) => {
+                onSuccess={async (newId) => {
                     setIsCreateModalOpen(false)
                     // Clear search params
                     const url = new URL(window.location.href)
                     url.searchParams.delete('posIds')
                     url.searchParams.delete('lotIds')
                     router.replace(url.pathname)
+
+                    // Mark pick requests as Approved if this was from a pick request approval
+                    const pendingIds = (window as any).__pendingPickRequestIds as string[] | undefined
+                    if (pendingIds && pendingIds.length > 0) {
+                        await (supabase.from('pick_requests' as any) as any)
+                            .update({ status: 'Approved' })
+                            .in('id', pendingIds)
+                        delete (window as any).__pendingPickRequestIds
+                        fetchPickRequests()
+                    }
+
                     fetchTasks()
                 }}
             />
