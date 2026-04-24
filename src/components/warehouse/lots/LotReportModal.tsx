@@ -52,8 +52,8 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
             start.setHours(0, 0, 0, 0)
             end.setHours(23, 59, 59, 999)
 
-            const startStr = format(start, "yyyy-MM-dd'T'00:00:00")
-            const endStr = format(end, "yyyy-MM-dd'T'23:59:59")
+            const startStr = format(start, "yyyy-MM-dd")
+            const endStr = format(end, "yyyy-MM-dd")
 
             const { data: allLots, error } = await supabase
                 .from('lots')
@@ -71,8 +71,8 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                     products(name, sku, unit)
                 `)
                 .eq('system_code', currentSystem?.code)
-                .or(`created_at.gte.${startStr},status.eq.exported`)
-                .order('created_at', { ascending: false })
+                .or(`inbound_date.gte.${startStr},created_at.gte.${format(start, "yyyy-MM-dd'T'00:00:00")},status.eq.exported`)
+                .order('inbound_date', { ascending: false })
 
             if (error) {
                 console.error('Supabase query error:', error)
@@ -85,25 +85,14 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
             const outwardTransactions: any[] = []
 
             rawLots.forEach(lot => {
-                // 2a. Check if inward (created in range)
-                const createdAt = new Date(lot.created_at)
-                if (createdAt >= start && createdAt <= end) {
+                // 2a. Check if inward (using inbound_date if available, else created_at)
+                const effectiveDateStr = lot.inbound_date || lot.created_at;
+                const effectiveDate = new Date(effectiveDateStr);
+                
+                if (effectiveDate >= start && effectiveDate <= end) {
                     let validItems = lot.lot_items || []
-                    validItems = validItems.filter((item: any) => {
-                        const itemHistory = lot.metadata?.system_history?.item_history?.[item.id]
-                        if (itemHistory && (itemHistory.type === 'merge' || itemHistory.type === 'split')) {
-                            return false; // Không tính lượng hàng từ Gộp/Tách vào báo cáo nhập mới
-                        }
-                        const originTag = lot.lot_tags?.find((t: any) => t.lot_item_id === item.id && (t.tag.startsWith('MERGED_') || t.tag.startsWith('SPLIT_')))
-                        if (originTag) {
-                            return false;
-                        }
-                        return true;
-                    })
-
-                    if (lot.lot_items && lot.lot_items.length > 0 && validItems.length === 0) {
-                        return; // Lot này không có lượng nhập mới, toàn là luân chuyển nội bộ
-                    } 
+                    // Không lọc bỏ hàng gộp/tách nữa để người dùng có thể theo dõi nguồn gốc hàng hóa
+                    // Thay vào đó chúng ta sẽ hiển thị nhãn phân biệt trong UI
                     
                     if (lot.lot_items && lot.lot_items.length > 0) {
                         inward.push({ ...lot, lot_items: validItems })
@@ -297,27 +286,101 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
     }, [reportDataInward])
 
     const summaryInward = useMemo(() => {
-        const stats: Record<string, { productName: string, sku: string, totalQty: number, unit: string, lotCount: number }> = {}
+        const stats: Record<string, { 
+            productName: string, 
+            sku: string, 
+            totalQty: number, 
+            newInQty: number,
+            mergedInQty: number,
+            mergedOutQty: number,
+            unit: string, 
+            lotCount: number 
+        }> = {}
         
         reportDataInward.forEach(lot => {
             const items = lot.lot_items || []
-            if (items.length > 0) {
-                items.forEach((item: any) => {
-                    const unit = item.unit || item.products?.unit || '-'
-                    const key = `${item.product_id}_${unit}`
-                    if (!stats[key]) {
-                        stats[key] = {
-                            productName: item.products?.name || 'Sản phẩm không tên',
-                            sku: item.products?.sku || '-',
-                            totalQty: 0,
-                            unit: unit,
-                            lotCount: 0
-                        }
+            const mergedOut = lot.metadata?.system_history?.merged_out || []
+            const processedPids = new Set<string>();
+
+            // 1. Xử lý hàng hiện có
+            items.forEach((item: any) => {
+                const unit = item.unit || item.products?.unit || '-'
+                const key = `${item.product_id}_${unit}`
+                if (!stats[key]) {
+                    stats[key] = {
+                        productName: item.products?.name || 'Sản phẩm không tên',
+                        sku: item.products?.sku || '-',
+                        totalQty: 0,
+                        newInQty: 0,
+                        mergedInQty: 0,
+                        mergedOutQty: 0,
+                        unit: unit,
+                        lotCount: 0
                     }
-                    stats[key].totalQty += (Number(item.quantity) || 0)
-                    stats[key].lotCount += 1
-                })
-            } else if (lot.products) {
+                }
+                
+                // Phân tích nguồn gốc item
+                const hist = lot.metadata?.system_history?.item_history?.[item.id];
+                const isMergedIn = hist?.type === 'merge' || hist?.type === 'split';
+                
+                const currentQty = Number(item.quantity) || 0;
+                let itemMergedOutQty = 0;
+                if (Array.isArray(mergedOut)) {
+                    mergedOut.forEach((mo: any) => {
+                        if (mo.product_id === item.product_id) {
+                            itemMergedOutQty += (Number(mo.quantity) || 0);
+                        }
+                    });
+                }
+
+                if (isMergedIn) {
+                    stats[key].mergedInQty += currentQty;
+                } else {
+                    stats[key].newInQty += currentQty;
+                }
+                
+                stats[key].mergedOutQty += itemMergedOutQty;
+                stats[key].totalQty += (currentQty + itemMergedOutQty);
+                stats[key].lotCount += 1;
+                processedPids.add(item.product_id);
+            })
+
+            // 2. Xử lý hàng đã gộp hết đi
+            if (Array.isArray(mergedOut)) {
+                const uniqueMergedPids = Array.from(new Set(mergedOut.map((mo: any) => mo.product_id)));
+                uniqueMergedPids.forEach((pid: any) => {
+                    if (!processedPids.has(pid)) {
+                        const productMergedInfo = mergedOut.filter((mo: any) => mo.product_id === pid);
+                        const totalMergedQty = productMergedInfo.reduce((acc: number, cur: any) => acc + (Number(cur.quantity) || 0), 0);
+                        
+                        const productSample = lot.products?.id === pid ? lot.products : null;
+                        const unit = productSample?.unit || '-';
+                        const key = `${pid}_${unit}`;
+                        
+                        if (!stats[key]) {
+                            stats[key] = {
+                                productName: productSample?.name || 'Sản phẩm đã gộp hết',
+                                sku: productSample?.sku || '-',
+                                totalQty: 0,
+                                newInQty: 0,
+                                mergedInQty: 0,
+                                mergedOutQty: 0,
+                                unit: unit,
+                                lotCount: 0
+                            }
+                        }
+                        
+                        stats[key].newInQty += totalMergedQty;
+                        stats[key].mergedOutQty += totalMergedQty;
+                        stats[key].totalQty += totalMergedQty;
+                        stats[key].lotCount += 1;
+                        processedPids.add(pid);
+                    }
+                });
+            }
+
+            // 3. Fallback cho trường hợp lot cũ (lot.products)
+            if (processedPids.size === 0 && lot.products) {
                 const unit = (lot as any).unit || lot.products.unit || '-'
                 const key = `${lot.product_id}_${unit}`
                 if (!stats[key]) {
@@ -325,16 +388,21 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                         productName: lot.products.name || 'Sản phẩm không tên',
                         sku: lot.products.sku || '-',
                         totalQty: 0,
+                        newInQty: 0,
+                        mergedInQty: 0,
+                        mergedOutQty: 0,
                         unit: unit,
                         lotCount: 0
                     }
                 }
-                stats[key].totalQty += (Number((lot as any).quantity) || 0)
-                stats[key].lotCount += 1
+                const qty = Number((lot as any).quantity) || 0;
+                stats[key].newInQty += qty;
+                stats[key].totalQty += qty;
+                stats[key].lotCount += 1;
             }
         })
         
-        return Object.values(stats).sort((a, b) => b.totalQty - a.totalQty)
+        return Object.values(stats).sort((a: any, b: any) => b.totalQty - a.totalQty)
     }, [reportDataInward])
 
     const summaryOutward = useMemo(() => {
@@ -374,7 +442,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
             if (activeTab === 'inward') {
                 worksheet.columns = [
                     { header: 'STT', key: 'stt', width: 5 },
-                    { header: 'NGÀY TẠO', key: 'date', width: 15 },
+                    { header: 'NGÀY NHẬP', key: 'date', width: 15 },
                     { header: 'MÃ LOT SX', key: 'prod_code', width: 25 },
                     { header: 'SẢN PHẨM', key: 'product', width: 40 },
                     { header: 'SỐ LƯỢNG', key: 'qty', width: 12 },
@@ -490,17 +558,27 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                     })
 
                     group.lots.forEach((lot: any, index: number) => {
-                        const dateStr = format(new Date(lot.created_at), 'dd/MM/yyyy')
+                        const dateStr = format(new Date(lot.inbound_date || lot.created_at), 'dd/MM/yyyy')
                         const posStr = lot.positions?.map((p: any) => p.code).join(', ') || '-'
                         
                         if (lot.lot_items && lot.lot_items.length > 0) {
                             lot.lot_items.forEach((item: any, itemIdx: number) => {
                                 const sxLotCode = productionLotsMap[`${lot.production_id}_${item.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
+                                const itemHist = lot.metadata?.system_history?.item_history?.[item.id];
+                                let productDisplay = item.products?.name || '-';
+                                if (itemHist?.type === 'merge' || itemHist?.type === 'split') {
+                                    const oDate = itemHist.snapshot?.inbound_date || itemHist.snapshot?.created_at || itemHist.merge_date;
+                                    const typeLabel = itemHist.type === 'merge' ? 'GỘP' : 'TÁCH';
+                                    const dateLabel = oDate ? ` (${format(new Date(oDate), 'dd/MM')})` : '';
+                                    const sourceLabel = itemHist.source_code ? ` từ ${itemHist.source_code}` : '';
+                                    productDisplay += ` [${typeLabel}${dateLabel}${sourceLabel}]`;
+                                }
+
                                 const row = worksheet.addRow({
                                     stt: itemIdx === 0 ? index + 1 : '',
                                     date: itemIdx === 0 ? dateStr : '',
                                     prod_code: itemIdx === 0 ? sxLotCode : '',
-                                    product: item.products?.name || '-',
+                                    product: productDisplay,
                                     qty: item.quantity,
                                     unit: item.unit || item.products?.unit || '-',
                                     position: itemIdx === 0 ? posStr : ''
@@ -803,7 +881,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                 </div>
                                 <div style={{ textAlign: 'center', marginBottom: '25px' }}>
                                     <h2 style={{ fontSize: '20pt', fontWeight: '900', margin: '0 0 8px 0', textTransform: 'uppercase', color: '#0f172a', letterSpacing: '1px' }}>
-                                        BÁO CÁO {activeTab === 'inward' ? 'DANH SÁCH LOT ĐÃ TẠO' : 'DANH SÁCH LOT ĐÃ XUẤT'}
+                                        BÁO CÁO {activeTab === 'inward' ? 'DANH SÁCH LOT ĐÃ NHẬP' : 'DANH SÁCH LOT ĐÃ XUẤT'}
                                     </h2>
                                     <p style={{ fontSize: '11pt', fontStyle: 'italic', color: '#475569', margin: '0' }}>
                                         Từ ngày: {format(new Date(startDate), 'dd/MM/yyyy')} đến ngày: {format(new Date(endDate), 'dd/MM/yyyy')}
@@ -830,6 +908,13 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                             {formatQuantityFull(stat.totalQty)}
                                                             <span className="text-[10px] font-bold text-slate-400 uppercase">{stat.unit}</span>
                                                         </div>
+                                                        {activeTab === 'inward' && ((stat as any).newInQty > 0 || (stat as any).mergedInQty > 0 || (stat as any).mergedOutQty > 0) && (
+                                                            <div className="text-[9px] font-bold text-slate-400 flex flex-wrap gap-x-2 mt-1">
+                                                                {(stat as any).newInQty > 0 && <span className="text-emerald-500">Mới: {formatQuantityFull((stat as any).newInQty)}</span>}
+                                                                {(stat as any).mergedInQty > 0 && <span className="text-blue-500">Gộp vào: {formatQuantityFull((stat as any).mergedInQty)}</span>}
+                                                                {(stat as any).mergedOutQty > 0 && <span className="text-amber-500">Gộp đi: {formatQuantityFull((stat as any).mergedOutQty)}</span>}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                     <div className="shrink-0 flex flex-col items-end">
                                                         <div className={`px-2 py-1 rounded text-[10px] font-black ${activeTab === 'inward' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'}`}>
@@ -861,7 +946,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                     <thead className="bg-slate-50 dark:bg-slate-900 border-b-2 border-slate-200 dark:border-slate-800">
                                                         <tr>
                                                             <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[4%]">STT</th>
-                                                            <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[11%]">Ngày tạo</th>
+                                                            <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[11%]">Ngày nhập</th>
                                                             <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[20%]">Mã LOT SX</th>
                                                             <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[33%]">Sản phẩm</th>
                                                             <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right w-[12%]">SL Nhập</th>
@@ -872,48 +957,103 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                     <tbody>
                                                         {group.lots.map((lot: any, idx: number) => {
                                                             const items = lot.lot_items || []
-                                                            const rowSpan = Math.max(items.length, 1)
+                                                            const mergedOut = lot.metadata?.system_history?.merged_out || []
+                                                            const itemsIdsInLot = new Set(items.map((i: any) => i.product_id));
+                                                            const uniqueMergedProducts = Array.from(new Set(mergedOut.filter((mo: any) => mo.product_id).map((mo: any) => mo.product_id)));
+
+                                                            // Những sản phẩm đã gộp hết (không còn trong items)
+                                                            const completelyMergedProducts = uniqueMergedProducts.filter(pid => !itemsIdsInLot.has(pid as string));
+
+                                                            const displayItems = [
+                                                                ...items,
+                                                                ...completelyMergedProducts.map(pid => {
+                                                                    const sample = mergedOut.find((mo: any) => mo.product_id === pid);
+                                                                    return {
+                                                                        id: `merged_${pid}`,
+                                                                        product_id: pid,
+                                                                        products: lot.products?.id === pid ? lot.products : { name: 'Sản phẩm đã gộp hết', sku: '-' },
+                                                                        quantity: 0,
+                                                                        is_completely_merged: true
+                                                                    }
+                                                                })
+                                                            ]
+
+                                                            const rowSpan = Math.max(displayItems.length, 1)
                                                             return (
                                                                 <React.Fragment key={lot.id}>
-                                                                    {items.length > 0 ? (
-                                                                        items.map((item: any, itemIdx: number) => (
-                                                                            <tr key={item.id} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm">
-                                                                                {itemIdx === 0 && (
-                                                                                    <>
-                                                                                        <td className="py-4 px-2 font-mono text-slate-500 font-bold" rowSpan={rowSpan}>{idx + 1}</td>
-                                                                                        <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400" rowSpan={rowSpan}>
-                                                                                            {format(new Date(lot.created_at), 'dd/MM/yyyy')}
-                                                                                        </td>
-                                                                                        <td className="py-4 px-2" rowSpan={rowSpan}>
-                                                                                            <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30">
-                                                                                                {productionLotsMap[`${lot.production_id}_${item.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'}
-                                                                                            </span>
-                                                                                        </td>
-                                                                                    </>
-                                                                                )}
-                                                                                <td className="py-2 px-2">
-                                                                                    <div className="font-bold text-slate-800 dark:text-slate-200">{item.products?.name}</div>
-                                                                                    <div className="text-[10px] text-slate-400 font-mono">{item.products?.sku}</div>
-                                                                                </td>
-                                                                                <td className="py-2 px-2 text-right font-black text-orange-600">
-                                                                                    {formatQuantityFull(item.quantity)}
-                                                                                </td>
-                                                                                <td className="py-2 px-2 font-bold text-[10px] text-slate-400 uppercase">
-                                                                                    {item.unit || item.products?.unit}
-                                                                                </td>
-                                                                                {itemIdx === 0 && (
-                                                                                    <td className="py-2 px-2" rowSpan={rowSpan}>
-                                                                                        <div className="flex flex-wrap gap-1">
-                                                                                            {lot.positions?.map((p: any) => (
-                                                                                                <span key={p.id} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-md text-[9px] font-black border border-slate-200 dark:border-slate-700">
-                                                                                                    {p.code}
+                                                                    {displayItems.length > 0 ? (
+                                                                        displayItems.map((item: any, itemIdx: number) => {
+                                                                            const itemMergedOut = mergedOut.filter((mo: any) => mo.product_id === item.product_id);
+                                                                            const totalMergedOutQty = itemMergedOut.reduce((acc: number, cur: any) => acc + (Number(cur.quantity) || 0), 0);
+                                                                            
+                                                                            return (
+                                                                                <tr key={item.id} className={`border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm ${item.is_completely_merged ? 'opacity-60 grayscale-[0.5]' : ''}`}>
+                                                                                    {itemIdx === 0 && (
+                                                                                        <>
+                                                                                            <td className="py-4 px-2 font-mono text-slate-500 font-bold" rowSpan={rowSpan}>{idx + 1}</td>
+                                                                                            <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400" rowSpan={rowSpan}>
+                                                                                                {format(new Date(lot.inbound_date || lot.created_at), 'dd/MM/yyyy')}
+                                                                                            </td>
+                                                                                            <td className="py-4 px-2" rowSpan={rowSpan}>
+                                                                                                <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30">
+                                                                                                    {productionLotsMap[`${lot.production_id}_${item.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'}
                                                                                                 </span>
-                                                                                            ))}
+                                                                                            </td>
+                                                                                        </>
+                                                                                    )}
+                                                                                    <td className="py-2 px-2">
+                                                                                        <div className="font-bold text-slate-800 dark:text-slate-200">{item.products?.name}</div>
+                                                                                        <div className="flex flex-wrap items-center gap-2">
+                                                                                            <span className="text-[10px] text-slate-400 font-mono">{item.products?.sku}</span>
+                                                                                            {(() => {
+                                                                                                const hist = lot.metadata?.system_history?.item_history?.[item.id];
+                                                                                                if (hist?.type === 'merge' || hist?.type === 'split') {
+                                                                                                    const originalDate = hist.snapshot?.inbound_date || hist.snapshot?.created_at || hist.merge_date;
+                                                                                                    return (
+                                                                                                        <span className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-[9px] font-black border border-blue-100 dark:border-blue-800/30 flex items-center gap-1">
+                                                                                                            {hist.type === 'merge' ? 'GỘP VÀO' : 'TÁCH VÀO'}
+                                                                                                            {originalDate && ` (${format(new Date(originalDate), 'dd/MM')})`}
+                                                                                                            {hist.source_code && ` từ ${hist.source_code}`}
+                                                                                                        </span>
+                                                                                                    )
+                                                                                                }
+                                                                                                return null;
+                                                                                            })()}
+                                                                                            
+                                                                                            {itemMergedOut.length > 0 && (
+                                                                                                <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 text-[9px] font-black border border-amber-100 dark:border-amber-800/30">
+                                                                                                    MANG ĐI GỘP SANG: {itemMergedOut.map((mo: any) => `${mo.target_lot_code} (${formatQuantityFull(mo.quantity)})`).join(', ')}
+                                                                                                </span>
+                                                                                            )}
                                                                                         </div>
                                                                                     </td>
-                                                                                )}
-                                                                            </tr>
-                                                                        ))
+                                                                                    <td className="py-2 px-2 text-right">
+                                                                                        <div className="font-black text-orange-600">
+                                                                                            {formatQuantityFull((Number(item.quantity) || 0) + totalMergedOutQty)}
+                                                                                        </div>
+                                                                                        {totalMergedOutQty > 0 && (
+                                                                                            <div className="text-[9px] text-slate-400 font-bold">
+                                                                                                (Hiện có: {formatQuantityFull(item.quantity)})
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </td>
+                                                                                    <td className="py-2 px-2 font-bold text-[10px] text-slate-400 uppercase">
+                                                                                        {item.unit || item.products?.unit}
+                                                                                    </td>
+                                                                                    {itemIdx === 0 && (
+                                                                                        <td className="py-2 px-2" rowSpan={rowSpan}>
+                                                                                            <div className="flex flex-wrap gap-1">
+                                                                                                {lot.positions?.map((p: any) => (
+                                                                                                    <span key={p.id} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-md text-[9px] font-black border border-slate-200 dark:border-slate-700">
+                                                                                                        {p.code}
+                                                                                                    </span>
+                                                                                                ))}
+                                                                                            </div>
+                                                                                        </td>
+                                                                                    )}
+                                                                                </tr>
+                                                                            )
+                                                                        })
                                                                     ) : (
                                                                         <tr className="border-b border-slate-100 dark:border-slate-800/50">
                                                                             <td className="py-4 px-2 font-mono text-slate-500 font-bold">{idx + 1}</td>

@@ -262,6 +262,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
         try {
             const itemsToMerge = Object.entries(selectedItems).map(([itemId, qty]) => ({ itemId, qty }));
             const newItemHistories: Record<string, any> = {}
+            const sourceMergeOut: Record<string, any[]> = {} // lotId -> list of merge-out records
 
             for (const entry of itemsToMerge) {
                 // Find source item and its lot
@@ -270,6 +271,17 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
 
                 const sourceItem = sourceLot.lot_items?.find(i => i.id === entry.itemId);
                 if (!sourceItem) continue;
+
+                // Track merge-out for source lot
+                if (!sourceMergeOut[sourceLot.id]) sourceMergeOut[sourceLot.id] = [];
+                sourceMergeOut[sourceLot.id].push({
+                    date: new Date().toISOString(),
+                    target_lot_id: targetLot.id,
+                    target_lot_code: targetLot.code,
+                    product_id: sourceItem.product_id,
+                    quantity: entry.qty,
+                    item_id: sourceItem.id
+                });
 
                 // Prepare snapshot
                 const snapshot = {
@@ -320,7 +332,6 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
 
                     if (tagMoveError) {
                         console.error('Error moving tags:', tagMoveError);
-                        // We don't throw here to avoid rolling back the item insert, but we log it
                     }
                 }
 
@@ -342,30 +353,31 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
 
             await (supabase.from('lots') as any).update({ metadata: targetMetadata }).eq('id', targetLot.id)
 
-            // Clean up positions for lots that became empty
-            const sourceLotIdsAffected = Array.from(new Set(modalLots.filter(l => l.lot_items?.some(i => selectedItems[i.id])).map(l => l.id)));
+            // 4. Update Source LOTs metadata with merge-out info
+            for (const [sourceLid, mergeOutList] of Object.entries(sourceMergeOut)) {
+                const { data: sLot } = await supabase.from('lots').select('metadata').eq('id', sourceLid).single();
+                if (sLot) {
+                    const sMeta = (sLot as any).metadata ? { ...(sLot as any).metadata as any } : {}
+                    if (!sMeta.system_history) sMeta.system_history = {}
+                    if (!sMeta.system_history.merged_out) sMeta.system_history.merged_out = []
+                    
+                    sMeta.system_history.merged_out.push(...mergeOutList)
+                    sMeta.system_history.merged_to = targetLot.code // For backward compatibility
+                    
+                    // Check if lot is now empty
+                    const { count } = await supabase
+                        .from('lot_items')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('lot_id', sourceLid)
 
-            for (const lid of sourceLotIdsAffected) {
-                const { count } = await supabase
-                    .from('lot_items')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('lot_id', lid)
-
-                if (count === 0) {
-                    await (supabase.from('positions') as any).update({ lot_id: null }).eq('lot_id', lid)
-
-                    // Add MERGED_TO reference to the source lot metadata
-                    const { data: sLot } = await supabase.from('lots').select('metadata').eq('id', lid).single();
-                    if (sLot) {
-                        const sMeta = (sLot as any).metadata ? { ...(sLot as any).metadata as any } : {}
-                        if (!sMeta.system_history) sMeta.system_history = {}
-                        sMeta.system_history.merged_to = targetLot.code
-                        await (supabase.from('lots') as any).update({
-                            metadata: sMeta,
-                            status: 'exported',
-                            quantity: 0
-                        }).eq('id', lid)
+                    const updatePayload: any = { metadata: sMeta }
+                    if (count === 0) {
+                        updatePayload.status = 'exported'
+                        updatePayload.quantity = 0
+                        await (supabase.from('positions') as any).update({ lot_id: null }).eq('lot_id', sourceLid)
                     }
+
+                    await (supabase.from('lots') as any).update(updatePayload).eq('id', sourceLid)
                 }
             }
 
