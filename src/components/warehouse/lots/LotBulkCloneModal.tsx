@@ -90,7 +90,7 @@ export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModal
 
             const newLots = Array.from({ length: cloneCount }).map((_, i) => {
                 const currentSeq = lastSequence + (i + 1)
-                const newCode = `${prefix}${currentSeq}`;
+                const newCode = `${prefix}${String(currentSeq).padStart(3, '0')}`;
 
                 return {
                     ...lotDataWithoutIds,

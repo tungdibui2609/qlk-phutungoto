@@ -428,19 +428,21 @@ export function LotForm({
 
         const prefix = warehousePrefix ? `${warehousePrefix}-LOT-${dateStr}-` : `LOT-${dateStr}-`
 
-        const { data: lastLots } = await supabase
+        const { data: allLots } = await supabase
             .from('lots')
             .select('code')
             .ilike('code', `${prefix}%`)
-            .order('code', { ascending: false })
-            .limit(1)
 
         let sequence = 1
-        if (lastLots && lastLots.length > 0) {
-            const lastCode = (lastLots as any)[0].code
-            const lastSeqRaw = parseInt(lastCode.split('-').pop() || '0')
-            if (!isNaN(lastSeqRaw)) {
-                sequence = lastSeqRaw + 1
+        if (allLots && allLots.length > 0) {
+            const sequences = allLots.map((l: any) => {
+                const parts = l.code.split('-')
+                const lastPart = parts[parts.length - 1]
+                return parseInt(lastPart || '0')
+            }).filter(s => !isNaN(s))
+            
+            if (sequences.length > 0) {
+                sequence = Math.max(...sequences) + 1
             }
         }
         setNewLotCode(`${prefix}${String(sequence).padStart(3, '0')}`)
