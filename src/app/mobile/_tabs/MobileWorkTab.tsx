@@ -32,6 +32,7 @@ interface TaskItem {
     position_id: string | null
     position_name: string
     current_position_name: string
+    zone_id?: string | null
     product_name: string
     sku: string
     quantity: number
@@ -62,6 +63,7 @@ export default function MobileWorkTab() {
     const [pendingLotId, setPendingLotId] = useState<string | null>(null)
     const [pendingPositionId, setPendingPositionId] = useState<string | null>(null)
     const [pendingItemId, setPendingItemId] = useState<string | null>(null)
+    const [pendingItems, setPendingItems] = useState<TaskItem[]>([])
 
     // Pick Request State (Hierarchical Selection)
     const [requestSelection, setRequestSelection] = useState({
@@ -74,6 +76,14 @@ export default function MobileWorkTab() {
     const [requestPositions, setRequestPositions] = useState<any[]>([])
     const [selectedPosIds, setSelectedPosIds] = useState<Set<string>>(new Set())
 
+    // Detail View Navigation State
+    const [detailSelection, setDetailSelection] = useState({
+        aisleId: null as string | null,
+        slotId: null as string | null,
+        step: 'aisle' as 'aisle' | 'slot' | 'items'
+    })
+    const [selectedDetailItemIds, setSelectedDetailItemIds] = useState<Set<string>>(new Set())
+
     useEffect(() => { 
         if (activeTab !== 'request') {
             fetchTasks()
@@ -82,29 +92,44 @@ export default function MobileWorkTab() {
     }, [activeTab, currentSystem])
 
     async function fetchZones() {
-        if (!currentSystem?.code) return
-        // Fetch zones
-        const { data: rawZones } = await supabase.from('zones').select('*').eq('system_type', currentSystem.code)
-        if (!rawZones) return
-        setZones(rawZones)
+        if (!currentSystem) return
+        setLoading(true)
+        try {
+            let allZones: any[] = []
+            let from = 0
+            const limit = 1000
+            
+            // Tìm kiếm linh hoạt hơn: một số record dùng code, một số dùng ID
+            const systemIdentifiers = [currentSystem.code, currentSystem.id].filter(Boolean)
 
-        // Fetch all zone_positions để groupWarehouseData có thể gom ô
-        const allZoneIds = rawZones.map(z => z.id)
-        const { data: zpData } = await supabase
-            .from('zone_positions' as any)
-            .select('position_id, zone_id')
-            .in('zone_id', allZoneIds) as any
+            while (true) {
+                const { data, error } = await supabase
+                    .from('zones')
+                    .select('*')
+                    .in('system_type', systemIdentifiers)
+                    .order('name')
+                    .range(from, from + limit - 1)
+                
+                if (error) throw error
+                if (!data || data.length === 0) break
+                
+                allZones = [...allZones, ...data]
+                if (data.length < limit) break
+                from += limit
+            }
 
-        // Tạo danh sách positions giả (chỉ cần id + zone_id) cho groupWarehouseData
-        const pseudoPositions = ((zpData || []) as any[]).map((zp: any) => ({
-            id: zp.position_id,
-            zone_id: zp.zone_id
-        }))
+            setZones(allZones)
 
-        // Chạy groupWarehouseData giống trang sơ đồ kho
-        const result = groupWarehouseData(rawZones as any, pseudoPositions as any)
-        setGroupedZones(result.zones || rawZones)
-        setVirtualToRealMap(result.virtualToRealMap || new Map())
+            // groupWarehouseData chỉ cần zones để tạo cây phân cấp gộp ô + virtualToRealMap
+            const result = groupWarehouseData(allZones as any, [] as any)
+            setGroupedZones(result.zones || allZones)
+            setVirtualToRealMap(result.virtualToRealMap || new Map())
+        } catch (error: any) {
+            console.error('Fetch zones error:', error)
+            showToast('Lỗi tải sơ đồ kho: ' + error.message, 'error')
+        } finally {
+            setLoading(false)
+        }
     }
 
     async function fetchTasks() {
@@ -144,7 +169,7 @@ export default function MobileWorkTab() {
                 .from('export_task_items')
                 .select(`id, quantity, unit, status, lot_id, position_id,
           lots (id, code, production_code, positions!positions_lot_id_fkey (code, is_hall:zone_positions(zone_id))),
-          positions!export_task_items_position_id_fkey (code), products (name, sku)`)
+          positions!export_task_items_position_id_fkey (code, zone_positions(zone_id)), products (name, sku)`)
                 .eq('task_id', taskId)
             if (error) throw error
 
@@ -179,11 +204,15 @@ export default function MobileWorkTab() {
                     displayStatus = isHall ? 'Moved to Hall' : 'Changed Position'
                 }
 
+                const zp = item.positions?.zone_positions
+                const leafZoneId = Array.isArray(zp) ? zp[0]?.zone_id : zp?.zone_id
+
                 return {
                     id: item.id, lot_id: item.lots?.id || item.lot_id, 
                     lot_code: item.lots?.code || 'N/A',
                     production_code: item.lots?.production_code,
                     position_id: item.position_id, position_name: originalPosCode, current_position_name: currentPosCode,
+                    zone_id: leafZoneId,
                     product_name: item.products?.name || 'N/A', sku: item.products?.sku || 'N/A',
                     quantity: item.quantity, unit: item.unit || '', status: item.status || 'Pending',
                     display_status: displayStatus,
@@ -206,6 +235,8 @@ export default function MobileWorkTab() {
     function handleReset() {
         setStep('list'); setSelectedTask(null); setTaskItems([])
         setPendingLotId(null); setPendingPositionId(null); setPendingItemId(null)
+        setDetailSelection({ aisleId: null, slotId: null, step: 'aisle' })
+        setSelectedDetailItemIds(new Set())
     }
 
     async function handleCheckOff(item: TaskItem) {
@@ -215,64 +246,79 @@ export default function MobileWorkTab() {
         setPendingLotId(item.lot_id)
         setPendingPositionId(item.position_id)
         setPendingItemId(item.id)
+        setPendingItems([item]) // Thêm danh sách tạm thời cho xử lý đơn lẻ
         setIsSelectHallOpen(true)
     }
 
     async function handleMoveToHall(hallId: string) {
         setIsSelectHallOpen(false)
-        if (!pendingLotId || !pendingItemId) return
+        if (pendingItems.length === 0) return
         
         setLoading(true)
-        setProcessingId(pendingItemId)
+        const total = pendingItems.length
+        let success = 0
+        
         try {
-            // 1. Kiểm tra vị trí hiện tại của LOT
-            const { data: currentPos, error: posError } = await supabase
-                .from('positions')
-                .select('id')
-                .eq('lot_id', pendingLotId)
-                .single()
-            
-            if (posError && posError.code !== 'PGRST116') throw posError
-            
-            // 2. Tìm vị trí trống trong Sảnh
-            const targetZoneIds = new Set<string>([hallId])
-            let added = true
-            while (added) { 
-                added = false
-                for (const z of zones) { 
-                    if (z.parent_id && targetZoneIds.has(z.parent_id) && !targetZoneIds.has(z.id)) { 
-                        targetZoneIds.add(z.id)
-                        added = true 
-                    } 
-                } 
+            for (const item of pendingItems) {
+                setProcessingId(item.id)
+                try {
+                    // 1. Kiểm tra vị trí hiện tại của LOT
+                    const { data: currentPos, error: posError } = await supabase
+                        .from('positions')
+                        .select('id')
+                        .eq('lot_id', item.lot_id)
+                        .single()
+                    
+                    if (posError && posError.code !== 'PGRST116') throw posError
+                    
+                    // 2. Tìm vị trí trống trong Sảnh
+                    const targetZoneIds = new Set<string>([hallId])
+                    let added = true
+                    while (added) { 
+                        added = false
+                        for (const z of zones) { 
+                            if (z.parent_id && targetZoneIds.has(z.parent_id) && !targetZoneIds.has(z.id)) { 
+                                targetZoneIds.add(z.id)
+                                added = true 
+                            } 
+                        } 
+                    }
+
+                    const { data: availablePositions, error: availError } = await (supabase
+                        .from('zone_positions').select('position_id, zone_id, positions!inner(id, lot_id)')
+                        .is('positions.lot_id', null).in('zone_id', Array.from(targetZoneIds)).limit(1) as any)
+
+                    if (availError || !availablePositions?.length) { 
+                        throw new Error('Không còn vị trí trống trong Sảnh!')
+                    }
+
+                    const targetPositionId = availablePositions[0].position_id as string
+
+                    // 3. Thực hiện di chuyển
+                    if (currentPos) {
+                        await (supabase.from('positions') as any).update({ lot_id: null }).eq('id', (currentPos as any).id)
+                    }
+                    
+                    const { error: updateError } = await (supabase.from('positions') as any).update({ lot_id: item.lot_id }).eq('id', targetPositionId)
+                    if (updateError) throw updateError
+                    
+                    success++
+                } catch (err: any) {
+                    console.error(`Lỗi hạ sảnh pallet ${item.lot_code}:`, err)
+                }
             }
 
-            const { data: availablePositions, error: availError } = await (supabase
-                .from('zone_positions').select('position_id, zone_id, positions!inner(id, lot_id)')
-                .is('positions.lot_id', null).in('zone_id', Array.from(targetZoneIds)).limit(1) as any)
-
-            if (availError || !availablePositions?.length) { 
-                showToast('Không còn vị trí trống trong Sảnh!', 'error')
-                return 
+            if (success > 0) {
+                showToast(`Đã hạ sảnh thành công ${success}/${total} pallet!`, 'success')
+                if (selectedTask) await fetchTaskItems(selectedTask.id, true)
+                setSelectedDetailItemIds(new Set())
             }
-
-            const targetPositionId = availablePositions[0].position_id as string
-
-            // 3. Thực hiện di chuyển (giải phóng cũ, gán mới)
-            if (currentPos) {
-                await (supabase.from('positions') as any).update({ lot_id: null }).eq('id', (currentPos as any).id)
-            }
-            
-            const { error: updateError } = await (supabase.from('positions') as any).update({ lot_id: pendingLotId }).eq('id', targetPositionId)
-            if (updateError) throw updateError
-
-            showToast(`Đã hạ sảnh thành công!`, 'success')
-            if (selectedTask) await fetchTaskItems(selectedTask.id, true)
         } catch (error: any) { 
-            showToast('Lỗi hạ sảnh: ' + error.message, 'error') 
+            showToast('Lỗi hệ thống: ' + error.message, 'error') 
         } finally { 
             setLoading(false)
             setProcessingId(null)
+            setPendingItems([])
             setPendingLotId(null)
             setPendingPositionId(null)
             setPendingItemId(null)
@@ -409,7 +455,7 @@ export default function MobileWorkTab() {
         }
     }
 
-    const handleZoneClick = (z: any) => {
+    const handleZoneClick = (z: any, shouldFetch: boolean = false) => {
         const nextStep = 
             requestSelection.step === 'warehouse' ? 'aisle' :
             requestSelection.step === 'aisle' ? 'slot' :
@@ -424,18 +470,20 @@ export default function MobileWorkTab() {
             step: nextStep
         }))
 
-        // Luôn thử tải pallet của zone vừa chọn để hỗ trợ gộp ô/dãy
-        fetchPositionsInZone(z.id)
+        // Chỉ fetch positions khi đã đến bước cuối (chọn Tầng hoặc Ô không có Tầng)
+        if (shouldFetch || nextStep === 'pallets') {
+            fetchPositionsInZone(z.id)
+        }
     }
 
     const scannedCount = taskItems.filter(i => i.scanned).length
     const totalCount = taskItems.length
 
-    // Hierarchy Helpers - Dùng groupedZones (đã gom ô) thay vì zones thô
-    const warehouses = groupedZones.filter(z => !z.parent_id)
-    const aisles = requestSelection.warehouseId ? groupedZones.filter(z => z.parent_id === requestSelection.warehouseId) : []
-    const slots = requestSelection.aisleId ? groupedZones.filter(z => z.parent_id === requestSelection.aisleId) : []
-    const tiers = requestSelection.slotId ? groupedZones.filter(z => z.parent_id === requestSelection.slotId) : []
+    // Hierarchy Helpers - Dùng groupedZones thống nhất để đảm bảo đồng bộ với logic gom ô/dãy
+    const warehouses = groupedZones.filter(z => !z.parent_id).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+    const aisles = requestSelection.warehouseId ? groupedZones.filter(z => z.parent_id === requestSelection.warehouseId).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })) : []
+    const slots = requestSelection.aisleId ? groupedZones.filter(z => z.parent_id === requestSelection.aisleId).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })) : []
+    const tiers = requestSelection.slotId ? groupedZones.filter(z => z.parent_id === requestSelection.slotId).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })) : []
 
     const togglePosSelection = (id: string) => {
         const next = new Set(selectedPosIds)
@@ -525,9 +573,12 @@ export default function MobileWorkTab() {
                                     {slots.map(z => (
                                         <button key={z.id} onClick={() => {
                                             const hasTiers = groupedZones.some(x => x.parent_id === z.id)
-                                            setRequestSelection({ ...requestSelection, slotId: z.id, step: hasTiers ? 'tier' : 'pallets' })
-                                            // Luôn fetch positions khi chọn Ô (gom ô sẽ lấy hết vị trí con)
-                                            fetchPositionsInZone(z.id)
+                                            if (hasTiers) {
+                                                setRequestSelection({ ...requestSelection, slotId: z.id, step: 'tier' })
+                                            } else {
+                                                setRequestSelection({ ...requestSelection, slotId: z.id, step: 'pallets' })
+                                                fetchPositionsInZone(z.id)
+                                            }
                                         }} className="p-5 bg-white rounded-3xl border border-gray-100 shadow-sm active:scale-95 text-center font-black uppercase text-sm text-gray-900">
                                             {z.name}
                                         </button>
@@ -581,48 +632,58 @@ export default function MobileWorkTab() {
                                                         onClick={() => pos.has_goods && togglePosSelection(pos.id)}
                                                         className={`p-4 rounded-3xl border transition-all ${isSelected ? 'bg-purple-50 border-purple-300 ring-2 ring-purple-100' : 'bg-white border-gray-100 shadow-sm'} ${!pos.has_goods && 'opacity-50 grayscale pointer-events-none'}`}
                                                     >
-                                                        <div className="flex items-start justify-between">
-                                                            <div className="flex gap-4 w-full">
-                                                                <div className={`w-12 h-12 rounded-2xl flex flex-col items-center justify-center shrink-0 ${isSelected ? 'bg-purple-600 text-white shadow-lg' : 'bg-gray-100 text-gray-400'}`}>
-                                                                    <MapPin size={18} />
-                                                                    <span className="text-[9px] font-black mt-0.5">{pos.code}</span>
-                                                                </div>
-                                                                <div className="flex-1 min-w-0">
-                                                                    <div className="flex items-center justify-between mb-1">
-                                                                        <div className="text-xs font-black text-gray-400 uppercase tracking-widest">LOT: {pos.lot?.code || '---'}</div>
-                                                                        {pos.lot?.production_code && (
-                                                                            <div className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded-lg text-[9px] font-black border border-blue-100">
-                                                                                LSX: {pos.lot.production_code}
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                    
-                                                                    {pos.lot?.lot_items && pos.lot.lot_items.length > 0 ? (
-                                                                        <div className="space-y-2 mt-2">
-                                                                            {pos.lot.lot_items.map((li: any, idx: number) => (
-                                                                                <div key={idx} className="bg-gray-50/50 p-2 rounded-xl border border-gray-100/50">
-                                                                                    <div className="flex justify-between items-start gap-2">
-                                                                                        <div className="min-w-0 flex-1">
-                                                                                            <div className="text-[11px] font-black text-gray-900 leading-tight truncate">{li.products?.name}</div>
-                                                                                            <div className="text-[9px] font-bold text-blue-500 mt-0.5 uppercase tracking-tighter">{li.products?.sku}</div>
-                                                                                        </div>
-                                                                                        <div className="text-right shrink-0">
-                                                                                            <div className="text-sm font-black text-gray-900 leading-none">{li.quantity}</div>
-                                                                                            <div className="text-[9px] font-bold text-gray-400 uppercase mt-0.5">{li.unit}</div>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                </div>
-                                                                            ))}
+                                                        <div className="flex gap-4 w-full">
+                                                            <div className={`w-12 h-12 rounded-2xl flex flex-col items-center justify-center shrink-0 ${isSelected ? 'bg-purple-600 text-white shadow-lg' : 'bg-gray-100 text-gray-400'}`}>
+                                                                <MapPin size={18} />
+                                                                <span className="text-[9px] font-black mt-0.5">{pos.code}</span>
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center justify-between mb-1">
+                                                                    <div className="text-xs font-black text-gray-400 uppercase tracking-widest">LOT: {pos.lot?.code || '---'}</div>
+                                                                    {pos.lot?.production_code && (
+                                                                        <div className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded-lg text-[9px] font-black border border-blue-100">
+                                                                            LSX: {pos.lot.production_code}
                                                                         </div>
-                                                                    ) : (
-                                                                        <div className="text-[10px] text-gray-300 italic font-medium py-1">Vị trí trống</div>
                                                                     )}
                                                                 </div>
+                                                                
+                                                                {pos.lot?.lot_items && pos.lot.lot_items.length > 0 ? (
+                                                                    <div className="space-y-2 mt-2">
+                                                                        {pos.lot.lot_items.map((li: any, idx: number) => (
+                                                                            <div key={idx} className="bg-gray-50/50 p-2 rounded-xl border border-gray-100/50">
+                                                                                <div className="flex justify-between items-start gap-2">
+                                                                                    <div className="min-w-0 flex-1">
+                                                                                        <div className="text-[11px] font-black text-gray-900 leading-tight truncate">{li.products?.name}</div>
+                                                                                        <div className="text-[9px] font-bold text-blue-500 mt-0.5 uppercase tracking-tighter">{li.products?.sku}</div>
+                                                                                    </div>
+                                                                                    <div className="text-right shrink-0">
+                                                                                        <div className="text-sm font-black text-gray-900 leading-none">{li.quantity}</div>
+                                                                                        <div className="text-[9px] font-bold text-gray-400 uppercase mt-0.5">{li.unit}</div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="text-[10px] text-gray-300 italic font-medium py-1">Vị trí trống</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        <div className="mt-4 flex items-center justify-between pt-3 border-t border-gray-50">
+                                                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all shrink-0 ${isSelected ? 'bg-purple-600 border-purple-600 text-white' : 'border-gray-200'}`}>
+                                                                {isSelected && <CheckCircle size={14} />}
                                                             </div>
                                                             {pos.has_goods && (
-                                                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all shrink-0 ml-2 ${isSelected ? 'bg-purple-600 border-purple-600 text-white' : 'border-gray-200'}`}>
-                                                                    {isSelected && <CheckCircle size={14} />}
-                                                                </div>
+                                                                <button 
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation()
+                                                                        handleRequestPick([pos.id])
+                                                                    }}
+                                                                    className="px-4 py-2 bg-blue-600 text-white rounded-xl text-[11px] font-black uppercase shadow-lg shadow-blue-100 active:scale-95"
+                                                                >
+                                                                    Hạ sảnh
+                                                                </button>
                                                             )}
                                                         </div>
                                                     </div>
@@ -730,78 +791,294 @@ export default function MobileWorkTab() {
                 </div>
             </div>
 
-            <div className="p-5">
-                <div className="flex items-center justify-between mb-4">
-                    <div className="mobile-section-label !mb-0">Danh sách LOT ({totalCount})</div>
-                    <button onClick={() => fetchTaskItems(selectedTask!.id)} disabled={loading} className="p-2 text-blue-600 active:rotate-180 transition-all duration-500">
-                        <RotateCcw size={18} />
-                    </button>
-                </div>
+                <div style={{ padding: '20px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                        <div className="mobile-section-label !mb-0">
+                            {detailSelection.step === 'aisle' ? `Chọn Dãy` : 
+                             detailSelection.step === 'slot' ? `Chọn Ô (Gộp)` : `Danh sách Pallet`}
+                        </div>
+                        <button onClick={() => fetchTaskItems(selectedTask!.id)} disabled={loading} className="p-2 text-blue-600 active:rotate-180 transition-all duration-500">
+                            <RotateCcw size={18} />
+                        </button>
+                    </div>
 
-                <div className="flex flex-col gap-3">
-                    {taskItems.map(item => {
-                        const isPending = item.display_status === 'Pending'
-                        const isExported = item.display_status === 'Exported'
-                        const isHall = item.display_status === 'Moved to Hall'
-                        const isChanged = item.display_status === 'Changed Position'
-                        const isProcessing = processingId === item.id
+                    {/* Breadcrumbs for Detail */}
+                    <div className="flex flex-wrap gap-2 mb-6">
+                        {detailSelection.aisleId && (
+                            <button 
+                                onClick={() => setDetailSelection({ ...detailSelection, step: 'aisle', aisleId: null, slotId: null })}
+                                className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-[10px] font-black uppercase border border-blue-100"
+                            >
+                                Dãy: {groupedZones.find(z => z.id === detailSelection.aisleId)?.name}
+                            </button>
+                        )}
+                        {detailSelection.slotId && (
+                            <button 
+                                onClick={() => setDetailSelection({ ...detailSelection, step: 'slot', slotId: null })}
+                                className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-[10px] font-black uppercase border border-blue-100"
+                            >
+                                Ô: {groupedZones.find(z => z.id === detailSelection.slotId)?.name}
+                            </button>
+                        )}
+                    </div>
 
-                        return (
-                            <div key={item.id} className={`p-4 rounded-3xl border transition-all ${isExported ? 'bg-green-50 border-green-100' : isPending ? 'bg-white border-gray-100 shadow-sm' : 'bg-blue-50 border-blue-100'}`}>
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="flex gap-3 flex-1 min-width-0">
-                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isExported ? 'bg-green-100 text-green-600' : isPending ? 'bg-gray-100 text-gray-400' : 'bg-blue-100 text-blue-600'}`}>
-                                            {isExported ? <CheckCircle size={20} /> : isPending ? <ArrowDownToLine size={20} /> : <CheckCircle2 size={20} />}
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <span className={`text-sm font-black font-mono tracking-tight ${isPending ? 'text-gray-900' : isExported ? 'text-green-700' : 'text-blue-700'}`}>
-                                                    {item.lot_code}
-                                                </span>
-                                                <div className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded-lg border border-gray-200">
-                                                    <MapPin size={8} className="text-gray-400" />
-                                                    <span className="text-[10px] font-black text-gray-600 font-mono">{item.position_name}</span>
-                                                </div>
-                                            </div>
-                                            <div className="text-[11px] text-gray-400 mt-1 truncate">
-                                                <span className="font-bold text-gray-600">{item.sku}</span> — {item.product_name}
-                                            </div>
+                    {/* Hierarchy Views using groupedZones */}
+                    {detailSelection.step === 'aisle' && (
+                        <div className="grid grid-cols-2 gap-3">
+                            {(() => {
+                                const activeAisleIds = new Set<string>()
+                                taskItems.forEach(item => {
+                                    if (!item.zone_id) return
+                                    // Tìm groupedZone cha (Aisle) của item này
+                                    let currId: string | null = item.zone_id
+                                    while (currId) {
+                                        const cid = currId // Local copy for type safety
+                                        const gz = groupedZones.find(z => z.id === cid || virtualToRealMap.get(z.id)?.includes(cid))
+                                        if (gz) {
+                                            const parent = groupedZones.find(p => p.id === gz.parent_id)
+                                            if (parent && !parent.parent_id) { activeAisleIds.add(gz.id); break }
+                                            currId = gz.parent_id
+                                        } else { break }
+                                    }
+                                })
+                                return Array.from(activeAisleIds).sort((a, b) => {
+                                    const na = groupedZones.find(z => z.id === a)?.name || ''
+                                    const nb = groupedZones.find(z => z.id === b)?.name || ''
+                                    return na.localeCompare(nb, undefined, { numeric: true })
+                                }).map(id => {
+                                    const z = groupedZones.find(x => x.id === id)
+                                    const count = taskItems.filter(i => {
+                                        let cId: string | null = i.zone_id
+                                        while (cId) {
+                                            const cid = cId
+                                            if (cid === id || virtualToRealMap.get(id)?.includes(cid)) return true
+                                            cId = zones.find(zx => zx.id === cid)?.parent_id || null
+                                        }
+                                        return false
+                                    }).length
+                                    return (
+                                        <button 
+                                            key={id} 
+                                            onClick={() => setDetailSelection({ ...detailSelection, aisleId: id, step: 'slot' })}
+                                            className="p-5 bg-white rounded-3xl border border-gray-100 shadow-sm active:scale-95 text-center flex flex-col items-center gap-1"
+                                        >
+                                            <span className="font-black uppercase text-sm text-gray-900">{z?.name}</span>
+                                            <span className="text-[10px] font-bold text-blue-500">{count} mặt hàng</span>
+                                        </button>
+                                    )
+                                })
+                            })()}
+                        </div>
+                    )}
 
-                                            {!isPending && (
-                                                <div className="mt-2 flex items-center gap-2">
-                                                    <div className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${isExported ? 'bg-green-200 text-green-800' : 'bg-blue-200 text-blue-800'}`}>
-                                                        {isExported ? 'Đã xuất' : isHall ? 'Hạ sảnh' : 'Đổi vị trí'}
-                                                    </div>
-                                                    <div className="text-[10px] font-bold text-gray-400">
-                                                        → {item.current_position_name}
-                                                    </div>
+                    {detailSelection.step === 'slot' && (
+                        <div className="grid grid-cols-2 gap-3">
+                            {(() => {
+                                const activeSlotIds = new Set<string>()
+                                taskItems.forEach(item => {
+                                    if (!item.zone_id || !detailSelection.aisleId) return
+                                    let cId: string | null = item.zone_id
+                                    while (cId) {
+                                        const cid = cId
+                                        const gz = groupedZones.find(z => z.id === cid || virtualToRealMap.get(z.id)?.includes(cid))
+                                        if (gz && gz.parent_id === detailSelection.aisleId) { activeSlotIds.add(gz.id); break }
+                                        cId = zones.find(zx => zx.id === cid)?.parent_id || null
+                                    }
+                                })
+                                return Array.from(activeSlotIds).sort((a, b) => {
+                                    const na = groupedZones.find(z => z.id === a)?.name || ''
+                                    const nb = groupedZones.find(z => z.id === b)?.name || ''
+                                    return na.localeCompare(nb, undefined, { numeric: true })
+                                }).map(id => {
+                                    const z = groupedZones.find(x => x.id === id)
+                                    const count = taskItems.filter(i => {
+                                        let cId: string | null = i.zone_id
+                                        while (cId) {
+                                            const cid = cId
+                                            if (cid === id || virtualToRealMap.get(id)?.includes(cid)) return true
+                                            cId = zones.find(zx => zx.id === cid)?.parent_id || null
+                                        }
+                                        return false
+                                    }).length
+                                    return (
+                                        <button 
+                                            key={id} 
+                                            onClick={() => setDetailSelection({ ...detailSelection, slotId: id, step: 'items' })}
+                                            className="p-5 bg-white rounded-3xl border border-gray-100 shadow-sm active:scale-95 text-center flex flex-col items-center gap-1"
+                                        >
+                                            <span className="font-black uppercase text-sm text-gray-900">{z?.name}</span>
+                                            <span className="text-[10px] font-bold text-blue-500">{count} mặt hàng</span>
+                                        </button>
+                                    )
+                                })
+                            })()}
+                            <button onClick={() => setDetailSelection({ ...detailSelection, step: 'aisle', aisleId: null })} className="p-5 bg-gray-50 rounded-3xl border border-dashed border-gray-300 text-gray-400 text-center font-bold uppercase text-xs">
+                                Quay lại
+                            </button>
+                        </div>
+                    )}
+
+                    {detailSelection.step === 'items' && (
+                        <div className="flex flex-col gap-3 pb-24">
+                            <div className="flex justify-between items-center px-1 mb-1">
+                                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                                    {selectedDetailItemIds.size > 0 ? `Đã chọn ${selectedDetailItemIds.size}` : 'Chọn các pallet cần hạ'}
+                                </div>
+                                <button 
+                                    onClick={() => {
+                                        const currentItems = taskItems.filter(i => {
+                                            if (!detailSelection.slotId) return false
+                                            let cId: string | null = i.zone_id
+                                            while (cId) {
+                                                const cid = cId
+                                                if (cid === detailSelection.slotId || virtualToRealMap.get(detailSelection.slotId)?.includes(cid)) return true
+                                                cId = zones.find(zx => zx.id === cid)?.parent_id || null
+                                            }
+                                            return false
+                                        })
+                                        const allSelected = currentItems.every(i => selectedDetailItemIds.has(i.id))
+                                        const next = new Set(selectedDetailItemIds)
+                                        currentItems.forEach(i => allSelected ? next.delete(i.id) : next.add(i.id))
+                                        setSelectedDetailItemIds(next)
+                                    }}
+                                    className="text-[10px] font-black text-blue-600 uppercase"
+                                >
+                                    {taskItems.filter(i => {
+                                        if (!detailSelection.slotId) return false
+                                        let cId: string | null = i.zone_id
+                                        while (cId) {
+                                            const cid = cId
+                                            if (cid === detailSelection.slotId || virtualToRealMap.get(detailSelection.slotId)?.includes(cid)) return true
+                                            cId = zones.find(zx => zx.id === cid)?.parent_id || null
+                                        }
+                                        return false
+                                    }).every(i => selectedDetailItemIds.has(i.id)) ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                                </button>
+                            </div>
+
+                            {taskItems
+                                .filter(i => {
+                                    if (!detailSelection.slotId) return false
+                                    let cId: string | null = i.zone_id
+                                    while (cId) {
+                                        const cid = cId
+                                        if (cid === detailSelection.slotId || virtualToRealMap.get(detailSelection.slotId)?.includes(cid)) return true
+                                        cId = zones.find(zx => zx.id === cid)?.parent_id || null
+                                    }
+                                    return false
+                                })
+                                .map(item => {
+                                    const isPending = item.display_status === 'Pending'
+                                    const isExported = item.display_status === 'Exported'
+                                    const isHall = item.display_status === 'Moved to Hall'
+                                    const isProcessing = processingId === item.id
+                                    const isSelected = selectedDetailItemIds.has(item.id)
+
+                                    return (
+                                        <div 
+                                            key={item.id} 
+                                            onClick={() => {
+                                                if (!isPending) return
+                                                const next = new Set(selectedDetailItemIds)
+                                                isSelected ? next.delete(item.id) : next.add(item.id)
+                                                setSelectedDetailItemIds(next)
+                                            }}
+                                            className={`p-4 rounded-3xl border transition-all relative overflow-hidden ${
+                                                isExported ? 'bg-green-50 border-green-100 opacity-60' : 
+                                                isSelected ? 'bg-blue-600 border-blue-700 shadow-xl scale-[1.02]' :
+                                                isPending ? 'bg-white border-gray-100 shadow-sm' : 
+                                                'bg-blue-50 border-blue-100'
+                                            }`}
+                                        >
+                                            {isSelected && (
+                                                <div className="absolute top-0 right-0 p-2">
+                                                    <CheckCircle2 size={24} className="text-white" />
                                                 </div>
                                             )}
+                                            
+                                            <div className="flex gap-4 w-full">
+                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
+                                                    isSelected ? 'bg-white/20 text-white' :
+                                                    isExported ? 'bg-green-100 text-green-600' : 
+                                                    isPending ? 'bg-gray-100 text-gray-400' : 
+                                                    'bg-blue-100 text-blue-600'
+                                                }`}>
+                                                    {isExported ? <CheckCircle size={22} /> : isPending ? <ArrowDownToLine size={22} /> : <CheckCircle2 size={22} />}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <div className={`text-xs font-black uppercase tracking-widest ${isSelected ? 'text-white/70' : 'text-gray-400'}`}>LOT: {item.lot_code}</div>
+                                                        <div className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border ${
+                                                            isSelected ? 'bg-white/20 border-white/30' : 'bg-gray-100 border-gray-200'
+                                                        }`}>
+                                                            <MapPin size={8} className={isSelected ? 'text-white' : 'text-gray-400'} />
+                                                            <span className={`text-[10px] font-black font-mono ${isSelected ? 'text-white' : 'text-gray-600'}`}>{item.position_name}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className={`text-[12px] font-black leading-tight mb-1 ${isSelected ? 'text-white' : 'text-gray-900'}`}>{item.product_name}</div>
+                                                    <div className={`text-[9px] font-bold uppercase tracking-tighter ${isSelected ? 'text-white/80' : 'text-blue-500'}`}>{item.sku}</div>
+
+                                                    {!isPending && (
+                                                        <div className="mt-2 flex items-center gap-2">
+                                                            <div className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${isExported ? 'bg-green-200 text-green-800' : 'bg-blue-200 text-blue-800'}`}>
+                                                                {isExported ? 'Đã xuất' : isHall ? 'Hạ sảnh' : 'Đổi vị trí'}
+                                                            </div>
+                                                            <div className="text-[10px] font-bold text-gray-400">
+                                                                → {item.current_position_name}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className={`mt-4 flex items-center justify-between pt-3 border-t ${isSelected ? 'border-white/20' : 'border-gray-50'}`}>
+                                                <div className="flex flex-col">
+                                                    <div className={`text-sm font-black leading-none ${isSelected ? 'text-white' : 'text-gray-900'}`}>{item.quantity}</div>
+                                                    <div className={`text-[10px] font-bold uppercase mt-1 tracking-widest ${isSelected ? 'text-white/60' : 'text-gray-400'}`}>{item.unit}</div>
+                                                </div>
+                                                
+                                                {isPending && activeTab === 'running' && !isSelected && (
+                                                    <button 
+                                                        onClick={(e) => {
+                                                            e.stopPropagation()
+                                                            handleCheckOff(item)
+                                                        }}
+                                                        disabled={loading}
+                                                        className="px-4 py-2 bg-blue-600 text-white rounded-xl text-[11px] font-black uppercase shadow-lg shadow-blue-100 active:scale-95 flex items-center gap-2"
+                                                    >
+                                                        {isProcessing ? <Loader2 size={12} className="animate-spin" /> : <Plus size={14} />}
+                                                        Hạ sảnh
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div className="flex flex-col items-end gap-2">
-                                        <div className="text-right">
-                                            <div className="text-base font-black text-gray-900 leading-none">{item.quantity}</div>
-                                            <div className="text-[10px] font-bold text-gray-400 mt-1 uppercase tracking-widest">{item.unit}</div>
-                                        </div>
-                                        
-                                        {isPending && activeTab === 'running' && (
-                                            <button 
-                                                onClick={() => handleCheckOff(item)}
-                                                disabled={loading}
-                                                className="mt-1 bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-black shadow-lg shadow-blue-100 active:scale-95 transition-all flex items-center gap-2"
-                                            >
-                                                {isProcessing ? <Loader2 size={12} className="animate-spin" /> : <Plus size={14} />}
-                                                Hạ sảnh
-                                            </button>
-                                        )}
-                                    </div>
+                                    )
+                                })}
+                            
+                            {/* Sticky Action Bar for Detail Multi-Select */}
+                            {selectedDetailItemIds.size > 0 && (
+                                <div className="fixed bottom-24 left-4 right-4 z-50">
+                                    <button 
+                                        onClick={() => {
+                                            const itemsToProcess = taskItems.filter(i => selectedDetailItemIds.has(i.id))
+                                            setPendingItems(itemsToProcess)
+                                            setIsSelectHallOpen(true)
+                                        }}
+                                        disabled={loading}
+                                        className="w-full bg-blue-700 text-white p-5 rounded-3xl font-black uppercase tracking-widest shadow-2xl shadow-blue-200 flex items-center justify-center gap-3 active:scale-[0.98] transition-all"
+                                    >
+                                        <ArrowDownToLine size={20} />
+                                        Hạ sảnh {selectedDetailItemIds.size} mặt hàng
+                                    </button>
                                 </div>
-                            </div>
-                        )
-                    })}
+                            )}
+
+                            <button onClick={() => setDetailSelection({ ...detailSelection, step: 'slot', slotId: null })} className="p-5 bg-gray-50 rounded-3xl border border-dashed border-gray-300 text-gray-400 text-center font-bold uppercase text-xs mt-2">
+                                Quay lại chọn Ô
+                            </button>
+                        </div>
+                    )}
                 </div>
-            </div>
 
             <SelectHallModal isOpen={isSelectHallOpen} onClose={() => setIsSelectHallOpen(false)} onConfirm={handleMoveToHall} zones={zones} />
         </div>
