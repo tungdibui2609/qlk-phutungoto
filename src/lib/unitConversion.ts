@@ -34,18 +34,20 @@ export const isKg = (name: string | null | undefined): boolean => {
  */
 export const formatUnitWeight = (unitName: string | null | undefined, weight: number): string => {
     if (!unitName) return '';
-    const norm = normalizeUnit(unitName);
-    const hasWeightInName = unitName.includes('(') && (unitName.toLowerCase().includes('kg') || unitName.toLowerCase().includes('g'));
     
-    if (hasWeightInName) return unitName;
+    // Strip any existing weight suffix to get the clean base name
+    // e.g., "Thùng (20 KG)" -> "Thùng"
+    const baseUnitName = unitName.split('(')[0].trim();
+    const normBase = normalizeUnit(baseUnitName);
     
     // Avoid redundant (1kg) for Kg unit
-    if (isKg(norm)) return unitName;
+    if (isKg(normBase)) return baseUnitName;
     
     if (weight > 0) {
-        return `${unitName} (${weight}kg)`;
+        // Standard format: "Name (10kg)" - no space, lowercase kg
+        return `${baseUnitName} (${weight}kg)`;
     }
-    return unitName;
+    return baseUnitName;
 };
 
 export const extractWeightFromName = (name: string | null | undefined): number | null => {

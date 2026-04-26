@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js'
+import { formatUnitWeight, extractWeightFromName } from '@/lib/unitConversion'
 
 export interface LotServiceParams {
     supabase: SupabaseClient
@@ -228,7 +229,7 @@ export const lotService = {
             if (result.remainingQtyInteger > 0) {
                 const { error: updError } = await supabase.from('lot_items').update({
                     quantity: result.remainingQtyInteger,
-                    unit: result.remainingUnitInteger
+                    unit: formatUnitWeight(result.remainingUnitInteger, extractWeightFromName(result.remainingUnitInteger) || 0)
                 }).eq('id', item.id)
                 if (updError) throw updError
             } else {
@@ -241,14 +242,14 @@ export const lotService = {
                 lot_id: lotId,
                 product_id: item.product_id,
                 quantity: result.remainingQtyFractional,
-                unit: result.remainingUnitFractional
+                unit: formatUnitWeight(result.remainingUnitFractional, extractWeightFromName(result.remainingUnitFractional) || 0)
             })
             if (insError) throw insError
         } else {
             // Simple update for integer remaining
             const { error: updError } = await supabase.from('lot_items').update({
                 quantity: result.remainingQtyInteger,
-                unit: result.remainingUnitInteger
+                unit: formatUnitWeight(result.remainingUnitInteger, extractWeightFromName(result.remainingUnitInteger) || 0)
             }).eq('id', item.id)
             if (updError) throw updError
         }

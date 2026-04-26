@@ -192,51 +192,58 @@ export default function HallSummaryPage() {
                     const hallId = posToHallMap[p.id]
                     if (!hallId) return
                     const wId = tempHallToWMap[hallId]
-
                     const lot = p.lot_id ? lotInfo[p.lot_id] : null
-                    if (!lot || !lot.items) return
+                    if (!lot || !lot.items || lot.items.length === 0) return
 
-                    lot.items.forEach((it: any) => {
-                        const tag = lot.tags?.[0] || ''
-                        const groupKey = `${it.sku}|${it.quantity}|${it.unit}|${tag}`;
-                        
-                        const itemData = {
-                            groupKey,
-                            sku: it.sku,
-                            name: it.product_name,
-                            quantity: it.quantity,
-                            unit: it.unit,
-                            tag,
-                            count: 1
-                        }
+                    // Sort items by SKU to ensure consistent key for identical lots
+                    const sortedItems = [...lot.items].sort((a, b) => (a.sku || '').trim().localeCompare((b.sku || '').trim()))
+                    
+                    // Create a composite key based on all items in the lot + tags
+                    // Normalize by removing all internal whitespaces for key generation
+                    const itemsKey = sortedItems.map(it => {
+                        const s = (it.sku || '').replace(/\s+/g, '').toUpperCase();
+                        const q = Number(it.quantity || 0);
+                        const u = (it.unit || '').replace(/\s+/g, '').toUpperCase();
+                        return `${s}:${q}:${u}`;
+                    }).join('|')
+                    
+                    // Normalize tags: sort and join them, also remove internal spaces for comparison
+                    const tag = (lot.tags || []).map((t: string) => t.trim()).filter(Boolean).sort().join(',')
+                    const groupKey = `${itemsKey}#${tag.replace(/\s+/g, '').toUpperCase()}`
 
-                        // Grand Total Merge
-                        if (!grandTotalGroups[groupKey]) grandTotalGroups[groupKey] = {...itemData}
-                        else grandTotalGroups[groupKey].count++
-                        
-                        // Per Hall Merge
-                        if (!hallGroups[hallId][groupKey]) hallGroups[hallId][groupKey] = {...itemData}
-                        else hallGroups[hallId][groupKey].count++
-                        
-                        // Per Warehouse Merge
-                        if (wId) {
-                            if (!warehouseGroups[wId][groupKey]) warehouseGroups[wId][groupKey] = {...itemData}
-                            else warehouseGroups[wId][groupKey].count++
-                        }
-                    })
+                    const itemData = {
+                        groupKey,
+                        items: sortedItems,
+                        tag: tag, // Use the normalized joined tags
+                        count: 1
+                    }
+
+                    // Grand Total Merge
+                    if (!grandTotalGroups[groupKey]) grandTotalGroups[groupKey] = { ...itemData }
+                    else grandTotalGroups[groupKey].count++
+
+                    // Per Hall Merge
+                    if (!hallGroups[hallId][groupKey]) hallGroups[hallId][groupKey] = { ...itemData }
+                    else hallGroups[hallId][groupKey].count++
+
+                    // Per Warehouse Merge
+                    if (wId) {
+                        if (!warehouseGroups[wId][groupKey]) warehouseGroups[wId][groupKey] = { ...itemData }
+                        else warehouseGroups[wId][groupKey].count++
+                    }
                 })
                 
-                setGrandTotalSummary(Object.values(grandTotalGroups).sort((a: any, b: any) => a.sku.localeCompare(b.sku)))
+                setGrandTotalSummary(Object.values(grandTotalGroups).sort((a: any, b: any) => (a.items[0]?.sku || '').localeCompare(b.items[0]?.sku || '')))
                 
                 const finalWhSummaries: Record<string, any[]> = {}
                 warehouseZones.forEach(w => {
-                    finalWhSummaries[w.id] = Object.values(warehouseGroups[w.id]).sort((a: any, b: any) => a.sku.localeCompare(b.sku))
+                    finalWhSummaries[w.id] = Object.values(warehouseGroups[w.id]).sort((a: any, b: any) => (a.items[0]?.sku || '').localeCompare(b.items[0]?.sku || ''))
                 })
                 setWarehouseSummaries(finalWhSummaries)
                 
                 const finalHallSummaries: Record<string, any[]> = {}
                 hallZones.forEach(h => {
-                    finalHallSummaries[h.id] = Object.values(hallGroups[h.id]).sort((a: any, b: any) => a.sku.localeCompare(b.sku))
+                    finalHallSummaries[h.id] = Object.values(hallGroups[h.id]).sort((a: any, b: any) => (a.items[0]?.sku || '').localeCompare(b.items[0]?.sku || ''))
                 })
                 setHallSummaries(finalHallSummaries)
 
@@ -265,11 +272,14 @@ export default function HallSummaryPage() {
     const filteredSummary = React.useMemo(() => {
         if (!searchTerm) return currentList;
         const normalized = normalizeSearchString(searchTerm);
-        return currentList.filter((item: any) => {
+        return currentList.filter((group: any) => {
+            const matchItems = group.items.some((it: any) => 
+                normalizeSearchString(it.sku || '').includes(normalized) ||
+                normalizeSearchString(it.name || '').includes(normalized)
+            );
             return (
-                normalizeSearchString(item.sku || '').includes(normalized) ||
-                normalizeSearchString(item.name || '').includes(normalized) ||
-                normalizeSearchString(item.tag || '').includes(normalized)
+                matchItems ||
+                normalizeSearchString(group.tag || '').includes(normalized)
             );
         });
     }, [currentList, searchTerm]);
@@ -331,19 +341,21 @@ export default function HallSummaryPage() {
             })
             currentRow++
 
-            data.forEach((item: any, idx: number) => {
+            data.forEach((group: any, idx: number) => {
                 const row = worksheet.getRow(currentRow)
                 row.getCell(1).value = idx + 1
-                row.getCell(2).value = item.sku
-                row.getCell(3).value = item.name || ''
-                row.getCell(4).value = item.tag || ''
-                row.getCell(5).value = item.unit || ''
-                row.getCell(6).value = item.quantity
-                row.getCell(7).value = item.count
+                row.getCell(2).value = group.items.map((it: any) => it.sku).join('\n')
+                row.getCell(3).value = group.items.map((it: any) => it.name || '').join('\n')
+                row.getCell(4).value = group.tag || ''
+                row.getCell(5).value = group.items.map((it: any) => it.unit || '').join('\n')
+                row.getCell(6).value = group.items.map((it: any) => it.quantity).join('\n')
+                row.getCell(7).value = group.count
 
                 for (let i = 1; i <= 7; i++) {
                     const cell = row.getCell(i)
                     cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                    cell.alignment = { vertical: 'middle', wrapText: true }
+                    
                     if (typeof cell.value === 'number') {
                         if (Math.floor(cell.value) === cell.value) {
                             cell.numFmt = '#,##0'
@@ -352,8 +364,8 @@ export default function HallSummaryPage() {
                         }
                     }
                 }
-                row.getCell(6).alignment = { horizontal: 'right' }
-                row.getCell(7).alignment = { horizontal: 'right' }
+                row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true }
+                row.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' }
                 
                 currentRow++
             })
@@ -588,7 +600,7 @@ export default function HallSummaryPage() {
                                         {/* Top Decoration Bar */}
                                         <div className={`absolute top-0 left-0 right-0 h-1.5 ${styles.topLine}`} />
 
-                                        {/* Header: SKU, Status & Action */}
+                                        {/* Header: First Item info (Primary) & Action */}
                                         <div className="flex justify-between items-start">
                                             <div className="flex items-center gap-4">
                                                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all border ${styles.iconBox}`}>
@@ -596,7 +608,9 @@ export default function HallSummaryPage() {
                                                 </div>
                                                 <div>
                                                     <div className="flex items-center gap-2 mb-1">
-                                                        <h4 className="text-lg font-black text-stone-900 tracking-tight leading-none">{group.sku}</h4>
+                                                        <h4 className="text-lg font-black text-stone-900 tracking-tight leading-none">
+                                                            {group.items.length === 1 ? group.items[0].sku : `${group.items.length} SẢN PHẨM`}
+                                                        </h4>
                                                     </div>
                                                     <div className="flex flex-col gap-1">
                                                         {group.tag && (
@@ -604,21 +618,42 @@ export default function HallSummaryPage() {
                                                                 {group.tag}
                                                             </span>
                                                         )}
-                                                        <p className="text-[9px] font-bold text-stone-300 uppercase tracking-widest leading-none">MÃ SẢN PHẨM • SKU</p>
+                                                        <p className="text-[9px] font-bold text-stone-300 uppercase tracking-widest leading-none">
+                                                            {group.items.length === 1 ? 'MÃ SẢN PHẨM • SKU' : 'KIỆN HÀNG HỖN HỢP'}
+                                                        </p>
                                                     </div>
                                                 </div>
                                             </div>
                                             <div className="text-right">
-                                                <div className={`text-2xl font-black leading-none ${styles.quantityText}`}>{group.quantity}</div>
-                                                <div className="text-[10px] font-bold text-stone-400 mt-1 uppercase tracking-wider">{group.unit || 'Đơn vị'}</div>
+                                                <div className={`text-2xl font-black leading-none ${styles.quantityText}`}>
+                                                    {group.items.length === 1 ? group.items[0].quantity : group.items.reduce((acc: number, it: any) => acc + (it.quantity || 0), 0)}
+                                                </div>
+                                                <div className="text-[10px] font-bold text-stone-400 mt-1 uppercase tracking-wider">
+                                                    {group.items.length === 1 ? (group.items[0].unit || 'Đơn vị') : 'Tổng SL'}
+                                                </div>
                                             </div>
                                         </div>
 
-                                        {/* Product Name */}
-                                        <div className="bg-stone-50 rounded-xl p-3 border border-stone-100">
-                                            <p className="text-[13px] font-bold text-stone-700 leading-snug line-clamp-2">
-                                                {group.name || 'Không có tên'}
-                                            </p>
+                                        {/* Product List */}
+                                        <div className="space-y-2">
+                                            {group.items.map((it: any, i: number) => (
+                                                <div key={i} className="bg-stone-50 rounded-xl p-3 border border-stone-100 flex justify-between items-center gap-3">
+                                                    <div className="flex-1 min-w-0">
+                                                        {group.items.length > 1 && (
+                                                            <p className="text-[10px] font-bold text-stone-400 uppercase mb-0.5">{it.sku}</p>
+                                                        )}
+                                                        <p className="text-[13px] font-bold text-stone-700 leading-snug line-clamp-2">
+                                                            {it.name || 'Không có tên'}
+                                                        </p>
+                                                    </div>
+                                                    {group.items.length > 1 && (
+                                                        <div className="text-right shrink-0">
+                                                            <p className="text-sm font-black text-stone-800">{it.quantity}</p>
+                                                            <p className="text-[9px] font-bold text-stone-400 uppercase">{it.unit}</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
                                         </div>
 
                                         {/* Footer Stats */}

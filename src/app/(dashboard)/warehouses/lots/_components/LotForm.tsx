@@ -738,20 +738,26 @@ export function LotForm({
             const existingIds = existingItems.map((i: any) => i.id)
             const existingIdsSet = new Set(existingIds)
 
-            const itemsToInsert = validItems.filter((i: any) => !i.id).map((item: any) => ({
-                lot_id: lotId,
-                product_id: item.productId,
-                quantity: Number(Number(item.quantity).toFixed(6)),
-                unit: item.unit
-            }))
+            const itemsToInsert = validItems.filter((i: any) => !i.id).map((item: any) => {
+                const weight = extractWeightFromName(item.unit) || 0;
+                return {
+                    lot_id: lotId,
+                    product_id: item.productId,
+                    quantity: Number(Number(item.quantity).toFixed(6)),
+                    unit: formatUnitWeight(item.unit, weight)
+                };
+            })
 
-            const itemsToUpdate = validItems.filter((i: any) => i.id).map((item: any) => ({
-                id: item.id!,
-                lot_id: lotId,
-                product_id: item.productId,
-                quantity: Number(Number(item.quantity).toFixed(6)),
-                unit: item.unit
-            }))
+            const itemsToUpdate = validItems.filter((i: any) => i.id).map((item: any) => {
+                const weight = extractWeightFromName(item.unit) || 0;
+                return {
+                    id: item.id!,
+                    lot_id: lotId,
+                    product_id: item.productId,
+                    quantity: Number(Number(item.quantity).toFixed(6)),
+                    unit: formatUnitWeight(item.unit, weight)
+                };
+            })
 
             const newIds = validItems.filter((i: any) => i.id).map((i: any) => i.id!)
             const idsToDelete = existingIds.filter((id: any) => !newIds.includes(id))

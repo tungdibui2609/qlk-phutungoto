@@ -10,6 +10,7 @@ import { Unit, ProductUnit } from '@/app/(dashboard)/warehouses/lots/_hooks/useL
 import { lotService } from '@/services/warehouse/lotService'
 import { parseQuantity, formatQuantityFull } from '@/lib/numberUtils'
 import { QuantityInput } from '@/components/ui/QuantityInput'
+import { formatUnitWeight, extractWeightFromName } from '@/lib/unitConversion'
 
 interface LotSplitModalProps {
     lot: Lot
@@ -239,7 +240,7 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                             lot_id: newLot.id,
                             product_id: item.product_id,
                             quantity: selectedQty,
-                            unit: selectedUnit
+                            unit: formatUnitWeight(selectedUnit, extractWeightFromName(selectedUnit) || 0)
                         })
                         .select()
                         .single()
