@@ -611,9 +611,11 @@ function WarehouseMapContent() {
         }
     }
 
-    async function handleAutoAssignWarehouse(warehouseId: string) {
+    async function handleAutoAssignWarehouse(params: { warehouseId: string; hallId: string | null }) {
         setIsAutoAssignModalOpen(false)
         if (selectedPositionIds.size === 0) return
+
+        const { warehouseId, hallId } = params
 
         // 1. Get unique lots from selected positions
         const lotIdsToMove = new Set<string>()
@@ -626,33 +628,46 @@ function WarehouseMapContent() {
             return
         }
 
-        // 2. Find all Halls under the selected Warehouse (Root Zone)
-        // Get all descendant zones first
-        const allDescendants = new Set<string>([warehouseId])
-        let added = true
-        while (added) {
-            added = false
-            for (const z of zones) {
-                if (z.parent_id && allDescendants.has(z.parent_id) && !allDescendants.has(z.id)) {
-                    allDescendants.add(z.id)
-                    added = true
+        // 2. Build list of target halls
+        let targetHalls: any[] = []
+
+        if (hallId) {
+            // User selected a specific hall
+            const hall = zones.find(z => z.id === hallId && (z as any).is_hall)
+            if (!hall) {
+                showToast('Không tìm thấy Sảnh đã chọn.', 'error')
+                return
+            }
+            targetHalls = [hall]
+        } else {
+            // Auto: Find all Halls under the selected Warehouse (Root Zone)
+            // Get all descendant zones first
+            const allDescendants = new Set<string>([warehouseId])
+            let added = true
+            while (added) {
+                added = false
+                for (const z of zones) {
+                    if (z.parent_id && allDescendants.has(z.parent_id) && !allDescendants.has(z.id)) {
+                        allDescendants.add(z.id)
+                        added = true
+                    }
                 }
             }
+
+            // Filter Halls among descendants and sort by name
+            targetHalls = zones
+                .filter(z => allDescendants.has(z.id) && (z as any).is_hall)
+                .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }))
         }
 
-        // Filter Halls among descendants and sort by name
-        const warehouseHalls = zones
-            .filter(z => allDescendants.has(z.id) && (z as any).is_hall)
-            .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }))
-
-        if (warehouseHalls.length === 0) {
+        if (targetHalls.length === 0) {
             showToast('Kho này chưa được cấu hình Sảnh.', 'error')
             return
         }
 
         // 3. Collect empty positions from each hall sequentially
         let availablePositions: any[] = []
-        for (const hall of warehouseHalls) {
+        for (const hall of targetHalls) {
             // Find all descendant zones of this hall
             const hallZoneIds = new Set<string>([hall.id])
             let hAdded = true
