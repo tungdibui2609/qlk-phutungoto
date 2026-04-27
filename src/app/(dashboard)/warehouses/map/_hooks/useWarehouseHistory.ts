@@ -81,15 +81,23 @@ export function useWarehouseHistory() {
             const { data, error } = await (supabase as any).rpc('capture_daily_position_snapshot')
 
             if (error) {
-                const errorMsg = error?.message || error?.details || error?.hint
-                    || (typeof error === 'object' ? JSON.stringify(error) : String(error))
-                console.error('Supabase RPC error details:', error)
-                throw new Error(errorMsg || 'Không thể chụp snapshot - lỗi RPC không xác định')
+                // PostgrestError may have non-enumerable properties → JSON.stringify yields {}
+                const code = (error as any).code
+                const message = (error as any).message
+                const details = (error as any).details
+                const hint = (error as any).hint
+
+                const errorMsg = code
+                    ? `[${code}] ${message || ''}${details ? ' - ' + details : ''}${hint ? ' (Hint: ' + hint + ')' : ''}`
+                    : (message || details || hint || JSON.stringify(error))
+                console.error('Supabase RPC error details:', { code, message, details, hint, raw: error })
+                throw new Error(errorMsg || 'Không thể chụp snapshot - lỗi RPC không xác định. Có thể migration chưa được áp dụng.')
             }
         } catch (e: any) {
             const msg = e?.message || String(e) || 'Lỗi không xác định'
             console.error('Error capturing snapshot:', msg)
-            throw new Error(msg)
+            // Re-throw with proper message
+            throw e instanceof Error ? e : new Error(msg)
         } finally {
             setCaptureLoading(false)
         }
