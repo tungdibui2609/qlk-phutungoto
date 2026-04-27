@@ -351,8 +351,9 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                 stats[key].lotCount += 1;
                 processedPids.add(item.product_id);
 
-                // Tích lũy vào productions
-                const qtyForProd = currentQty + itemMergedOutQty;
+                // Tích lũy vào productions - CHỈ tính hàng MỚI thực tế của ngày đó (không tính hàng gộp vào từ nơi khác)
+                const actualNewQty = isMergedIn ? 0 : currentQty;
+                const qtyForProd = actualNewQty + itemMergedOutQty;
                 if (qtyForProd > 0) {
                     stats[key].productions[prodLabel] = (stats[key].productions[prodLabel] || 0) + qtyForProd;
                 }
