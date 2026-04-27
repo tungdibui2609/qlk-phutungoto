@@ -78,26 +78,39 @@ export function useWarehouseHistory() {
     const captureSnapshot = useCallback(async (): Promise<void> => {
         setCaptureLoading(true)
         try {
-            const { data, error } = await (supabase as any).rpc('capture_daily_position_snapshot')
+            const { data, error, status, statusText } = await (supabase as any).rpc('capture_daily_position_snapshot')
 
             if (error) {
-                // PostgrestError may have non-enumerable properties → JSON.stringify yields {}
-                const code = (error as any).code
-                const message = (error as any).message
-                const details = (error as any).details
-                const hint = (error as any).hint
+                // Log đầy đủ thông tin lỗi để debug
+                const allKeys = Reflect.ownKeys(error)
+                const props: Record<string, unknown> = {}
+                for (const k of allKeys) {
+                    try { props[String(k)] = (error as any)[k] } catch { /* ignore */ }
+                }
+                console.error('Supabase RPC error (full):', {
+                    status,
+                    statusText,
+                    keys: allKeys,
+                    props,
+                    enumerable: Object.keys(error),
+                    raw: error,
+                    constructorName: error?.constructor?.name,
+                    toString: String(error),
+                })
 
-                const errorMsg = code
-                    ? `[${code}] ${message || ''}${details ? ' - ' + details : ''}${hint ? ' (Hint: ' + hint + ')' : ''}`
-                    : (message || details || hint || JSON.stringify(error))
-                console.error('Supabase RPC error details:', { code, message, details, hint, raw: error })
-                throw new Error(errorMsg || 'Không thể chụp snapshot - lỗi RPC không xác định. Có thể migration chưa được áp dụng.')
+                const msg = (error as any).message || String(error)
+                if (status === 404) {
+                    throw new Error('Hàm RPC capture_daily_position_snapshot chưa tồn tại. Vui lòng chạy migration trong Supabase SQL Editor.')
+                }
+                throw new Error(msg ? `Supabase RPC [${status || '?'}]: ${msg}` : `Lỗi RPC không xác định (HTTP ${status || '?'})`)
             }
         } catch (e: any) {
-            const msg = e?.message || String(e) || 'Lỗi không xác định'
-            console.error('Error capturing snapshot:', msg)
-            // Re-throw with proper message
-            throw e instanceof Error ? e : new Error(msg)
+            if (e instanceof Error && e.message) {
+                console.error('Error capturing snapshot:', e.message)
+                throw e
+            }
+            console.error('Error capturing snapshot:', e)
+            throw new Error('Không thể chụp snapshot - lỗi không xác định.')
         } finally {
             setCaptureLoading(false)
         }
