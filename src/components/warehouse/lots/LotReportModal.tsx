@@ -294,7 +294,8 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
             mergedInQty: number,
             mergedOutQty: number,
             unit: string, 
-            lotCount: number 
+            lotCount: number,
+            productions: Record<string, number>
         }> = {}
         
         reportDataInward.forEach(lot => {
@@ -315,9 +316,15 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                         mergedInQty: 0,
                         mergedOutQty: 0,
                         unit: unit,
-                        lotCount: 0
+                        lotCount: 0,
+                        productions: {}
                     }
                 }
+
+                // Lấy nhãn lệnh sản xuất (Mã | Tên)
+                const prodCode = lot.productions?.code || lot.production_code || 'NO_CODE'
+                const prodName = lot.productions?.name || ''
+                const prodLabel = prodName ? `${prodCode} | ${prodName}` : prodCode
                 
                 // Phân tích nguồn gốc item
                 const hist = lot.metadata?.system_history?.item_history?.[item.id];
@@ -343,6 +350,12 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                 stats[key].totalQty += (currentQty + itemMergedOutQty);
                 stats[key].lotCount += 1;
                 processedPids.add(item.product_id);
+
+                // Tích lũy vào productions
+                const qtyForProd = currentQty + itemMergedOutQty;
+                if (qtyForProd > 0) {
+                    stats[key].productions[prodLabel] = (stats[key].productions[prodLabel] || 0) + qtyForProd;
+                }
             })
 
             // 2. Xử lý hàng đã gộp hết đi
@@ -366,14 +379,20 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                 mergedInQty: 0,
                                 mergedOutQty: 0,
                                 unit: unit,
-                                lotCount: 0
+                                lotCount: 0,
+                                productions: {}
                             }
                         }
+
+                        const prodCode = lot.productions?.code || lot.production_code || 'NO_CODE'
+                        const prodName = lot.productions?.name || ''
+                        const prodLabel = prodName ? `${prodCode} | ${prodName}` : prodCode
                         
                         stats[key].newInQty += totalMergedQty;
                         stats[key].mergedOutQty += totalMergedQty;
                         stats[key].totalQty += totalMergedQty;
                         stats[key].lotCount += 1;
+                        stats[key].productions[prodLabel] = (stats[key].productions[prodLabel] || 0) + totalMergedQty;
                         processedPids.add(pid);
                     }
                 });
@@ -392,13 +411,18 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                         mergedInQty: 0,
                         mergedOutQty: 0,
                         unit: unit,
-                        lotCount: 0
+                        lotCount: 0,
+                        productions: {}
                     }
                 }
                 const qty = Number((lot as any).quantity) || 0;
                 stats[key].newInQty += qty;
                 stats[key].totalQty += qty;
                 stats[key].lotCount += 1;
+                const prodCode = lot.productions?.code || lot.production_code || 'NO_CODE'
+                const prodName = lot.productions?.name || ''
+                const prodLabel = prodName ? `${prodCode} | ${prodName}` : prodCode
+                stats[key].productions[prodLabel] = (stats[key].productions[prodLabel] || 0) + qty;
             }
         })
         
@@ -406,7 +430,14 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
     }, [reportDataInward])
 
     const summaryOutward = useMemo(() => {
-        const stats: Record<string, { productName: string, sku: string, totalQty: number, unit: string, lotCount: number }> = {}
+        const stats: Record<string, { 
+            productName: string, 
+            sku: string, 
+            totalQty: number, 
+            unit: string, 
+            lotCount: number,
+            productions: Record<string, number>
+        }> = {}
         
         reportDataOutward.forEach(row => {
             const unit = row.unit || '-'
@@ -417,11 +448,18 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                     sku: row.product_sku,
                     totalQty: 0,
                     unit: unit,
-                    lotCount: 0
+                    lotCount: 0,
+                    productions: {}
                 }
             }
-            stats[key].totalQty += (Number(row.quantity) || 0)
+            const qty = (Number(row.quantity) || 0)
+            stats[key].totalQty += qty
             stats[key].lotCount += 1
+
+            const prodCode = row.production_code || 'NO_CODE'
+            const prodName = row.production_name || ''
+            const prodLabel = prodName ? `${prodCode} | ${prodName}` : prodCode
+            stats[key].productions[prodLabel] = (stats[key].productions[prodLabel] || 0) + qty
         })
         
         return Object.values(stats).sort((a, b) => b.totalQty - a.totalQty)
@@ -913,6 +951,32 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                 {(stat as any).newInQty > 0 && <span className="text-emerald-500">Mới: {formatQuantityFull((stat as any).newInQty)}</span>}
                                                                 {(stat as any).mergedInQty > 0 && <span className="text-blue-500">Gộp vào: {formatQuantityFull((stat as any).mergedInQty)}</span>}
                                                                 {(stat as any).mergedOutQty > 0 && <span className="text-amber-500">Gộp đi: {formatQuantityFull((stat as any).mergedOutQty)}</span>}
+                                                            </div>
+                                                        )}
+
+                                                        {/* Chi tiết theo Lệnh sản xuất */}
+                                                        {stat.productions && Object.keys(stat.productions).length > 0 && (
+                                                            <div className="mt-2 flex flex-col gap-0.5 border-t border-slate-100 dark:border-slate-800/50 pt-2">
+                                                                {Object.entries(stat.productions).map(([pLabel, pQty]) => {
+                                                                    const [pCode, pName] = pLabel.split(' | ');
+                                                                    return (
+                                                                        <div key={pLabel} className="flex items-start justify-between gap-2 border-b border-slate-50 dark:border-slate-800/30 last:border-0 py-1.5">
+                                                                            <div className="flex flex-col min-w-0">
+                                                                                <span className="text-[10px] font-black text-slate-700 dark:text-slate-300 truncate" title={pCode}>
+                                                                                    {pCode === 'NO_CODE' ? 'Không xác định' : pCode}
+                                                                                </span>
+                                                                                {pName && (
+                                                                                    <span className="text-[9px] font-bold text-slate-400 truncate leading-tight mt-0.5" title={pName}>
+                                                                                        {pName}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                            <span className={`text-[10px] font-black shrink-0 ${activeTab === 'inward' ? 'text-orange-600' : 'text-emerald-600'}`}>
+                                                                                {formatQuantityFull(pQty as number)}
+                                                                            </span>
+                                                                        </div>
+                                                                    );
+                                                                })}
                                                             </div>
                                                         )}
                                                     </div>
