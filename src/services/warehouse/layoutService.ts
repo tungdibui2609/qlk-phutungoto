@@ -45,8 +45,8 @@ export const layoutService = {
 
         try {
             await this.syncPositionsFromLayout(data as WarehouseLayout);
-        } catch (syncError) {
-            console.error('Error syncing layout positions:', syncError);
+        } catch (syncError: any) {
+            console.error('Error syncing layout positions:', syncError.message || syncError);
         }
 
         return data as WarehouseLayout;
@@ -90,6 +90,7 @@ export const layoutService = {
                     code: zoneCode,
                     name: layout.name, // Display directly as layout name
                     system_type: layout.system_type,
+                    company_id: layout.company_id,
                     level: 0
                 }]);
             if (zoneErr) {
@@ -99,7 +100,10 @@ export const layoutService = {
             zoneId = newId;
         } else {
             // Update name in case layout was renamed
-            await (supabase as any).from('zones').update({ name: layout.name }).eq('id', zoneId);
+            await (supabase as any).from('zones').update({ 
+                name: layout.name,
+                company_id: layout.company_id 
+            }).eq('id', zoneId);
         }
 
         if (codes.length === 0) return;
@@ -120,7 +124,7 @@ export const layoutService = {
                 id: crypto.randomUUID(),
                 code,
                 system_type: layout.system_type,
-                status: 'active'
+                company_id: layout.company_id,
             }));
 
             const { error: posErr } = await (supabase as any).from('positions').insert(newPosRecords);

@@ -82,17 +82,20 @@ BEGIN
     DELETE FROM public.position_history WHERE snapshot_date = target_date;
 
     -- Insert current position state for today
+    -- Note: positions use system_type, not system_code
+    -- zone_id comes from zone_positions join table
     INSERT INTO public.position_history (position_id, system_code, snapshot_date, code, lot_id, lot_code, zone_id)
     SELECT 
         p.id,
-        COALESCE(p.system_code, 'default'),
+        COALESCE(p.system_type, 'default'),
         target_date,
         p.code,
         p.lot_id,
         l.code AS lot_code,
-        p.zone_id
+        zp.zone_id
     FROM public.positions p
-    LEFT JOIN public.lots l ON l.id = p.lot_id;
+    LEFT JOIN public.lots l ON l.id = p.lot_id
+    LEFT JOIN public.zone_positions zp ON zp.position_id = p.id;
 END;
 $$;
 

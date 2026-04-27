@@ -36,8 +36,6 @@ export function WarehouseHistoryModal({ isOpen, onClose, currentPositions }: War
     const [selectedDate, setSelectedDate] = useState<string>(format(subDays(new Date(), 1), 'yyyy-MM-dd'))
     const [historyData, setHistoryData] = useState<HistoryPosition[] | null>(null)
     const [comparison, setComparison] = useState<HistoryComparison | null>(null)
-    const [isRollbackMode, setIsRollbackMode] = useState(false)
-    const [selectedForRollback, setSelectedForRollback] = useState<Set<string>>(new Set())
 
     // Quick select options
     const quickOptions = [
@@ -54,8 +52,6 @@ export function WarehouseHistoryModal({ isOpen, onClose, currentPositions }: War
         if (!isOpen) {
             setHistoryData(null)
             setComparison(null)
-            setIsRollbackMode(false)
-            setSelectedForRollback(new Set())
         } else {
             // Load available snapshot dates when modal opens
             fetchSnapshotDates().catch(() => {})
@@ -105,19 +101,6 @@ export function WarehouseHistoryModal({ isOpen, onClose, currentPositions }: War
         } catch (e: any) {
             showToast('Lỗi khi chụp snapshot: ' + (e.message || 'Không xác định'), 'error')
         }
-    }
-
-    // Toggle chọn vị trí để rollback
-    const toggleRollbackSelect = (positionId: string) => {
-        setSelectedForRollback(prev => {
-            const next = new Set(prev)
-            if (next.has(positionId)) {
-                next.delete(positionId)
-            } else {
-                next.add(positionId)
-            }
-            return next
-        })
     }
 
     // Lấy danh sách các thay đổi từ comparison
@@ -328,39 +311,15 @@ export function WarehouseHistoryModal({ isOpen, onClose, currentPositions }: War
                                 </div>
                             ) : (
                                 <div>
-                                    <div className="flex items-center justify-between mb-3">
-                                        <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300">
-                                            {changedItems.length} vị trí có thay đổi
-                                        </h3>
-                                        {changedItems.length > 0 && (
-                                            <button
-                                                onClick={() => {
-                                                    setIsRollbackMode(!isRollbackMode)
-                                                    setSelectedForRollback(new Set())
-                                                }}
-                                                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${
-                                                    isRollbackMode
-                                                        ? 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-                                                        : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50'
-                                                }`}
-                                            >
-                                                {isRollbackMode ? 'Hủy' : <><RefreshCw size={14} /> Hoàn tác</>}
-                                            </button>
-                                        )}
-                                    </div>
+                                    <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">
+                                        {changedItems.length} vị trí có thay đổi
+                                    </h3>
 
                                     <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
                                         {changedItems.map(item => (
                                             <div
                                                 key={item.positionId}
-                                                className={`flex items-center gap-3 p-2.5 rounded-xl border transition-colors cursor-pointer ${
-                                                    isRollbackMode && selectedForRollback.has(item.positionId)
-                                                        ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-600'
-                                                        : isRollbackMode
-                                                            ? 'hover:bg-gray-50 dark:hover:bg-gray-800 border-gray-100 dark:border-gray-800'
-                                                            : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-800'
-                                                }`}
-                                                onClick={() => isRollbackMode && toggleRollbackSelect(item.positionId)}
+                                                className="flex items-center gap-3 p-2.5 rounded-xl border bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-800"
                                             >
                                                 {/* Change type icon */}
                                                 <div className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-lg ${
@@ -410,44 +369,10 @@ export function WarehouseHistoryModal({ isOpen, onClose, currentPositions }: War
                                                     </div>
                                                 </div>
 
-                                                {/* Rollback select indicator */}
-                                                {isRollbackMode && (
-                                                    <div className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
-                                                        selectedForRollback.has(item.positionId)
-                                                            ? 'bg-amber-500 border-amber-500 text-white'
-                                                            : 'border-gray-300 dark:border-gray-600'
-                                                    }`}>
-                                                        {selectedForRollback.has(item.positionId) && (
-                                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                                            </svg>
-                                                        )}
-                                                    </div>
-                                                )}
                                             </div>
                                         ))}
                                     </div>
 
-                                    {/* Rollback Action Bar */}
-                                    {isRollbackMode && selectedForRollback.size > 0 && (
-                                        <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl flex items-center justify-between">
-                                            <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
-                                                <AlertTriangle size={18} />
-                                                <span>
-                                                    <strong>{selectedForRollback.size}</strong> vị trí được chọn để hoàn tác
-                                                </span>
-                                            </div>
-                                            <button
-                                                onClick={() => {
-                                                    showToast('Tính năng hoàn tác hàng loạt đang được phát triển', 'info')
-                                                }}
-                                                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-                                            >
-                                                <RefreshCw size={16} />
-                                                Hoàn Tác {selectedForRollback.size} Vị Trí
-                                            </button>
-                                        </div>
-                                    )}
                                 </div>
                             )}
                         </div>

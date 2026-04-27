@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { Save, X, MousePointer, Square, Minus, MoveRight, DoorOpen, Trash2, ZoomIn, ZoomOut, Grid3X3, Box, Circle, RotateCw, Tag } from 'lucide-react';
 import { layoutService } from '@/services/warehouse/layoutService';
 import { useSystem } from '@/contexts/SystemContext';
+import { useUser } from '@/contexts/UserContext';
 
 interface LayoutEditorProps {
     layout?: WarehouseLayout;
@@ -52,6 +53,7 @@ function initShapes(layout?: WarehouseLayout): LayoutShape[] {
 
 export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutEditorProps) {
     const { systemType } = useSystem();
+    const { profile } = useUser();
     const { showToast } = useToast();
     const svgRef = useRef<SVGSVGElement>(null);
 
@@ -334,6 +336,7 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                 height: canvasH,
                 grid_data: shapes,
                 is_active: true,
+                company_id: profile?.company_id || undefined,
             };
             if (layout?.id) {
                 await layoutService.saveLayout({ ...layoutData, id: layout.id } as WarehouseLayout);
