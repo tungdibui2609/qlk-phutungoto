@@ -24,10 +24,12 @@ import { MapBanners } from './_components/MapBanners'
 import { ZoneCollapseControls } from './_components/ZoneCollapseControls'
 import { MapSearchStats } from './_components/MapSearchStats'
 import { LotBulkPrintModal } from '@/components/warehouse/map/LotBulkPrintModal'
+import { WarehouseHistoryModal } from './_components/WarehouseHistoryModal'
 import { SelectWarehouseModal } from '@/components/warehouse/map/SelectWarehouseModal'
 import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
 import { SelectMoveDestinationModal } from '@/components/warehouse/map/SelectMoveDestinationModal'
 import { groupWarehouseData, sortPositionsByBinPriority } from '@/lib/warehouseUtils'
+import WarehouseLayoutViewer from '@/components/warehouse/layout-manager/WarehouseLayoutViewer'
 
 type Zone = Database['public']['Tables']['zones']['Row']
 type ZoneLayout = Database['public']['Tables']['zone_layouts']['Row']
@@ -35,6 +37,7 @@ type ZoneLayout = Database['public']['Tables']['zone_layouts']['Row']
 function WarehouseMapContent() {
     const { showToast, showConfirm } = useToast()
     const { systemType, currentSystem, hasModule } = useSystem()
+    const is2DLayoutEnabled = hasModule('warehouse_layout_2d')
     const searchParams = useSearchParams()
     const router = useRouter()
     const assignLotId = searchParams.get('assignLotId')
@@ -97,6 +100,7 @@ function WarehouseMapContent() {
     const [qrLot, setQrLot] = useState<any>(null)
     const [bulkPrintLotIds, setBulkPrintLotIds] = useState<string[] | null>(null)
     const [isMapControlsOpen, setIsMapControlsOpen] = useState(false)
+    const [isHistoryOpen, setIsHistoryOpen] = useState(false)
     const [pageBreakZoneIds, setPageBreakZoneIds] = useState<Set<string>>(new Set())
     const [isGrouped, setIsGrouped] = useState(true)
     const [mergedZones, setMergedZones] = useState<Set<string>>(new Set())
@@ -735,7 +739,7 @@ function WarehouseMapContent() {
 
     if (!systemType) return <div>Vui lòng chọn kho hàng.</div>
     if (loading && positions.length === 0) return (
-        <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex items-center justify-center min-h-100">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
         </div>
     )
@@ -758,6 +762,7 @@ function WarehouseMapContent() {
                 isMobile={isMobile}
                 displayInternalCode={displayInternalCode}
                 setDisplayInternalCode={setDisplayInternalCode}
+                onOpenHistory={() => setIsHistoryOpen(true)}
             />
 
             <MapBanners
@@ -823,31 +828,40 @@ function WarehouseMapContent() {
             {/* Map Grid Area - Hide when searching */}
             {!searchTerm && (
                 <div className="space-y-4">
-                    {/* Process grouped data if enabled */}
-                    {(() => {
-                        const { zones: displayZones, positions: displayPositions } = isGrouped
-                            ? groupWarehouseData(filteredZones, filteredPositions)
-                            : { zones: filteredZones, positions: filteredPositions }
+                    {is2DLayoutEnabled ? (
+                        <div className="mb-8">
+                            <WarehouseLayoutViewer 
+                                positions={filteredPositions}
+                                onPositionClick={handlePositionSelect}
+                                selectedZone={zones.find(z => z.id === selectedZoneId)}
+                            />
+                        </div>
+                    ) : (
+                        /* Process grouped data if enabled */
+                        (() => {
+                            const { zones: displayZones, positions: displayPositions } = isGrouped
+                                ? groupWarehouseData(filteredZones, filteredPositions)
+                                : { zones: filteredZones, positions: filteredPositions }
 
-                        return (
-                            <div className="min-w-0">
-                                <FlexibleZoneGrid
-                                    zones={displayZones}
-                                    positions={displayPositions}
-                                    layouts={layoutRecord}
-                                    lotInfo={lotInfo}
-                                    occupiedIds={occupiedIds}
-                                    selectedPositionIds={selectedPositionIds}
-                                    collapsedZones={collapsedZones}
-                                    onToggleCollapse={toggleZoneCollapse}
-                                    onUpdateCollapsedZones={setCollapsedZones}
-                                    onPositionSelect={handlePositionSelect}
-                                    onPositionMenu={(pos, e) => handlePositionMenu(pos, e)}
-                                    onViewDetails={(lotId) => fetchFullLotDetails(lotId)}
-                                    isDesignMode={isDesignMode}
-                                    onConfigureZone={setConfiguringZone}
-                                    isAssignmentMode={!!assignLot}
-                                    highlightingPositionIds={recentlyUpdatedPositionIds}
+                            return (
+                                <div className="min-w-0">
+                                    <FlexibleZoneGrid
+                                        zones={displayZones}
+                                        positions={displayPositions}
+                                        layouts={layoutRecord}
+                                        lotInfo={lotInfo}
+                                        occupiedIds={occupiedIds}
+                                        selectedPositionIds={selectedPositionIds}
+                                        collapsedZones={collapsedZones}
+                                        onToggleCollapse={toggleZoneCollapse}
+                                        onUpdateCollapsedZones={setCollapsedZones}
+                                        onPositionSelect={handlePositionSelect}
+                                        onPositionMenu={(pos, e) => handlePositionMenu(pos, e)}
+                                        onViewDetails={(lotId) => fetchFullLotDetails(lotId)}
+                                        isDesignMode={isDesignMode}
+                                        onConfigureZone={setConfiguringZone}
+                                        isAssignmentMode={!!assignLot}
+                                        highlightingPositionIds={recentlyUpdatedPositionIds}
                                     displayInternalCode={displayInternalCode}
                                     isGrouped={isGrouped}
                                     onBulkSelect={handleBulkSelect}
@@ -867,10 +881,11 @@ function WarehouseMapContent() {
                                 />
                             </div>
                         )
-                    })()}
+                        })()
+                    )}
                 </div>
             )}
-            <div className="fixed bottom-6 right-6 z-[60] shadow-2xl transition-all duration-300 hover:scale-[1.02] flex justify-end">
+            <div className="fixed bottom-6 right-6 z-60 shadow-2xl transition-all duration-300 hover:scale-[1.02] flex justify-end">
                 {!isMapControlsOpen ? (
                     <button
                         onClick={() => setIsMapControlsOpen(true)}
@@ -889,7 +904,7 @@ function WarehouseMapContent() {
                                     // Mở Cấp 1: Xóa Root(Kho) khỏi Set. Chỉ gập list Dãy/Sảnh.
                                     setCollapsedZones(new Set(zones.filter(z => z.parent_id).map(z => z.id)))
                                 }}
-                                className="px-3 py-2 text-slate-600 dark:text-slate-300 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1 font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800"
+                                className="px-3 py-2 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1 font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800"
                                 title="Bung list Kho tải các Dãy (Ẩn Vị trí)"
                             >
                                 <ChevronDown size={14} />
@@ -900,7 +915,7 @@ function WarehouseMapContent() {
                                     // Mở Cấp 2: Show hết sạch
                                     setCollapsedZones(new Set())
                                 }}
-                                className="px-3 py-2 text-slate-600 dark:text-slate-300 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition ml-1 flex items-center gap-1 font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                                className="px-3 py-2 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition ml-1 flex items-center gap-1 font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
                                 title="Mở bung toàn bộ mọi Vị trí"
                             >
                                 <ChevronDown size={14} />
@@ -1050,7 +1065,7 @@ function WarehouseMapContent() {
             )}
 
             {configuringZone && (
-                <div className="fixed bottom-6 right-6 z-[100] animate-in slide-in-from-right-8">
+                <div className="fixed bottom-6 right-6 z-100 animate-in slide-in-from-right-8">
                     <LayoutConfigPanel
                         zone={configuringZone}
                         layout={layouts.find(l => l.zone_id === configuringZone.id) || null}
@@ -1097,6 +1112,17 @@ function WarehouseMapContent() {
             )}
 
             {PositionActionUI()}
+
+            <WarehouseHistoryModal
+                isOpen={isHistoryOpen}
+                onClose={() => setIsHistoryOpen(false)}
+                currentPositions={filteredPositions.map(p => ({
+                    id: p.id,
+                    lot_id: p.lot_id,
+                    code: (p as any).code || (p as any).position_code || p.id,
+                    lot_code: lotInfo[p.lot_id || '']?.lot_code || null
+                }))}
+            />
         </div>
     )
 }

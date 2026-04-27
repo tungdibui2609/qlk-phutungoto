@@ -118,6 +118,14 @@ export const UTILITY_MODULES: UtilityModule[] = [
         icon: AlertTriangle,
         category: 'automation',
         default_enabled: false
+    },
+    {
+        id: 'warehouse_layout_2d',
+        name: 'Sơ đồ kho 2D (AutoCAD)',
+        description: 'Kích hoạt công cụ thiết kế mặt bằng kho 2D, thay thế hoàn toàn cấu trúc sơ đồ phân cấp mặc định.',
+        icon: HardHat,
+        category: 'specialized',
+        default_enabled: false
     }
 ]
 

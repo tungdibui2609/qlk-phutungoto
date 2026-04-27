@@ -1,6 +1,6 @@
 'use client'
 
-import { Map, Printer, Settings, Hash } from 'lucide-react'
+import { Map, Printer, Settings, Hash, Clock } from 'lucide-react'
 import Protected from '@/components/auth/Protected'
 
 interface MapHeaderProps {
@@ -14,6 +14,7 @@ interface MapHeaderProps {
     isMobile: boolean
     displayInternalCode: boolean
     setDisplayInternalCode: (val: boolean) => void
+    onOpenHistory: () => void
 }
 
 export function MapHeader({
@@ -26,7 +27,8 @@ export function MapHeader({
     setIsDesignMode,
     isMobile,
     displayInternalCode,
-    setDisplayInternalCode
+    setDisplayInternalCode,
+    onOpenHistory
 }: MapHeaderProps) {
     const handlePrint = () => {
         const params = new URLSearchParams()
@@ -50,6 +52,15 @@ export function MapHeader({
             </div>
 
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+                <button
+                    onClick={onOpenHistory}
+                    className="px-3 py-1.5 sm:px-4 sm:py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-300 rounded-lg font-medium flex items-center gap-2 transition-colors shadow-sm text-sm"
+                    title="Xem lịch sử sơ đồ kho"
+                >
+                    <Clock size={18} />
+                    <span className="whitespace-nowrap">Lịch sử</span>
+                </button>
+
                 <button
                     onClick={handlePrint}
                     className="px-3 py-1.5 sm:px-4 sm:py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg font-medium flex items-center gap-2 transition-colors shadow-sm text-sm"
