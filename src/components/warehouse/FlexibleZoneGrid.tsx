@@ -592,6 +592,20 @@ export default function FlexibleZoneGrid({
                                         ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={`print:hidden ${headerColor || headerTextColor ? '' : 'text-emerald-500'}`} />
                                         : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={`print:hidden ${headerColor || headerTextColor ? '' : 'text-emerald-500'}`} />
                                 )}
+                                {!isAssignmentMode && !isEmptyMode && totalSelectableCount > 0 && onBulkSelect && (
+                                    <div className="flex items-center justify-center shrink-0 print:hidden" onClick={e => e.stopPropagation()}>
+                                        <input
+                                            type="checkbox"
+                                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                            checked={isAllSelected}
+                                            ref={el => {
+                                                if (el) el.indeterminate = isIndeterminate
+                                            }}
+                                            onChange={handleZoneCheckboxChange}
+                                            title={`Chọn tất cả ${totalSelectableCount} vị trí có hàng`}
+                                        />
+                                    </div>
+                                )}
                                 <div
                                     className={`rounded-full shrink-0 print:hidden ${isLevelUnderBin ? 'w-0.5 h-3' : isBigBin ? 'w-1 h-5' : 'w-1 h-8'}`}
                                     style={{ backgroundColor: headerTextColor || (headerColor ? 'rgba(255,255,255,0.8)' : '#22c55e') }}
@@ -613,7 +627,7 @@ export default function FlexibleZoneGrid({
                                                     value={localNotes[zone.id] || ''}
                                                     onChange={(val: string) => setLocalNotes(prev => ({ ...prev, [zone.id]: val }))}
                                                     placeholder=""
-                                                    className="!text-red-600 font-bold italic text-sm print:text-red-600 !border-b-stone-300"
+className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-stone-300!"
                                                     isSnapshot={isCapturing}
                                                 />
                                             </div>
@@ -857,7 +871,7 @@ export default function FlexibleZoneGrid({
                                                     value={localNotes[zone.id] || ''}
                                                     onChange={(val: string) => setLocalNotes(prev => ({ ...prev, [zone.id]: val }))}
                                                     placeholder=""
-                                                    className="!text-red-600 font-bold italic text-sm print:text-red-600 !border-b-stone-300"
+                                                    className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-stone-300!"
                                                     isSnapshot={isCapturing}
                                                 />
                                             </div>
@@ -1136,7 +1150,7 @@ export default function FlexibleZoneGrid({
                                             value={localNotes[zone.id] || ''}
                                             onChange={(val: string) => setLocalNotes(prev => ({ ...prev, [zone.id]: val }))}
                                             placeholder=""
-                                            className="!text-red-600 font-bold italic text-sm print:text-red-600 !border-b-stone-300"
+                                            className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-stone-300!"
                                             isSnapshot={isCapturing}
                                         />
                                     </div>
