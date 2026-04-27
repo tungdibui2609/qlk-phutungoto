@@ -56,7 +56,10 @@ export const layoutService = {
         const items = (layout.grid_data || []) as any[];
         const codeSet = new Set<string>();
         items.forEach((item: any) => {
-            if (item.type === 'ZONE' && item.label) codeSet.add(item.label);
+            if (item.type === 'ZONE') {
+                const c = item.code || item.label;
+                if (c) codeSet.add(c);
+            }
             if (item.type === 'RACK' && item.positions) {
                 (item.positions as string[]).forEach(c => codeSet.add(c));
             }

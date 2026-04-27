@@ -70,11 +70,21 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
     const drawStartRef = useRef({ x: 0, y: 0 });
 
     // Dragging state
-    const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
-    const [dragPos, setDragPos] = useState<{ id: string; x: number; y: number } | null>(null);
+    const draggingRef = useRef<{ 
+        id: string; 
+        offsetX: number; 
+        offsetY: number;
+        isResize?: boolean;
+        handle?: string;
+        origX?: number;
+        origY?: number;
+        origW?: number;
+        origH?: number;
+    } | null>(null);
+    const [dragPos, setDragPos] = useState<{ id: string; x: number; y: number; w?: number; h?: number } | null>(null);
 
     // Label popup
-    const [labelPopup, setLabelPopup] = useState<{ shapeId: string; value: string } | null>(null);
+    const [labelPopup, setLabelPopup] = useState<{ shapeId: string; value: string; code?: string } | null>(null);
     // Rack config popup
     const [rackPopup, setRackPopup] = useState<{ shapeId: string; prefix: string; rows: number; cols: number } | null>(null);
     // Radius popup
@@ -147,7 +157,7 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
             };
             setShapes(prev => [...prev, newShape]);
             setSelectedId(newShape.id);
-            setLabelPopup({ shapeId: newShape.id, value: '' });
+            setLabelPopup({ shapeId: newShape.id, value: '', code: '' });
         } else {
             drawingRef.current = true;
             drawStartRef.current = pt;
@@ -169,11 +179,36 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
             });
         } else if (draggingRef.current) {
             const d = draggingRef.current;
-            setDragPos({
-                id: d.id,
-                x: snap(pt.x - d.offsetX),
-                y: snap(pt.y - d.offsetY),
-            });
+            if (d.isResize) {
+                let nx = d.origX!;
+                let ny = d.origY!;
+                let nw = d.origW!;
+                let nh = d.origH!;
+
+                if (d.handle?.includes('e')) {
+                    nw = snap(Math.max(MIN_SIZE, pt.x - nx));
+                }
+                if (d.handle?.includes('s')) {
+                    nh = snap(Math.max(MIN_SIZE, pt.y - ny));
+                }
+                if (d.handle?.includes('w')) {
+                    const newX = snap(Math.min(d.origX! + d.origW! - MIN_SIZE, pt.x));
+                    nw = d.origX! + d.origW! - newX;
+                    nx = newX;
+                }
+                if (d.handle?.includes('n')) {
+                    const newY = snap(Math.min(d.origY! + d.origH! - MIN_SIZE, pt.y));
+                    nh = d.origY! + d.origH! - newY;
+                    ny = newY;
+                }
+                setDragPos({ id: d.id, x: nx, y: ny, w: nw, h: nh });
+            } else {
+                setDragPos({
+                    id: d.id,
+                    x: snap(pt.x - d.offsetX),
+                    y: snap(pt.y - d.offsetY),
+                });
+            }
         }
     }, [getSvgPoint]);
 
@@ -197,11 +232,17 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
             if (activeTool === 'RACK') {
                 setRackPopup({ shapeId: newShape.id, prefix: '', rows: 2, cols: 3 });
             } else {
-                setLabelPopup({ shapeId: newShape.id, value: '' });
+                setLabelPopup({ shapeId: newShape.id, value: '', code: '' });
             }
         } else if (draggingRef.current && dragPos) {
             setShapes(prev => prev.map(s =>
-                s.id === dragPos.id ? { ...s, x: dragPos.x, y: dragPos.y } : s
+                s.id === dragPos.id ? { 
+                    ...s, 
+                    x: dragPos.x, 
+                    y: dragPos.y,
+                    width: dragPos.w ?? s.width,
+                    height: dragPos.h ?? s.height
+                } : s
             ));
             draggingRef.current = null;
             setDragPos(null);
@@ -212,20 +253,11 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
         }
     }, [activeTool, drawPreview, dragPos]);
 
-    // Global mouseup fallback
+    // Global mouseup handles all drag/draw commits, even if released outside SVG
     useEffect(() => {
-        const handler = () => {
-            if (drawingRef.current) {
-                drawingRef.current = false;
-                setDrawPreview(null);
-            }
-            if (draggingRef.current) {
-                draggingRef.current = null;
-            }
-        };
-        window.addEventListener('mouseup', handler);
-        return () => window.removeEventListener('mouseup', handler);
-    }, []);
+        window.addEventListener('mouseup', onMouseUp);
+        return () => window.removeEventListener('mouseup', onMouseUp);
+    }, [onMouseUp]);
 
     // Delete with keyboard
     useEffect(() => {
@@ -241,13 +273,10 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
 
     const handleLabelConfirm = () => {
         if (!labelPopup) return;
-        const val = labelPopup.value.trim().toUpperCase();
-        if (labelPopup.value && !val) {
-            showToast('Mã vị trí không hợp lệ', 'warning');
-            return;
-        }
+        const codeVal = (labelPopup.code || '').trim().toUpperCase();
+        const labelVal = (labelPopup.value || '').trim();
         setShapes(prev => prev.map(s =>
-            s.id === labelPopup.shapeId ? { ...s, label: val || undefined } : s
+            s.id === labelPopup.shapeId ? { ...s, label: labelVal || undefined, code: codeVal || undefined } : s
         ));
         setLabelPopup(null);
     };
@@ -362,9 +391,9 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                     )}
                     {selectedShape && selectedShape.type !== 'RACK' && (
                         <button type="button"
-                            onClick={() => setLabelPopup({ shapeId: selectedShape.id, value: selectedShape.label || '' })}
+                            onClick={() => setLabelPopup({ shapeId: selectedShape.id, value: selectedShape.label || '', code: selectedShape.code || '' })}
                             className="px-3 py-1.5 text-sm font-medium rounded-md bg-orange-50 text-orange-700 hover:bg-orange-100 dark:bg-orange-900/30 dark:text-orange-400 flex items-center gap-1">
-                            <Tag className="w-3.5 h-3.5" /> {selectedShape.label ? `Tên: ${selectedShape.label}` : 'Đặt tên'}
+                            <Tag className="w-3.5 h-3.5" /> {selectedShape.label ? `Tên: ${selectedShape.label}` : 'Đặt tên / Mã'}
                         </button>
                     )}
                     {selectedShape?.type === 'RACK' && (
@@ -440,15 +469,31 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                     {/* Label Popup */}
                     {labelPopup && (
                         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 p-5 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-80">
-                            <h4 className="font-bold mb-1 text-gray-900 dark:text-white text-base">Đặt Mã Vị Trí</h4>
-                            <p className="text-xs text-gray-500 mb-4">Mã này sẽ được đồng bộ vào hệ thống để gán hàng hóa.</p>
-                            <input
-                                autoFocus type="text" value={labelPopup.value}
-                                onChange={e => setLabelPopup(prev => prev ? { ...prev, value: e.target.value } : null)}
-                                placeholder="VD: A1, KHO-LANH-01..."
-                                className="w-full px-3 py-2 border rounded-md mb-4 dark:bg-gray-900 dark:border-gray-700 dark:text-white uppercase text-sm"
-                                onKeyDown={e => e.key === 'Enter' && handleLabelConfirm()}
-                            />
+                            <h4 className="font-bold mb-1 text-gray-900 dark:text-white text-base">Thông tin Vị Trí</h4>
+                            <p className="text-xs text-gray-500 mb-4">Tên hiển thị và Mã vị trí (dùng để đồng bộ).</p>
+                            
+                            <label className="block mb-3">
+                                <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 block mb-1">Tên hiển thị (tuỳ chọn)</span>
+                                <input
+                                    autoFocus type="text" value={labelPopup.value}
+                                    onChange={e => setLabelPopup(prev => prev ? { ...prev, value: e.target.value } : null)}
+                                    placeholder="VD: Khu Lạnh"
+                                    className="w-full px-3 py-2 border rounded-md dark:bg-gray-900 dark:border-gray-700 dark:text-white text-sm"
+                                    onKeyDown={e => e.key === 'Enter' && handleLabelConfirm()}
+                                />
+                            </label>
+
+                            <label className="block mb-4">
+                                <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 block mb-1">Mã hệ thống (System Code)</span>
+                                <input
+                                    type="text" value={labelPopup.code || ''}
+                                    onChange={e => setLabelPopup(prev => prev ? { ...prev, code: e.target.value } : null)}
+                                    placeholder="VD: KHO-LANH-01"
+                                    className="w-full px-3 py-2 border rounded-md dark:bg-gray-900 dark:border-gray-700 dark:text-white uppercase text-sm"
+                                    onKeyDown={e => e.key === 'Enter' && handleLabelConfirm()}
+                                />
+                            </label>
+
                             <div className="flex justify-end gap-2">
                                 <button type="button" onClick={handleLabelCancel} className="px-3 py-1.5 text-sm rounded-md bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600">Bỏ qua</button>
                                 <button type="button" onClick={handleLabelConfirm} className="px-4 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium">Xác nhận</button>
@@ -532,7 +577,6 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                         style={{ minWidth: canvasW * zoom, minHeight: canvasH * zoom }}
                         onMouseDown={onMouseDown}
                         onMouseMove={onMouseMove}
-                        onMouseUp={onMouseUp}
                         onDragStart={e => e.preventDefault()}
                     >
                         {/* Grid */}
@@ -548,9 +592,11 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                         <rect width={canvasW} height={canvasH} fill="url(#grid)" />
 
                         {/* Shapes */}
-                        {shapes.map(shape => {
-                            const sx = dragPos?.id === shape.id ? dragPos.x : shape.x;
-                            const sy = dragPos?.id === shape.id ? dragPos.y : shape.y;
+                        {shapes.map(shapeOrig => {
+                            const isDragging = dragPos?.id === shapeOrig.id;
+                            const shape = isDragging ? { ...shapeOrig, x: dragPos.x, y: dragPos.y, width: dragPos.w ?? shapeOrig.width, height: dragPos.h ?? shapeOrig.height } : shapeOrig;
+                            const sx = shape.x;
+                            const sy = shape.y;
                             const isSelected = shape.id === selectedId;
                             const rot = shape.rotation || 0;
                             const cx = sx + shape.width / 2;
@@ -561,8 +607,27 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                                 <>
                                     <rect x={sx - 2} y={sy - 2} width={shape.width + 4} height={shape.height + 4}
                                         fill="none" stroke="#3b82f6" strokeWidth={2} strokeDasharray="6 3" rx={4} />
-                                    {[[sx - 4, sy - 4], [sx + shape.width, sy - 4], [sx - 4, sy + shape.height], [sx + shape.width, sy + shape.height]].map(([hx, hy], i) => (
-                                        <rect key={i} x={hx} y={hy} width={8} height={8} fill="#3b82f6" stroke="white" strokeWidth={1} rx={1} />
+                                    {([
+                                        [sx - 4, sy - 4, 'nw', 'nwse-resize'],
+                                        [sx + shape.width - 4, sy - 4, 'ne', 'nesw-resize'],
+                                        [sx - 4, sy + shape.height - 4, 'sw', 'nesw-resize'],
+                                        [sx + shape.width - 4, sy + shape.height - 4, 'se', 'nwse-resize'],
+                                        [sx + shape.width - 4, sy + shape.height / 2 - 4, 'e', 'ew-resize'],
+                                        [sx + shape.width / 2 - 4, sy + shape.height - 4, 's', 'ns-resize'],
+                                        [sx - 4, sy + shape.height / 2 - 4, 'w', 'ew-resize'],
+                                        [sx + shape.width / 2 - 4, sy - 4, 'n', 'ns-resize'],
+                                    ]).map(([hx, hy, handle, cursor], i) => (
+                                        <rect key={i} x={hx as number} y={hy as number} width={8} height={8} fill="#3b82f6" stroke="white" strokeWidth={1} rx={1} 
+                                            style={{ cursor: cursor as string }}
+                                            onMouseDown={(e) => {
+                                                e.stopPropagation();
+                                                e.preventDefault();
+                                                draggingRef.current = { 
+                                                    id: shape.id, offsetX: 0, offsetY: 0, isResize: true, handle: handle as string,
+                                                    origX: shape.x, origY: shape.y, origW: shape.width, origH: shape.height
+                                                };
+                                            }}
+                                        />
                                     ))}
                                 </>
                             );

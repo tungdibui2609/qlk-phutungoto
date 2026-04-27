@@ -54,12 +54,18 @@ export function useWarehouseHistory() {
                 p_system_code: currentSystem?.code || 'default'
             })
 
-            if (error) throw error
+            if (error) {
+                const errorMsg = error?.message || error?.details || error?.hint
+                    || (typeof error === 'object' ? JSON.stringify(error) : String(error))
+                console.error('Supabase RPC error (get_snapshot_dates):', error)
+                throw new Error(errorMsg || 'Không thể lấy danh sách ngày snapshot')
+            }
             const result = (data || []) as SnapshotDate[]
             setSnapshotDates(result)
             return result
         } catch (e: any) {
-            console.error('Error fetching snapshot dates:', e)
+            const msg = e?.message || String(e) || 'Lỗi không xác định'
+            console.error('Error fetching snapshot dates:', msg)
             throw e
         } finally {
             setDatesLoading(false)
@@ -72,12 +78,18 @@ export function useWarehouseHistory() {
     const captureSnapshot = useCallback(async (): Promise<void> => {
         setCaptureLoading(true)
         try {
-            const { error } = await (supabase as any).rpc('capture_daily_position_snapshot')
+            const { data, error } = await (supabase as any).rpc('capture_daily_position_snapshot')
 
-            if (error) throw error
+            if (error) {
+                const errorMsg = error?.message || error?.details || error?.hint
+                    || (typeof error === 'object' ? JSON.stringify(error) : String(error))
+                console.error('Supabase RPC error details:', error)
+                throw new Error(errorMsg || 'Không thể chụp snapshot - lỗi RPC không xác định')
+            }
         } catch (e: any) {
-            console.error('Error capturing snapshot:', e)
-            throw e
+            const msg = e?.message || String(e) || 'Lỗi không xác định'
+            console.error('Error capturing snapshot:', msg)
+            throw new Error(msg)
         } finally {
             setCaptureLoading(false)
         }
@@ -94,12 +106,18 @@ export function useWarehouseHistory() {
                 p_snapshot_date: snapshotDate
             })
 
-            if (error) throw error
+            if (error) {
+                const errorMsg = error?.message || error?.details || error?.hint
+                    || (typeof error === 'object' ? JSON.stringify(error) : String(error))
+                console.error('Supabase RPC error (get_position_history):', error)
+                throw new Error(errorMsg || 'Không thể lấy lịch sử vị trí')
+            }
             const result = (data || []) as HistoryPosition[]
             setHistoryPositions(result)
             return result
         } catch (e: any) {
-            console.error('Error fetching position history:', e)
+            const msg = e?.message || String(e) || 'Lỗi không xác định'
+            console.error('Error fetching position history:', msg)
             throw e
         } finally {
             setHistoryLoading(false)

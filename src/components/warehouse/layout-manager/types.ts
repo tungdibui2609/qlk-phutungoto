@@ -20,6 +20,7 @@ export interface LayoutShape {
     width: number;
     height: number;
     label?: string;
+    code?: string;
     rotation?: number;
     rx?: number; // border radius chung
     customRadii?: [number, number, number, number]; // [TL, TR, BR, BL] bo góc tuỳ chỉnh
