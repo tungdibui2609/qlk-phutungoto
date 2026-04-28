@@ -170,7 +170,7 @@ export default function HallSummaryPage() {
                             code: l.code,
                             tags: l.lot_tags?.map((t: any) => t.tag) || [],
                             items: l.lot_items?.map((li: any) => ({
-                                product_name: li.products?.name,
+                                name: li.products?.name,
                                 sku: li.products?.sku,
                                 product_color: li.products?.color,
                                 quantity: li.quantity,
