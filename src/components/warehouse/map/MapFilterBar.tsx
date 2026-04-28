@@ -106,7 +106,7 @@ export function MapFilterBar({
                                 searchMode === 'tag' ? "Nhập mã phụ (tag)..." :
                                 searchMode === 'position' ? "Nhập mã vị trí (A01...)..." :
                                 searchMode === 'category' ? "Nhập tên danh mục..." :
-                                searchMode === 'production' ? "Nhập mã lệnh sản xuất..." :
+                                searchMode === 'production' ? "Nhập mã LSX hoặc mã lot sản xuất..." :
                                 "Tìm kiếm nhanh..."
                             }
                             value={localSearchTerm}

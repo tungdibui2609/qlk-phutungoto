@@ -46,7 +46,7 @@ export function useWarehouseData() {
 
         const { data: l, error } = await supabase
             .from('lots')
-            .select('*, productions(code, name, production_lots(lot_code, product_id)), suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)')
+            .select('*, productions(code, name, production_lots(id, lot_code, product_id)), suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)')
             .eq('id', lotId)
             .single() as any
 
@@ -94,12 +94,24 @@ export function useWarehouseData() {
         }
 
         const prodData = Array.isArray(l.productions) ? l.productions[0] : l.productions
-        const palletProductIds = new Set(lotItems.map((i: any) => i.product_id))
-        if (l.product_id) palletProductIds.add(l.product_id)
 
-        const matchingProdLots = (prodData?.production_lots || [])
-            .filter((pl: any) => palletProductIds.has(pl.product_id))
+        // Lọc mã lot sản xuất: ưu tiên dùng production_lot_id (FK trực tiếp)
+        // Fallback sang product_id cho dữ liệu legacy chưa có production_lot_id
+        const lotProdLotId = l.production_lot_id
+        const allProdLots = (prodData?.production_lots || [])
+            .filter((pl: any) => {
+                if (lotProdLotId) return pl.id === lotProdLotId
+                // Fallback: lọc theo product_id
+                const lotProductIds = new Set<string>()
+                if (lotItems.length > 0) {
+                    lotItems.forEach((item: any) => { if (item.product_id) lotProductIds.add(item.product_id) })
+                } else if (l.product_id) {
+                    lotProductIds.add(l.product_id)
+                }
+                return lotProductIds.size === 0 || lotProductIds.has(pl.product_id)
+            })
             .map((pl: any) => pl.lot_code)
+            .filter(Boolean)
 
         const info = {
             ...l,
@@ -108,7 +120,7 @@ export function useWarehouseData() {
             qc_name: l.qc_info?.name,
             supplier_name: l.suppliers?.name,
             productions: prodData,
-            production_lot_codes: matchingProdLots
+            production_lot_codes: allProdLots
         }
 
         setLotInfo(prev => ({
@@ -168,7 +180,7 @@ export function useWarehouseData() {
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
                 fetchAllZonesPos(),
                 fetchAll('zone_layouts', q => q.order('id')),
-                fetchAll('lots', q => q.eq('system_code', systemType), '*, productions(code, name, production_lots(lot_code, product_id)), suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)') as Promise<any[]>,
+                fetchAll('lots', q => q.eq('system_code', systemType), '*, productions(code, name, production_lots(id, lot_code, product_id)), suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)') as Promise<any[]>,
                 supabase.from('export_task_items').select('position_id, lot_id, export_tasks!inner(status, system_code)').eq('export_tasks.system_code', systemType).in('export_tasks.status', ['Pending', 'Processing'])
             ])
 
@@ -236,12 +248,24 @@ export function useWarehouseData() {
                 }
 
                 const prodData = Array.isArray(l.productions) ? l.productions[0] : l.productions
-                const palletProductIds = new Set(lotItems.map((i: any) => i.product_id))
-                if (l.product_id) palletProductIds.add(l.product_id)
 
-                const matchingProdLots = (prodData?.production_lots || [])
-                    .filter((pl: any) => palletProductIds.has(pl.product_id))
+                // Lọc mã lot sản xuất: ưu tiên dùng production_lot_id (FK trực tiếp)
+                // Fallback sang product_id cho dữ liệu legacy chưa có production_lot_id
+                const lotProdLotId = l.production_lot_id
+                const allProdLots = (prodData?.production_lots || [])
+                    .filter((pl: any) => {
+                        if (lotProdLotId) return pl.id === lotProdLotId
+                        // Fallback: lọc theo product_id
+                        const lotProductIds = new Set<string>()
+                        if (lotItems.length > 0) {
+                            lotItems.forEach((item: any) => { if (item.product_id) lotProductIds.add(item.product_id) })
+                        } else if (l.product_id) {
+                            lotProductIds.add(l.product_id)
+                        }
+                        return lotProductIds.size === 0 || lotProductIds.has(pl.product_id)
+                    })
                     .map((pl: any) => pl.lot_code)
+                    .filter(Boolean)
 
                 lotInfoMap[l.id] = {
                     ...l,
@@ -250,7 +274,7 @@ export function useWarehouseData() {
                     qc_name: l.qc_info?.name,
                     supplier_name: l.suppliers?.name,
                     productions: prodData,
-                    production_lot_codes: matchingProdLots
+                    production_lot_codes: allProdLots
                 }
             })
 

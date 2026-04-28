@@ -103,7 +103,7 @@ export function LotFilter({
                                 searchMode === 'tag' ? "Mã phụ (tag)..." :
                                 searchMode === 'position' ? "Mã vị trí..." :
                                 searchMode === 'category' ? "Tên danh mục..." :
-                                searchMode === 'production' ? "Mã lệnh sản xuất..." :
+                                searchMode === 'production' ? "Mã LSX hoặc mã lot sản xuất..." :
                                 searchMode === 'stt' ? "Số thứ tự pallet (STT)..." :
                                 "Tìm kiếm..."
                             }

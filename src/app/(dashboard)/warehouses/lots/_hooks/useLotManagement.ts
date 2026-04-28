@@ -489,8 +489,8 @@ export function useLotManagement() {
                             const { data: prodMatched } = await (supabase.from('productions') as any).select('id').or(`code.ilike.${partTerm},name.ilike.${partTerm}`).eq('company_id', currentSystem.company_id);
                             const prodIdsInAll = prodMatched?.map((p: any) => p.id) || [];
                             
-                            // 🟢 NEW: Search in production_lots (Bridge Search)
-                            const { data: prodLotsBridge } = await (supabase.from('production_lots') as any).select('production_id, product_id').ilike('lot_code', partTerm).eq('company_id', currentSystem.company_id);
+                            // 🟢 Search in production_lots (Bridge Search)
+                            const { data: prodLotsBridge } = await (supabase.from('production_lots') as any).select('id, production_id, product_id').ilike('lot_code', partTerm).eq('company_id', currentSystem.company_id);
                             
                             let prodLotIds: string[] = [];
 
@@ -500,16 +500,20 @@ export function useLotManagement() {
                                 if (linkedLots) prodLotIds.push(...linkedLots.map((l: any) => l.id));
                             }
 
-                            // 2. Bridge match: production_lots -> (production_id, product_id) -> lots
+                            // 2. Bridge match: production_lots -> lots via production_lot_id (chính xác)
                             if (prodLotsBridge && prodLotsBridge.length > 0) {
+                                const bridgePLIds = prodLotsBridge.map((b: any) => b.id).filter(Boolean);
+                                if (bridgePLIds.length > 0) {
+                                    // Ưu tiên: match trực tiếp qua FK production_lot_id
+                                    const { data: directMatch } = await (supabase.from('lots') as any).select('id').in('production_lot_id', bridgePLIds).eq('system_code', currentSystem.code);
+                                    if (directMatch) prodLotIds.push(...directMatch.map((l: any) => l.id));
+                                }
+                                // Fallback cho dữ liệu legacy (chưa có production_lot_id)
                                 for (const bridge of prodLotsBridge) {
                                     if (!bridge.production_id || !bridge.product_id) continue;
-                                    
-                                    // Find lots by production_id
-                                    const { data: lotsByProd } = await (supabase.from('lots') as any).select('id').eq('production_id', bridge.production_id).eq('system_code', currentSystem.code);
+                                    const { data: lotsByProd } = await (supabase.from('lots') as any).select('id').eq('production_id', bridge.production_id).is('production_lot_id', null).eq('system_code', currentSystem.code);
                                     if (lotsByProd && lotsByProd.length > 0) {
                                         const candidateIds = lotsByProd.map((l: any) => l.id);
-                                        // Further filter by lot_items containing the bridged product_id
                                         const { data: matchingItems } = await (supabase.from('lot_items') as any).select('lot_id').in('lot_id', candidateIds).eq('product_id', bridge.product_id);
                                         if (matchingItems) prodLotIds.push(...matchingItems.map((mi: any) => mi.lot_id));
                                     }
@@ -542,9 +546,9 @@ export function useLotManagement() {
                             const { data: prodMatched } = await (supabase.from('productions') as any).select('id').or(`code.ilike.${partTerm},name.ilike.${partTerm}`).eq('company_id', currentSystem.company_id);
                             const prodIds = prodMatched?.map((p: any) => p.id) || [];
                             
-                            // 🟢 NEW: Search in production_lots (Bridge Search)
+                            // 🟢 Search in production_lots (Bridge Search)
                             const { data: prodLotsBridge } = await (supabase.from('production_lots') as any)
-                                .select('production_id, product_id')
+                                .select('id, production_id, product_id')
                                 .ilike('lot_code', partTerm)
                                 .eq('company_id', currentSystem.company_id);
 
@@ -554,16 +558,20 @@ export function useLotManagement() {
                                 if (linkedLots) currentMatchIds.push(...linkedLots.map((l: any) => l.id));
                             }
 
-                            // Match by bridge (production_lots)
+                            // Match by bridge: production_lots -> lots via production_lot_id (chính xác)
                             if (prodLotsBridge && prodLotsBridge.length > 0) {
+                                const bridgePLIds = prodLotsBridge.map((b: any) => b.id).filter(Boolean);
+                                if (bridgePLIds.length > 0) {
+                                    // Ưu tiên: match trực tiếp qua FK production_lot_id
+                                    const { data: directMatch } = await (supabase.from('lots') as any).select('id').in('production_lot_id', bridgePLIds).eq('system_code', currentSystem.code);
+                                    if (directMatch) currentMatchIds.push(...directMatch.map((l: any) => l.id));
+                                }
+                                // Fallback cho dữ liệu legacy (chưa có production_lot_id)
                                 for (const bridge of prodLotsBridge) {
                                     if (!bridge.production_id || !bridge.product_id) continue;
-                                    
-                                    // Find lots by production_id
-                                    const { data: lotsByProd } = await (supabase.from('lots') as any).select('id').eq('production_id', bridge.production_id).eq('system_code', currentSystem.code);
+                                    const { data: lotsByProd } = await (supabase.from('lots') as any).select('id').eq('production_id', bridge.production_id).is('production_lot_id', null).eq('system_code', currentSystem.code);
                                     if (lotsByProd && lotsByProd.length > 0) {
                                         const candidateIds = lotsByProd.map((l: any) => l.id);
-                                        // Further filter by lot_items containing the bridged product_id
                                         const { data: matchingItems } = await (supabase.from('lot_items') as any).select('lot_id').in('lot_id', candidateIds).eq('product_id', bridge.product_id);
                                         if (matchingItems) currentMatchIds.push(...matchingItems.map((mi: any) => mi.lot_id));
                                     }
