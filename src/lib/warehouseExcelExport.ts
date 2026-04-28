@@ -868,16 +868,17 @@ export async function exportWarehouseLobbyDetailToExcel(data: ExportWarehouseLob
                 const tagsStr = (it.lotTags || []).join(', ');
                 const batch = it.batchCode || '';
                 const lot = it.lotCode || '';
-                const key = `${it.sku || it.productName}_${it.unit}_${batch}_${tagsStr}`;
+                const normUnit = normalizeUnit(it.unit);
+                const key = `${it.sku || it.productName}_${normUnit}_${batch}_${tagsStr}`;
 
                 if (!lobbySummary[key]) {
-                    lobbySummary[key] = { sku: it.sku, name: it.productName, batchCode: batch, tags: tagsStr, unit: it.unit, qty: 0, lots: new Set() };
+                    lobbySummary[key] = { sku: it.sku, name: it.productName, batchCode: batch, tags: tagsStr, unit: normUnit, qty: 0, lots: new Set() };
                 }
                 lobbySummary[key].qty += (Number(it.quantity) || 0);
                 if (lot) lobbySummary[key].lots.add(lot);
 
                 if (!globalSummary[key]) {
-                    globalSummary[key] = { sku: it.sku, name: it.productName, batchCode: batch, tags: tagsStr, unit: it.unit, qty: 0, lots: new Set() };
+                    globalSummary[key] = { sku: it.sku, name: it.productName, batchCode: batch, tags: tagsStr, unit: normUnit, qty: 0, lots: new Set() };
                 }
                 globalSummary[key].qty += (Number(it.quantity) || 0);
                 if (lot) globalSummary[key].lots.add(lot);
