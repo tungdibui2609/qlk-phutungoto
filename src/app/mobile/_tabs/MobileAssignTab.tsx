@@ -514,18 +514,19 @@ export default function MobileAssignTab() {
                                 <label className="text-[11px] font-black text-zinc-400 uppercase tracking-widest text-center block">NHẬP STT CỦA LÔ HÀNG</label>
                                 <div className="relative">
                                     <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={24} />
-                                    <input 
-                                        type="number" 
-                                        pattern="[0-9]*" 
-                                        inputMode="numeric" 
-                                        value={currentStt} 
-                                        onChange={e => setCurrentStt(e.target.value)} 
-                                        placeholder="Số STT..." 
-                                        className="w-full bg-zinc-50 dark:bg-zinc-950 border-2 border-zinc-100 dark:border-zinc-800 focus:border-emerald-500 rounded-2xl py-4 pl-14 pr-6 text-2xl font-black text-zinc-900 dark:text-white outline-none transition-all placeholder:text-zinc-300" 
-                                        autoFocus 
-                                        id="mobile-stt-input"
-                                        onKeyDown={(e) => e.key === 'Enter' && currentStt && handleConfirmStt()}
-                                    />
+                                     <input 
+                                         type="number" 
+                                         pattern="[0-9]*" 
+                                         inputMode="numeric" 
+                                         value={currentStt} 
+                                         onChange={e => setCurrentStt(e.target.value)} 
+                                         placeholder="Số STT..." 
+                                         className="w-full bg-zinc-50 dark:bg-zinc-950 border-2 border-zinc-100 dark:border-zinc-800 focus:border-emerald-500 rounded-2xl py-4 pl-14 pr-6 text-2xl font-black text-zinc-900 dark:text-white outline-none transition-all placeholder:text-zinc-300" 
+                                         autoFocus 
+                                         id="mobile-stt-input"
+                                         onKeyDown={(e) => e.key === 'Enter' && currentStt && handleConfirmStt()}
+                                         onWheel={(e) => e.currentTarget.blur()}
+                                     />
                                 </div>
                                 <button onClick={() => handleConfirmStt()} disabled={!currentStt || loading} className={`w-full py-6 rounded-2xl flex items-center justify-center gap-3 text-lg font-black transition-all ${!currentStt || loading ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-300 dark:text-zinc-700' : 'bg-emerald-600 text-white shadow-xl shadow-emerald-500/20 active:scale-95'}`}>
                                     {loading ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
