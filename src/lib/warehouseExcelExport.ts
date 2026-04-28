@@ -1,6 +1,24 @@
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 
+/**
+ * Chuẩn hóa đơn vị tính để tránh trùng lặp khi nhóm.
+ * Ví dụ: "Thùng (10 Kg)" → "Thùng (10kg)", "Thùng (10kg)" → "Thùng (10kg)"
+ * Xử lý: loại bỏ khoảng trắng thừa bên trong ngoặc và viết thường đơn vị trọng lượng.
+ */
+function normalizeUnit(unit: string): string {
+    if (!unit) return '';
+    // Chuẩn hóa khoảng trắng thừa trước
+    let normalized = unit.trim().replace(/\s+/g, ' ');
+    // Chuẩn hóa phần bên trong ngoặc: loại bỏ khoảng trắng giữa số và đơn vị, viết thường đơn vị
+    normalized = normalized.replace(/\(([^)]+)\)/g, (match, inner) => {
+        // Loại bỏ khoảng trắng thừa và viết thường toàn bộ nội dung trong ngoặc
+        const cleanInner = inner.trim().replace(/\s+/g, '').toLowerCase();
+        return `(${cleanInner})`;
+    });
+    return normalized;
+}
+
 interface ExcelPosition {
     code: string;
     warehouse?: string;
@@ -565,8 +583,9 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
                     const richText: any[] = [];
                     const summary: Record<string, { name: string, qty: number, unit: string }> = {};
                     allSanhItems.forEach(it => {
-                        const key = `${it.sku || it.productName}_${it.unit}`;
-                        if (!summary[key]) summary[key] = { name: it.productName, qty: 0, unit: it.unit };
+                        const normUnit = normalizeUnit(it.unit);
+                        const key = `${it.sku || it.productName}_${normUnit}`;
+                        if (!summary[key]) summary[key] = { name: it.productName, qty: 0, unit: normUnit };
                         summary[key].qty += (Number(it.quantity) || 0);
                     });
 
@@ -615,9 +634,10 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
             const gridSummary: Record<string, { sku: string, name: string, unit: string, qty: number }> = {};
             grid.cells.forEach((c: any) => {
                 c.items.forEach((it: any) => {
-                    const key = `${it.sku || it.productName}_${it.unit}`;
+                    const normUnit = normalizeUnit(it.unit);
+                    const key = `${it.sku || it.productName}_${normUnit}`;
                     if (!gridSummary[key]) {
-                        gridSummary[key] = { sku: it.sku, name: it.productName, unit: it.unit, qty: 0 };
+                        gridSummary[key] = { sku: it.sku, name: it.productName, unit: normUnit, qty: 0 };
                     }
                     gridSummary[key].qty += (Number(it.quantity) || 0);
                 });
@@ -656,9 +676,10 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
     data.grids.forEach((grid: any) => {
         grid.cells.forEach((c: any) => {
             c.items.forEach((it: any) => {
-                const key = `${it.sku || it.productName}_${it.unit}`;
+                const normUnit = normalizeUnit(it.unit);
+                const key = `${it.sku || it.productName}_${normUnit}`;
                 if (!globalSummary[key]) {
-                    globalSummary[key] = { sku: it.sku, name: it.productName, unit: it.unit, qty: 0 };
+                    globalSummary[key] = { sku: it.sku, name: it.productName, unit: normUnit, qty: 0 };
                 }
                 globalSummary[key].qty += (Number(it.quantity) || 0);
             });
