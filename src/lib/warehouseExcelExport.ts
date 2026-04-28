@@ -271,7 +271,8 @@ export async function exportWarehouseToExcel(data: ExportWarehouseData) {
     const summaryMap = new Map<string, { sku: string, name: string, unit: string, qty: number, kg: number }>();
     data.positions.forEach(p => {
         if (!p.sku || !p.productName) return;
-        const key = `${p.sku}_${p.unit}`;
+        const normUnit = normalizeUnit(p.unit || '');
+        const key = `${p.sku}_${normUnit}`;
         const existing = summaryMap.get(key);
         if (existing) {
             existing.qty += (Number(p.quantity) || 0);
@@ -280,7 +281,7 @@ export async function exportWarehouseToExcel(data: ExportWarehouseData) {
             summaryMap.set(key, {
                 sku: p.sku,
                 name: p.productName,
-                unit: p.unit || '',
+                unit: normUnit,
                 qty: (Number(p.quantity) || 0),
                 kg: (Number(p.kgQuantity) || 0)
             });
