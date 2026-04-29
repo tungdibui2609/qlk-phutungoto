@@ -237,10 +237,10 @@ export async function exportToExcel(data: ExportData) {
                 right: { style: 'thin' }
             };
             if (typeof val === 'number') {
-                if (Math.floor(val) === val) {
+                if (Number.isInteger(val)) {
                     cell.numFmt = '#,##0';
                 } else {
-                    cell.numFmt = '#,##0.##';
+                    cell.numFmt = '#,##0.###';
                 }
             }
         });
@@ -258,10 +258,10 @@ export async function exportToExcel(data: ExportData) {
     const totalQty = data.items.reduce((sum, item) => sum + item.quantity, 0);
     totalRow.getCell(qtyCol).value = totalQty;
     totalRow.getCell(qtyCol).font = { bold: true };
-    if (Math.floor(totalQty) === totalQty) {
+    if (Number.isInteger(totalQty)) {
         totalRow.getCell(qtyCol).numFmt = '#,##0';
     } else {
-        totalRow.getCell(qtyCol).numFmt = '#,##0.##';
+        totalRow.getCell(qtyCol).numFmt = '#,##0.###';
     }
 
     if (data.modules.hasFinancials && data.printType === 'official') {
@@ -269,10 +269,10 @@ export async function exportToExcel(data: ExportData) {
         const amountCol = headers.indexOf('Thành tiền') + 1;
         totalRow.getCell(amountCol).value = totalAmount;
         totalRow.getCell(amountCol).font = { bold: true };
-        if (Math.floor(totalAmount) === totalAmount) {
+        if (Number.isInteger(totalAmount)) {
             totalRow.getCell(amountCol).numFmt = '#,##0';
         } else {
-            totalRow.getCell(amountCol).numFmt = '#,##0.##';
+            totalRow.getCell(amountCol).numFmt = '#,##0.###';
         }
     }
 
@@ -486,14 +486,22 @@ export async function exportToExcelWithTemplate(data: ExportData, templateUrl: s
         const qtyValue = Number(item.quantity) || 0;
         const qtyCell = row.getCell(5);
         qtyCell.value = qtyValue;
-        qtyCell.numFmt = '#,##0';
+        if (Number.isInteger(qtyValue)) {
+            qtyCell.numFmt = '#,##0';
+        } else {
+            qtyCell.numFmt = '#,##0.###';
+        }
         totalQty += qtyValue;
         
         if (item.convertedQty !== undefined && item.convertedQty !== '-') {
             const cQty = typeof item.convertedQty === 'string' ? parseFloat(item.convertedQty.replace(/,/g, '')) : Number(item.convertedQty);
             const convCell = row.getCell(6);
             convCell.value = cQty || 0;
-            convCell.numFmt = '#,##0';
+            if (Number.isInteger(cQty)) {
+                convCell.numFmt = '#,##0';
+            } else {
+                convCell.numFmt = '#,##0.###';
+            }
             totalConvertedQty += (cQty || 0);
         }
 
@@ -521,13 +529,21 @@ export async function exportToExcelWithTemplate(data: ExportData, templateUrl: s
     const qCellTotal = newCongRow.getCell(5);
     if (qCellTotal) {
         qCellTotal.value = totalQty;
-        qCellTotal.numFmt = '#,##0';
+        if (Number.isInteger(totalQty)) {
+            qCellTotal.numFmt = '#,##0';
+        } else {
+            qCellTotal.numFmt = '#,##0.###';
+        }
     }
     if (totalConvertedQty > 0) {
         const cCellTotal = newCongRow.getCell(6);
         if (cCellTotal) {
             cCellTotal.value = totalConvertedQty;
-            cCellTotal.numFmt = '#,##0';
+            if (Number.isInteger(totalConvertedQty)) {
+                cCellTotal.numFmt = '#,##0';
+            } else {
+                cCellTotal.numFmt = '#,##0.###';
+            }
         }
     }
 

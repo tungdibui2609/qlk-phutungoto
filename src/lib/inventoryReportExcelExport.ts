@@ -183,7 +183,12 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
                 };
                 if (colNumber >= 5) {
                     cell.alignment = { horizontal: 'right' };
-                    cell.numFmt = '#,##0.###';
+                    const val = cell.value;
+                    if (typeof val === 'number' && Number.isInteger(val)) {
+                        cell.numFmt = '#,##0';
+                    } else {
+                        cell.numFmt = '#,##0.###';
+                    }
                 }
             });
 
@@ -204,8 +209,14 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
                 });
                 // Align quantity columns
                 [5, 6, 7, 8, 9].forEach(col => {
-                    row.getCell(col).alignment = { horizontal: 'right' };
-                    row.getCell(col).numFmt = '#,##0.###';
+                    const cell = row.getCell(col);
+                    cell.alignment = { horizontal: 'right' };
+                    const val = cell.value;
+                    if (typeof val === 'number' && Number.isInteger(val)) {
+                        cell.numFmt = '#,##0';
+                    } else {
+                        cell.numFmt = '#,##0.###';
+                    }
                 });
             });
         });
@@ -327,7 +338,12 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
                             if (colIdx === 4) cell.alignment = { horizontal: 'left' };
                             if (colIdx >= 6) {
                                 cell.alignment = { horizontal: 'right' };
-                                cell.numFmt = '#,##0.###';
+                                const val = cell.value;
+                                if (typeof val === 'number' && Number.isInteger(val)) {
+                                    cell.numFmt = '#,##0';
+                                } else {
+                                    cell.numFmt = '#,##0.###';
+                                }
                             }
                         });
                         lsxRow.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2CC' } };
@@ -351,7 +367,12 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
                                     if (colIdx === 4) cell.font = { italic: true, color: { argb: isNoTag ? 'BFBFBF' : '404040' } };
                                     if (colIdx >= 6) {
                                         cell.alignment = { horizontal: 'right' };
-                                        cell.numFmt = '#,##0.###';
+                                        const val = cell.value;
+                                        if (typeof val === 'number' && Number.isInteger(val)) {
+                                            cell.numFmt = '#,##0';
+                                        } else {
+                                            cell.numFmt = '#,##0.###';
+                                        }
                                     }
                                 });
                             });
@@ -382,7 +403,12 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
                             if (colIdx === 4 && !isNoTag) cell.font = { italic: true };
                             if (colIdx >= 6) {
                                 cell.alignment = { horizontal: 'right' };
-                                cell.numFmt = '#,##0.###';
+                                const val = cell.value;
+                                if (typeof val === 'number' && Number.isInteger(val)) {
+                                    cell.numFmt = '#,##0';
+                                } else {
+                                    cell.numFmt = '#,##0.###';
+                                }
                             }
                         });
                     });
@@ -402,8 +428,14 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
                 cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
             });
             [4, 5, 6].forEach(col => {
-                row.getCell(col).alignment = { horizontal: 'right' };
-                row.getCell(col).numFmt = '#,##0';
+                const cell = row.getCell(col);
+                cell.alignment = { horizontal: 'right' };
+                const val = cell.value;
+                if (typeof val === 'number' && Number.isInteger(val)) {
+                    cell.numFmt = '#,##0';
+                } else {
+                    cell.numFmt = '#,##0.###';
+                }
             });
         });
     }
