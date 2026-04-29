@@ -2,7 +2,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { Database } from '@/lib/database.types'
-import { convertUnit as convertUnitLogic, normalizeUnit, isKg, extractWeightFromName, canonicalizeUnit, getMatchingUnitName } from '@/lib/unitConversion'
+import { convertUnit as convertUnitLogic, normalizeUnit, isKg, extractWeightFromName, canonicalizeUnit, getMatchingUnitName, toBaseAmount, getBaseToKgRate } from '@/lib/unitConversion'
 
 export const dynamic = 'force-dynamic'
 
@@ -164,6 +164,7 @@ export async function GET(request: Request) {
             balance: number
             categoryName: string | null
             isUnconvertible?: boolean
+            kg?: number
         }
 
         // Maps for O(1) Access
@@ -326,6 +327,23 @@ export async function GET(request: Request) {
 
             // Process Outbound
             ; (outboundItems as any[])?.forEach(item => processItem(item, 'out', new Date(item.order.created_at)))
+        
+        // Calculate KG for each item
+        inventoryMap.forEach((entry) => {
+            const prod = productMap.get(entry.productId)
+            if (prod) {
+                const baseUnitName = prod.unit
+                const balanceBase = toBaseAmount(entry.productId, entry.unitRaw || '', entry.balance, baseUnitName, unitNameMap, conversionMap)
+                const kgRate = getBaseToKgRate(entry.productId, baseUnitName, unitNameMap, conversionMap)
+                if (kgRate !== null) {
+                    entry.kg = balanceBase * kgRate
+                } else {
+                    entry.kg = 0
+                }
+            } else {
+                entry.kg = 0
+            }
+        })
 
         // Filter and Sort
         let result = Array.from(inventoryMap.values())

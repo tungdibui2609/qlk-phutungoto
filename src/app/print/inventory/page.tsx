@@ -27,6 +27,7 @@ interface InventoryItem {
     qtyIn: number
     qtyOut: number
     balance: number
+    kg?: number
     productGroup?: string
     isUnconvertible?: boolean
     categoryIds?: string[]
@@ -839,6 +840,7 @@ export default function PrintInventoryPage() {
                                 <th className="border border-black p-1 text-right w-20">Nhập</th>
                                 <th className="border border-black p-1 text-right w-20">Xuất</th>
                                 <th className="border border-black p-1 text-right w-20">Tồn Cuối</th>
+                                <th className="border border-black p-1 text-right w-20">Quy đổi (Kg)</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -850,12 +852,13 @@ export default function PrintInventoryPage() {
                                         qtyIn: acc.qtyIn + (item.qtyIn || 0),
                                         qtyOut: acc.qtyOut + (item.qtyOut || 0),
                                         balance: acc.balance + (item.balance || 0),
-                                    }), { opening: 0, qtyIn: 0, qtyOut: 0, balance: 0 });
+                                        kg: acc.kg + (item.kg || 0),
+                                    }), { opening: 0, qtyIn: 0, qtyOut: 0, balance: 0, kg: 0 });
 
                                     return (
                                         <React.Fragment key={categoryName}>
                                             <tr className="bg-orange-50/50 font-bold">
-                                                <td colSpan={8} className="border border-black p-1 text-orange-800 uppercase italic text-[11px]">
+                                                <td colSpan={9} className="border border-black p-1 text-orange-800 uppercase italic text-[11px]">
                                                     <div className="flex justify-between items-center w-full px-1">
                                                         <span>DANH MỤC: {categoryName}</span>
                                                         <div className="flex gap-4 text-[10px] font-bold italic">
@@ -863,6 +866,7 @@ export default function PrintInventoryPage() {
                                                             <span>Nhập: {formatQuantityFull(totals.qtyIn)}</span>
                                                             <span>Xuất: {formatQuantityFull(totals.qtyOut)}</span>
                                                             <span>Tồn Cuối: {formatQuantityFull(totals.balance)}</span>
+                                                            <span>Tổng KG: {formatQuantityFull(totals.kg)}</span>
                                                         </div>
                                                     </div>
                                                 </td>
@@ -878,7 +882,7 @@ export default function PrintInventoryPage() {
                                                     <React.Fragment key={`${item.id}-${idx}`}>
                                                         {stt > 1 && (
                                                             <tr className={`print:hidden ${hasBreak ? '' : 'h-0'}`}>
-                                                                <td colSpan={8} className="p-0 border-0 relative">
+                                                                <td colSpan={9} className="p-0 border-0 relative">
                                                                     <button
                                                                         onClick={() => togglePageBreak(breakKey)}
                                                                         className={`w-full flex items-center justify-center gap-1 text-[10px] py-0.5 transition-all group hover:bg-blue-50 ${hasBreak ? 'bg-blue-100 border-y-2 border-dashed border-blue-500' : 'opacity-0 hover:opacity-100'}`}
@@ -889,7 +893,7 @@ export default function PrintInventoryPage() {
                                                                 </td>
                                                             </tr>
                                                         )}
-                                                        {hasBreak && <tr className="hidden print:table-row" style={{ pageBreakBefore: 'always' }}><td colSpan={8} className="p-0 border-0 h-0"></td></tr>}
+                                                        {hasBreak && <tr className="hidden print:table-row" style={{ pageBreakBefore: 'always' }}><td colSpan={9} className="p-0 border-0 h-0"></td></tr>}
                                                         <tr className={item.isUnconvertible ? 'bg-orange-100 print:bg-transparent' : ''}>
                                                             <td className="border border-black p-1 text-center">{stt}</td>
                                                             <td className="border border-black p-1">
@@ -902,6 +906,7 @@ export default function PrintInventoryPage() {
                                                             <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyIn)}</td>
                                                             <td className="border border-black p-1 text-right">{formatQuantityFull(item.qtyOut)}</td>
                                                             <td className="border border-black p-1 text-right font-bold">{formatQuantityFull(item.balance)}</td>
+                                                            <td className="border border-black p-1 text-right text-stone-700 bg-stone-50/50">{formatQuantityFull(item.kg)}</td>
                                                         </tr>
                                                     </React.Fragment>
                                                 )

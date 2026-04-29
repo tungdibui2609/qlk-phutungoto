@@ -31,6 +31,7 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
             { header: 'Nhập', key: 'qtyIn', width: 15 },
             { header: 'Xuất', key: 'qtyOut', width: 15 },
             { header: 'Tồn Cuối', key: 'balance', width: 15 },
+            { header: 'Quy đổi (Kg)', key: 'kg', width: 15 },
         ];
     } else if (data.type === 'lot' || data.type === 'category' || data.type === 'tags') {
         worksheet.columns = [
@@ -162,7 +163,8 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
                 cleanNum(catTotals.opening),
                 cleanNum(catTotals.qtyIn),
                 cleanNum(catTotals.qtyOut),
-                cleanNum(catTotals.balance)
+                cleanNum(catTotals.balance),
+                items.reduce((sum, item) => sum + (item.kg || 0), 0)
             ]);
             worksheet.mergeCells(`A${catRow.number}:D${catRow.number}`);
             catRow.font = { bold: true, italic: true, size: 10, color: { argb: '7F6000' } };
@@ -181,7 +183,7 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
                 };
                 if (colNumber >= 5) {
                     cell.alignment = { horizontal: 'right' };
-                    cell.numFmt = '#,##0';
+                    cell.numFmt = '#,##0.###';
                 }
             });
 
@@ -194,15 +196,16 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
                     cleanNum(item.opening),
                     cleanNum(item.qtyIn),
                     cleanNum(item.qtyOut),
-                    cleanNum(item.balance)
+                    cleanNum(item.balance),
+                    cleanNum(item.kg)
                 ]);
                 row.eachCell(cell => {
                     cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
                 });
                 // Align quantity columns
-                [5, 6, 7, 8].forEach(col => {
+                [5, 6, 7, 8, 9].forEach(col => {
                     row.getCell(col).alignment = { horizontal: 'right' };
-                    row.getCell(col).numFmt = '#,##0';
+                    row.getCell(col).numFmt = '#,##0.###';
                 });
             });
         });
