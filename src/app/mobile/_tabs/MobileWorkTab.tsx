@@ -294,7 +294,6 @@ export default function MobileWorkTab() {
 
                     const targetPositionId = availablePositions[0].position_id as string
 
-                    // 3. Thực hiện di chuyển
                     if (currentPos) {
                         await (supabase.from('positions') as any).update({ lot_id: null }).eq('id', (currentPos as any).id)
                     }

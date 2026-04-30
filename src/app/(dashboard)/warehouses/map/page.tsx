@@ -30,6 +30,7 @@ import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
 import { SelectMoveDestinationModal } from '@/components/warehouse/map/SelectMoveDestinationModal'
 import { groupWarehouseData, sortPositionsByBinPriority } from '@/lib/warehouseUtils'
 import WarehouseLayoutViewer from '@/components/warehouse/layout-manager/WarehouseLayoutViewer'
+import { logActivity } from '@/lib/audit'
 
 type Zone = Database['public']['Tables']['zones']['Row']
 type ZoneLayout = Database['public']['Tables']['zone_layouts']['Row']
@@ -131,6 +132,36 @@ function WarehouseMapContent() {
         }
     }, [assignLotId])
 
+    // Helper for position updates with logging
+    async function updatePositionsWithLog(updates: { id: string, lot_id: string | null }[]) {
+        const chunkSize = 15;
+        const results: any[] = [];
+        
+        for (let i = 0; i < updates.length; i += chunkSize) {
+            const chunk = updates.slice(i, i + chunkSize);
+            const chunkRes = await Promise.all(
+                chunk.map(async (u) => {
+                    const oldLotId = positions.find(p => p.id === u.id)?.lot_id || null;
+                    const res = await (supabase.from('positions') as any).update({ lot_id: u.lot_id }).eq('id', u.id);
+                    if (!res.error) {
+                        await logActivity({
+                            supabase,
+                            tableName: 'positions',
+                            recordId: u.id,
+                            action: 'UPDATE',
+                            oldData: { lot_id: oldLotId },
+                            newData: { lot_id: u.lot_id },
+                            systemCode: currentSystem?.code || ''
+                        });
+                    }
+                    return res;
+                })
+            );
+            results.push(...chunkRes);
+        }
+        return results;
+    }
+
     function handlePositionSelect(positionIdOrIds: string | string[]) {
         const targetIds = Array.isArray(positionIdOrIds) ? positionIdOrIds : [positionIdOrIds]
 
@@ -166,11 +197,7 @@ function WarehouseMapContent() {
                 }))
 
                 // DB Updates
-                const updatePromises = (updates as any[]).map((u: any) =>
-                    ((supabase as any).from('positions').update({ lot_id: u.lot_id }).eq('id', u.id) as any)
-                )
-
-                Promise.all(updatePromises).then(results => {
+                updatePositionsWithLog(updates).then(results => {
                     const hasError = results.some(r => r.error)
                     if (hasError) {
                         showToast('Có lỗi xảy ra khi dời vị trí!', 'error')
@@ -195,11 +222,7 @@ function WarehouseMapContent() {
             ))
 
             // DB Update
-            const promises = (targetIds as any[]).map((id: any) =>
-                ((supabase as any).from('positions').update({ lot_id: newLotId }).eq('id', id) as any)
-            )
-
-            Promise.all(promises).then(results => {
+            updatePositionsWithLog(targetIds.map(id => ({ id, lot_id: newLotId }))).then(results => {
                 const hasError = results.some(r => r.error)
                 if (hasError) {
                     showToast('Có lỗi xảy ra khi cập nhật vị trí', 'error')
@@ -493,27 +516,8 @@ function WarehouseMapContent() {
 
         // DB Updates
         try {
-            const chunkSize = 20; // Smaller chunks for individual updates to avoid massive parallel overhead
-            
-            // Phase 1: Clear old positions
-            for (let i = 0; i < clearUpdates.length; i += chunkSize) {
-                const chunk = clearUpdates.slice(i, i + chunkSize);
-                const results = await Promise.all(
-                    (chunk as any[]).map((u: any) => ((supabase as any).from('positions').update({ lot_id: null }).eq('id', u.id) as any))
-                )
-                const error = (results as any).find((r: any) => r.error)?.error
-                if (error) throw error
-            }
-
-            // Phase 2: Assign to new positions
-            for (let i = 0; i < assignUpdates.length; i += chunkSize) {
-                const chunk = assignUpdates.slice(i, i + chunkSize);
-                const results = await Promise.all(
-                    (chunk as any[]).map((u: any) => ((supabase as any).from('positions').update({ lot_id: u.lot_id }).eq('id', u.id) as any))
-                )
-                const error = (results as any).find((r: any) => r.error)?.error
-                if (error) throw error
-            }
+            await updatePositionsWithLog(clearUpdates)
+            await updatePositionsWithLog(assignUpdates)
 
             showToast('Đã di chuyển hàng thành công!', 'success')
             setSelectedPositionIds(new Set())
@@ -579,27 +583,8 @@ function WarehouseMapContent() {
 
         // DB Updates
         try {
-            const chunkSize = 20;
-
-            // Phase 1: Clear old positions
-            for (let i = 0; i < clearUpdates.length; i += chunkSize) {
-                const chunk = clearUpdates.slice(i, i + chunkSize);
-                const results = await Promise.all(
-                    (chunk as any[]).map((u: any) => ((supabase as any).from('positions').update({ lot_id: null }).eq('id', u.id) as any))
-                )
-                const error = (results as any).find((r: any) => r.error)?.error
-                if (error) throw error
-            }
-
-            // Phase 2: Assign to new positions
-            for (let i = 0; i < assignUpdates.length; i += chunkSize) {
-                const chunk = assignUpdates.slice(i, i + chunkSize);
-                const results = await Promise.all(
-                    (chunk as any[]).map((u: any) => ((supabase as any).from('positions').update({ lot_id: u.lot_id }).eq('id', u.id) as any))
-                )
-                const error = (results as any).find((r: any) => r.error)?.error
-                if (error) throw error
-            }
+            await updatePositionsWithLog(clearUpdates)
+            await updatePositionsWithLog(assignUpdates)
 
             showToast('Đã di chuyển hàng thành công!', 'success')
             setSelectedPositionIds(new Set())
@@ -701,27 +686,8 @@ function WarehouseMapContent() {
 
         // 4. Execute Updates
         try {
-            const chunkSize = 20;
-
-            // Phase 1: Clear old positions
-            for (let i = 0; i < clearUpdates.length; i += chunkSize) {
-                const chunk = clearUpdates.slice(i, i + chunkSize);
-                const results = await Promise.all(
-                    (chunk as any[]).map((u: any) => ((supabase as any).from('positions').update({ lot_id: null }).eq('id', u.id) as any))
-                )
-                const error = (results as any).find((r: any) => r.error)?.error
-                if (error) throw error
-            }
-
-            // Phase 2: Assign to new positions
-            for (let i = 0; i < assignUpdates.length; i += chunkSize) {
-                const chunk = assignUpdates.slice(i, i + chunkSize);
-                const results = await Promise.all(
-                    (chunk as any[]).map((u: any) => ((supabase as any).from('positions').update({ lot_id: u.lot_id }).eq('id', u.id) as any))
-                )
-                const error = (results as any).find((r: any) => r.error)?.error
-                if (error) throw error
-            }
+            await updatePositionsWithLog(clearUpdates)
+            await updatePositionsWithLog(assignUpdates)
 
             showToast(`Đã gán thành công ${lotsArr.length} LOT vào Kho mới!`, 'success')
             setSelectedPositionIds(new Set())

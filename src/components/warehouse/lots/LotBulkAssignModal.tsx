@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { useSystem } from '@/contexts/SystemContext'
+import { logActivity } from '@/lib/audit'
 
 interface LotBulkAssignModalProps {
     onClose: () => void
@@ -56,7 +57,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                 .eq('system_type', currentSystem.code);
 
             const zoneMap = new Map();
-            (allZonesData || []).forEach(z => zoneMap.set(z.id, z));
+            (allZonesData as any[] || []).forEach(z => zoneMap.set(z.id, z));
 
             // 2. Fetch Halls
             const { data: hallData } = await supabase
@@ -68,8 +69,8 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                 .order('name', { ascending: true });
 
             // 3. For each hall, count empty positions and resolve parent
-            const hallResults = await Promise.all((hallData || []).map(async (hall) => {
-                const descIds = getDescendantIds(hall.id, allZonesData || []);
+            const hallResults = await Promise.all(((hallData as any[]) || []).map(async (hall: any) => {
+                const descIds = getDescendantIds(hall.id, (allZonesData as any[]) || []);
 
                 // Count empty positions
                 const { count } = await supabase
@@ -96,7 +97,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                 }
 
                 return {
-                    ...hall,
+                    ...(hall as any),
                     emptyCount: count || 0,
                     parentName: parentName || currentSystem.name // Fallback to system name
                 };
@@ -116,7 +117,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                     console.error('Count error from robust query:', countError);
                     // Keep using initialUnassignedCount
                 } else if (lotCount !== null) {
-                    setUnassignedCount(prev => Math.max(prev, lotCount));
+                    setUnassignedCount(prev => Math.max(prev, lotCount as number));
                 }
             } catch (err) {
                 console.error('Error in count fetch:', err);
@@ -178,7 +179,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             }
 
             // Filter for actually empty positions: no lot_id OR lot doesn't exist anymore
-            const availablePositions = posData.filter(p => !p.lot_id || !p.lots);
+            const availablePositions = (posData as any[]).filter(p => !p.lot_id || !p.lots);
 
             if (availablePositions.length === 0) {
                 showToast('Không có vị trí trống.', 'warning');
@@ -196,8 +197,8 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             }
 
             const actualCount = Math.min(availablePositions.length, lotsToAssign.length);
-            const positionUpdates = [];
-            const historyInserts = [];
+            const positionUpdates: any[] = [];
+            const historyInserts: any[] = [];
 
             const lotIdsToAssign = lotsToAssign.slice(0, actualCount).map(l => l.id);
 
@@ -207,7 +208,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             // 2. Prepare updates and history
             for (let i = 0; i < actualCount; i++) {
                 const lot = lotsToAssign[i];
-                const pos = availablePositions[i];
+                const pos = availablePositions[i] as any;
 
                 positionUpdates.push({
                     id: pos.id,
@@ -237,9 +238,24 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                 if (batchError) throw batchError;
             }
 
-            // 4. Batch Insert History
+            // 4. Batch Insert History (Legacy)
             if (historyInserts.length > 0) {
                 await (supabase as any).from('operation_history').insert(historyInserts);
+            }
+
+            // 5. Log Audit Activity (New)
+            for (let i = 0; i < actualCount; i++) {
+                const lot = lotsToAssign[i];
+                const pos = availablePositions[i] as any;
+                await logActivity({
+                    supabase,
+                    tableName: 'positions',
+                    recordId: pos.id,
+                    action: 'UPDATE',
+                    oldData: { lot_id: null },
+                    newData: { lot_id: lot.id },
+                    systemCode: currentSystem.code
+                })
             }
 
             showToast(`Gán thành công ${actualCount} LOT vào ${hall.name}!`, 'success');
@@ -291,7 +307,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             const assignedCodes: string[] = [];
 
             for (const code of uniqueCodes) {
-                const p = posMap.get(code);
+                const p = posMap.get(code) as any;
                 if (!p) {
                     missingCodes.push(code);
                 } else if (p.lot_id && p.lots) {
@@ -333,12 +349,12 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
 
             // 4. Perform Mapping and Update
             const lotIdsToAssign = lotsToAssign.slice(0, actualUpdateCount).map(l => l.id);
-
+            
             // 1. Clear existing mappings for these lots defensively
             await supabase.from('positions').update({ lot_id: null }).in('lot_id', lotIdsToAssign);
 
-            const positionUpdates = [];
-            const historyInserts = [];
+            const positionUpdates: any[] = [];
+            const historyInserts: any[] = [];
 
             for (let i = 0; i < actualUpdateCount; i++) {
                 const lot = lotsToAssign[i];
@@ -371,9 +387,24 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                 if (batchError) throw batchError;
             }
 
-            // 3. Batch Insert History
+            // 3. Batch Insert History (Legacy)
             if (historyInserts.length > 0) {
                 await (supabase as any).from('operation_history').insert(historyInserts);
+            }
+
+            // 4. Log Audit Activity (New)
+            for (let i = 0; i < actualUpdateCount; i++) {
+                const lot = lotsToAssign[i];
+                const pos = validPositions[i];
+                await logActivity({
+                    supabase,
+                    tableName: 'positions',
+                    recordId: pos.id,
+                    action: 'UPDATE',
+                    oldData: { lot_id: null },
+                    newData: { lot_id: lot.id },
+                    systemCode: currentSystem.code
+                })
             }
 
             const successCodes = validPositions.slice(0, actualUpdateCount).map(p => p.code);

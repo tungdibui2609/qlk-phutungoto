@@ -16,6 +16,7 @@ import { format, subDays, isWithinInterval, parseISO } from 'date-fns'
 import { vi } from 'date-fns/locale'
 import { exportAssignmentHistoryToExcel } from '@/lib/assignmentExcelExport'
 import { extractWeightFromName } from '@/lib/unitConversion'
+import { logActivity } from '@/lib/audit'
 
 type PendingAssignment = {
     id: string
@@ -420,6 +421,17 @@ export default function AssignmentApprovalPage() {
                         .update({ lot_id: null })
                         .eq('id', oldPos.id)
                     if (unbindErr) throw new Error(`Lỗi khi gỡ khỏi vị trí ${oldPos.code}: ` + unbindErr.message);
+                    
+                    // Audit Log for removal
+                    await logActivity({
+                        supabase,
+                        tableName: 'positions',
+                        recordId: oldPos.id,
+                        action: 'UPDATE',
+                        oldData: { lot_id: lotId },
+                        newData: { lot_id: null },
+                        systemCode: currentSystem?.code || ''
+                    })
                 }
             }
 
@@ -436,6 +448,17 @@ export default function AssignmentApprovalPage() {
             if (posUpdateErr) {
                 throw new Error("KHÔNG THỂ GHI NHẬN VỊ TRÍ: " + posUpdateErr.message);
             }
+
+            // Audit Log for new assignment
+            await logActivity({
+                supabase,
+                tableName: 'positions',
+                recordId: targetPosId,
+                action: 'UPDATE',
+                oldData: { lot_id: targetPosInfo?.lot_id || null },
+                newData: { lot_id: lotId },
+                systemCode: currentSystem?.code || ''
+            })
 
             // Then, mark assignment as approved with metadata in status
             const isMove = otherPlacements.length > 0
@@ -537,7 +560,39 @@ export default function AssignmentApprovalPage() {
                 const { data: targetPosInfo } = await (supabase.from('positions') as any).select('lot_id').eq('id', targetPosId).single()
                 if (targetPosInfo?.lot_id && targetPosInfo.lot_id !== lot.id) continue;
                 
+                // 1. Check if LOT is already at another position and clear it
+                // This ensures data integrity (one LOT at one place) and creates the "REMOVE" log for "Move" detection
+                const { data: currentPosData } = await supabase.from('positions').select('id, code').eq('lot_id', lot.id)
+                if (currentPosData && currentPosData.length > 0) {
+                    for (const oldPos of currentPosData) {
+                        if (oldPos.id !== targetPosId) {
+                            await (supabase.from('positions') as any).update({ lot_id: null }).eq('id', oldPos.id)
+                            await logActivity({
+                                supabase,
+                                tableName: 'positions',
+                                recordId: oldPos.id,
+                                action: 'UPDATE',
+                                oldData: { lot_id: lot.id },
+                                newData: { lot_id: null },
+                                systemCode: currentSystem?.code || ''
+                            })
+                        }
+                    }
+                }
+                
+                // 2. Assign to new position
                 await (supabase.from('positions') as any).update({ lot_id: lot.id }).eq('id', targetPosId)
+                await logActivity({
+                    supabase,
+                    tableName: 'positions',
+                    recordId: targetPosId,
+                    action: 'UPDATE',
+                    oldData: { lot_id: targetPosInfo?.lot_id || null },
+                    newData: { lot_id: lot.id },
+                    systemCode: currentSystem?.code || ''
+                })
+                
+                // 3. Update assignment status
                 await (supabase.from('pending_assignments') as any).update({ 
                     status: 'approved:new', 
                     position_id: targetPosId, 

@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft, FileOutput, Trash2 } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { Database } from '@/lib/database.types'
+import { logActivity } from '@/lib/audit'
 
 import { LotForm } from '@/app/(dashboard)/warehouses/lots/_components/LotForm'
 import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
@@ -103,6 +104,19 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
 
                 if (posError) throw posError
 
+                // Audit Log for deletion (clearing positions)
+                for (const id of realIds) {
+                    await logActivity({
+                        supabase,
+                        tableName: 'positions',
+                        recordId: id,
+                        action: 'UPDATE',
+                        oldData: { lot_id: lotId },
+                        newData: { lot_id: null },
+                        systemCode: currentSystemCode || ''
+                    })
+                }
+
                 // 2. Delete lot_tags (Child)
                 await supabase.from('lot_tags').delete().eq('lot_id', lotId)
 
@@ -190,6 +204,19 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
                 .from('positions')
                 .update({ lot_id: lotData.id } as any)
                 .in('id', ids)
+
+            // Audit Log
+            for (const id of ids) {
+                await logActivity({
+                    supabase,
+                    tableName: 'positions',
+                    recordId: id,
+                    action: 'UPDATE',
+                    oldData: { lot_id: editingLot?.id || null },
+                    newData: { lot_id: lotData.id },
+                    systemCode: currentSystemCode || ''
+                })
+            }
         }
 
         setShowLotForm(false)
