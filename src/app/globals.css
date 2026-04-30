@@ -89,6 +89,7 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  user-select: text; /* Ensure text is selectable by default */
 }
 
 /* Add subtle grid pattern overlay */

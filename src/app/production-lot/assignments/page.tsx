@@ -7,13 +7,15 @@ import {
     CheckCircle2, MapPin, Hash, Calendar, Loader2, 
     Link as LinkIcon, AlertCircle, Trash2, Check, X, XCircle,
     ArrowRight, Package, Search, Filter, RefreshCcw,
-    AlertTriangle, Edit2, Save, ChevronDown, Clock, History, Info, Plus
+    AlertTriangle, Edit2, Save, ChevronDown, Clock, History, Info, Plus, Download
 } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
 import { format, subDays, isWithinInterval, parseISO } from 'date-fns'
 import { vi } from 'date-fns/locale'
+import { exportAssignmentHistoryToExcel } from '@/lib/assignmentExcelExport'
+import { extractWeightFromName } from '@/lib/unitConversion'
 
 type PendingAssignment = {
     id: string
@@ -27,6 +29,20 @@ type PendingAssignment = {
         code: string
         id: string
     }
+    lot?: {
+        id: string
+        code: string
+        product_names: string[]
+        product_skus: string[]
+        total_quantity: number
+        total_weight_kg: number
+        quantity_display: string
+        production_code: string | null
+        production_lot_code: string | null
+        production_order_code: string | null
+    }
+    assignment_type?: 'new' | 'move'
+    old_position_code?: string
 }
 
 type Lot = Database['public']['Tables']['lots']['Row'] & {
@@ -59,6 +75,8 @@ export default function AssignmentApprovalPage() {
     const [historyLoading, setHistoryLoading] = useState(false)
     const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | 'approved' | 'rejected'>('all')
     const [historySearchTerm, setHistorySearchTerm] = useState('')
+    const [historyProdOrderSearch, setHistoryProdOrderSearch] = useState('')
+    const [historyProdLotSearch, setHistoryProdLotSearch] = useState('')
     
     // Global positions for manual join
     const [allPositions, setAllPositions] = useState<any[]>([])
@@ -67,6 +85,24 @@ export default function AssignmentApprovalPage() {
     const [editingId, setEditingId] = useState<string | null>(null)
     const [editValues, setEditValues] = useState<{ lot_stt: string, position_id: string, position_code: string }>({ lot_stt: '', position_id: '', position_code: '' })
     const [manualEdits, setManualEdits] = useState<Record<string, { lot_stt: number, position_code: string }>>({})
+
+    const filteredHistory = useMemo(() => {
+        return historyList.filter(h => {
+            const matchesGeneral = !historySearchTerm || 
+                h.position?.code?.toLowerCase().includes(historySearchTerm.toLowerCase()) || 
+                h.lot_stt.toString().includes(historySearchTerm) ||
+                h.lot?.code?.toLowerCase().includes(historySearchTerm.toLowerCase()) ||
+                h.lot?.product_names?.some(p => p.toLowerCase().includes(historySearchTerm.toLowerCase()));
+            
+            const matchesProdOrder = !historyProdOrderSearch || 
+                h.lot?.production_order_code?.toLowerCase().includes(historyProdOrderSearch.toLowerCase());
+                
+            const matchesProdLot = !historyProdLotSearch || 
+                h.lot?.production_lot_code?.toLowerCase().includes(historyProdLotSearch.toLowerCase());
+
+            return matchesGeneral && matchesProdOrder && matchesProdLot;
+        });
+    }, [historyList, historySearchTerm, historyProdOrderSearch, historyProdLotSearch]);
 
     useEffect(() => {
         if (currentSystem?.code) {
@@ -123,7 +159,7 @@ export default function AssignmentApprovalPage() {
             }))
 
             setPendingList(enrichedAssignments.filter((a: any) => a.status === 'pending'))
-            setApprovedList(enrichedAssignments.filter((a: any) => a.status === 'approved'))
+            setApprovedList(enrichedAssignments.filter((a: any) => a.status.startsWith('approved')))
             setRejectedList(enrichedAssignments.filter((a: any) => a.status === 'rejected'))
 
             // 5. Fetch LOTs for matching list
@@ -201,13 +237,104 @@ export default function AssignmentApprovalPage() {
                 }
             }
 
-            const enriched = assignments.map((h: any) => ({
-                ...h,
-                position: { 
-                    id: h.position_id, 
-                    code: posMap[h.position_id] || 'N/A' 
+            // 4. Fetch LOTs for these dates to match product info
+            const { data: lotsData } = await supabase
+                .from('lots')
+                .select(`
+                    id, code, daily_seq, inbound_date,
+                    production_code,
+                    production_lot_id,
+                    production_lots:production_lot_id(lot_code),
+                    productions:production_id(code),
+                    lot_items(quantity, unit, products(name, sku, weight_kg))
+                `)
+                .eq('system_code', currentSystem.code)
+                .in('daily_seq', Array.from(new Set(assignments.map((a: any) => a.lot_stt))))
+            
+            const processedLots = (lotsData || []).map((l: any) => {
+                const totalQty = l.lot_items?.reduce((sum: number, li: any) => sum + (li.quantity || 0), 0) || 0
+                const unit = l.lot_items?.[0]?.unit || ''
+                
+                // Calculate Weight in KG
+                const totalWeightKg = l.lot_items?.reduce((sum: number, li: any) => {
+                    const weightFactor = extractWeightFromName(li.unit) || li.products?.weight_kg || 0
+                    return sum + ((li.quantity || 0) * weightFactor)
+                }, 0) || 0
+
+                return {
+                    ...l,
+                    product_names: l.lot_items?.map((li: any) => li.products?.name).filter(Boolean) || [],
+                    product_skus: l.lot_items?.map((li: any) => li.products?.sku).filter(Boolean) || [],
+                    total_quantity: totalQty,
+                    total_weight_kg: totalWeightKg,
+                    unit: unit,
+                    quantity_display: `${totalQty} ${unit}`.trim() || '---',
+                    production_order_code: (l as any).productions?.code || null,
+                    production_lot_code: (l as any).production_lots?.lot_code || l.production_code || null
                 }
-            }))
+            })
+
+            const lotsMap: Record<string, any[]> = {}
+            processedLots.forEach((l: any) => {
+                const date = l.inbound_date?.split('T')[0]
+                if (date) {
+                    const key = `${date}_${l.daily_seq}`
+                    if (!lotsMap[key]) lotsMap[key] = []
+                    lotsMap[key].push(l)
+                }
+            })
+
+            const enriched = assignments.map((h: any) => {
+                const date = h.production_date
+                const key = `${date}_${h.lot_stt}`
+                let matchedLots = lotsMap[key] || []
+                
+                // Smart Fallback: If exact date match fails, look for the same STT on any date (prioritize closest date)
+                if (matchedLots.length === 0 && processedLots.length > 0) {
+                    matchedLots = processedLots
+                        .filter(l => l.daily_seq === h.lot_stt)
+                        .sort((a, b) => {
+                            const distA = Math.abs(new Date(a.inbound_date).getTime() - new Date(h.production_date).getTime());
+                            const distB = Math.abs(new Date(b.inbound_date).getTime() - new Date(h.production_date).getTime());
+                            return distA - distB;
+                        });
+                }
+
+                const lot = matchedLots.length > 0 ? matchedLots[0] : null
+
+                // Decode status info: "approved:move:OLD_POS" or "approved:new"
+                let assignment_type: 'new' | 'move' | undefined = undefined
+                let old_position_code: string | undefined = undefined
+                
+                if (h.status.startsWith('approved:move:')) {
+                    assignment_type = 'move'
+                    old_position_code = h.status.replace('approved:move:', '')
+                } else if (h.status === 'approved:new' || h.status === 'approved') {
+                    assignment_type = 'new'
+                }
+
+                return {
+                    ...h,
+                    position: { 
+                        id: h.position_id, 
+                        code: posMap[h.position_id] || 'N/A' 
+                    },
+                    lot: lot ? {
+                        id: lot.id,
+                        code: lot.code,
+                        product_names: lot.product_names,
+                        product_skus: lot.product_skus,
+                        total_quantity: lot.total_quantity,
+                        total_weight_kg: lot.total_weight_kg,
+                        quantity_display: lot.quantity_display,
+                        production_code: lot.production_code,
+                        production_lot_code: lot.production_lot_code,
+                        production_order_code: lot.production_order_code
+                    } : null,
+                    assignment_type,
+                    old_position_code
+                }
+            })
             setHistoryList(enriched)
         } catch (e: any) {
             showToast('Lỗi tải lịch sử: ' + e.message, 'error')
@@ -310,9 +437,13 @@ export default function AssignmentApprovalPage() {
                 throw new Error("KHÔNG THỂ GHI NHẬN VỊ TRÍ: " + posUpdateErr.message);
             }
 
-            // Then, mark assignment as approved
+            // Then, mark assignment as approved with metadata in status
+            const isMove = otherPlacements.length > 0
+            const oldPosCodes = otherPlacements.map((p: any) => p.code).join(', ')
+            const finalStatus = isMove ? `approved:move:${oldPosCodes}` : `approved:new`
+
             const { error: statusUpdateErr } = await (supabase.from('pending_assignments') as any)
-                .update({ status: 'approved' })
+                .update({ status: finalStatus })
                 .eq('id', ass.id)
             
             if (statusUpdateErr) {
@@ -407,7 +538,11 @@ export default function AssignmentApprovalPage() {
                 if (targetPosInfo?.lot_id && targetPosInfo.lot_id !== lot.id) continue;
                 
                 await (supabase.from('positions') as any).update({ lot_id: lot.id }).eq('id', targetPosId)
-                await (supabase.from('pending_assignments') as any).update({ status: 'approved', position_id: targetPosId, lot_stt: manual?.lot_stt || ass.lot_stt }).eq('id', ass.id)
+                await (supabase.from('pending_assignments') as any).update({ 
+                    status: 'approved:new', 
+                    position_id: targetPosId, 
+                    lot_stt: manual?.lot_stt || ass.lot_stt 
+                }).eq('id', ass.id)
                 successCount++;
             }
             showToast(`Đã duyệt thành công ${successCount}/${validPairs.length} yêu cầu.`, successCount > 0 ? 'success' : 'error')
@@ -421,7 +556,7 @@ export default function AssignmentApprovalPage() {
 
     return (
 
-        <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-zinc-950 p-6 h-full transition-colors">
+        <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-zinc-950 p-6 h-full transition-colors select-text">
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
                 <div>
@@ -619,24 +754,164 @@ export default function AssignmentApprovalPage() {
                         </button>
                         {showHistory && (
                             <div className="mt-4 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-[32px] p-6 space-y-4 shadow-xl">
-                                <div className="flex flex-col sm:flex-row gap-3">
-                                    <div className="flex items-center gap-2 bg-zinc-50 dark:bg-zinc-950 px-3 py-1 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                                        <input type="date" value={historyDateFrom} onChange={e => setHistoryDateFrom(e.target.value)} className="bg-transparent text-xs font-black text-zinc-900 dark:text-white outline-none" />
-                                        <span className="text-zinc-300">→</span>
-                                        <input type="date" value={historyDateTo} onChange={e => setHistoryDateTo(e.target.value)} className="bg-transparent text-xs font-black text-zinc-900 dark:text-white outline-none" />
+                                <div className="space-y-4 bg-zinc-50/50 dark:bg-zinc-900/50 p-4 rounded-[32px] border border-zinc-100 dark:border-zinc-800">
+                                    {/* Dòng 1: Thời gian & Hành động */}
+                                    <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                                        <div className="flex items-center gap-3 px-5 py-2.5 bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-200/60 dark:border-zinc-800 shadow-sm">
+                                            <Calendar size={14} className="text-blue-500" />
+                                            <div className="flex items-center gap-3">
+                                                <input type="date" value={historyDateFrom} onChange={e => setHistoryDateFrom(e.target.value)} className="bg-transparent text-[11px] font-black text-zinc-900 dark:text-white outline-none cursor-pointer" />
+                                                <span className="text-zinc-300 font-bold">→</span>
+                                                <input type="date" value={historyDateTo} onChange={e => setHistoryDateTo(e.target.value)} className="bg-transparent text-[11px] font-black text-zinc-900 dark:text-white outline-none cursor-pointer" />
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-2">
+                                            <button 
+                                                onClick={() => {
+                                                    exportAssignmentHistoryToExcel({
+                                                        systemName: currentSystem?.name || 'Unknown System',
+                                                        dateRange: `${format(new Date(historyDateFrom), 'dd/MM/yyyy')} - ${format(new Date(historyDateTo), 'dd/MM/yyyy')}`,
+                                                        items: filteredHistory
+                                                    });
+                                                }} 
+                                                className="h-11 px-6 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-[10px] font-black uppercase flex items-center gap-2 shadow-lg shadow-emerald-600/20 transition-all active:scale-95 whitespace-nowrap"
+                                            >
+                                                <Download size={15} /> Xuất Excel
+                                            </button>
+                                            <button 
+                                                onClick={fetchHistory} 
+                                                className="h-11 w-11 flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white rounded-2xl shadow-lg shadow-blue-600/20 active:scale-95 transition-all shrink-0"
+                                            >
+                                                <RefreshCcw size={16} className={historyLoading ? "animate-spin" : ""} />
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div className="relative flex-1">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={14} />
-                                        <input placeholder="Tìm kiếm vị trí hoặc STT..." value={historySearchTerm} onChange={e => setHistorySearchTerm(e.target.value)} className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl py-2 pl-9 pr-4 text-xs font-bold text-zinc-900 dark:text-white outline-none focus:border-blue-400" />
+
+                                    {/* Dòng 2: Các ô tìm kiếm chi tiết */}
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        <div className="relative group">
+                                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-blue-500 transition-colors" size={14} />
+                                            <input 
+                                                placeholder="Tìm vị trí, số STT, tên sản phẩm..." 
+                                                value={historySearchTerm} 
+                                                onChange={e => setHistorySearchTerm(e.target.value)} 
+                                                className="w-full bg-white dark:bg-zinc-950 border border-zinc-200/60 dark:border-zinc-800 rounded-2xl py-3 pl-11 pr-4 text-[11px] font-bold text-zinc-900 dark:text-white outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-500/5 shadow-sm transition-all" 
+                                            />
+                                        </div>
+                                        <div className="relative group">
+                                            <Package className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-blue-500 transition-colors" size={14} />
+                                            <input 
+                                                placeholder="Mã Lệnh Sản Xuất..." 
+                                                value={historyProdOrderSearch} 
+                                                onChange={e => setHistoryProdOrderSearch(e.target.value)} 
+                                                className="w-full bg-white dark:bg-zinc-950 border border-zinc-200/60 dark:border-zinc-800 rounded-2xl py-3 pl-11 pr-4 text-[11px] font-bold text-zinc-900 dark:text-white outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-500/5 shadow-sm transition-all" 
+                                            />
+                                        </div>
+                                        <div className="relative group">
+                                            <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-blue-500 transition-colors" size={14} />
+                                            <input 
+                                                placeholder="Mã Lot Sản Xuất..." 
+                                                value={historyProdLotSearch} 
+                                                onChange={e => setHistoryProdLotSearch(e.target.value)} 
+                                                className="w-full bg-white dark:bg-zinc-950 border border-zinc-200/60 dark:border-zinc-800 rounded-2xl py-3 pl-11 pr-4 text-[11px] font-bold text-zinc-900 dark:text-white outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-500/5 shadow-sm transition-all" 
+                                            />
+                                        </div>
                                     </div>
-                                    <button onClick={fetchHistory} className="px-5 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-600/20 active:scale-95 transition-all"><RefreshCcw size={16} className={historyLoading?"animate-spin":""}/></button>
                                 </div>
                                 <div className="overflow-x-auto rounded-2xl border border-zinc-100 dark:border-zinc-800">
                                     <table className="w-full text-xs">
-                                        <thead className="bg-zinc-50 dark:bg-zinc-950"><tr><th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">STT</th><th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">Vị trí</th><th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">Ngày SX</th><th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">Trạng thái</th></tr></thead>
-                                        <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">{historyList.filter(h => !historySearchTerm || h.position?.code?.toLowerCase().includes(historySearchTerm.toLowerCase()) || h.lot_stt.toString().includes(historySearchTerm)).map(h => (
-                                            <tr key={h.id} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/20 transition-colors"><td className="px-4 py-3 font-bold text-zinc-900 dark:text-zinc-300">#{h.lot_stt}</td><td className="px-4 py-3 font-black uppercase text-zinc-900 dark:text-white">{h.position?.code || '---'}</td><td className="px-4 py-3 text-zinc-500 font-medium">{format(new Date(h.production_date), 'dd/MM/yyyy')}</td><td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${h.status === 'approved' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400'}`}>{h.status === 'approved' ? 'Đã duyệt' : 'Đã hủy'}</span></td></tr>
-                                        ))}</tbody>
+                                        <thead className="bg-zinc-50 dark:bg-zinc-950">
+                                            <tr>
+                                                <th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">STT</th>
+                                                <th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">Lệnh SX / Lot SX</th>
+                                                <th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">Sản Phẩm</th>
+                                                <th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">Số lượng</th>
+                                                <th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">Quy đổi (kg)</th>
+                                                <th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">Vị trí</th>
+                                                <th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">Loại</th>
+                                                <th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">Ngày SX</th>
+                                                <th className="px-4 py-3 text-left font-black text-zinc-400 uppercase tracking-widest text-[10px]">Trạng thái</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
+                                            {filteredHistory.map(h => (
+                                                    <tr key={h.id} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/20 transition-colors">
+                                                        <td className="px-4 py-3 font-bold text-zinc-900 dark:text-zinc-300">#{h.lot_stt}</td>
+                                                        <td className="px-4 py-3">
+                                                            <div className="flex flex-col gap-0.5">
+                                                                <span className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase">
+                                                                    LSX: {h.lot?.production_order_code || '---'}
+                                                                </span>
+                                                                <span className="text-[10px] font-bold text-zinc-500 uppercase">
+                                                                    LOT: {h.lot?.production_lot_code || '---'}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            {h.lot ? (
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-black text-zinc-900 dark:text-white uppercase">{h.lot.code}</span>
+                                                                    <span className="text-[10px] text-zinc-500 font-medium line-clamp-1">{h.lot.product_names?.join(', ') || '---'}</span>
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-zinc-400 italic">Không xác định</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            <span className="font-black text-zinc-900 dark:text-zinc-300">
+                                                                {h.lot?.quantity_display || '---'}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            <span className="font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded-lg">
+                                                                {h.lot?.total_weight_kg ? `${h.lot.total_weight_kg.toLocaleString('vi-VN')} kg` : '---'}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            <div className="flex flex-col">
+                                                                <div className="flex items-center gap-2">
+                                                                    <MapPin size={12} className="text-emerald-500" />
+                                                                    <span className="font-bold text-zinc-900 dark:text-zinc-200 uppercase">{h.position?.code}</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-1 mt-1">
+                                                                    <span className="text-[9px] font-bold text-zinc-400 uppercase">
+                                                                        {h.assignment_type === 'move' ? 'Từ:' : 'Nguồn:'}
+                                                                    </span>
+                                                                    <span className={`text-[9px] font-black uppercase ${h.assignment_type === 'move' ? 'text-blue-600 dark:text-blue-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                                                        {h.old_position_code || 'Sảnh'}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            {h.status === 'approved' ? (
+                                                                h.assignment_type === 'move' ? (
+                                                                    <div className="flex flex-col">
+                                                                        <span className="text-blue-600 dark:text-blue-400 font-black uppercase text-[9px] flex items-center gap-1">
+                                                                            <RefreshCcw size={10} /> Di chuyển
+                                                                        </span>
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="text-emerald-600 dark:text-emerald-400 font-black uppercase text-[9px] flex items-center gap-1">
+                                                                        <Plus size={10} /> Gán mới
+                                                                    </span>
+                                                                )
+                                                            ) : (
+                                                                <span className="text-zinc-400">---</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-zinc-500 font-medium">
+                                                            {format(new Date(h.production_date), 'dd/MM/yyyy')}
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${h.status === 'approved' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400'}`}>
+                                                                {h.status === 'approved' ? 'Đã duyệt' : 'Đã hủy'}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                        </tbody>
                                     </table>
                                 </div>
                             </div>
