@@ -39,6 +39,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
     const [branches, setBranches] = useState<any[]>([])
     const [units, setUnits] = useState<Unit[]>([])
     const [orderTypes, setOrderTypes] = useState<any[]>([])
+    const [categories, setCategories] = useState<any[]>([])
     const [loadingData, setLoadingData] = useState(false)
     const [submitting, setSubmitting] = useState(false)
 
@@ -70,18 +71,20 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
     async function fetchData() {
         setLoadingData(true)
         try {
-            const [prodRes, suppRes, branchRes, unitRes, typeRes] = await Promise.all([
+            const [prodRes, suppRes, branchRes, unitRes, typeRes, catRes] = await Promise.all([
                 supabase.from('products').select('*, product_units(unit_id, conversion_rate)').eq('system_type', systemCode).order('name'),
                 supabase.from('suppliers').select('*').eq('system_code', systemCode).order('name'),
                 supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'),
                 supabase.from('units').select('*').eq('is_active', true).or(`system_code.eq.${systemCode},system_code.is.null`),
-                (supabase.from('order_types') as any).select('*').or(`scope.eq.inbound,scope.eq.both`).or(`system_code.eq.${systemCode},system_code.is.null`).eq('is_active', true).order('created_at', { ascending: true })
+                (supabase.from('order_types') as any).select('*').or(`scope.eq.inbound,scope.eq.both`).or(`system_code.eq.${systemCode},system_code.is.null`).eq('is_active', true).order('created_at', { ascending: true }),
+                supabase.from('categories').select('*').eq('system_type', systemCode).order('name')
             ])
 
             if (prodRes.data) setProducts(prodRes.data)
             if (suppRes.data) setSuppliers(suppRes.data)
             if (unitRes.data) setUnits(unitRes.data)
             if (typeRes.data) setOrderTypes(typeRes.data)
+            if (catRes && catRes.data) setCategories(catRes.data)
             const branchesData = branchRes.data as any[] || []
             setBranches(branchesData)
 
@@ -127,7 +130,8 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                         quantity: i.quantity,
                         document_quantity: i.document_quantity || i.quantity,
                         price: i.price || 0,
-                        note: i.note || ''
+                        note: i.note || '',
+                        categoryId: i.category_id || null
                     })))
                 }
             } else if (initialData) {
@@ -175,7 +179,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
 
     const addItem = () => {
         setItems([...items, {
-            id: crypto.randomUUID(), productId: '', productName: '', unit: '', quantity: 1, document_quantity: 1, price: 0, note: ''
+            id: crypto.randomUUID(), productId: '', productName: '', unit: '', quantity: 1, document_quantity: 1, price: 0, note: '', categoryId: null
         }])
     }
 
@@ -186,7 +190,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                 const prod = products.find(p => p.id === value)
                 let initialUnit = ''
                 if (prod && (!prod.product_units || prod.product_units.length === 0) && prod.unit) initialUnit = prod.unit
-                return { ...item, productId: value, productName: prod?.name || '', unit: initialUnit, price: (prod as any)?.cost_price || 0 }
+                return { ...item, productId: value, productName: prod?.name || '', unit: initialUnit, price: (prod as any)?.cost_price || 0, categoryId: prod?.category_id || null }
             }
             if (field === 'quantity') {
                 const newValue = Number(value)
@@ -266,7 +270,8 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                 quantity: item.quantity,
                 document_quantity: item.document_quantity || item.quantity,
                 price: item.price,
-                note: item.note
+                note: item.note,
+                category_id: item.categoryId || null
             }))
 
             const { error: itemsError } = await (supabase.from('inbound_order_items') as any).insert(orderItems)
@@ -313,7 +318,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
         images, setImages,
         targetUnit, setTargetUnit,
         createdAt, setCreatedAt,
-        products, suppliers, branches, units, orderTypes,
+        products, suppliers, branches, units, orderTypes, categories,
         loadingData, submitting, handleSubmit,
         hasModule,
         convertUnit

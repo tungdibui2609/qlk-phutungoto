@@ -29,7 +29,7 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
         images, setImages,
         targetUnit, setTargetUnit,
         createdAt, setCreatedAt,
-        products, suppliers, branches, units, orderTypes,
+        products, suppliers, branches, units, orderTypes, categories,
         loadingData, submitting, handleSubmit,
         hasModule,
         convertUnit
@@ -131,6 +131,7 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
                 items={items}
                 products={products}
                 units={units}
+                categories={categories}
                 updateItem={updateItem}
                 removeItem={removeItem}
                 targetUnit={targetUnit}

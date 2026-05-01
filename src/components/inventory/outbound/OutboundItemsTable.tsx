@@ -10,6 +10,7 @@ interface OutboundItemsTableProps {
     items: OrderItem[]
     products: Product[]
     units: Unit[]
+    categories: any[]
     updateItem: (id: string, field: keyof OrderItem, value: any) => void
     removeItem: (id: string) => void
     targetUnit: string
@@ -20,7 +21,7 @@ interface OutboundItemsTableProps {
 }
 
 export function OutboundItemsTable({
-    items, products, units, updateItem, removeItem, targetUnit, hasModule, compact, displayInternalCode, convertUnit
+    items, products, units, categories, updateItem, removeItem, targetUnit, hasModule, compact, displayInternalCode, convertUnit
 }: OutboundItemsTableProps) {
     const [editingValue, setEditingValue] = useState<{ id: string, field: string, value: string } | null>(null)
 
@@ -122,6 +123,20 @@ export function OutboundItemsTable({
                                                         (~ {formatQuantityFull(stockAvailable)} {product.unit})
                                                     </div>
                                                 )}
+                                            </div>
+                                        )}
+                                        {categories && categories.length > 0 && (
+                                            <div className="mt-2">
+                                                <select
+                                                    value={item.categoryId || ''}
+                                                    onChange={(e) => updateItem(item.id, 'categoryId', e.target.value)}
+                                                    className="w-full bg-stone-50 dark:bg-zinc-800/50 border border-stone-200 dark:border-zinc-700 rounded px-2 py-1 text-[10px] text-stone-600 dark:text-stone-300 outline-none focus:border-orange-500"
+                                                >
+                                                    <option value="">-- Chọn danh mục --</option>
+                                                    {categories.map(c => (
+                                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                                    ))}
+                                                </select>
                                             </div>
                                         )}
                                     </td>
@@ -294,6 +309,20 @@ export function OutboundItemsTable({
                                                 (~ {formatQuantityFull(stockAvailable)} {product.unit})
                                             </div>
                                         )}
+                                    </div>
+                                )}
+                                {categories && categories.length > 0 && (
+                                    <div className="mt-2">
+                                        <select
+                                            value={item.categoryId || ''}
+                                            onChange={(e) => updateItem(item.id, 'categoryId', e.target.value)}
+                                            className="w-full bg-stone-50 dark:bg-zinc-800/50 border border-stone-200 dark:border-zinc-700 rounded px-2 py-1.5 text-xs text-stone-600 dark:text-stone-300 outline-none focus:border-orange-500"
+                                        >
+                                            <option value="">-- Chọn danh mục --</option>
+                                            {categories.map(c => (
+                                                <option key={c.id} value={c.id}>{c.name}</option>
+                                            ))}
+                                        </select>
                                     </div>
                                 )}
                             </div>

@@ -30,7 +30,7 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
         images, setImages,
         targetUnit, setTargetUnit,
         createdAt, setCreatedAt,
-        products, customers, branches, units, orderTypes,
+        products, customers, branches, units, orderTypes, categories,
         loadingData, submitting, handleSubmit,
         hasModule, isUtilityEnabled, confirmDialog, setConfirmDialog, handleCustomerSelect,
         convertUnit
@@ -143,6 +143,7 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
                     items={items}
                     products={products}
                     units={units}
+                    categories={categories}
                     updateItem={updateItem}
                     removeItem={removeItem}
                     targetUnit={targetUnit}

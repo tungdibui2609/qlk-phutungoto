@@ -20,6 +20,7 @@ export interface UnbundleParams {
     unitNameMap: UnitNameMap
     unitIdMap: Map<string, string>
     generateOrderCode: (type: 'PNK' | 'PXK') => Promise<string>
+    categoryId?: string | null
 }
 
 export const unbundleService = {
@@ -253,7 +254,7 @@ export const unbundleService = {
         const {
             supabase, productId, productName, baseUnit, reqUnit, reqQty,
             currentLiquid, costPrice, rate, warehouseName, systemCode,
-            mainOrderCode, convTypeId, conversionMap, unitNameMap, unitIdMap, generateOrderCode
+            mainOrderCode, convTypeId, conversionMap, unitNameMap, unitIdMap, generateOrderCode, categoryId
         } = params
 
         const deficit = reqQty - currentLiquid
@@ -286,7 +287,8 @@ export const unbundleService = {
             product_name: productName,
             unit: enrichedBaseUnit,
             quantity: Number(baseToBreak.toFixed(6)),
-            price: costPrice || 0
+            price: costPrice || 0,
+            category_id: categoryId || null
         })
 
         // B. Create PNK (Chuyển đổi) - In Requested Units
@@ -310,7 +312,8 @@ export const unbundleService = {
             product_name: productName,
             unit: enrichedReqUnit,
             quantity: Number((baseToBreak * rate).toFixed(6)),
-            price: costPrice || 0
+            price: costPrice || 0,
+            category_id: categoryId || null
         })
 
         return baseToBreak

@@ -20,9 +20,10 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Bao Cao Ton Kho');
 
-    // 1. Set Columns based on report type
+    // 1. Define Columns based on report type
+    let cols: any[] = [];
     if (data.type === 'accounting') {
-        worksheet.columns = [
+        cols = [
             { header: 'STT', key: 'stt', width: 6 },
             { header: 'Tên Sản Phẩm', key: 'productName', width: 40 },
             { header: 'Mã SP', key: 'productCode', width: 20 },
@@ -34,7 +35,7 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
             { header: 'Quy đổi (Kg)', key: 'kg', width: 15 },
         ];
     } else if (data.type === 'lot' || data.type === 'category' || data.type === 'tags') {
-        worksheet.columns = [
+        cols = [
             { header: 'STT', key: 'stt', width: 6 },
             { header: 'Mã SP', key: 'productCode', width: 20 },
             { header: 'Tên sản phẩm', key: 'productName', width: 40 },
@@ -44,7 +45,7 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
             { header: 'Quy đổi (Kg)', key: 'kg', width: 15 },
         ];
     } else {
-        worksheet.columns = [
+        cols = [
             { header: 'Mã SP', key: 'productCode', width: 20 },
             { header: 'Tên Sản Phẩm', key: 'productName', width: 40 },
             { header: 'ĐVT', key: 'unit', width: 10 },
@@ -53,6 +54,9 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
             { header: 'Chênh Lệch', key: 'diff', width: 15 },
         ];
     }
+
+    // Set keys and widths without headers to prevent auto-writing on row 1
+    worksheet.columns = cols.map(c => ({ key: c.key, width: c.width }));
 
     // 2. Add Company Info Header
     let currentRow = 1;
@@ -87,7 +91,7 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
                 ? 'BÁO CÁO TỒN KHO THEO DANH MỤC'
                 : 'BẢNG ĐỐI CHIẾU TỒN KHO VS KẾ TOÁN';
     
-    const lastCol = String.fromCharCode(65 + worksheet.columns.length - 1);
+    const lastCol = String.fromCharCode(65 + cols.length - 1);
     worksheet.mergeCells(`A${currentRow}:${lastCol}${currentRow}`);
     const titleCell = worksheet.getCell(`A${currentRow}`);
     titleCell.value = title;
@@ -113,7 +117,7 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
 
     // 4. Table Header formatting
     const headerRow = worksheet.getRow(currentRow);
-    headerRow.values = worksheet.columns.map(c => String(c.header || ''));
+    headerRow.values = cols.map(c => String(c.header || ''));
     headerRow.eachCell(cell => {
         cell.font = { bold: true };
         cell.alignment = { horizontal: 'center', vertical: 'middle' };

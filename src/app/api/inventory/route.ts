@@ -65,6 +65,7 @@ export async function GET(request: Request) {
                         product_id,
                         unit,
                         quantity,
+                        category_id,
                         order:${orderRelation}!inner (
                             warehouse_name,
                             created_at
@@ -163,6 +164,7 @@ export async function GET(request: Request) {
             qtyOut: number
             balance: number
             categoryName: string | null
+            categoryId?: string | null
             isUnconvertible?: boolean
             kg?: number
         }
@@ -241,6 +243,8 @@ export async function GET(request: Request) {
 
             const prod = productMap.get(pid)
             const baseUnitName = prod?.unit || null
+            const cid = item.category_id || prod?.category_id || null
+            const cName = cid ? categoryMap.get(cid) || null : null
 
             // Determine if convertible
             const isTargetKg = targetUnit && isKg(targetUnit.name)
@@ -255,7 +259,7 @@ export async function GET(request: Request) {
             if (targetUnitId && isConvertible) {
                 // CONVERTIBLE
                 unitIdVal = targetUnitId
-                key = `${pid}_${wName}_${targetUnitId}`
+                key = `${pid}_${wName}_${targetUnitId}_${cid || 'null'}`
                 // Display the suffix if the target unit is not already formatted and has a weight factor
                 const rate = conversionMap.get(pid)?.get(targetUnitId)
                 const suffix = (rate && rate > 1 && !targetUnit!.name.includes('(')) ? ` (${rate}kg)` : ''
@@ -265,7 +269,7 @@ export async function GET(request: Request) {
                 // NOT CONVERTIBLE or NO TARGET UNIT
                 const canonicalUName = canonicalizeUnit(uName)
                 unitIdVal = unitNameMap.get(canonicalUName) || null
-                key = `${pid}_${wName}_${uName}`
+                key = `${pid}_${wName}_${uName}_${cid || 'null'}`
                 if (targetUnitId) {
                     isUnconvertible = true
                 }
@@ -302,7 +306,8 @@ export async function GET(request: Request) {
                     qtyIn: 0,
                     qtyOut: 0,
                     balance: 0,
-                    categoryName: prod?.category_id ? categoryMap.get(prod.category_id) || null : null,
+                    categoryName: cName,
+                    categoryId: cid,
                     isUnconvertible
                 })
             }
@@ -394,8 +399,7 @@ export async function GET(request: Request) {
             const selectedCategoryIds = new Set(categoryIdsParam.split(',').filter(Boolean))
             if (selectedCategoryIds.size > 0) {
                 result = result.filter(i => {
-                    const prod = productMap.get(i.productId)
-                    return prod?.category_id && selectedCategoryIds.has(prod.category_id)
+                    return i.categoryId && selectedCategoryIds.has(i.categoryId)
                 })
             }
         }

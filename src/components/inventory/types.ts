@@ -22,6 +22,7 @@ export interface OrderItem {
     document_quantity: number
     price: number
     note: string
+    categoryId?: string | null
     isDocQtyVisible?: boolean
     isNoteOpen?: boolean
     needsUnbundle?: boolean

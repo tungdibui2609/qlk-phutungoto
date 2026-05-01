@@ -548,6 +548,11 @@ export default function InventoryPage() {
                                                                     <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-400">{displayCode}</td>
                                                                     <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100 flex items-center gap-2">
                                                                         {displayName}
+                                                                        {item.categoryName && (
+                                                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-600 border border-blue-200">
+                                                                                {item.categoryName}
+                                                                            </span>
+                                                                        )}
                                                                         {item.isUnconvertible && (
                                                                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-600 border border-orange-200">
                                                                                 Chưa thể quy đổi

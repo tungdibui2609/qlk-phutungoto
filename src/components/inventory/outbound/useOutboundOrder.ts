@@ -42,6 +42,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
     const [branches, setBranches] = useState<any[]>([])
     const [units, setUnits] = useState<Unit[]>([])
     const [orderTypes, setOrderTypes] = useState<any[]>([])
+    const [categories, setCategories] = useState<any[]>([])
     const [loadingData, setLoadingData] = useState(false)
     const [submitting, setSubmitting] = useState(false)
     const [confirmDialog, setConfirmDialog] = useState<{ isOpen: boolean, title: string, message: string, onConfirm: () => void }>({ isOpen: false, title: '', message: '', onConfirm: () => { } })
@@ -116,6 +117,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                         document_quantity: i.document_quantity,
                         price: i.price,
                         note: i.note,
+                        categoryId: i.category_id || null,
                         isDocQtyVisible: i.document_quantity !== i.quantity
                     }
                     
@@ -156,13 +158,14 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
     async function fetchData() {
         setLoadingData(true)
         try {
-            const [prodRes, branchRes, custRes, invRes, unitRes, typeRes] = await Promise.all([
+            const [prodRes, branchRes, custRes, invRes, unitRes, typeRes, catRes] = await Promise.all([
                 supabase.from('products').select('*, product_units(unit_id, conversion_rate)').eq('system_type', systemCode).order('name'),
                 supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'),
                 supabase.from('customers').select('*').eq('system_code', systemCode).order('name'),
                 fetch(`/api/inventory?systemType=${systemCode}`).then(res => res.json()),
                 supabase.from('units').select('*').eq('is_active', true).or(`system_code.eq.${systemCode},system_code.is.null`),
-                (supabase.from('order_types') as any).select('*').or(`scope.eq.outbound,scope.eq.both`).or(`system_code.eq.${systemCode},system_code.is.null`).eq('is_active', true).order('created_at', { ascending: true })
+                (supabase.from('order_types') as any).select('*').or(`scope.eq.outbound,scope.eq.both`).or(`system_code.eq.${systemCode},system_code.is.null`).eq('is_active', true).order('created_at', { ascending: true }),
+                supabase.from('categories').select('*').eq('system_type', systemCode).order('name')
             ])
 
             if (prodRes.data) {
@@ -204,6 +207,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
             if (custRes.data) setCustomers(custRes.data as any)
             if (unitRes.data) setUnits(unitRes.data)
             if (typeRes.data) setOrderTypes(typeRes.data)
+            if (catRes && catRes.data) setCategories(catRes.data)
 
             const branchesData = branchRes.data as any[] || []
             setBranches(branchesData)
@@ -235,7 +239,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
 
     const addItem = () => {
         setItems([...items, {
-            id: crypto.randomUUID(), productId: '', productName: '', unit: '', quantity: 1, document_quantity: 1, price: 0, note: ''
+            id: crypto.randomUUID(), productId: '', productName: '', unit: '', quantity: 1, document_quantity: 1, price: 0, note: '', categoryId: null
         }])
     }
 
@@ -261,7 +265,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                 let initialUnit = ''
                 if (prod && (!prod.product_units || prod.product_units.length === 0) && prod.unit) initialUnit = prod.unit
                 
-                const returnItem = { ...item, productId: value, productName: prod?.name || '', unit: initialUnit, price: (prod as any)?.price || 0 }
+                const returnItem = { ...item, productId: value, productName: prod?.name || '', unit: initialUnit, price: (prod as any)?.price || 0, categoryId: prod?.category_id || null }
                 
                 // Check unbundle
                 if (isUtilityEnabled('auto_unbundle_order')) {
@@ -397,7 +401,8 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                             conversionMap,
                             unitNameMap,
                             unitIdMap,
-                            generateOrderCode: (type: 'PNK' | 'PXK') => generateOrderCode(type, systemCode)
+                            generateOrderCode: (type: 'PNK' | 'PXK') => generateOrderCode(type, systemCode),
+                            categoryId: item.categoryId || null
                         })
                     }
                 }
@@ -410,7 +415,8 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                 quantity: item.quantity,
                 document_quantity: item.document_quantity || item.quantity,
                 price: item.price,
-                note: item.note
+                note: item.note,
+                category_id: item.categoryId || null
             }))
 
             const { error: itemsError } = await (supabase.from('outbound_order_items') as any).insert(orderItems)
@@ -441,7 +447,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         images, setImages,
         targetUnit, setTargetUnit,
         createdAt, setCreatedAt,
-        products, customers, branches, units, orderTypes,
+        products, customers, branches, units, orderTypes, categories,
         loadingData, submitting, handleSubmit,
         handleCustomerSelect,
         confirmDialog, setConfirmDialog,
