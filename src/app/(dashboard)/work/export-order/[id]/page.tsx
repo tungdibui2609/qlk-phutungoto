@@ -530,7 +530,28 @@ function ExportOrderDetailContent() {
                 }).eq('id', item.id)
 
                 if (totalLotQty <= 0.000001) {
+                    // Lấy danh sách position IDs trước khi clear (để ghi audit log)
+                    const { data: affectedPositions } = await supabase
+                        .from('positions')
+                        .select('id')
+                        .eq('lot_id', lot.id)
+
                     await (supabase.from('positions') as any).update({ lot_id: null }).eq('lot_id', lot.id)
+
+                    // Ghi audit log cho từng vị trí đã bị xóa LOT
+                    if (affectedPositions && affectedPositions.length > 0) {
+                        for (const pos of affectedPositions as any[]) {
+                            await logActivity({
+                                supabase,
+                                tableName: 'positions',
+                                recordId: pos.id,
+                                action: 'UPDATE',
+                                oldData: { lot_id: lot.id },
+                                newData: { lot_id: null },
+                                systemCode: currentSystem?.code || ''
+                            })
+                        }
+                    }
                 }
 
                 await logActivity({

@@ -174,7 +174,7 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                 // 1. Fetch current LOT state to ensure we have latest data (in case of concurrent changes)
                 const { data: lotData, error: fetchError } = await supabase
                     .from('lots')
-                    .select('*, lot_items(*, products(sku, name, unit, cost_price)), positions!positions_lot_id_fkey(code)')
+                    .select('*, lot_items(*, products(sku, name, unit, cost_price)), positions!positions_lot_id_fkey(id, code)')
                     .eq('id', lotId)
                     .single()
 
@@ -284,9 +284,25 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                     }).eq('id', lot.id)
                     if (lotUpdError) throw lotUpdError
 
+                    // Lấy danh sách position IDs trước khi clear (để ghi audit log)
+                    const clearedPositionIds: string[] = (lot.positions || []).map((p: any) => p.id).filter(Boolean)
+
                     // Clear positions
                     const { error: posUpdError } = await (supabase.from('positions') as any).update({ lot_id: null }).eq('lot_id', lot.id)
                     if (posUpdError) throw posUpdError
+
+                    // Ghi audit log cho từng vị trí đã bị xóa LOT
+                    for (const posId of clearedPositionIds) {
+                        await logActivity({
+                            supabase,
+                            tableName: 'positions',
+                            recordId: posId,
+                            action: 'UPDATE',
+                            oldData: { lot_id: lot.id },
+                            newData: { lot_id: null },
+                            systemCode: lot.system_code
+                        })
+                    }
 
                     // Audit log export action on lot
                     await logActivity({
