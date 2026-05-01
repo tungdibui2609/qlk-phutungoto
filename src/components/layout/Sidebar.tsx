@@ -123,6 +123,7 @@ const menuItems: MenuItem[] = [
             { id: 'warehouse_status', name: 'Trạng thái kho', href: '/warehouses/status', icon: BarChart3, requiredPermission: 'warehouse.view' },
             { id: 'hall_summary', name: 'Thống kê sảnh', href: '/warehouses/hall-summary', icon: BarChart3, requiredPermission: 'warehouse.view' },
             { id: 'warehouse_map_log', name: 'Nhật ký sơ đồ kho', href: '/reports/warehouse-map-log', icon: Map, requiredPermission: 'report.view' },
+            { id: 'warehouse_movements', name: 'Diễn biến kho (Sạch)', href: '/reports/warehouse-movements', icon: Activity, requiredPermission: 'report.view' },
             { id: 'history', name: 'Lịch sử thao tác', href: '/operation-history', icon: Activity, requiredPermission: 'report.view' },
             { id: 'customer_docs', name: 'Chứng từ khách hàng', href: '/reports/customer-docs', icon: FileText, requiredPermission: 'report.view' },
             { id: 'supplier_debts', name: 'Công nợ NCC', href: '/reports/supplier-debts', icon: DollarSign, requiredPermission: 'report.view' },
