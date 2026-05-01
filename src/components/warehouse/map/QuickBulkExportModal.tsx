@@ -185,37 +185,40 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
 
                 const exportItemsData: Record<string, any> = {}
                 const lotItems = lot.lot_items || []
-                let totalLotRemaining = 0;
-
                 const currentLotFlatItems = flatLotItems.filter(f => f.lotId === lot.id)
+
+                // Pre-calculate export totals per SKU+Unit for this lot
+                const skuUnitExportTotals: Record<string, number> = {}
+                currentLotFlatItems.forEach(f => {
+                    const normUnit = f.unit ? f.unit.replace(/\s+/g, '').toLowerCase() : ''
+                    const key = `${f.sku}_${normUnit}`
+                    const qty = exportQuantities[f.uid] || 0;
+                    skuUnitExportTotals[key] = (skuUnitExportTotals[key] || 0) + qty;
+                    
+                    // Track this processed item for upstream page update
+                    if (qty > 0 && f.task_item_id) {
+                        processedTaskItems.push({
+                            task_item_id: f.task_item_id,
+                            export_qty: qty
+                        })
+                    }
+                })
 
                 // 2. Prepare export history data & Production inputs
                 for (const item of lotItems) {
                     const baseUnit = item.products?.unit || ''
                     const selectedUnit = item.unit || baseUnit
+                    const normUnit = selectedUnit ? selectedUnit.replace(/\s+/g, '').toLowerCase() : ''
+                    const key = `${item.products?.sku}_${normUnit}`
                     
-                    const matchedFlatItem = currentLotFlatItems.find(f => f.sku === item.products?.sku && f.unit === selectedUnit)
-                    
-                    let exportQty = item.quantity;
-                    if (matchedFlatItem && exportQuantities[matchedFlatItem.uid] !== undefined) {
-                        exportQty = exportQuantities[matchedFlatItem.uid]
+                    let exportQty = 0;
+                    if (skuUnitExportTotals[key] > 0) {
+                        exportQty = Math.min(item.quantity, skuUnitExportTotals[key]);
+                        skuUnitExportTotals[key] -= exportQty;
                     }
 
                     if (exportQty <= 0) {
-                        totalLotRemaining += item.quantity;
                         continue;
-                    }
-
-                    // Track this processed item for upstream page update
-                    if (matchedFlatItem?.task_item_id) {
-                        processedTaskItems.push({
-                            task_item_id: matchedFlatItem.task_item_id,
-                            export_qty: exportQty
-                        })
-                    }
-
-                    if (exportQty > item.quantity) {
-                        throw new Error(`Số lượng xuất vượt quá tồn (${exportQty} > ${item.quantity}) đối với mã ${item.products?.name}`)
                     }
 
                     const weightKg = toBaseAmount(item.product_id, selectedUnit, exportQty, baseUnit)
@@ -244,14 +247,24 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                     }
 
                     const remainingQty = item.quantity - exportQty;
-                    totalLotRemaining += remainingQty;
 
-                    if (remainingQty === 0) {
+                    if (remainingQty <= 0.000001) {
                         const { error: itemsDelError } = await (supabase.from('lot_items') as any).delete().eq('id', item.id)
                         if (itemsDelError) throw itemsDelError
                     } else {
                         const { error: itemsUpdError } = await (supabase.from('lot_items') as any).update({ quantity: remainingQty }).eq('id', item.id)
                         if (itemsUpdError) throw itemsUpdError
+                    }
+                }
+
+                // Verify all requested quantities were fulfilled
+                for (const [key, remaining] of Object.entries(skuUnitExportTotals)) {
+                    // Small floating point tolerance due to math precision
+                    if (remaining > 0.0001) {
+                        const sku = key.split('_')[0];
+                        const matchedProduct = currentLotFlatItems.find(f => f.sku === sku);
+                        const productName = matchedProduct ? matchedProduct.name : sku;
+                        throw new Error(`Số lượng xuất vượt quá tồn kho (Thiếu ${Math.round(remaining * 1000) / 1000}) đối với mã ${productName}`)
                     }
                 }
 
@@ -273,21 +286,29 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                     }
                 })
 
-                // 4. Perform full export updates in database
-                if (totalLotRemaining === 0) {
-                    // Update LOT status and quantity
-                    const { error: lotUpdError } = await (supabase.from('lots') as any).update({
-                        quantity: 0,
-                        metadata: newMetadata,
-                        status: 'exported',
-                        system_code: lot.system_code // Explicitly preserve system_code
-                    }).eq('id', lot.id)
-                    if (lotUpdError) throw lotUpdError
+                // 3.5 Calculate Final Total Remaining Qty from DB to be 100% accurate (in BASE UNIT)
+                const totalRemainingLotQty = await lotService.calculateTotalBaseQty({
+                    supabase,
+                    lotId: lot.id,
+                    unitNameMap,
+                    conversionMap
+                })
 
+                // 4. Perform full export updates in database
+                const statusVal = totalRemainingLotQty <= 0.000001 ? 'exported' : lot.status
+                const { error: lotUpdError } = await (supabase.from('lots') as any).update({
+                    quantity: totalRemainingLotQty,
+                    metadata: newMetadata,
+                    status: statusVal,
+                    system_code: lot.system_code // Explicitly preserve system_code
+                }).eq('id', lot.id)
+                if (lotUpdError) throw lotUpdError
+
+                // Map Cleanup: If lot is empty, clear from positions
+                if (totalRemainingLotQty <= 0.000001) {
                     // Lấy danh sách position IDs trước khi clear (để ghi audit log)
                     const clearedPositionIds: string[] = (lot.positions || []).map((p: any) => p.id).filter(Boolean)
 
-                    // Clear positions
                     const { error: posUpdError } = await (supabase.from('positions') as any).update({ lot_id: null }).eq('lot_id', lot.id)
                     if (posUpdError) throw posUpdError
 
@@ -303,37 +324,18 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                             systemCode: lot.system_code
                         })
                     }
-
-                    // Audit log export action on lot
-                    await logActivity({
-                        supabase,
-                        tableName: 'lots',
-                        recordId: lot.id,
-                        action: 'UPDATE',
-                        oldData: { quantity: lot.quantity, status: lot.status },
-                        newData: { quantity: 0, status: 'exported' },
-                        systemCode: lot.system_code
-                    })
-                } else {
-                    // Update LOT quantity only
-                    const { error: lotUpdError } = await (supabase.from('lots') as any).update({
-                        quantity: totalLotRemaining,
-                        metadata: newMetadata,
-                        system_code: lot.system_code 
-                    }).eq('id', lot.id)
-                    if (lotUpdError) throw lotUpdError
-
-                    // Audit log export action on lot
-                    await logActivity({
-                        supabase,
-                        tableName: 'lots',
-                        recordId: lot.id,
-                        action: 'UPDATE',
-                        oldData: { quantity: lot.quantity },
-                        newData: { quantity: totalLotRemaining },
-                        systemCode: lot.system_code
-                    })
                 }
+
+                // Audit log export action on lot
+                await logActivity({
+                    supabase,
+                    tableName: 'lots',
+                    recordId: lot.id,
+                    action: 'UPDATE',
+                    oldData: { quantity: lot.quantity, status: lot.status },
+                    newData: { quantity: totalRemainingLotQty, status: statusVal },
+                    systemCode: lot.system_code
+                })
             }
 
             // Save Production Inputs
