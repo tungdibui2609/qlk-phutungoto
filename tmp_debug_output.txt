@@ -1,9 +1,0 @@
---- Searching for product SKU "SRM.CD" ---
-
-Product ID: 8206449d-ff98-4587-a258-29b931b5f52c
-SKU: SRM.CD
-Name: Sầu Riêng Cấp Đông Múi
-Unit: Kg
-Weight KG: null
-Product Units:
-  - Unit: Thùng (ID: 474c5aa3-02f9-48e5-9a1d-a64e80db8d18), Rate: 20
