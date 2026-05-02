@@ -196,11 +196,17 @@ function ExportOrderContent() {
     const fetchTasks = async () => {
         try {
             setLoading(true)
-            // 1. Fetch tasks and item counts
-            const { data: tasksData, error: tasksError } = await supabase
+            let query = supabase
                 .from('export_tasks')
                 .select('*, export_task_items(count)')
                 .order('created_at', { ascending: false })
+                .limit(500)
+
+            if (currentSystem?.code) {
+                query = query.eq('system_code', currentSystem.code)
+            }
+
+            const { data: tasksData, error: tasksError } = await query
 
             if (tasksError) throw tasksError
 

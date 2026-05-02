@@ -55,6 +55,8 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
             const startStr = format(start, "yyyy-MM-dd")
             const endStr = format(end, "yyyy-MM-dd")
 
+            // Query 1: Lấy tất cả lot có ngày nhập hoặc ngày tạo trong khoảng thời gian
+            // Không dùng status.eq.exported nữa vì nó kéo về TẤT CẢ lot đã xuất bất kể ngày tháng
             const { data: allLots, error } = await supabase
                 .from('lots')
                 .select(`
@@ -71,14 +73,46 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                     products(name, sku, unit)
                 `)
                 .eq('system_code', currentSystem?.code)
-                .or(`inbound_date.gte.${startStr},created_at.gte.${format(start, "yyyy-MM-dd'T'00:00:00")},status.eq.exported`)
+                .or(`inbound_date.gte.${startStr},created_at.gte.${format(start, "yyyy-MM-dd'T'00:00:00")}`)
                 .order('inbound_date', { ascending: false })
 
             if (error) {
                 console.error('Supabase query error:', error)
                 throw new Error(error.message || 'Lỗi không xác định từ cơ sở dữ liệu')
             }
-            const rawLots = (allLots || []) as any[]
+
+            // Query 1b: Lấy thêm các lot đã xuất CŨ (tạo trước khoảng ngày đang xem)
+            // Chỉ dùng cho phần Outward - kiểm tra metadata exports có ngày xuất trong khoảng
+            // Giới hạn trong 1 năm để tránh kéo quá nhiều dữ liệu
+            const oneYearBefore = new Date(start)
+            oneYearBefore.setFullYear(oneYearBefore.getFullYear() - 1)
+            const { data: exportedLots } = await supabase
+                .from('lots')
+                .select(`
+                    *,
+                    productions(code, name),
+                    lot_items(
+                        id,
+                        product_id,
+                        quantity,
+                        unit,
+                        products(name, sku, unit)
+                    ),
+                    positions!positions_lot_id_fkey(id, code),
+                    products(name, sku, unit)
+                `)
+                .eq('system_code', currentSystem?.code)
+                .eq('status', 'exported')
+                .lt('created_at', format(start, "yyyy-MM-dd'T'00:00:00"))
+                .gte('created_at', format(oneYearBefore, "yyyy-MM-dd'T'00:00:00"))
+
+            // Merge 2 danh sách, loại trùng bằng id
+            const allLotsIds = new Set((allLots || []).map((l: any) => l.id))
+            const mergedLots = [
+                ...(allLots || []),
+                ...((exportedLots || []).filter((l: any) => !allLotsIds.has(l.id)))
+            ]
+            const rawLots = mergedLots as any[]
 
             // Step 2: Separate Inward and Outward
             const inward: any[] = []
@@ -89,15 +123,33 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                 const effectiveDateStr = lot.inbound_date || lot.created_at;
                 const effectiveDate = new Date(effectiveDateStr);
                 
-                if (effectiveDate >= start && effectiveDate <= end) {
-                    let validItems = lot.lot_items || []
-                    // Không lọc bỏ hàng gộp/tách nữa để người dùng có thể theo dõi nguồn gốc hàng hóa
-                    // Thay vào đó chúng ta sẽ hiển thị nhãn phân biệt trong UI
+                // Kiểm tra ngày nằm trong khoảng lọc
+                const isDateInRange = effectiveDate >= start && effectiveDate <= end;
+                
+                if (isDateInRange) {
+                    // Bỏ qua các lot "ma" - đã xuất hết, không có hàng hóa, 
+                    // và ngày tạo thực tế nằm ngoài khoảng (inbound_date bị đổi thủ công)
+                    const createdAt = new Date(lot.created_at);
+                    const isCreatedInRange = createdAt >= start && createdAt <= end;
+                    const hasInventoryData = (lot.lot_items && lot.lot_items.length > 0) || 
+                                             lot.products || 
+                                             (lot.metadata?.system_history?.merged_out?.length > 0);
+                    const isExported = lot.status === 'exported';
                     
-                    if (lot.lot_items && lot.lot_items.length > 0) {
-                        inward.push({ ...lot, lot_items: validItems })
+                    // Nếu lot đã xuất + không có dữ liệu hàng hóa + ngày tạo không nằm trong khoảng
+                    // → Đây là lot cũ bị đổi inbound_date → không hiển thị trong danh sách nhập
+                    if (isExported && !hasInventoryData && !isCreatedInRange) {
+                        // Skip - lot "ma" (ghost lot)
                     } else {
-                        inward.push(lot)
+                        let validItems = lot.lot_items || []
+                        // Không lọc bỏ hàng gộp/tách nữa để người dùng có thể theo dõi nguồn gốc hàng hóa
+                        // Thay vào đó chúng ta sẽ hiển thị nhãn phân biệt trong UI
+                        
+                        if (lot.lot_items && lot.lot_items.length > 0) {
+                            inward.push({ ...lot, lot_items: validItems })
+                        } else {
+                            inward.push(lot)
+                        }
                     }
                 }
 
@@ -250,6 +302,57 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                 }
             } else {
                 setProductionLotsMap({})
+            }
+
+            // Step 6: Reconstruct missing lot_items for fully exported/empty lots
+            const emptyInwardLots = inward.filter(lot => 
+                (!lot.lot_items || lot.lot_items.length === 0) && 
+                !lot.products && 
+                !(lot.metadata?.system_history?.merged_out?.length > 0)
+            );
+
+            if (emptyInwardLots.length > 0) {
+                const emptyLotIds = emptyInwardLots.map(l => l.id);
+                const { data: missingExportItems } = await supabase
+                    .from('export_task_items')
+                    .select(`
+                        lot_id,
+                        product_id,
+                        quantity,
+                        unit,
+                        products(name, sku, unit)
+                    `)
+                    .in('lot_id', emptyLotIds)
+                    .in('status', ['Exported', 'Completed']);
+
+                if (missingExportItems && missingExportItems.length > 0) {
+                    const reconstructedMap: Record<string, any[]> = {};
+                    
+                    missingExportItems.forEach((item: any) => {
+                        if (!reconstructedMap[item.lot_id]) reconstructedMap[item.lot_id] = [];
+                        
+                        // Aggregate quantities for same product/unit
+                        const existing = reconstructedMap[item.lot_id].find(i => i.product_id === item.product_id && i.unit === item.unit);
+                        if (existing) {
+                            existing.quantity += (Number(item.quantity) || 0);
+                        } else {
+                            reconstructedMap[item.lot_id].push({
+                                id: `reconstructed_${item.product_id}`,
+                                product_id: item.product_id,
+                                quantity: Number(item.quantity) || 0,
+                                unit: item.unit || item.products?.unit,
+                                products: item.products,
+                                is_reconstructed: true
+                            });
+                        }
+                    });
+
+                    inward.forEach(lot => {
+                        if (reconstructedMap[lot.id]) {
+                            lot.lot_items = reconstructedMap[lot.id];
+                        }
+                    });
+                }
             }
 
             setReportDataInward(inward)
@@ -1119,10 +1222,43 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                                 </tr>
                                                                             )
                                                                         })
+                                                                    ) : lot.products ? (
+                                                                        <tr className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm">
+                                                                            <td className="py-4 px-2 font-mono text-slate-500 font-bold">{idx + 1}</td>
+                                                                            <td className="py-4 px-2 text-slate-600 dark:text-slate-400 font-medium">{format(new Date(lot.inbound_date || lot.created_at), 'dd/MM/yyyy')}</td>
+                                                                            <td className="py-4 px-2">
+                                                                                <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30">
+                                                                                    {productionLotsMap[`${lot.production_id}_${lot.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td className="py-2 px-2">
+                                                                                <div className="font-bold text-slate-800 dark:text-slate-200">{lot.products.name || '-'}</div>
+                                                                                <div className="flex flex-wrap items-center gap-2">
+                                                                                    <span className="text-[10px] text-slate-400 font-mono">{lot.products.sku || '-'}</span>
+                                                                                </div>
+                                                                            </td>
+                                                                            <td className="py-2 px-2 text-right">
+                                                                                <div className="font-black text-orange-600">
+                                                                                    {formatQuantityFull(Number((lot as any).quantity) || 0)}
+                                                                                </div>
+                                                                            </td>
+                                                                            <td className="py-2 px-2 font-bold text-[10px] text-slate-400 uppercase">
+                                                                                {(lot as any).unit || lot.products.unit || '-'}
+                                                                            </td>
+                                                                            <td className="py-2 px-2">
+                                                                                <div className="flex flex-wrap gap-1">
+                                                                                    {lot.positions?.map((p: any) => (
+                                                                                        <span key={p.id} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-md text-[9px] font-black border border-slate-200 dark:border-slate-700">
+                                                                                            {p.code}
+                                                                                        </span>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </td>
+                                                                        </tr>
                                                                     ) : (
                                                                         <tr className="border-b border-slate-100 dark:border-slate-800/50">
                                                                             <td className="py-4 px-2 font-mono text-slate-500 font-bold">{idx + 1}</td>
-                                                                            <td className="py-4 px-2 text-slate-600 dark:text-slate-400 font-medium">{format(new Date(lot.created_at), 'dd/MM/yyyy')}</td>
+                                                                            <td className="py-4 px-2 text-slate-600 dark:text-slate-400 font-medium">{format(new Date(lot.inbound_date || lot.created_at), 'dd/MM/yyyy')}</td>
                                                                             <td className="py-4 px-2">
                                                                                 <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-400 font-bold text-[11px]">
                                                                                     {lot.code}
