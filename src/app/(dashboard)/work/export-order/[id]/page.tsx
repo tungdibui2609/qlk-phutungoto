@@ -35,6 +35,7 @@ interface ExportOrderItem {
     lot_inbound_date?: string | null
     display_status?: 'Pending' | 'Exported' | 'Picked' | 'Moved to Hall' | 'Changed Position'
     current_position_name?: string
+    current_position_id?: string
     is_hall?: boolean
     priority?: number | null
     zone_path?: string[]
@@ -113,8 +114,29 @@ function ExportOrderDetailContent() {
     }, [taskId])
 
     async function fetchZones() {
-        const { data } = await supabase.from('zones').select('*')
-        if (data) setZones(data)
+        const systemType = currentSystem?.code;
+        if (!systemType) {
+            const { data } = await supabase.from('zones').select('*')
+            if (data) setZones(data)
+            return;
+        }
+
+        let allZones: any[] = []
+        let from = 0
+        const limit = 1000
+        while (true) {
+            const { data, error } = await supabase
+                .from('zones')
+                .select('*')
+                .eq('system_type', systemType)
+                .range(from, from + limit - 1)
+            if (error) break
+            if (!data || data.length === 0) break
+            allZones = [...allZones, ...data]
+            if (data.length < limit) break
+            from += limit
+        }
+        setZones(allZones)
     }
 
     const aggregatedItems = useMemo(() => {
@@ -190,6 +212,7 @@ function ExportOrderDetailContent() {
                             inbound_date, 
                             lot_tags (tag, lot_item_id),
                             positions!positions_lot_id_fkey (
+                                id,
                                 code,
                                 zone_positions(zone_id)
                             )
@@ -205,10 +228,31 @@ function ExportOrderDetailContent() {
             // Fetch zones if not already fetched to use for recursive is_hall check
             let currentZones = zones;
             if (currentZones.length === 0) {
-                const { data: zData } = await supabase.from('zones').select('*');
-                if (zData) {
-                    currentZones = zData;
-                    setZones(zData);
+                const systemType = currentSystem?.code;
+                if (!systemType) {
+                    const { data: zData } = await supabase.from('zones').select('*');
+                    if (zData) {
+                        currentZones = zData;
+                        setZones(zData);
+                    }
+                } else {
+                    let allZones: any[] = []
+                    let from = 0
+                    const limit = 1000
+                    while (true) {
+                        const { data, error } = await supabase
+                            .from('zones')
+                            .select('*')
+                            .eq('system_type', systemType)
+                            .range(from, from + limit - 1)
+                        if (error) break
+                        if (!data || data.length === 0) break
+                        allZones = [...allZones, ...data]
+                        if (data.length < limit) break
+                        from += limit
+                    }
+                    currentZones = allZones;
+                    setZones(allZones);
                 }
             }
 
@@ -232,10 +276,12 @@ function ExportOrderDetailContent() {
 
                     // Current position of the lot
                     let currentPosCode = originalPosCode
+                    let currentPosId = originalPosId
                     let isHall = false
 
                     if (item.lots?.positions && item.lots?.positions.length > 0) {
                         currentPosCode = item.lots.positions[0].code
+                        currentPosId = item.lots.positions[0].id
 
                         const zps = item.lots.positions[0].zone_positions
                         const leafZoneId = Array.isArray(zps)
@@ -294,6 +340,7 @@ function ExportOrderDetailContent() {
                         position_name: originalPosCode,
                         position_id: originalPosId,
                         current_position_name: currentPosCode,
+                        current_position_id: currentPosId,
                         is_hall: isHall,
                         product_name: item.products?.name || 'Sản phẩm không tên',
                         sku: item.products?.sku || 'N/A',
@@ -637,86 +684,144 @@ function ExportOrderDetailContent() {
         setIsSelectHallOpen(false)
         if (selectedPositionIds.size === 0) return
 
-        // Lấy tất cả các lot IDs cần di chuyển
-        const lotIdsToMove = new Set<string>()
-        const selectedItems = task?.items?.filter(item => selectedPositionIds.has(item.id || '')) || []
-        selectedItems.forEach(item => {
-            if (item.lot_id) lotIdsToMove.add(item.lot_id)
-        })
-
-        if (lotIdsToMove.size === 0) return
+        const itemsToMove = task?.items?.filter(item => selectedPositionIds.has(item.id || '') && item.lot_id) || []
+        if (itemsToMove.length === 0) return
 
         setLoading(true)
         try {
-            // Tìm các zone con của Sảnh
-            const targetZoneIds = new Set<string>([hallId])
-            let added = true
-            while (added) {
-                added = false
-                for (const z of zones) {
-                    if (z.parent_id && targetZoneIds.has(z.parent_id) && !targetZoneIds.has(z.id)) {
-                        targetZoneIds.add(z.id)
-                        added = true
+            // Xác định xem hallId là một Sảnh cụ thể hay là ID Kho (root)
+            const selectedZone = zones.find(z => z.id === hallId)
+            const isSpecificHall = selectedZone && selectedZone.is_hall
+
+            let targetZoneIds = new Set<string>()
+
+            if (isSpecificHall) {
+                // Nếu chọn chính xác 1 sảnh, lấy sảnh đó và con của nó
+                targetZoneIds.add(hallId)
+                let added = true
+                while (added) {
+                    added = false
+                    for (const z of zones) {
+                        if (z.parent_id && targetZoneIds.has(z.parent_id) && !targetZoneIds.has(z.id)) {
+                            targetZoneIds.add(z.id)
+                            added = true
+                        }
                     }
                 }
+            } else {
+                // Nếu chọn Kho (root), tìm tất cả các Sảnh trong kho đó
+                // 1. Tìm tất cả các sảnh thuộc kho này
+                const hallsInWarehouse = zones.filter(z => {
+                    if (!z.is_hall) return false
+                    // Kiểm tra xem sảnh này có thuộc kho root đang chọn không
+                    let curr = z
+                    const seen = new Set()
+                    while (curr.parent_id && !seen.has(curr.id)) {
+                        seen.add(curr.id)
+                        if (curr.parent_id === hallId) return true
+                        const parent = zones.find(p => p.id === curr.parent_id)
+                        if (!parent) break
+                        curr = parent
+                    }
+                    return false
+                })
+
+                // 2. Với mỗi sảnh tìm được, lấy nó và tất cả các con của nó (vị trí thường nằm ở tầng cuối)
+                hallsInWarehouse.forEach(h => {
+                    targetZoneIds.add(h.id)
+                })
+
+                let added = true
+                while (added) {
+                    added = false
+                    for (const z of zones) {
+                        if (z.parent_id && targetZoneIds.has(z.parent_id) && !targetZoneIds.has(z.id)) {
+                            targetZoneIds.add(z.id)
+                            added = true
+                        }
+                    }
+                }
+            }
+
+            if (targetZoneIds.size === 0) {
+                showToast('Không tìm thấy sảnh nào trong khu vực đã chọn.', 'error')
+                setLoading(false)
+                return
             }
 
             // Tìm các vị trí trống
             const { data: availablePositions, error: availError } = await (supabase
                 .from('zone_positions') as any)
-                .select('position_id, zone_id, positions!inner(id, lot_id)')
+                .select('position_id, zone_id, positions!inner(id, lot_id, system_type)')
                 .is('positions.lot_id', null)
+                .eq('positions.system_type', currentSystem?.code || '')
                 .in('zone_id', Array.from(targetZoneIds))
-                .limit(lotIdsToMove.size)
+                .limit(itemsToMove.length)
 
-            if (availError || !availablePositions || availablePositions.length < lotIdsToMove.size) {
-                showToast(`Không đủ vị trí trống trong Sảnh này. Cần ${lotIdsToMove.size}, nhưng chỉ còn ${availablePositions?.length || 0} vị trí.`, 'error')
+            if (availError || !availablePositions || availablePositions.length < itemsToMove.length) {
+                showToast(`Không đủ vị trí trống trong Sảnh này. Cần ${itemsToMove.length}, nhưng chỉ còn ${availablePositions?.length || 0} vị trí.`, 'error')
                 setLoading(false)
                 return
             }
 
-            const lotsArr = Array.from(lotIdsToMove)
-            // Lấy position_id hiện tại của các lot (để xóa lot_id ở đó)
-            const oldPosIdsToClear = selectedItems.filter(i => i.lot_id && i.position_id).map(i => i.position_id!)
-
-            const updates: { id: string, lot_id: string | null }[] = []
-            oldPosIdsToClear.forEach(id => updates.push({ id, lot_id: null }))
-
-            for (let i = 0; i < lotsArr.length; i++) {
-                updates.push({ id: availablePositions[i].position_id as string, lot_id: lotsArr[i] })
-            }
-
-            const updatePromises = updates.map(u =>
-                (supabase.from('positions') as any).update({ lot_id: u.lot_id }).eq('id', u.id)
-            )
-            const results = await Promise.all(updatePromises)
-            const hasError = results.some(r => r.error)
-
-            if (!hasError) {
-                // Log all movements
-                for (const u of updates) {
+            // 1. Clear current positions (Bulk)
+            const idsToClear = Array.from(new Set(itemsToMove.map(i => i.current_position_id).filter(Boolean) as string[]))
+            if (idsToClear.length > 0) {
+                const { error: clearError } = await (supabase.from('positions') as any)
+                    .update({ lot_id: null })
+                    .in('id', idsToClear)
+                
+                if (clearError) throw clearError
+                
+                // Log clear actions
+                for (const id of idsToClear) {
                     await logActivity({
                         supabase,
                         tableName: 'positions',
-                        recordId: u.id,
+                        recordId: id,
                         action: 'UPDATE',
-                        oldData: { lot_id: u.lot_id ? null : oldPosIdsToClear.includes(u.id) ? 'some_lot' : null }, // approximation for old data in bulk
-                        newData: { lot_id: u.lot_id },
-                        systemCode: currentSystem?.code
+                        oldData: { lot_id: 'some_lot' },
+                        newData: { lot_id: null },
+                        systemCode: currentSystem?.code || ''
                     })
                 }
             }
 
-            if (hasError) {
-                showToast('Hạ sảnh có lỗi xảy ra. Đang làm mới dữ liệu.', 'warning')
-            } else {
-                showToast('Đã hạ sảnh thành công!', 'success')
-                setSelectedPositionIds(new Set())
+            // 2. Assign to new positions in hall (Bulk)
+            const assignUpdates = itemsToMove.map((item, i) => ({
+                id: availablePositions[i].position_id as string,
+                lot_id: item.lot_id
+            }))
+
+            if (assignUpdates.length > 0) {
+                const { error: assignError } = await (supabase.from('positions') as any)
+                    .upsert(assignUpdates, { onConflict: 'id' })
+                
+                if (assignError) throw assignError
+
+                // Log assign actions
+                for (const update of assignUpdates) {
+                    await logActivity({
+                        supabase,
+                        tableName: 'positions',
+                        recordId: update.id,
+                        action: 'UPDATE',
+                        oldData: { lot_id: null },
+                        newData: { lot_id: update.lot_id },
+                        systemCode: currentSystem?.code || ''
+                    })
+                }
             }
+
+            showToast('Đã hạ sảnh thành công!', 'success')
+            setSelectedPositionIds(new Set())
             fetchTaskDetails()
         } catch (error: any) {
+            console.error('Error moving to hall:', error)
             showToast('Lỗi khi hạ sảnh: ' + error.message, 'error')
             fetchTaskDetails()
+        } finally {
+            setLoading(false)
         }
     }
 

@@ -112,49 +112,81 @@ export function SelectHallModal({ isOpen, onClose, onConfirm, zones }: SelectHal
                                 {Object.entries(groupedHalls).map(([rootId, { rootZone, groupHalls }]) => {
                                     const groupName = rootZone ? rootZone.name : 'Khu vực gốc'
                                     const isExpanded = expandedGroups.has(rootId)
+                                    const isRootSelected = selectedHallId === rootId
 
                                     return (
-                                        <div key={rootId} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden flex flex-col">
-                                            <button
-                                                type="button"
-                                                onClick={() => toggleGroup(rootId)}
-                                                className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
-                                            >
-                                                <span className="font-semibold text-sm text-gray-800 dark:text-gray-200">
-                                                    {groupName} <span className="text-gray-500 font-normal text-xs ml-1">({groupHalls.length})</span>
-                                                </span>
-                                                {isExpanded ? (
-                                                    <ChevronDown size={16} className="text-gray-500" />
-                                                ) : (
-                                                    <ChevronRight size={16} className="text-gray-500" />
-                                                )}
-                                            </button>
+                                        <div 
+                                            key={rootId} 
+                                            className={`border rounded-xl overflow-hidden flex flex-col transition-all duration-200 ${
+                                                isRootSelected 
+                                                ? 'border-indigo-500 shadow-sm ring-1 ring-indigo-500/50' 
+                                                : 'border-stone-200 dark:border-zinc-800'
+                                            }`}
+                                        >
+                                            <div className={`flex items-center w-full transition-colors ${
+                                                isRootSelected 
+                                                ? 'bg-indigo-50/80 dark:bg-indigo-900/10' 
+                                                : 'bg-stone-50/50 dark:bg-zinc-900/50'
+                                            }`}>
+                                                <label className="flex items-center gap-3 p-3.5 cursor-pointer flex-1 min-w-0">
+                                                    <div className="relative flex items-center justify-center">
+                                                        <input
+                                                            type="radio"
+                                                            name="hall_selection"
+                                                            className="peer w-5 h-5 text-indigo-600 border-stone-300 dark:border-zinc-700 focus:ring-indigo-500 bg-white dark:bg-zinc-900"
+                                                            checked={isRootSelected}
+                                                            onChange={() => setSelectedHallId(rootId)}
+                                                        />
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className={`font-black text-sm transition-colors ${isRootSelected ? 'text-indigo-700 dark:text-indigo-400' : 'text-stone-700 dark:text-zinc-200'}`}>
+                                                            {groupName}
+                                                        </span>
+                                                        <span className="text-[10px] font-bold text-stone-500 uppercase tracking-tight">
+                                                            Tự động tìm sảnh trống ({groupHalls.length})
+                                                        </span>
+                                                    </div>
+                                                </label>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggleGroup(rootId)}
+                                                    className={`p-4 hover:bg-stone-200/50 dark:hover:bg-zinc-800 transition-colors border-l ${isRootSelected ? 'border-indigo-100 dark:border-indigo-900/30' : 'border-stone-100 dark:border-zinc-800'}`}
+                                                >
+                                                    {isExpanded ? (
+                                                        <ChevronDown size={18} className={isRootSelected ? 'text-indigo-600' : 'text-stone-400'} />
+                                                    ) : (
+                                                        <ChevronRight size={18} className={isRootSelected ? 'text-indigo-600' : 'text-stone-400'} />
+                                                    )}
+                                                </button>
+                                            </div>
 
                                             {isExpanded && (
-                                                <div className="p-2 space-y-2 bg-white dark:bg-gray-900 flex-1">
+                                                <div className="p-2.5 space-y-2 bg-white dark:bg-zinc-900 border-t border-stone-100 dark:border-zinc-800 flex-1 ml-6 mr-2 mb-2">
+                                                    <div className="text-[10px] font-black text-stone-400 mb-2 uppercase tracking-widest pl-1">Hoặc chọn sảnh cụ thể:</div>
                                                     {groupHalls.map((hall) => (
                                                         <label
                                                             key={hall.id}
-                                                            className={`flex items-start gap-3 p-3 rounded border cursor-pointer transition-colors ${selectedHallId === hall.id
-                                                                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
-                                                                : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
-                                                                }`}
+                                                            className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                                                                selectedHallId === hall.id
+                                                                ? 'border-indigo-400 bg-indigo-50/40 dark:bg-indigo-900/10 shadow-sm'
+                                                                : 'border-stone-100 dark:border-zinc-800/50 hover:bg-stone-50 dark:hover:bg-zinc-800/50'
+                                                            }`}
                                                         >
                                                             <div className="flex items-center h-5">
                                                                 <input
                                                                     type="radio"
                                                                     name="hall_selection"
-                                                                    className="w-4 h-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                                                                    className="w-4 h-4 text-indigo-600 border-stone-300 dark:border-zinc-700 focus:ring-indigo-500"
                                                                     checked={selectedHallId === hall.id}
                                                                     onChange={() => setSelectedHallId(hall.id)}
                                                                 />
                                                             </div>
                                                             <div className="flex flex-col flex-1 min-w-0">
-                                                                <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                                                <span className={`text-sm font-bold truncate ${selectedHallId === hall.id ? 'text-indigo-700 dark:text-indigo-300' : 'text-stone-600 dark:text-zinc-300'}`}>
                                                                     {getZonePathFromRoot(hall.id, rootId)}
                                                                 </span>
-                                                                <span className="text-xs text-gray-500 font-mono mt-0.5">
-                                                                    Mã: {hall.code}
+                                                                <span className="text-[10px] text-stone-400 font-mono">
+                                                                    {hall.code}
                                                                 </span>
                                                             </div>
                                                         </label>
