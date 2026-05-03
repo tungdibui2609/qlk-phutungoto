@@ -562,9 +562,9 @@ export default function AssignmentApprovalPage() {
                 
                 // 1. Check if LOT is already at another position and clear it
                 // This ensures data integrity (one LOT at one place) and creates the "REMOVE" log for "Move" detection
-                const { data: currentPosData } = await supabase.from('positions').select('id, code').eq('lot_id', lot.id)
+                const { data: currentPosData } = await (supabase.from('positions') as any).select('id, code').eq('lot_id', lot.id)
                 if (currentPosData && currentPosData.length > 0) {
-                    for (const oldPos of currentPosData) {
+                    for (const oldPos of (currentPosData as any[])) {
                         if (oldPos.id !== targetPosId) {
                             await (supabase.from('positions') as any).update({ lot_id: null }).eq('id', oldPos.id)
                             await logActivity({
@@ -940,7 +940,7 @@ export default function AssignmentApprovalPage() {
                                                             </div>
                                                         </td>
                                                         <td className="px-4 py-3">
-                                                            {h.status === 'approved' ? (
+                                                            {h.status.startsWith('approved') ? (
                                                                 h.assignment_type === 'move' ? (
                                                                     <div className="flex flex-col">
                                                                         <span className="text-blue-600 dark:text-blue-400 font-black uppercase text-[9px] flex items-center gap-1">
@@ -960,8 +960,8 @@ export default function AssignmentApprovalPage() {
                                                             {format(new Date(h.production_date), 'dd/MM/yyyy')}
                                                         </td>
                                                         <td className="px-4 py-3">
-                                                            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${h.status === 'approved' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400'}`}>
-                                                                {h.status === 'approved' ? 'Đã duyệt' : 'Đã hủy'}
+                                                            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${h.status.startsWith('approved') ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400'}`}>
+                                                                {h.status.startsWith('approved') ? 'Đã duyệt' : 'Đã hủy'}
                                                             </span>
                                                         </td>
                                                     </tr>
