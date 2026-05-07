@@ -75,7 +75,7 @@ export default function WarehouseMovementsSnapshotPage() {
         if (!currentSystem?.code) return
         setLoading(true)
         try {
-            // 1. Fetch audit logs for 'positions' table
+            // 1. Fetch audit logs for 'positions' table - handle potential limit
             const { data: logs, error: logsError } = await supabase
                 .from('audit_logs')
                 .select('*')
@@ -83,7 +83,8 @@ export default function WarehouseMovementsSnapshotPage() {
                 .eq('system_code', currentSystem.code)
                 .gte('created_at', parseISO(dateFrom).toISOString())
                 .lte('created_at', parseISO(dateTo).toISOString())
-                .order('created_at', { ascending: false }) // Latest first is crucial for deduplication
+                .order('created_at', { ascending: false })
+                .range(0, 2000) // Increase range to 2000 for now
 
             if (logsError) throw logsError
 
@@ -97,40 +98,61 @@ export default function WarehouseMovementsSnapshotPage() {
             const userIds = Array.from(new Set((logs as any[]).map(l => l.changed_by).filter(Boolean)))
             const posIds = Array.from(new Set((logs as any[]).map(l => l.record_id).filter(Boolean)))
             
-            const lotIds = new Set<string>()
+            const lotIdsSet = new Set<string>()
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
             ;(logs as any[]).forEach(l => {
                 const oldLotId = l.old_data?.lot_id
                 const newLotId = l.new_data?.lot_id
-                if (oldLotId) lotIds.add(oldLotId)
-                if (newLotId) lotIds.add(newLotId)
+                if (oldLotId && uuidRegex.test(oldLotId)) lotIdsSet.add(oldLotId)
+                if (newLotId && uuidRegex.test(newLotId)) lotIdsSet.add(newLotId)
             })
+            const lotIds = Array.from(lotIdsSet)
 
-            // 3. Fetch related data
-            const [usersRes, posRes, lotsRes] = await Promise.all([
+            // 3. Fetch related data with chunks if lotIds > 1000
+            const fetchLots = async (ids: string[]) => {
+                const chunks: any[] = []
+                for (let i = 0; i < ids.length; i += 1000) {
+                    const chunk = ids.slice(i, i + 1000)
+                    const { data, error } = await supabase.from('lots').select(`
+                        id, code, production_code, production_lot_id,
+                        production_lots:production_lot_id(lot_code),
+                        productions:production_id(code),
+                        lot_items(quantity, unit, products(name, sku))
+                    `).in('id', chunk)
+                    if (error) throw error
+                    chunks.push(...(data || []))
+                }
+                return chunks
+            }
+
+            const [usersRes, posRes, allLots] = await Promise.all([
                 supabase.from('user_profiles' as any).select('id, full_name, email').in('id', userIds),
                 supabase.from('positions').select('id, code').in('id', posIds),
-                supabase.from('lots').select(`
-                    id, code, production_code, production_lot_id,
-                    production_lots:production_lot_id(lot_code),
-                    productions:production_id(code),
-                    lot_items(quantity, unit, products(name, sku, weight_kg))
-                `).in('id', Array.from(lotIds))
+                fetchLots(lotIds)
             ])
+
+            console.log(`DEBUG: Requested ${lotIds.length} lots, found ${allLots.length} lots`)
 
             const userMap = new Map<string, any>((usersRes.data?.map((u: any) => [u.id, u]) || []) as any)
             const posMap = new Map<string, string>((posRes.data?.map((p: any) => [p.id, p.code]) || []) as any)
             
             const lotMap = new Map<string, any>()
-            ;(lotsRes.data as any[])?.forEach((l: any) => {
-                const products = l.lot_items?.map((li: any) => ({
-                    name: li.products?.name || 'Unknown',
-                    sku: li.products?.sku || 'N/A',
-                    quantity: li.quantity,
-                    unit: li.unit || 'Kg'
-                })) || []
+            allLots.forEach((l: any) => {
+                const products = l.lot_items?.map((li: any) => {
+                    if (!li.products) {
+                        console.warn(`Product missing for lot_item in lot ${l.code}`, li)
+                    }
+                    return {
+                        name: li.products?.name || 'Unknown',
+                        sku: li.products?.sku || 'N/A',
+                        quantity: li.quantity,
+                        unit: li.unit || 'Kg'
+                    }
+                }) || []
 
                 const totalWeightKg = l.lot_items?.reduce((sum: number, li: any) => {
-                    const weightFactor = extractWeightFromName(li.unit) || li.products?.weight_kg || 0
+                    const weightFactor = extractWeightFromName(li.unit) || (li.products as any)?.weight_kg || 0
                     return sum + ((li.quantity || 0) * weightFactor)
                 }, 0) || 0
 
@@ -143,6 +165,15 @@ export default function WarehouseMovementsSnapshotPage() {
                     totalWeightKg
                 })
             })
+
+            // Helper to get lot data with fallback
+            const getLotData = (id: string) => {
+                if (!id) return null
+                const lot = lotMap.get(id)
+                if (lot) return lot
+                return { id, code: `LOT-ID:${id.slice(0,8)}...`, products: [], totalWeightKg: 0 }
+            }
+
 
             // 4. Process logs into movements WITH Deduplication
             const processedMovements: MapMovement[] = []
@@ -177,7 +208,7 @@ export default function WarehouseMovementsSnapshotPage() {
                             performedBy: userMap.get(log.changed_by) || null,
                             position: { id: log.record_id, code: posMap.get(log.record_id) || 'Unknown' },
                             sourcePositionCode: posMap.get(counterpart.record_id) || 'Unknown',
-                            lot: lotMap.get(newLotId) || { id: newLotId, code: 'Unknown', products: [], totalWeightKg: 0 },
+                            lot: getLotData(newLotId),
                             oldLot: null
                         }
                     } else {
@@ -185,7 +216,7 @@ export default function WarehouseMovementsSnapshotPage() {
                             id: log.id, type: 'assigned', createdAt: log.created_at,
                             performedBy: userMap.get(log.changed_by) || null,
                             position: { id: log.record_id, code: posMap.get(log.record_id) || 'Unknown' },
-                            lot: lotMap.get(newLotId) || { id: newLotId, code: 'Unknown', products: [], totalWeightKg: 0 },
+                            lot: getLotData(newLotId),
                             oldLot: null
                         }
                     }
@@ -204,7 +235,7 @@ export default function WarehouseMovementsSnapshotPage() {
                             performedBy: userMap.get(counterpart.changed_by) || null,
                             position: { id: counterpart.record_id, code: posMap.get(counterpart.record_id) || 'Unknown' },
                             sourcePositionCode: posMap.get(log.record_id) || 'Unknown',
-                            lot: lotMap.get(oldLotId) || { id: oldLotId, code: 'Unknown', products: [], totalWeightKg: 0 },
+                            lot: getLotData(oldLotId),
                             oldLot: null
                         }
                     } else {
@@ -213,7 +244,7 @@ export default function WarehouseMovementsSnapshotPage() {
                             performedBy: userMap.get(log.changed_by) || null,
                             position: { id: log.record_id, code: posMap.get(log.record_id) || 'Unknown' },
                             lot: null,
-                            oldLot: lotMap.get(oldLotId) || { id: oldLotId, code: 'Unknown' }
+                            oldLot: getLotData(oldLotId)
                         }
                     }
                 } else if (oldLotId && newLotId && oldLotId !== newLotId) {
@@ -221,8 +252,8 @@ export default function WarehouseMovementsSnapshotPage() {
                         id: log.id, type: 'replaced', createdAt: log.created_at,
                         performedBy: userMap.get(log.changed_by) || null,
                         position: { id: log.record_id, code: posMap.get(log.record_id) || 'Unknown' },
-                        lot: lotMap.get(newLotId) || { id: newLotId, code: 'Unknown', products: [], totalWeightKg: 0 },
-                        oldLot: lotMap.get(oldLotId) || { id: oldLotId, code: 'Unknown' }
+                        lot: getLotData(newLotId),
+                        oldLot: getLotData(oldLotId)
                     }
                 }
 

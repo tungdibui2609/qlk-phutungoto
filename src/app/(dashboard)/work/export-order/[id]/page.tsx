@@ -773,14 +773,15 @@ function ExportOrderDetailContent() {
                 
                 if (clearError) throw clearError
                 
-                // Log clear actions
-                for (const id of idsToClear) {
+                // Log clear actions with ACTUAL lot_id
+                for (const posId of idsToClear) {
+                    const item = itemsToMove.find(i => i.current_position_id === posId)
                     await logActivity({
                         supabase,
                         tableName: 'positions',
-                        recordId: id,
+                        recordId: posId,
                         action: 'UPDATE',
-                        oldData: { lot_id: 'some_lot' },
+                        oldData: { lot_id: item?.lot_id || null },
                         newData: { lot_id: null },
                         systemCode: currentSystem?.code || ''
                     })
