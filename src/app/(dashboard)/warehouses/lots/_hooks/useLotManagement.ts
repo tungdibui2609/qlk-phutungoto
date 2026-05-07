@@ -360,17 +360,40 @@ export function useLotManagement() {
                             
                             if (prodIds.length > 0) {
                                 // 2. Find lots with these prods AND stt
-                                const { data: foundLots } = await (supabase.from('lots') as any)
+                                let subQuery = (supabase.from('lots') as any)
                                     .select('id')
                                     .in('production_id', prodIds)
                                     .eq('daily_seq', sttTerm)
                                     .eq('system_code', currentSystem.code);
                                 
+                                // Apply date filter to advanced search too
+                                if (startDate && endDate) {
+                                    if (dateFilterField === 'created_at') {
+                                        const startLocal = new Date(`${startDate}T00:00:00`);
+                                        const endLocal = new Date(`${endDate}T23:59:59.999`);
+                                        subQuery = subQuery.gte(dateFilterField, startLocal.toISOString()).lte(dateFilterField, endLocal.toISOString());
+                                    } else {
+                                        subQuery = subQuery.gte(dateFilterField, startDate).lte(dateFilterField, endDate);
+                                    }
+                                }
+
+                                const { data: foundLots } = await subQuery;
+                                
                                 if (foundLots && foundLots.length > 0) {
                                     const matchingIds = foundLots.map((l: any) => l.id);
                                     query = query.in('id', matchingIds.slice(0, 150));
                                     
-                                    // Skip the rest of regular search logic
+                                    // Apply date filter again to the main query for absolute safety
+                                    if (startDate && endDate) {
+                                        if (dateFilterField === 'created_at') {
+                                            const startLocal = new Date(`${startDate}T00:00:00`);
+                                            const endLocal = new Date(`${endDate}T23:59:59.999`);
+                                            query = query.gte(dateFilterField, startLocal.toISOString()).lte(dateFilterField, endLocal.toISOString());
+                                        } else {
+                                            query = query.gte(dateFilterField, startDate).lte(dateFilterField, endDate);
+                                        }
+                                    }
+
                                     const { data, error, count } = await query
                                         .range(page * pageSize, (page + 1) * pageSize - 1);
                                     
@@ -662,10 +685,15 @@ export function useLotManagement() {
 
             // 2. Date Range
             if (startDate && endDate) {
-                // Adjust end date to end of day
-                const end = new Date(endDate)
-                end.setHours(23, 59, 59, 999)
-                query = query.gte(dateFilterField, startDate).lte(dateFilterField, end.toISOString())
+                if (dateFilterField === 'created_at') {
+                    // For timestamp fields, use precise local boundaries converted to ISO
+                    const startLocal = new Date(`${startDate}T00:00:00`)
+                    const endLocal = new Date(`${endDate}T23:59:59.999`)
+                    query = query.gte(dateFilterField, startLocal.toISOString()).lte(dateFilterField, endLocal.toISOString())
+                } else {
+                    // For DATE fields (inbound_date, peeling_date, etc.), use raw YYYY-MM-DD
+                    query = query.gte(dateFilterField, startDate).lte(dateFilterField, endDate)
+                }
             }
 
             // Pagination
@@ -837,9 +865,13 @@ export function useLotManagement() {
             }
 
             if (startDate && endDate) {
-                const end = new Date(endDate);
-                end.setHours(23, 59, 59, 999);
-                query = query.gte(dateFilterField, startDate).lte(dateFilterField, end.toISOString());
+                if (dateFilterField === 'created_at') {
+                    const startLocal = new Date(`${startDate}T00:00:00`)
+                    const endLocal = new Date(`${endDate}T23:59:59.999`)
+                    query = query.gte(dateFilterField, startLocal.toISOString()).lte(dateFilterField, endLocal.toISOString())
+                } else {
+                    query = query.gte(dateFilterField, startDate).lte(dateFilterField, endDate)
+                }
             }
 
             if (selectedZoneId) {
@@ -997,9 +1029,13 @@ export function useLotManagement() {
             }
 
             if (startDate && endDate) {
-                const end = new Date(endDate);
-                end.setHours(23, 59, 59, 999);
-                query = query.gte(dateFilterField, startDate).lte(dateFilterField, end.toISOString());
+                if (dateFilterField === 'created_at') {
+                    const startLocal = new Date(`${startDate}T00:00:00`)
+                    const endLocal = new Date(`${endDate}T23:59:59.999`)
+                    query = query.gte(dateFilterField, startLocal.toISOString()).lte(dateFilterField, endLocal.toISOString())
+                } else {
+                    query = query.gte(dateFilterField, startDate).lte(dateFilterField, endDate)
+                }
             }
 
             // Fetch ALL lots then filter untagged client-side for accuracy

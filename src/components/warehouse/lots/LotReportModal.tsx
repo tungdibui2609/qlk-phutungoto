@@ -719,7 +719,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                 const row = worksheet.addRow({
                                     stt: itemIdx === 0 ? index + 1 : '',
                                     date: itemIdx === 0 ? dateStr : '',
-                                    prod_code: itemIdx === 0 ? sxLotCode : '',
+                                    prod_code: itemIdx === 0 ? `${sxLotCode}${lot.code ? ` (${lot.code})` : ''}` : '',
                                     product: productDisplay,
                                     qty: item.quantity,
                                     unit: item.unit || item.products?.unit || '-',
@@ -738,7 +738,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                             const row = worksheet.addRow({
                                 stt: index + 1,
                                 date: dateStr,
-                                prod_code: sxLotCode,
+                                prod_code: `${sxLotCode}${lot.code ? ` (${lot.code})` : ''}`,
                                 product: lot.products.name || '-',
                                 qty: (lot as any).quantity || 0,
                                 unit: (lot as any).unit || lot.products.unit || '-',
@@ -757,11 +757,11 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
             } else {
                 // Outward export
                 reportDataOutward.forEach((row, index) => {
-                    const sxLotCode = productionLotsMap[`${row.production_id}_${row.product_id}`] || row.lot_code || '-'
+                    const sxLotCode = productionLotsMap[`${row.production_id}_${row.product_id}`] || '-'
                     const excelRow = worksheet.addRow({
                         stt: index + 1,
                         date: format(new Date(row.date), 'dd/MM/yyyy'),
-                        prod_code: sxLotCode,
+                        prod_code: `${sxLotCode}${row.lot_code ? ` (${row.lot_code})` : ''}`,
                         product: row.product_name,
                         qty: row.quantity,
                         unit: row.unit,
@@ -1163,9 +1163,16 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                                                 {format(new Date(lot.inbound_date || lot.created_at), 'dd/MM/yyyy')}
                                                                                             </td>
                                                                                             <td className="py-4 px-2" rowSpan={rowSpan}>
-                                                                                                <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30">
-                                                                                                    {productionLotsMap[`${lot.production_id}_${item.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'}
-                                                                                                </span>
+                                                                                                <div className="flex flex-col gap-1.5">
+                                                                                                    <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30 w-fit">
+                                                                                                        {productionLotsMap[`${lot.production_id}_${item.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'}
+                                                                                                    </span>
+                                                                                                    {lot.code && (
+                                                                                                        <span className="text-[10px] text-slate-400 font-mono ml-0.5">
+                                                                                                            ID: {lot.code}
+                                                                                                        </span>
+                                                                                                    )}
+                                                                                                </div>
                                                                                             </td>
                                                                                         </>
                                                                                     )}
@@ -1227,9 +1234,16 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                             <td className="py-4 px-2 font-mono text-slate-500 font-bold">{idx + 1}</td>
                                                                             <td className="py-4 px-2 text-slate-600 dark:text-slate-400 font-medium">{format(new Date(lot.inbound_date || lot.created_at), 'dd/MM/yyyy')}</td>
                                                                             <td className="py-4 px-2">
-                                                                                <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30">
-                                                                                    {productionLotsMap[`${lot.production_id}_${lot.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'}
-                                                                                </span>
+                                                                                <div className="flex flex-col gap-1.5">
+                                                                                    <span className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold text-[11px] border border-orange-100 dark:border-orange-800/30 w-fit">
+                                                                                        {productionLotsMap[`${lot.production_id}_${lot.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'}
+                                                                                    </span>
+                                                                                    {lot.code && (
+                                                                                        <span className="text-[10px] text-slate-400 font-mono ml-0.5">
+                                                                                            ID: {lot.code}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
                                                                             </td>
                                                                             <td className="py-2 px-2">
                                                                                 <div className="font-bold text-slate-800 dark:text-slate-200">{lot.products.name || '-'}</div>
@@ -1303,9 +1317,16 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                             {format(new Date(row.date), 'dd/MM/yyyy')}
                                                         </td>
                                                         <td className="py-4 px-2">
-                                                            <span className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 font-bold text-[11px] border border-emerald-100 dark:border-emerald-800/30">
-                                                                {productionLotsMap[`${row.production_id}_${row.product_id}`] || row.lot_code || '-'}
-                                                            </span>
+                                                            <div className="flex flex-col gap-1.5">
+                                                                <span className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 font-bold text-[11px] border border-emerald-100 dark:border-emerald-800/30 w-fit">
+                                                                    {productionLotsMap[`${row.production_id}_${row.product_id}`] || '-'}
+                                                                </span>
+                                                                {row.lot_code && (
+                                                                    <span className="text-[10px] text-slate-400 font-mono ml-0.5">
+                                                                        ID: {row.lot_code}
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         </td>
                                                         <td className="py-2 px-2">
                                                             <div className="font-bold text-slate-800 dark:text-slate-200">{row.product_name}</div>
