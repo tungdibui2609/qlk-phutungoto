@@ -112,44 +112,60 @@ export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModal
 
             // 2. Prepare Batch Inserts for Items and Tags
             if (insertedLots && insertedLots.length > 0) {
-                const newLotItems: any[] = []
-                const newLotTags: any[] = []
-
                 for (const newLot of insertedLots) {
-                    // Clone Items
+                    // Clone Items for this specific Lot
+                    let newItemsForThisLot: any[] = []
                     if (lot_items && lot_items.length > 0) {
-                        for (const item of lot_items) {
-                            const { id: ignoreId, lot_id: ignoreLotId, created_at: ignoreCreatedAt, ...itemDataWithoutIds } = item as any
-                            newLotItems.push({
-                                ...itemDataWithoutIds,
+                        const itemsToInsert = lot_items.map((item: any) => {
+                            const { id, lot_id, created_at, ...itemData } = item
+                            return {
+                                ...itemData,
                                 lot_id: newLot.id
-                            })
-                        }
+                            }
+                        })
+
+                        const { data: insertedItems, error: insertItemsError } = await (supabase.from('lot_items') as any)
+                            .insert(itemsToInsert)
+                            .select()
+
+                        if (insertItemsError) throw insertItemsError
+                        newItemsForThisLot = insertedItems || []
                     }
 
-                    // Clone Tags
+                    // Clone Tags for this specific Lot
                     if (lot_tags && lot_tags.length > 0) {
-                        for (const tag of lot_tags) {
-                            const { id: ignoreId, lot_id: ignoreLotId, added_at: ignoreAddedAt, ...tagDataWithoutIds } = tag as any
-                            newLotTags.push({
-                                ...tagDataWithoutIds,
+                        const tagsToInsert = lot_tags.map((tag: any) => {
+                            const { id, lot_id, added_at, ...tagData } = tag
+                            
+                            // Map old lot_item_id to new lot_item_id
+                            let newLotItemId = tagData.lot_item_id
+                            if (tagData.lot_item_id) {
+                                const oldItem = lot_items.find((it: any) => it.id === tagData.lot_item_id)
+                                if (oldItem) {
+                                    // Match by product_id
+                                    const newItem = newItemsForThisLot.find((it: any) => it.product_id === oldItem.product_id)
+                                    if (newItem) {
+                                        newLotItemId = newItem.id
+                                    } else {
+                                        // If not found by product_id, use first item of the new lot if available
+                                        newLotItemId = newItemsForThisLot.length > 0 ? newItemsForThisLot[0].id : null
+                                    }
+                                }
+                            }
+
+                            return {
+                                ...tagData,
                                 lot_id: newLot.id,
+                                lot_item_id: newLotItemId,
                                 added_at: new Date().toISOString()
-                            })
-                        }
+                            }
+                        })
+
+                        const { error: insertTagsError } = await (supabase.from('lot_tags') as any)
+                            .insert(tagsToInsert)
+                        
+                        if (insertTagsError) throw insertTagsError
                     }
-                }
-
-                // Batch Insert Items
-                if (newLotItems.length > 0) {
-                    const { error: insertItemsError } = await (supabase.from('lot_items') as any).insert(newLotItems)
-                    if (insertItemsError) throw insertItemsError
-                }
-
-                // Batch Insert Tags
-                if (newLotTags.length > 0) {
-                    const { error: insertTagsError } = await (supabase.from('lot_tags') as any).insert(newLotTags)
-                    if (insertTagsError) throw insertTagsError
                 }
             }
 
