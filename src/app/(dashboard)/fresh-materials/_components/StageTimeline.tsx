@@ -13,6 +13,7 @@ import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 interface StageTimelineProps {
     batch: any
     onRefresh: () => void
+    onClose: () => void
 }
 
 const STAGE_STATUS_ICON = {
@@ -21,7 +22,7 @@ const STAGE_STATUS_ICON = {
     DONE: <CheckCircle2 size={16} className="text-emerald-500" />,
 }
 
-export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) {
+export default function StageTimeline({ batch, onRefresh, onClose }: StageTimelineProps) {
     const { showToast, showConfirm } = useToast()
     const { profile } = useUser()
     const [isStageModalOpen, setIsStageModalOpen] = useState(false)
@@ -38,6 +39,14 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
     const stages = (batch.fresh_material_stages || []).sort((a: any, b: any) => a.stage_order - b.stage_order)
     const receivings = batch.fresh_material_receivings || []
     const totalReceived = receivings.reduce((sum: number, r: any) => sum + (r.quantity || 0), 0)
+
+    // Disable background scroll when open
+    useEffect(() => {
+        document.body.style.overflow = 'hidden'
+        return () => {
+            document.body.style.overflow = 'unset'
+        }
+    }, [])
 
     // Fetch linked production lots
     useEffect(() => {
@@ -421,36 +430,80 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
     }
 
     return (
-        <div className="bg-white dark:bg-zinc-900 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
-            {/* Header */}
-            <div className="px-6 py-5 border-b border-stone-100 dark:border-zinc-800 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/30">
-                        <Leaf size={18} className="text-emerald-600" />
-                    </div>
-                    <div>
-                        <h3 className="font-black text-stone-800 dark:text-white">{batch.batch_code}</h3>
-                        <p className="text-xs text-stone-400 font-medium">{batch.products?.name || 'Nguyên liệu'} • {batch.suppliers?.name || 'NCC'}</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => setIsReportModalOpen(true)}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-stone-100 dark:bg-zinc-800 text-stone-600 dark:text-stone-300 text-xs font-bold hover:bg-stone-200 transition-all"
-                    >
-                        <Printer size={14} /> In báo cáo
-                    </button>
-                    <button
-                        onClick={handleAddStage}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition-all"
-                    >
-                        <Plus size={14} /> Thêm giai đoạn
-                    </button>
-                </div>
-            </div>
+        <div className="fixed inset-0 z-[100] flex justify-end overflow-hidden">
+            {/* Backdrop */}
+            <div 
+                className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-300"
+                onClick={onClose}
+            />
 
-            <div className="px-6 py-6">
-                <div className="flex items-center gap-4 mb-6 p-4 bg-stone-50 dark:bg-zinc-800 rounded-2xl">
+            {/* Side Panel */}
+            <div className="relative w-full max-w-[95%] md:max-w-5xl h-full bg-white dark:bg-zinc-900 shadow-2xl animate-in slide-in-from-right duration-300 flex flex-col">
+                {/* Header */}
+                <div className="px-6 py-5 border-b border-stone-100 dark:border-zinc-800 flex items-center justify-between bg-white dark:bg-zinc-900 sticky top-0 z-10">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30">
+                            <Leaf size={20} className="text-emerald-600" />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <h3 className="font-black text-lg text-stone-800 dark:text-white uppercase tracking-tight">{batch.batch_code}</h3>
+                                <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${
+                                    batch.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-600' : 
+                                    batch.status === 'PROCESSING' ? 'bg-orange-100 text-orange-600' : 
+                                    'bg-blue-100 text-blue-600'
+                                }`}>
+                                    {batch.status}
+                                </span>
+                            </div>
+                            <p className="text-xs text-stone-400 font-bold uppercase tracking-widest">{batch.products?.name || 'Nguyên liệu'} • {batch.suppliers?.name || 'NCC'}</p>
+                        </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                        <div className="hidden md:flex items-center gap-2 mr-4">
+                            <button
+                                onClick={() => setIsReportModalOpen(true)}
+                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-stone-100 dark:bg-zinc-800 text-stone-600 dark:text-stone-300 text-xs font-black uppercase tracking-widest hover:bg-stone-200 transition-all"
+                            >
+                                <Printer size={16} /> In báo cáo
+                            </button>
+                            <button
+                                onClick={handleAddStage}
+                                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-black uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition-all"
+                            >
+                                <Plus size={16} /> Thêm giai đoạn
+                            </button>
+                        </div>
+
+                        <button 
+                            onClick={onClose}
+                            className="p-3 rounded-2xl bg-stone-100 dark:bg-zinc-800 text-stone-400 hover:text-stone-800 dark:hover:text-white transition-all active:scale-90"
+                        >
+                            <X size={24} />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Content Area */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                    {/* Mobile Quick Actions */}
+                    <div className="md:hidden flex gap-2 mb-2">
+                        <button
+                            onClick={() => setIsReportModalOpen(true)}
+                            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-stone-100 dark:bg-zinc-800 text-stone-600 text-xs font-black uppercase tracking-widest"
+                        >
+                            <Printer size={16} /> In
+                        </button>
+                        <button
+                            onClick={handleAddStage}
+                            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-emerald-600 text-white text-xs font-black uppercase tracking-widest"
+                        >
+                            <Plus size={16} /> Thêm
+                        </button>
+                    </div>
+
+                    <div className="flex items-center gap-4 mb-6 p-4 bg-stone-50 dark:bg-zinc-800 rounded-2xl">
                     <div className="flex items-center gap-2">
                         <Truck size={16} className="text-blue-500" />
                         <span className="text-xs font-bold text-stone-500">Tổng nhập:</span>
@@ -854,6 +907,7 @@ export default function StageTimeline({ batch, onRefresh }: StageTimelineProps) 
                 url={viewDocUrl?.url || ''}
                 title={viewDocUrl?.title}
             />
+            </div>
         </div>
     )
 }

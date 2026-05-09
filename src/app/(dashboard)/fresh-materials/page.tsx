@@ -241,11 +241,12 @@ export default function FreshMaterialsPage() {
                 />
             )}
 
-            {/* STAGE TIMELINE (Expanded) */}
+            {/* STAGE TIMELINE (Side Drawer) */}
             {selectedBatch && (
                 <StageTimeline
                     batch={selectedBatch}
                     onRefresh={fetchBatches}
+                    onClose={() => setSelectedBatch(null)}
                 />
             )}
 
