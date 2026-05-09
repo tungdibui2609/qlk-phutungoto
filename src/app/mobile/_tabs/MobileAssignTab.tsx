@@ -190,18 +190,49 @@ export default function MobileAssignTab() {
                 setPosSearchTerm(nextPos.code)
                 updateSelection({ step: 'working' })
                 setCurrentStt('')
-                // Focus back to input
+                // Focus back to input - reduced delay and removed aggressive scrolling
                 setTimeout(() => {
-                    document.getElementById('mobile-stt-input')?.focus()
-                    // Scroll to ensure the position area is visible
-                    document.getElementById('pos-suggest-area')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                }, 300);
+                    const input = document.getElementById('mobile-stt-input')
+                    if (input) {
+                        input.focus()
+                        // Use nearest to prevent jumping the whole screen
+                        input.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                    }
+                }, 150);
             } else {
                 showToast('Không còn vị trí trống trong khu vực này!', 'error')
                 updateSelection({ step: 'setup' })
             }
         } finally { setLoading(false) }
     }
+
+    const handleSkip = () => {
+        if (suggestedPos) {
+            const currentId = suggestedPos.id
+            setSkippedIds(prev => new Set(prev).add(currentId));
+            setSuggestedPos(null);
+            setPosSearchTerm('');
+            setTimeout(() => suggestNextPosition(new Set([currentId])), 10);
+        }
+    }
+
+    // Keyboard navigation for desktop
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (step !== 'working') return
+            
+            // Skip current position on ArrowRight
+            if (e.key === 'ArrowRight') {
+                handleSkip()
+            }
+            // Also ArrowLeft for consistency if they want to skip
+            if (e.key === 'ArrowLeft') {
+                handleSkip()
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [step, suggestedPos])
 
     async function handleConfirmStt() {
         if (!suggestedPos || !currentStt) return
@@ -223,14 +254,13 @@ export default function MobileAssignTab() {
             
             const currentPositionId = suggestedPos.id
             setCurrentStt('')
-            setSuggestedPos(null)
             
-            setTimeout(() => {
-                suggestNextPosition(new Set([currentPositionId]))
-            }, 100)
+            // Tìm vị trí tiếp theo ngay lập tức mà không cần delay 100ms
+            suggestNextPosition(new Set([currentPositionId]))
         } catch (e: any) {
             showToast('Lỗi khi lưu: ' + e.message, 'error')
-        } finally { setLoading(false) }
+            setLoading(false) 
+        }
     }
 
     async function syncAssignments() {
@@ -436,102 +466,104 @@ export default function MobileAssignTab() {
                         </div>
                     </div>
                 ) : (
-                    <div className="space-y-6">
-                        <div className="mobile-card-premium p-6 border-emerald-500 animate-in zoom-in duration-300">
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="px-3 py-1 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-full text-[10px] font-black uppercase tracking-wider">VỊ TRÍ ĐẶT HÀNG</div>
-                                <button onClick={() => updateSelection({ step: 'setup' })} className="p-1 text-zinc-300 dark:text-zinc-700"><X size={24} /></button>
+                    <div className="space-y-6 max-w-5xl mx-auto">
+                        <div className="mobile-card-premium border-emerald-500 animate-in zoom-in duration-300">
+                            <div className="flex justify-between items-start p-6 pb-0">
+                                <div className="px-3 py-1 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-full text-[10px] font-black uppercase tracking-wider">CHẾ ĐỘ GÁN VỊ TRÍ</div>
+                                <button onClick={() => updateSelection({ step: 'setup' })} className="p-1 text-zinc-300 dark:text-zinc-700 hover:text-red-500 transition-colors"><X size={24} /></button>
                             </div>
-                            <div className="text-center py-6" id="pos-suggest-area">
-                                <div className="mx-auto w-20 h-20 bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 rounded-[28px] flex items-center justify-center mb-4 border border-emerald-100 dark:border-emerald-900/20"><MapPin size={40} /></div>
-                                <div className="text-[10px] font-black text-emerald-600 dark:text-emerald-500 uppercase tracking-[0.2em] mb-3">VỊ TRÍ ĐẶT HÀNG</div>
-                                
-                                {/* Smart Position Input with Autocomplete */}
-                                <div className="relative max-w-[280px] mx-auto group mb-2">
-                                    <input
-                                        type="text"
-                                        value={posSearchTerm}
-                                        onChange={(e) => {
-                                            setPosSearchTerm(e.target.value.toUpperCase())
-                                            setShowPosSuggestions(true)
-                                        }}
-                                        onFocus={() => setShowPosSuggestions(true)}
-                                        className="w-full bg-white/50 dark:bg-zinc-800/50 text-3xl font-black text-black dark:text-white tracking-tighter text-center border-b-2 border-emerald-500/30 outline-none focus:border-emerald-500 focus:ring-0 py-2 px-4 transition-all opacity-100"
-                                        placeholder="NHẬP MÃ KỆ"
-                                    />
-                                    <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mt-2">Nhấn để sửa mã kệ thực tế</div>
 
-                                    {/* Suggestions Dropdown */}
-                                    {showPosSuggestions && posSuggestions.length > 0 && (
-                                        <div className="absolute z-50 left-0 right-0 mt-2 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150">
-                                            {posSuggestions.map(p => (
-                                                <button
-                                                    key={p.id}
-                                                    onClick={() => {
-                                                        setSuggestedPos(p)
-                                                        setPosSearchTerm(p.code)
-                                                        setShowPosSuggestions(false)
-                                                    }}
-                                                    className="w-full px-4 py-3 text-left hover:bg-emerald-50 dark:hover:bg-emerald-900/20 border-b border-zinc-50 dark:border-zinc-800 last:border-0 flex justify-between items-center"
-                                                >
-                                                    <span className="font-black text-sm text-zinc-900 dark:text-zinc-100">{p.code}</span>
-                                                    <span className="text-[9px] font-bold text-emerald-600 uppercase">Trống</span>
-                                                </button>
-                                            ))}
+                            <div className="md:grid md:grid-cols-2 md:divide-x md:divide-zinc-100 dark:md:divide-zinc-800">
+                                {/* Left Column: Position Info */}
+                                <div className="p-6 flex flex-col justify-center" id="pos-suggest-area">
+                                    <div className="text-center">
+                                        <div className="mx-auto w-16 h-16 md:w-24 md:h-24 bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 rounded-[24px] md:rounded-[32px] flex items-center justify-center mb-4 border border-emerald-100 dark:border-emerald-900/20"><MapPin size={32} className="md:w-12 md:h-12" /></div>
+                                        <div className="text-[10px] font-black text-emerald-600 dark:text-emerald-500 uppercase tracking-[0.2em] mb-3">VỊ TRÍ ĐẶT HÀNG</div>
+                                        
+                                        {/* Smart Position Input with Autocomplete */}
+                                        <div className="relative max-w-[280px] mx-auto group mb-2">
+                                            <input
+                                                type="text"
+                                                value={posSearchTerm}
+                                                onChange={(e) => {
+                                                    setPosSearchTerm(e.target.value.toUpperCase())
+                                                    setShowPosSuggestions(true)
+                                                }}
+                                                onFocus={() => setShowPosSuggestions(true)}
+                                                className="w-full bg-white/50 dark:bg-zinc-800/50 text-2xl md:text-4xl font-black text-black dark:text-white tracking-tighter text-center border-b-2 border-emerald-500/30 outline-none focus:border-emerald-500 focus:ring-0 py-2 px-4 transition-all"
+                                                placeholder="MÃ KỆ"
+                                            />
+                                            <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mt-2">Sửa mã kệ nếu cần</div>
+
+                                            {/* Suggestions Dropdown */}
+                                            {showPosSuggestions && posSuggestions.length > 0 && (
+                                                <div className="absolute z-50 left-0 right-0 mt-2 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150">
+                                                    {posSuggestions.map(p => (
+                                                        <button
+                                                            key={p.id}
+                                                            onClick={() => {
+                                                                setSuggestedPos(p)
+                                                                setPosSearchTerm(p.code)
+                                                                setShowPosSuggestions(false)
+                                                            }}
+                                                            className="w-full px-4 py-3 text-left hover:bg-emerald-50 dark:hover:bg-emerald-900/20 border-b border-zinc-50 dark:border-zinc-800 last:border-0 flex justify-between items-center"
+                                                        >
+                                                            <span className="font-black text-sm text-zinc-900 dark:text-zinc-100">{p.code}</span>
+                                                            <span className="text-[9px] font-bold text-emerald-600 uppercase">Trống</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
-                                </div>
-                                
-                                {showPosSuggestions && (
-                                    <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setShowPosSuggestions(false)} />
-                                )}
-                                
-                                {/* Fast Mode Info */}
-                                <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                    <div className="bg-zinc-50 dark:bg-zinc-900/50 rounded-2xl p-2.5 border border-zinc-100 dark:border-zinc-800 max-w-[200px] mx-auto">
-                                        <div className="text-[9px] font-black text-emerald-600 uppercase mb-0.5">Chế độ Gán mù</div>
-                                        <div className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 leading-tight">Hàng sẽ được khớp sau</div>
+                                        
+                                        {showPosSuggestions && (
+                                            <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setShowPosSuggestions(false)} />
+                                        )}
+                                        
+                                        <button 
+                                            onClick={handleSkip}
+                                            disabled={loading}
+                                            className="mt-6 text-zinc-400 dark:text-zinc-600 text-[10px] font-black uppercase tracking-widest hover:text-emerald-600 transition-colors flex items-center justify-center gap-2 mx-auto"
+                                        >
+                                            <RotateCcw size={12} /> Bỏ qua & gợi ý khác (Phím &rarr;)
+                                        </button>
                                     </div>
                                 </div>
 
-                                <button 
-                                    onClick={() => {
-                                        if (suggestedPos) {
-                                            setSkippedIds(prev => new Set(prev).add(suggestedPos.id));
-                                            setSuggestedPos(null);
-                                            setPosSearchTerm('');
-                                            setTimeout(() => suggestNextPosition(new Set([suggestedPos.id])), 10);
-                                        }
-                                    }}
-                                    disabled={loading}
-                                    className="mt-6 text-zinc-400 dark:text-zinc-600 text-[10px] font-black uppercase tracking-widest hover:text-emerald-600 transition-colors flex items-center justify-center gap-2 mx-auto"
-                                >
-                                    <RotateCcw size={12} /> Bỏ qua & gợi ý khác
-                                </button>
-                            </div>
-                            <div className="h-px bg-zinc-100 dark:bg-zinc-800 my-6" />
-                            <div className="space-y-4">
-                                <label className="text-[11px] font-black text-zinc-400 uppercase tracking-widest text-center block">NHẬP STT CỦA LÔ HÀNG</label>
-                                <div className="relative">
-                                    <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={24} />
-                                     <input 
-                                         type="number" 
-                                         pattern="[0-9]*" 
-                                         inputMode="numeric" 
-                                         value={currentStt} 
-                                         onChange={e => setCurrentStt(e.target.value)} 
-                                         placeholder="Số STT..." 
-                                         className="w-full bg-zinc-50 dark:bg-zinc-950 border-2 border-zinc-100 dark:border-zinc-800 focus:border-emerald-500 rounded-2xl py-4 pl-14 pr-6 text-2xl font-black text-zinc-900 dark:text-white outline-none transition-all placeholder:text-zinc-300" 
-                                         autoFocus 
-                                         id="mobile-stt-input"
-                                         onKeyDown={(e) => e.key === 'Enter' && currentStt && handleConfirmStt()}
-                                         onWheel={(e) => e.currentTarget.blur()}
-                                     />
+                                {/* Right Column: STT Input */}
+                                <div className="p-6 space-y-6 bg-zinc-50/50 dark:bg-zinc-900/20">
+                                    <div className="space-y-4">
+                                        <label className="text-[11px] font-black text-zinc-400 uppercase tracking-widest text-center block">NHẬP STT CỦA LÔ HÀNG</label>
+                                        <div className="relative">
+                                            <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={24} />
+                                             <input 
+                                                 type="number" 
+                                                 pattern="[0-9]*" 
+                                                 inputMode="numeric" 
+                                                 value={currentStt} 
+                                                 onChange={e => setCurrentStt(e.target.value)} 
+                                                 placeholder="Số STT..." 
+                                                 className="w-full bg-white dark:bg-zinc-950 border-2 border-zinc-100 dark:border-zinc-800 focus:border-emerald-500 rounded-2xl py-4 md:py-6 pl-14 pr-6 text-2xl md:text-3xl font-black text-zinc-900 dark:text-white outline-none transition-all placeholder:text-zinc-300 shadow-sm" 
+                                                 autoFocus 
+                                                 id="mobile-stt-input"
+                                                 onKeyDown={(e) => e.key === 'Enter' && currentStt && handleConfirmStt()}
+                                                 onWheel={(e) => e.currentTarget.blur()}
+                                             />
+                                        </div>
+                                        <button onClick={() => handleConfirmStt()} disabled={!currentStt || loading} className={`w-full py-6 rounded-2xl flex items-center justify-center gap-3 text-lg font-black transition-all ${!currentStt || loading ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-300 dark:text-zinc-700' : 'bg-emerald-600 text-white shadow-xl shadow-emerald-500/20 active:scale-95'}`}>
+                                            {loading ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
+                                            XÁC NHẬN GÁN
+                                        </button>
+                                    </div>
+
+                                    {/* Fast Mode Info */}
+                                    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                        <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-3 border border-zinc-100 dark:border-zinc-800 text-center">
+                                            <div className="text-[9px] font-black text-emerald-600 uppercase mb-0.5 tracking-widest">Chế độ Gán mù</div>
+                                            <div className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 leading-tight">Mã kệ {posSearchTerm} sẽ được Admin khớp hàng sau</div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <button onClick={() => handleConfirmStt()} disabled={!currentStt || loading} className={`w-full py-6 rounded-2xl flex items-center justify-center gap-3 text-lg font-black transition-all ${!currentStt || loading ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-300 dark:text-zinc-700' : 'bg-emerald-600 text-white shadow-xl shadow-emerald-500/20 active:scale-95'}`}>
-                                    {loading ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
-                                    XÁC NHẬN GÁN
-                                </button>
                             </div>
                         </div>
 
