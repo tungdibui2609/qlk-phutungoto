@@ -125,6 +125,7 @@ export default function AssignmentApprovalPage() {
                 .gte('production_date', dateFrom)
                 .lte('production_date', dateTo)
                 .order('created_at', { ascending: false })
+                .limit(2000)
 
             if (pErr) throw pErr
             const assignments = pData || []
@@ -147,6 +148,7 @@ export default function AssignmentApprovalPage() {
             const { data: allPosData } = await (supabase.from('positions') as any)
                 .select('id, code, lot_id')
                 .eq('system_type', currentSystem.code)
+                .limit(10000) // Support up to 10k positions to avoid limit 1000 issue
             const safePosData = allPosData || []
             setAllPositions(safePosData)
 
@@ -176,6 +178,7 @@ export default function AssignmentApprovalPage() {
                 .neq('status', 'hidden')
                 .neq('status', 'exported')
                 .order('daily_seq', { ascending: true })
+                .limit(2000)
 
             if (lErr) throw lErr
 
@@ -215,6 +218,7 @@ export default function AssignmentApprovalPage() {
                 .gte('production_date', historyDateFrom)
                 .lte('production_date', historyDateTo)
                 .order('created_at', { ascending: false })
+                .limit(2000)
             
             if (historyStatusFilter !== 'all') query = query.eq('status', historyStatusFilter)
 
@@ -366,6 +370,10 @@ export default function AssignmentApprovalPage() {
     }
 
     const handleApprove = async (ass: PendingAssignment, lotId: string) => {
+        if (!profile) {
+            showToast('Vui lòng đăng nhập để thực hiện tác vụ này', 'error')
+            return
+        }
         setActionLoading(ass.id)
         try {
             const manual = manualEdits[ass.id]
@@ -472,7 +480,8 @@ export default function AssignmentApprovalPage() {
             if (statusUpdateErr) {
                 // Warning: position linked but assignment status failed to update
                 showToast("Vị trí đã lưu nhưng lỗi cập nhật trạng thái: " + statusUpdateErr.message, "error");
-                throw new Error("Lỗi cập nhật trạng thái duyệt.");
+                fetchData() // Refresh to show linked position
+                return 
             }
 
             showToast('Đã duyệt và ghi nhận vị trí thành công!', 'success')
@@ -545,6 +554,10 @@ export default function AssignmentApprovalPage() {
         const confirmed = await showConfirm(`Duyệt tự động ${validPairs.length} yêu cầu hợp lệ này?`)
         if (!confirmed) return;
         
+        if (!profile) {
+            showToast('Vui lòng đăng nhập để thực hiện tác vụ này', 'error')
+            return
+        }
         setActionLoading('bulk');
         try {
             let successCount = 0;
