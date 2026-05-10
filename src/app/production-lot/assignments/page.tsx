@@ -137,6 +137,7 @@ export default function AssignmentApprovalPage() {
                 const { data: historyPosData } = await (supabase.from('positions') as any)
                     .select('id, code')
                     .in('id', posIds)
+                    .limit(10000)
                 if (historyPosData) {
                     historyPosData.forEach((p: any) => {
                         posMap[p.id] = p.code
@@ -185,11 +186,14 @@ export default function AssignmentApprovalPage() {
             const fetchedLots = lData || []
             const lotIds = fetchedLots.map((l: any) => l.id)
             
-            // Explicitly fetch the positions for THESE lots to bypass the 1000 row limit on allPosData
+            // Explicitly fetch the positions for THESE lots to bypass the 10k row limit on allPosData
             let assignedPosData: any[] = []
             if (lotIds.length > 0) {
-                const { data } = await supabase.from('positions').select('id, code, lot_id').in('lot_id', lotIds)
-                assignedPosData = data || []
+                for (let i = 0; i < lotIds.length; i += 200) {
+                    const chunk = lotIds.slice(i, i + 200)
+                    const { data } = await supabase.from('positions').select('id, code, lot_id').in('lot_id', chunk).limit(1000)
+                    if (data) assignedPosData.push(...data)
+                }
             }
 
             const formattedLots: Lot[] = fetchedLots.map((l: any) => ({
@@ -234,6 +238,7 @@ export default function AssignmentApprovalPage() {
                 const { data: posData } = await (supabase.from('positions') as any)
                     .select('id, code')
                     .in('id', posIds)
+                    .limit(10000)
                 
                 if (posData) {
                     posData.forEach((p: any) => {
