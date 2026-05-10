@@ -355,6 +355,98 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                 }
             }
 
+            // Step 7: Fetch Product info for merged_out products that don't have it
+            const mergedOutPids = new Set<string>();
+            inward.forEach(lot => {
+                const mo = lot.metadata?.system_history?.merged_out || [];
+                if (Array.isArray(mo)) {
+                    mo.forEach((m: any) => {
+                        if (m.product_id && !m.product_name) {
+                            mergedOutPids.add(m.product_id);
+                        }
+                    });
+                }
+            });
+
+            const mergedProductInfoMap: Record<string, any> = {};
+            if (mergedOutPids.size > 0) {
+                const { data: pData } = await supabase
+                    .from('products')
+                    .select('id, name, sku, unit')
+                    .in('id', Array.from(mergedOutPids));
+                
+                if (pData) {
+                    pData.forEach((p: any) => {
+                        mergedProductInfoMap[p.id] = p;
+                    });
+                }
+            }
+
+            // Step 8: Truy xuất unit chính xác từ lot đích cho merged_out cũ không có product_unit
+            // Khi gộp, item được insert vào lot đích (target_lot_id) với unit đúng
+            // → Query lot_items của target lot để lấy unit thực tế
+            const targetLotUnitLookups: { target_lot_id: string, product_id: string }[] = [];
+            inward.forEach(lot => {
+                const mo = lot.metadata?.system_history?.merged_out || [];
+                if (Array.isArray(mo)) {
+                    mo.forEach((m: any) => {
+                        if (m.target_lot_id && (m.product_id || lot.product_id) && !m.product_unit) {
+                            targetLotUnitLookups.push({
+                                target_lot_id: m.target_lot_id,
+                                product_id: m.product_id || lot.product_id
+                            });
+                        }
+                    });
+                }
+            });
+
+            const targetUnitMap: Record<string, string> = {};
+            if (targetLotUnitLookups.length > 0) {
+                // Lấy unique target_lot_ids
+                const uniqueTargetLotIds = Array.from(new Set(targetLotUnitLookups.map(l => l.target_lot_id)));
+                
+                const { data: targetLotItems } = await supabase
+                    .from('lot_items')
+                    .select('lot_id, product_id, unit')
+                    .in('lot_id', uniqueTargetLotIds);
+
+                if (targetLotItems && targetLotItems.length > 0) {
+                    // Tạo map: lot_id_product_id → unit
+                    (targetLotItems as any[]).forEach((ti: any) => {
+                        const key = `${ti.lot_id}_${ti.product_id}`;
+                        if (ti.unit && !targetUnitMap[key]) {
+                            targetUnitMap[key] = ti.unit;
+                        }
+                    });
+                }
+            }
+
+            // Map back to inward data for easier access (Kết hợp Step 7 và kết quả Step 8)
+            inward.forEach(lot => {
+                const mo = lot.metadata?.system_history?.merged_out || [];
+                if (Array.isArray(mo)) {
+                    mo.forEach((m: any) => {
+                        // Cố gắng gán product_unit từ Step 8 trước
+                        if (!m.product_unit && m.target_lot_id) {
+                            const pid = m.product_id || lot.product_id;
+                            const lookupKey = `${m.target_lot_id}_${pid}`;
+                            if (targetUnitMap[lookupKey]) {
+                                m.product_unit = targetUnitMap[lookupKey];
+                            }
+                        }
+
+                        // Map thông tin Product từ Step 7 (name, sku, và fallback unit)
+                        if (m.product_id && !m.product_name && mergedProductInfoMap[m.product_id]) {
+                            const p = mergedProductInfoMap[m.product_id];
+                            m.product_name = p.name;
+                            m.product_sku = p.sku;
+                            // Fallback cuối cùng nếu cả DB cũ và target lot đều không có
+                            if (!m.product_unit) m.product_unit = p.unit;
+                        }
+                    });
+                }
+            });
+
             setReportDataInward(inward)
             setReportDataOutward(mappedOutward)
         } catch (err: any) {
@@ -406,9 +498,32 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
             const mergedOut = lot.metadata?.system_history?.merged_out || []
             const processedPids = new Set<string>();
 
+            // Pre-process merged_out: tính tổng qty theo product_id (CHỈ TÍNH 1 LẦN cho mỗi lot)
+            // Tránh bug nhân bội khi nhiều items cùng product_id
+            const mergedOutByPid: Record<string, number> = {};
+            const mergedOutUnitByPid: Record<string, string> = {};
+            if (Array.isArray(mergedOut)) {
+                mergedOut.forEach((mo: any) => {
+                    // Dùng product_id nếu có, fallback sang lot.product_id cho merged_out cũ
+                    const moPid = mo.product_id || lot.product_id;
+                    if (moPid) {
+                        mergedOutByPid[moPid] = (mergedOutByPid[moPid] || 0) + (Number(mo.quantity) || 0);
+                        // Lấy unit từ merged_out (đã được backfill từ target lot ở Step 8)
+                        if (!mergedOutUnitByPid[moPid] && (mo.product_unit || mo.unit)) {
+                            mergedOutUnitByPid[moPid] = mo.product_unit || mo.unit;
+                        }
+                    }
+                });
+            }
+
+            // Track which product_ids already had their mergedOut accounted for in this lot
+            const mergedOutAccountedPids = new Set<string>();
+
             // 1. Xử lý hàng hiện có
             items.forEach((item: any) => {
-                const unit = item.unit || item.products?.unit || '-'
+                // Ưu tiên unit từ merged_out (chính xác từ target lot) nếu có
+                const baseUnit = item.unit || item.products?.unit || '-';
+                const unit = mergedOutUnitByPid[item.product_id] || baseUnit;
                 const key = `${item.product_id}_${unit}`
                 if (!stats[key]) {
                     stats[key] = {
@@ -434,13 +549,13 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                 const isMergedIn = hist?.type === 'merge' || hist?.type === 'split';
                 
                 const currentQty = Number(item.quantity) || 0;
+                
+                // Chỉ tính mergedOutQty MỘT LẦN cho mỗi product_id trong mỗi lot
+                // (tránh nhân bội khi nhiều items cùng product_id)
                 let itemMergedOutQty = 0;
-                if (Array.isArray(mergedOut)) {
-                    mergedOut.forEach((mo: any) => {
-                        if (mo.product_id === item.product_id) {
-                            itemMergedOutQty += (Number(mo.quantity) || 0);
-                        }
-                    });
+                if (!mergedOutAccountedPids.has(item.product_id) && mergedOutByPid[item.product_id]) {
+                    itemMergedOutQty = mergedOutByPid[item.product_id];
+                    mergedOutAccountedPids.add(item.product_id);
                 }
 
                 if (isMergedIn) {
@@ -462,22 +577,30 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                 }
             })
 
-            // 2. Xử lý hàng đã gộp hết đi
+            // 2. Xử lý hàng đã gộp hết đi (không còn item nào trong lot cho product_id đó)
             if (Array.isArray(mergedOut)) {
-                const uniqueMergedPids = Array.from(new Set(mergedOut.map((mo: any) => mo.product_id)));
-                uniqueMergedPids.forEach((pid: any) => {
+                // Lấy tất cả product_id trong merged_out (kể cả những cái không có product_id thì fallback)
+                const allMergedPids: string[] = [];
+                mergedOut.forEach((mo: any) => {
+                    const moPid = mo.product_id || lot.product_id;
+                    if (moPid && !allMergedPids.includes(moPid)) {
+                        allMergedPids.push(moPid);
+                    }
+                });
+                
+                allMergedPids.forEach((pid: string) => {
                     if (!processedPids.has(pid)) {
-                        const productMergedInfo = mergedOut.filter((mo: any) => mo.product_id === pid);
+                        const productMergedInfo = mergedOut.filter((mo: any) => (mo.product_id || lot.product_id) === pid);
                         const totalMergedQty = productMergedInfo.reduce((acc: number, cur: any) => acc + (Number(cur.quantity) || 0), 0);
                         
                         const productSample = lot.products?.id === pid ? lot.products : null;
-                        const unit = productSample?.unit || '-';
+                        const unit = productSample?.unit || productMergedInfo[0]?.product_unit || productMergedInfo[0]?.unit || '-';
                         const key = `${pid}_${unit}`;
                         
                         if (!stats[key]) {
                             stats[key] = {
-                                productName: productSample?.name || 'Sản phẩm đã gộp hết',
-                                sku: productSample?.sku || '-',
+                                productName: productSample?.name || productMergedInfo[0]?.product_name || 'Sản phẩm đã gộp hết',
+                                sku: productSample?.sku || productMergedInfo[0]?.product_sku || '-',
                                 totalQty: 0,
                                 newInQty: 0,
                                 mergedInQty: 0,
@@ -1045,8 +1168,8 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                             {stats.map((stat, sIdx) => (
                                                 <div key={sIdx} className={`p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between group transition-all shadow-sm ${activeTab === 'inward' ? 'hover:border-orange-200 dark:hover:border-orange-900/30' : 'hover:border-emerald-200 dark:hover:border-emerald-900/30'}`}>
                                                     <div className="flex-1 min-w-0 pr-3">
-                                                        <div className="text-[10px] font-black text-slate-400 uppercase mb-1 truncate">{stat.productName}</div>
-                                                        <div className="text-lg font-black text-slate-900 dark:text-slate-100 truncate flex items-baseline gap-1">
+                                                        <div className="text-[10px] font-black text-slate-400 uppercase mb-1">{stat.productName}</div>
+                                                        <div className="text-lg font-black text-slate-900 dark:text-slate-100 flex items-baseline gap-1">
                                                             {formatQuantityFull(stat.totalQty)}
                                                             <span className="text-[10px] font-bold text-slate-400 uppercase">{stat.unit}</span>
                                                         </div>
@@ -1066,11 +1189,11 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                     return (
                                                                         <div key={pLabel} className="flex items-start justify-between gap-2 border-b border-slate-50 dark:border-slate-800/30 last:border-0 py-1.5">
                                                                             <div className="flex flex-col min-w-0">
-                                                                                <span className="text-[10px] font-black text-slate-700 dark:text-slate-300 truncate" title={pCode}>
+                                                                                <span className="text-[10px] font-black text-slate-700 dark:text-slate-300" title={pCode}>
                                                                                     {pCode === 'NO_CODE' ? 'Không xác định' : pCode}
                                                                                 </span>
                                                                                 {pName && (
-                                                                                    <span className="text-[9px] font-bold text-slate-400 truncate leading-tight mt-0.5" title={pName}>
+                                                                                    <span className="text-[9px] font-bold text-slate-400 leading-tight mt-0.5" title={pName}>
                                                                                         {pName}
                                                                                     </span>
                                                                                 )}
@@ -1127,7 +1250,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                             const items = lot.lot_items || []
                                                             const mergedOut = lot.metadata?.system_history?.merged_out || []
                                                             const itemsIdsInLot = new Set(items.map((i: any) => i.product_id));
-                                                            const uniqueMergedProducts = Array.from(new Set(mergedOut.filter((mo: any) => mo.product_id).map((mo: any) => mo.product_id)));
+                                                            const uniqueMergedProducts = Array.from(new Set(mergedOut.map((mo: any) => mo.product_id || lot.product_id).filter(Boolean)));
 
                                                             // Những sản phẩm đã gộp hết (không còn trong items)
                                                             const completelyMergedProducts = uniqueMergedProducts.filter(pid => !itemsIdsInLot.has(pid as string));
@@ -1135,12 +1258,13 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                             const displayItems = [
                                                                 ...items,
                                                                 ...completelyMergedProducts.map(pid => {
-                                                                    const sample = mergedOut.find((mo: any) => mo.product_id === pid);
+                                                                    const sample = mergedOut.find((mo: any) => (mo.product_id || lot.product_id) === pid);
                                                                     return {
                                                                         id: `merged_${pid}`,
                                                                         product_id: pid,
-                                                                        products: lot.products?.id === pid ? lot.products : { name: 'Sản phẩm đã gộp hết', sku: '-' },
+                                                                        products: lot.products?.id === pid ? lot.products : (sample ? { name: sample.product_name || 'Sản phẩm đã gộp hết', sku: sample.product_sku || '-', unit: sample.product_unit || sample.unit || '' } : { name: 'Sản phẩm đã gộp hết', sku: '-' }),
                                                                         quantity: 0,
+                                                                        unit: sample?.product_unit || sample?.unit || lot.products?.unit || '',
                                                                         is_completely_merged: true
                                                                     }
                                                                 })
@@ -1151,7 +1275,15 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                 <React.Fragment key={lot.id}>
                                                                     {displayItems.length > 0 ? (
                                                                         displayItems.map((item: any, itemIdx: number) => {
-                                                                            const itemMergedOut = mergedOut.filter((mo: any) => mo.product_id === item.product_id);
+                                                                            // Match merged_out records: ưu tiên theo item_id (chính xác), fallback theo product_id
+                                                                            const itemMergedOutById = mergedOut.filter((mo: any) => mo.item_id === item.id);
+                                                                            // Nếu không match theo item_id (records cũ), fallback theo product_id
+                                                                            // Nhưng chỉ tính cho item đầu tiên có product_id đó (tránh nhân bội)
+                                                                            const itemMergedOut = itemMergedOutById.length > 0 
+                                                                                ? itemMergedOutById 
+                                                                                : (item.is_completely_merged 
+                                                                                    ? mergedOut.filter((mo: any) => (mo.product_id || lot.product_id) === item.product_id)
+                                                                                    : mergedOut.filter((mo: any) => mo.item_id === item.id));
                                                                             const totalMergedOutQty = itemMergedOut.reduce((acc: number, cur: any) => acc + (Number(cur.quantity) || 0), 0);
                                                                             
                                                                             return (
@@ -1197,7 +1329,10 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                                             
                                                                                             {itemMergedOut.length > 0 && (
                                                                                                 <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 text-[9px] font-black border border-amber-100 dark:border-amber-800/30">
-                                                                                                    MANG ĐI GỘP SANG: {itemMergedOut.map((mo: any) => `${mo.target_lot_code} (${formatQuantityFull(mo.quantity)})`).join(', ')}
+                                                                                                    MANG ĐI GỘP SANG: {itemMergedOut.map((mo: any) => {
+                                                                                                        const moUnit = mo.product_unit || mo.unit || item.unit || item.products?.unit || '';
+                                                                                                        return `${mo.target_lot_code} (${formatQuantityFull(mo.quantity)}${moUnit ? ` ${moUnit}` : ''})`;
+                                                                                                    }).join(', ')}
                                                                                                 </span>
                                                                                             )}
                                                                                         </div>
@@ -1213,7 +1348,14 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                                         )}
                                                                                     </td>
                                                                                     <td className="py-2 px-2 font-bold text-[10px] text-slate-400 uppercase">
-                                                                                        {item.unit || item.products?.unit}
+                                                                                        {(() => {
+                                                                                            // Ưu tiên unit từ merged_out records (chính xác nhất cho items đã gộp)
+                                                                                            if (itemMergedOut.length > 0) {
+                                                                                                const moUnit = itemMergedOut[0]?.product_unit || itemMergedOut[0]?.unit;
+                                                                                                if (moUnit) return moUnit;
+                                                                                            }
+                                                                                            return item.unit || item.products?.unit || '-';
+                                                                                        })()}
                                                                                     </td>
                                                                                     {itemIdx === 0 && (
                                                                                         <td className="py-2 px-2" rowSpan={rowSpan}>
@@ -1349,7 +1491,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                     // 1. Ưu tiên Tên lệnh sản xuất (Tên đầy đủ)
                                                                     if (row.production_name && row.production_name !== '-') {
                                                                         return (
-                                                                            <div className="text-[11px] font-black text-slate-800 dark:text-white uppercase leading-tight truncate max-w-[160px]">
+                                                                            <div className="text-[11px] font-black text-slate-800 dark:text-white uppercase leading-tight">
                                                                                 {row.production_name}
                                                                             </div>
                                                                         );
@@ -1369,7 +1511,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                     // 3. Cuối cùng hiện mô tả ngắn hoặc "Xuất lẻ"
                                                                     return (
                                                                         <div className="text-[10px] text-slate-400 italic">
-                                                                            {desc.length > 25 ? desc.substring(0, 25) + '...' : (desc || 'Xuất lẻ')}
+                                                                            {desc || 'Xuất lẻ'}
                                                                         </div>
                                                                     );
                                                                 })()}

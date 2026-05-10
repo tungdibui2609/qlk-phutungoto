@@ -279,6 +279,9 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, o
                     target_lot_id: targetLot.id,
                     target_lot_code: targetLot.code,
                     product_id: sourceItem.product_id,
+                    product_name: sourceItem.products?.name,
+                    product_sku: sourceItem.products?.sku,
+                    product_unit: sourceItem.unit || sourceItem.products?.unit || '',
                     quantity: entry.qty,
                     item_id: sourceItem.id
                 });
