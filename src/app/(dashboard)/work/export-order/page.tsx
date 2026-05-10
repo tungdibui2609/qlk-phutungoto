@@ -1,7 +1,7 @@
 'use client'
 
 import React, { Suspense, useState, useEffect, useMemo } from 'react'
-import { FileText, LayoutList, Loader2, Trash2, Printer, CheckCircle, RotateCcw, PackageCheck, XCircle, MapPin, Clock, User } from 'lucide-react'
+import { FileText, LayoutList, Loader2, Trash2, Printer, CheckCircle, RotateCcw, PackageCheck, XCircle, MapPin, Clock, User, ShieldAlert } from 'lucide-react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { format } from 'date-fns'
@@ -39,7 +39,8 @@ interface ExportTask {
     notes?: string | null
     items?: ExportOrderItem[]
     created_by?: { full_name: string } | null
-    export_task_items?: { count: number }[] | null
+    export_task_items?: any[] | null
+    has_pending_items?: boolean
 }
 
 interface PickRequestGroup {
@@ -198,7 +199,13 @@ function ExportOrderContent() {
             setLoading(true)
             let query = supabase
                 .from('export_tasks')
-                .select('*, export_task_items(count)')
+                .select(`
+                    *,
+                    export_task_items (
+                        quantity,
+                        exported_quantity
+                    )
+                `)
                 .order('created_at', { ascending: false })
                 .limit(500)
 
@@ -230,6 +237,9 @@ function ExportOrderContent() {
             // 4. Map data
             const formattedTasks: ExportTask[] = (tasksData || []).map((t: any) => {
                 const task = t
+                const items = task.export_task_items || []
+                const hasPendingItems = items.some((item: any) => (item.exported_quantity || 0) < (item.quantity - 0.000001))
+                
                 return {
                     id: task.id,
                     code: task.code,
@@ -238,7 +248,8 @@ function ExportOrderContent() {
                     notes: task.notes,
                     // Map name from userMap
                     created_by_name: task.created_by ? (userMap[task.created_by] || 'Unknown') : 'Unknown',
-                    items_count: task.export_task_items?.[0]?.count || 0
+                    items_count: items.length,
+                    has_pending_items: hasPendingItems
                 }
             })
 
@@ -617,12 +628,18 @@ function ExportOrderContent() {
                                                             task.status === 'Cancelled' ? 'Đã hủy' : 'Đang xử lý'}
                                                 </span>
                                             </div>
-                                            <div className="text-sm text-stone-500 dark:text-zinc-400 flex items-center gap-2 mt-1">
+                                            <div className="text-sm text-stone-500 dark:text-zinc-400 flex items-center gap-2 mt-1 flex-wrap">
                                                 <span>Tạo bởi: <span className="font-bold text-stone-700 dark:text-zinc-300">{task.created_by_name}</span></span>
                                                 <span>•</span>
                                                 <span className="font-mono">{format(new Date(task.created_at), 'HH:mm:ss dd/MM/yyyy')}</span>
                                                 <span>•</span>
                                                 <span className="font-bold">{task.items_count} mặt hàng</span>
+                                                {task.status === 'Completed' && task.has_pending_items && (
+                                                    <span className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-[11px] px-2 py-0.5 rounded-md font-bold flex items-center gap-1 border border-red-100 dark:border-red-800 animate-pulse">
+                                                        <ShieldAlert size={12} />
+                                                        CÒN HÀNG CHƯA HẠ HOẶC CHƯA XUẤT
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     </div>

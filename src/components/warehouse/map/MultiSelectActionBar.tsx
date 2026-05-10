@@ -122,7 +122,7 @@ export default function MultiSelectActionBar({
                     }
                 }
 
-                groups[key].totalQuantity += qty
+                groups[key].totalQuantity = Number((groups[key].totalQuantity + qty).toFixed(3))
                 groups[key].lotCodes.add(lot.code)
             })
 
@@ -142,7 +142,7 @@ export default function MultiSelectActionBar({
     const totalByUnit = useMemo(() => {
         const units: Record<string, number> = {}
         aggregatedItems.forEach(item => {
-            units[item.unit] = (units[item.unit] || 0) + item.totalQuantity
+            units[item.unit] = Number(((units[item.unit] || 0) + item.totalQuantity).toFixed(3))
         })
         return units
     }, [aggregatedItems])
