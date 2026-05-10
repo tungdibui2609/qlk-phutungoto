@@ -134,15 +134,18 @@ export default function AssignmentApprovalPage() {
             const posIds = Array.from(new Set(assignments.map((a: any) => a.position_id).filter(Boolean)))
             let posMap: Record<string, string> = {}
             if (posIds.length > 0) {
-                const { data: historyPosData } = await (supabase.from('positions') as any)
-                    .select('id, code')
-                    .in('id', posIds)
-                    .limit(10000)
-                if (historyPosData) {
-                    historyPosData.forEach((p: any) => {
-                        posMap[p.id] = p.code
-                    })
+                let historyPosData: any[] = []
+                for (let i = 0; i < posIds.length; i += 200) {
+                    const chunk = posIds.slice(i, i + 200)
+                    const { data } = await (supabase.from('positions') as any)
+                        .select('id, code')
+                        .in('id', chunk)
+                        .limit(1000)
+                    if (data) historyPosData.push(...data)
                 }
+                historyPosData.forEach((p: any) => {
+                    posMap[p.id] = p.code
+                })
             }
 
             // 3. Keep allPositions updated for dropdowns and edits
@@ -235,16 +238,18 @@ export default function AssignmentApprovalPage() {
             
             let posMap: Record<string, string> = {}
             if (posIds.length > 0) {
-                const { data: posData } = await (supabase.from('positions') as any)
-                    .select('id, code')
-                    .in('id', posIds)
-                    .limit(10000)
-                
-                if (posData) {
-                    posData.forEach((p: any) => {
-                        posMap[p.id] = p.code
-                    })
+                let posData: any[] = []
+                for (let i = 0; i < posIds.length; i += 200) {
+                    const chunk = posIds.slice(i, i + 200)
+                    const { data } = await (supabase.from('positions') as any)
+                        .select('id, code')
+                        .in('id', chunk)
+                        .limit(1000)
+                    if (data) posData.push(...data)
                 }
+                posData.forEach((p: any) => {
+                    posMap[p.id] = p.code
+                })
             }
 
             // 4. Fetch LOTs for these dates to match product info
