@@ -122,6 +122,7 @@ const menuItems: MenuItem[] = [
             { id: 'inventory_report', name: 'Tồn kho', href: '/inventory', icon: Package, requiredPermission: 'inventory.view' },
             { id: 'warehouse_status', name: 'Trạng thái kho', href: '/warehouses/status', icon: BarChart3, requiredPermission: 'warehouse.view' },
             { id: 'hall_summary', name: 'Thống kê sảnh', href: '/warehouses/hall-summary', icon: BarChart3, requiredPermission: 'warehouse.view' },
+            { id: 'floor_1_report', name: 'Báo cáo tầng 1', href: '/reports/floor-1', icon: BarChart3, requiredPermission: 'report.view' },
             { id: 'warehouse_map_log', name: 'Nhật ký sơ đồ kho', href: '/reports/warehouse-map-log', icon: Map, requiredPermission: 'report.view' },
             { id: 'warehouse_movements', name: 'Diễn biến kho (Sạch)', href: '/reports/warehouse-movements', icon: Activity, requiredPermission: 'report.view' },
             { id: 'history', name: 'Lịch sử thao tác', href: '/operation-history', icon: Activity, requiredPermission: 'report.view' },

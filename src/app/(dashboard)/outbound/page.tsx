@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
-import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2, Trash2, RotateCcw, FileText, FileSpreadsheet } from 'lucide-react'
+import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2, Trash2, RotateCcw, FileText, FileSpreadsheet, Download, CheckSquare, Square } from 'lucide-react'
 import OutboundOrderModal from '@/components/inventory/outbound/OutboundOrderModal'
 import OutboundOrderDetailModal from './OutboundOrderDetailModal'
 import { LotExportBuffer } from '@/components/warehouse/lots/LotExportBuffer'
@@ -28,6 +28,8 @@ export default function OutboundPage() {
     const [isBufferOpen, setIsBufferOpen] = useState(false)
     const [isExportModalOpen, setIsExportModalOpen] = useState(false)
     const [isAllExportModalOpen, setIsAllExportModalOpen] = useState(false)
+    const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set())
+    const [isBatchDownloading, setIsBatchDownloading] = useState(false)
 
     // Helper: Utility Check
     const isUtilityEnabled = (utilityId: string) => {
@@ -184,6 +186,72 @@ export default function OutboundPage() {
         }
     }
 
+    // Toggle chọn tất cả
+    const toggleSelectAll = () => {
+        if (selectedOrderIds.size === orders.length) {
+            setSelectedOrderIds(new Set())
+        } else {
+            setSelectedOrderIds(new Set(orders.map(o => o.id)))
+        }
+    }
+
+    // Toggle chọn một dòng
+    const toggleSelectOrder = (id: string) => {
+        setSelectedOrderIds(prev => {
+            const next = new Set(prev)
+            if (next.has(id)) {
+                next.delete(id)
+            } else {
+                next.add(id)
+            }
+            return next
+        })
+    }
+
+    // Tải hàng loạt Excel
+    const handleBatchDownload = async () => {
+        if (selectedOrderIds.size === 0) return
+        setIsBatchDownloading(true)
+        try {
+            const { data: { session } } = await supabase.auth.getSession()
+            const token = session?.access_token
+            if (!token) {
+                showToast('Bạn cần đăng nhập để thực hiện chức năng này', 'error')
+                return
+            }
+            const res = await fetch('/api/export/batch-outbound', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    orderIds: Array.from(selectedOrderIds),
+                    system_code: systemType,
+                    printType: 'official'
+                })
+            })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ error: 'Lỗi không xác định' }))
+                throw new Error(err.error || 'Tải về thất bại')
+            }
+            const blob = await res.blob()
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `Phieu_Xuat_${selectedOrderIds.size}_phieu.zip`
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
+            URL.revokeObjectURL(url)
+            showToast(`Đã tải về ${selectedOrderIds.size} phiếu xuất thành công!`, 'success')
+        } catch (error: any) {
+            showToast('Lỗi tải về: ' + error.message, 'error')
+        } finally {
+            setIsBatchDownloading(false)
+        }
+    }
+
     const getStatusText = (status: string) => {
         switch (status) {
             case 'Completed': return 'Đã hoàn tất'
@@ -228,6 +296,20 @@ export default function OutboundPage() {
                         <FileSpreadsheet size={16} />
                         Báo cáo Xuất
                     </button>
+                    {selectedOrderIds.size > 0 && (
+                        <button
+                            className="flex items-center h-10 px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-md transition-all active:scale-95 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                            onClick={handleBatchDownload}
+                            disabled={isBatchDownloading}
+                        >
+                            {isBatchDownloading ? (
+                                <div className="w-4 h-4 mr-2 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : (
+                                <Download className="w-4 h-4 mr-2" />
+                            )}
+                            Tải {selectedOrderIds.size} phiếu Excel
+                        </button>
+                    )}
                     <button
                         className="flex items-center h-10 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-md transition-all active:scale-95 font-medium"
                         onClick={() => setIsCreateModalOpen(true)}
@@ -285,6 +367,15 @@ export default function OutboundPage() {
                                 <table className="w-full text-left border-collapse">
                                     <thead>
                                         <tr className="bg-gray-50/50 border-b">
+                                            <th className="px-4 py-4 text-xs font-semibold text-gray-500 uppercase w-12">
+                                                <button onClick={toggleSelectAll} className="flex items-center justify-center w-full hover:text-indigo-600 transition-colors">
+                                                    {selectedOrderIds.size === orders.length && orders.length > 0 ? (
+                                                        <CheckSquare className="w-4 h-4 text-indigo-600" />
+                                                    ) : (
+                                                        <Square className="w-4 h-4" />
+                                                    )}
+                                                </button>
+                                            </th>
                                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Mã phiếu</th>
                                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Khách hàng</th>
                                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Ngày tạo</th>
@@ -295,7 +386,16 @@ export default function OutboundPage() {
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
                                         {orders.map((order) => (
-                                            <tr key={order.id} className="hover:bg-gray-50/80 transition-colors">
+                                            <tr key={order.id} className={`hover:bg-gray-50/80 transition-colors ${selectedOrderIds.has(order.id) ? 'bg-indigo-50/50' : ''}`}>
+                                                <td className="px-4 py-4 whitespace-nowrap">
+                                                    <button onClick={() => toggleSelectOrder(order.id)} className="flex items-center justify-center w-full hover:text-indigo-600 transition-colors">
+                                                        {selectedOrderIds.has(order.id) ? (
+                                                            <CheckSquare className="w-4 h-4 text-indigo-600" />
+                                                        ) : (
+                                                            <Square className="w-4 h-4 text-gray-400" />
+                                                        )}
+                                                    </button>
+                                                </td>
                                                 <td className="px-6 py-4 whitespace-nowrap">
                                                     <div className="flex flex-col">
                                                         <span className="text-sm font-semibold text-indigo-600 cursor-pointer" onClick={() => { setSelectedOrderId(order.id); setIsDetailModalOpen(true); }}>

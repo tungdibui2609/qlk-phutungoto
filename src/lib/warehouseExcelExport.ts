@@ -535,11 +535,14 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
                             const richText: any[] = [];
                             cellData.items.forEach((it: any, itIdx: number) => {
                                 const roundedQty = Math.round((Number(it.quantity) || 0) * 1000) / 1000;
-                                richText.push({ text: `• ${it.productName}`, font: { bold: true, size: 9 } });
+                                const sttPrefix = it.batchCode ? `[${it.batchCode}] ` : '';
+                                richText.push({ text: `• ${sttPrefix}${it.productName}`, font: { bold: true, size: 9 } });
                                 richText.push({ text: ` : ${roundedQty} ${it.unit}`, font: { size: 9, bold: true, color: { argb: '0000FF' } } }); // Blue for qty
                                 
                                 if (itIdx < cellData.items.length - 1) {
-                                    richText.push({ text: '\n', font: { size: 6 } });
+                                    richText.push({ text: '\n', font: { size: 2 } });
+                                    richText.push({ text: '----------------------------------', font: { size: 4, color: { argb: 'BBBBBB' } } });
+                                    richText.push({ text: '\n', font: { size: 2 } });
                                 }
                             });
                             cell.value = { richText };
