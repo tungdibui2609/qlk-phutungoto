@@ -257,7 +257,8 @@ function ExportOrderDetailContent() {
             }
 
             // Deduplicate items to prevent duplicate keys in UI
-            const uniqueItems = Array.from(new Map((data.items || []).map((item: any) => [item.id, item])).values())
+            const itemsArray = Array.isArray(data.items) ? data.items : []
+            const uniqueItems = Array.from(new Map(itemsArray.map((item: any) => [item.id, item])).values())
 
             const formattedTask: ExportTask = {
                 ...data,
@@ -750,19 +751,29 @@ function ExportOrderDetailContent() {
             }
 
             // Tìm các vị trí trống
-            const { data: availablePositions, error: availError } = await (supabase
+            const { data: rawPositions, error: availError } = await (supabase
                 .from('zone_positions') as any)
                 .select('position_id, zone_id, positions!inner(id, lot_id, system_type)')
                 .is('positions.lot_id', null)
                 .eq('positions.system_type', currentSystem?.code || '')
                 .in('zone_id', Array.from(targetZoneIds))
-                .limit(itemsToMove.length)
 
-            if (availError || !availablePositions || availablePositions.length < itemsToMove.length) {
-                showToast(`Không đủ vị trí trống trong Sảnh này. Cần ${itemsToMove.length}, nhưng chỉ còn ${availablePositions?.length || 0} vị trí.`, 'error')
+            if (availError || !rawPositions) {
+                showToast(`Không thể tìm vị trí trống: ${availError?.message || 'Lỗi không xác định'}`, 'error')
                 setLoading(false)
                 return
             }
+
+            // Loại bỏ các vị trí trùng lặp (trường hợp một vị trí thuộc nhiều zones con)
+            const uniquePositions = Array.from(new Map(rawPositions.map((p: any) => [p.position_id, p])).values())
+
+            if (uniquePositions.length < itemsToMove.length) {
+                showToast(`Không đủ vị trí trống trong Sảnh này. Cần ${itemsToMove.length}, nhưng chỉ còn ${uniquePositions.length} vị trí duy nhất.`, 'error')
+                setLoading(false)
+                return
+            }
+
+            const availablePositions = uniquePositions.slice(0, itemsToMove.length)
 
             // 1. Clear current positions (Bulk)
             const idsToClear = Array.from(new Set(itemsToMove.map(i => i.current_position_id).filter(Boolean) as string[]))
@@ -790,7 +801,7 @@ function ExportOrderDetailContent() {
 
             // 2. Assign to new positions in hall (Bulk)
             const assignUpdates = itemsToMove.map((item, i) => ({
-                id: availablePositions[i].position_id as string,
+                id: (availablePositions[i] as any).position_id as string,
                 lot_id: item.lot_id
             }))
 
@@ -1255,14 +1266,6 @@ function ExportOrderDetailContent() {
                                     >
                                         <Calendar size={16} className="group-hover:scale-110 transition-transform" />
                                         <span>Sửa ngày LOT</span>
-                                    </button>
-                                    <button
-                                        onClick={() => setIsBulkExportOpen(true)}
-                                        className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-all active:scale-95 group whitespace-nowrap"
-                                        title="Xuất nhanh các lô đã chọn"
-                                    >
-                                        <PackageMinus size={16} className="group-hover:scale-110 transition-transform" />
-                                        <span>Xuất kho</span>
                                     </button>
                                     <button
                                         onClick={() => {

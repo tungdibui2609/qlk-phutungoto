@@ -253,7 +253,18 @@ export default function AssignmentApprovalPage() {
             }
 
             // 4. Fetch LOTs for these dates to match product info
-            const { data: lotsData } = await supabase
+            const dailySeqs = Array.from(new Set(assignments.map((a: any) => a.lot_stt)))
+            const knownLotIds = assignments
+                .map((a: any) => {
+                    const status = a.status || ''
+                    const parts = status.split(':')
+                    // Format: "approved:new:LOT_ID" or "approved:move:OLD_POS:LOT_ID"
+                    if (parts.length >= 3 && parts[0] === 'approved') return parts[parts.length - 1]
+                    return null
+                })
+                .filter(Boolean) as string[]
+
+            let lotsQuery = supabase
                 .from('lots')
                 .select(`
                     id, code, daily_seq, inbound_date,
@@ -264,7 +275,15 @@ export default function AssignmentApprovalPage() {
                     lot_items(quantity, unit, products(name, sku, weight_kg))
                 `)
                 .eq('system_code', currentSystem.code)
-                .in('daily_seq', Array.from(new Set(assignments.map((a: any) => a.lot_stt))))
+            
+            if (knownLotIds.length > 0) {
+                // Fetch by ID OR by STT (for backward compatibility)
+                lotsQuery = lotsQuery.or(`id.in.(${knownLotIds.map(id => `"${id}"`).join(',')}),daily_seq.in.(${dailySeqs.join(',')})`)
+            } else {
+                lotsQuery = lotsQuery.in('daily_seq', dailySeqs)
+            }
+
+            const { data: lotsData } = await lotsQuery.limit(5000)
             
             const processedLots = (lotsData || []).map((l: any) => {
                 const totalQty = l.lot_items?.reduce((sum: number, li: any) => sum + (li.quantity || 0), 0) || 0
@@ -300,31 +319,52 @@ export default function AssignmentApprovalPage() {
             })
 
             const enriched = assignments.map((h: any) => {
-                const date = h.production_date
-                const key = `${date}_${h.lot_stt}`
-                let matchedLots = lotsMap[key] || []
-                
-                // Smart Fallback: If exact date match fails, look for the same STT on any date (prioritize closest date)
-                if (matchedLots.length === 0 && processedLots.length > 0) {
-                    matchedLots = processedLots
-                        .filter(l => l.daily_seq === h.lot_stt)
-                        .sort((a, b) => {
-                            const distA = Math.abs(new Date(a.inbound_date).getTime() - new Date(h.production_date).getTime());
-                            const distB = Math.abs(new Date(b.inbound_date).getTime() - new Date(h.production_date).getTime());
-                            return distA - distB;
-                        });
+                // Decode status info to get Lot ID if stored
+                const statusStr = h.status || ''
+                const parts = statusStr.split(':')
+                let explicitLotId: string | null = null
+                if (parts.length >= 3 && parts[0] === 'approved') {
+                    explicitLotId = parts[parts.length - 1]
                 }
 
-                const lot = matchedLots.length > 0 ? matchedLots[0] : null
+                let lot = null
+                if (explicitLotId) {
+                    lot = processedLots.find(l => l.id === explicitLotId)
+                }
 
-                // Decode status info: "approved:move:OLD_POS" or "approved:new"
+                // If no explicit lot ID or lot not found in current fetch, fallback to matching logic
+                if (!lot) {
+                    const date = h.production_date
+                    const key = `${date}_${h.lot_stt}`
+                    let matchedLots = lotsMap[key] || []
+                    
+                    // Smart Fallback: If exact date match fails, look for the same STT on any date (prioritize closest date)
+                    if (matchedLots.length === 0 && processedLots.length > 0) {
+                        matchedLots = processedLots
+                            .filter(l => l.daily_seq === h.lot_stt)
+                            .sort((a, b) => {
+                                const distA = Math.abs(new Date(a.inbound_date).getTime() - new Date(h.production_date).getTime());
+                                const distB = Math.abs(new Date(b.inbound_date).getTime() - new Date(h.production_date).getTime());
+                                return distA - distB;
+                            });
+                    }
+                    lot = matchedLots.length > 0 ? matchedLots[0] : null
+                }
+
+                // Decode assignment type and old position
                 let assignment_type: 'new' | 'move' | undefined = undefined
                 let old_position_code: string | undefined = undefined
                 
-                if (h.status.startsWith('approved:move:')) {
+                if (statusStr.startsWith('approved:move:')) {
                     assignment_type = 'move'
-                    old_position_code = h.status.replace('approved:move:', '')
-                } else if (h.status === 'approved:new' || h.status === 'approved') {
+                    // For old format: approved:move:OLD_POS
+                    // For new format: approved:move:OLD_POS:LOT_ID
+                    if (parts.length >= 4) {
+                        old_position_code = parts[2]
+                    } else {
+                        old_position_code = statusStr.replace('approved:move:', '')
+                    }
+                } else if (statusStr.startsWith('approved:new') || statusStr === 'approved') {
                     assignment_type = 'new'
                 }
 
@@ -481,7 +521,7 @@ export default function AssignmentApprovalPage() {
             // Then, mark assignment as approved with metadata in status
             const isMove = otherPlacements.length > 0
             const oldPosCodes = otherPlacements.map((p: any) => p.code).join(', ')
-            const finalStatus = isMove ? `approved:move:${oldPosCodes}` : `approved:new`
+            const finalStatus = isMove ? `approved:move:${oldPosCodes}:${lotId}` : `approved:new:${lotId}`
 
             const { error: statusUpdateErr } = await (supabase.from('pending_assignments') as any)
                 .update({ status: finalStatus })
@@ -617,7 +657,7 @@ export default function AssignmentApprovalPage() {
                 
                 // 3. Update assignment status
                 await (supabase.from('pending_assignments') as any).update({ 
-                    status: 'approved:new', 
+                    status: `approved:new:${lot.id}`, 
                     position_id: targetPosId, 
                     lot_stt: manual?.lot_stt || ass.lot_stt 
                 }).eq('id', ass.id)
