@@ -1,7 +1,7 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Search, Download, Calendar, Boxes, Building2, User, FileText, Filter, Layers, ChevronDown, DollarSign, ArrowUpRight, ArrowDownLeft, PackageSearch, TrendingUp } from 'lucide-react'
+import { Search, Download, Calendar, Boxes, Building2, User, FileText, Filter, Layers, ChevronDown, DollarSign, ArrowUpRight, ArrowDownLeft, PackageSearch, TrendingUp, Check, X } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, isBefore, parseISO } from 'date-fns'
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
@@ -32,9 +32,21 @@ type ProductMovement = {
     vouchers: Set<string>
 }
 
+type DailyMovement = {
+    date: string
+    productId: string
+    sku: string
+    name: string
+    unit: string
+    totalIn: number
+    totalOut: number
+    vouchers: Set<string>
+}
+
 export default function AccountingHistoryPage() {
     const { systemType } = useSystem()
     const [loading, setLoading] = useState(true)
+    const [viewMode, setViewMode] = useState<'summary' | 'daily'>('summary')
     const [searchTerm, setSearchTerm] = useState('')
     const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'))
     const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'))
@@ -42,9 +54,11 @@ export default function AccountingHistoryPage() {
     const [products, setProducts] = useState<any[]>([])
     const [orderTypes, setOrderTypes] = useState<OrderType[]>([])
     const [movements, setMovements] = useState<ProductMovement[]>([])
+    const [dailyMovements, setDailyMovements] = useState<DailyMovement[]>([])
     const [selectedVouchersProduct, setSelectedVouchersProduct] = useState<any | null>(null)
     const [units, setUnits] = useState<any[]>([])
     const [targetUnitId, setTargetUnitId] = useState<string | null>(null)
+    const [selectedProductIds, setSelectedProductIds] = useState<string[]>([])
 
     const { showToast } = useToast()
     const { companyInfo } = usePrintCompanyInfo()
@@ -203,9 +217,85 @@ export default function AccountingHistoryPage() {
                 mov.closing = mov.opening + mov.totalIn - mov.totalOut
             })
 
+            // Process Daily Movements
+            const dailyMap: Record<string, DailyMovement> = {}
+            
+            // Re-process inbound for daily
+            inboundItems?.forEach((item: any) => {
+                if (!item.order) return
+                const orderDate = parseISO(item.order.created_at)
+                if (isBefore(orderDate, start) || !isBefore(orderDate, end)) return
+                
+                const dateKey = format(orderDate, 'yyyy-MM-dd')
+                const prod = prodData.find((p: any) => p.id === item.product_id)
+                const canConvert = isConvertible(item.product_id)
+                const displayUnit = (targetUnit && canConvert) ? targetUnit.name : (item.unit || '-')
+                
+                const key = `${dateKey}_${item.product_id}_${displayUnit}`
+                
+                const qty = (targetUnit && canConvert)
+                    ? convertUnit(item.product_id, item.unit || null, targetUnit.name, item.quantity, prod?.unit || null)
+                    : item.quantity
+
+                if (!dailyMap[key]) {
+                    dailyMap[key] = {
+                        date: dateKey,
+                        productId: item.product_id,
+                        sku: prod?.sku || 'N/A',
+                        name: prod?.name || 'Unknown',
+                        unit: displayUnit,
+                        totalIn: 0,
+                        totalOut: 0,
+                        vouchers: new Set()
+                    }
+                }
+                dailyMap[key].totalIn += (qty || 0)
+                dailyMap[key].vouchers.add(item.order.code)
+            })
+
+            // Re-process outbound for daily
+            outboundItems?.forEach((item: any) => {
+                if (!item.order) return
+                const orderDate = parseISO(item.order.created_at)
+                if (isBefore(orderDate, start) || !isBefore(orderDate, end)) return
+                
+                const dateKey = format(orderDate, 'yyyy-MM-dd')
+                const prod = prodData.find((p: any) => p.id === item.product_id)
+                const canConvert = isConvertible(item.product_id)
+                const displayUnit = (targetUnit && canConvert) ? targetUnit.name : (item.unit || '-')
+                
+                const key = `${dateKey}_${item.product_id}_${displayUnit}`
+                
+                const qty = (targetUnit && canConvert)
+                    ? convertUnit(item.product_id, item.unit || null, targetUnit.name, item.quantity, prod?.unit || null)
+                    : item.quantity
+
+                if (!dailyMap[key]) {
+                    dailyMap[key] = {
+                        date: dateKey,
+                        productId: item.product_id,
+                        sku: prod?.sku || 'N/A',
+                        name: prod?.name || 'Unknown',
+                        unit: displayUnit,
+                        totalIn: 0,
+                        totalOut: 0,
+                        vouchers: new Set()
+                    }
+                }
+                dailyMap[key].totalOut += (qty || 0)
+                dailyMap[key].vouchers.add(item.order.code)
+            })
+
             // Sort movements by SKU or Name to keep list stable
             const result = Object.values(movementMap).sort((a, b) => a.sku.localeCompare(b.sku))
             setMovements(result)
+
+            const dailyResult = Object.values(dailyMap).sort((a, b) => {
+                const dateCompare = b.date.localeCompare(a.date)
+                if (dateCompare !== 0) return dateCompare
+                return a.sku.localeCompare(b.sku)
+            })
+            setDailyMovements(dailyResult)
 
 
         } catch (error) {
@@ -215,10 +305,12 @@ export default function AccountingHistoryPage() {
         }
     }
 
-    const filteredMovements = movements.filter(m =>
-        m.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        m.name.toLowerCase().includes(searchTerm.toLowerCase())
-    ).filter(m => m.opening !== 0 || m.totalIn !== 0 || m.totalOut !== 0)
+    const filteredMovements = movements.filter(m => {
+        const matchesSearch = m.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            m.name.toLowerCase().includes(searchTerm.toLowerCase())
+        const matchesProducts = selectedProductIds.length === 0 || selectedProductIds.includes(m.productId)
+        return matchesSearch && matchesProducts
+    }).filter(m => m.opening !== 0 || m.totalIn !== 0 || m.totalOut !== 0)
 
     // Dynamic columns for Order Types
     const inboundTypes = orderTypes.filter(t => t.scope === 'inbound' || t.scope === 'both')
@@ -280,18 +372,35 @@ export default function AccountingHistoryPage() {
                     </p>
                 </div>
 
-                <button
-                    onClick={handleExportExcel}
-                    disabled={exporting}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition-all shadow-lg shadow-indigo-500/20 w-fit ${exporting ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                    {exporting ? (
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                    ) : (
-                        <Download size={18} />
-                    )}
-                    {exporting ? 'Đang xuất...' : 'Xuất Excel'}
-                </button>
+                <div className="flex items-center gap-3">
+                    <div className="flex bg-stone-100 dark:bg-slate-800 p-1 rounded-xl border border-stone-200 dark:border-slate-700">
+                        <button
+                            onClick={() => setViewMode('summary')}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'summary' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:hover:text-stone-300'}`}
+                        >
+                            Tổng hợp kỳ
+                        </button>
+                        <button
+                            onClick={() => setViewMode('daily')}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'daily' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:hover:text-stone-300'}`}
+                        >
+                            Nhật ký ngày
+                        </button>
+                    </div>
+
+                    <button
+                        onClick={handleExportExcel}
+                        disabled={exporting}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition-all shadow-lg shadow-indigo-500/20 w-fit ${exporting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                        {exporting ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                        ) : (
+                            <Download size={18} />
+                        )}
+                        {exporting ? 'Đang xuất...' : 'Xuất Excel'}
+                    </button>
+                </div>
             </div>
 
             {/* Dashboard Summary Cards */}
@@ -328,68 +437,97 @@ export default function AccountingHistoryPage() {
             </div>
 
             {/* Filters Section */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-stone-200 dark:border-slate-800 shadow-sm sticky top-4 z-10">
-                <div className="relative group md:col-span-2">
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
-                    <input
-                        type="text"
-                        placeholder="Tìm mã SP, tên sản phẩm..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-stone-50 dark:bg-slate-800 border border-stone-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
-                    />
-                </div>
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-stone-200 dark:border-slate-800 shadow-sm sticky top-4 z-10 space-y-4">
+                <div className="flex flex-col lg:flex-row gap-4">
+                    {/* Search & Product MultiSelect Group */}
+                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="relative group">
+                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
+                            <input
+                                type="text"
+                                placeholder="Tìm mã SP, tên sản phẩm..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-stone-50 dark:bg-slate-800/50 border border-stone-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
+                            />
+                        </div>
 
-                <div className="flex items-center gap-2">
-                    <div className="relative flex-1 group">
-                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-indigo-500" size={16} />
-                        <input
-                            type="date"
-                            value={startDate}
-                            onChange={(e) => setStartDate(e.target.value)}
-                            className="w-full pl-9 pr-2 py-2.5 rounded-xl bg-stone-50 dark:bg-slate-800 border border-stone-200 dark:border-slate-700 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-bold appearance-none"
+                        <ProductMultiSelect
+                            products={products}
+                            selectedIds={selectedProductIds}
+                            onChange={setSelectedProductIds}
                         />
                     </div>
-                    <span className="text-stone-300"> đến </span>
-                    <div className="relative flex-1 group">
-                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-indigo-500" size={16} />
-                        <input
-                            type="date"
-                            value={endDate}
-                            onChange={(e) => setEndDate(e.target.value)}
-                            className="w-full pl-9 pr-2 py-2.5 rounded-xl bg-stone-50 dark:bg-slate-800 border border-stone-200 dark:border-slate-700 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-bold appearance-none"
-                        />
-                    </div>
-                </div>
 
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => fetchData()}
-                        className="px-4 py-2.5 rounded-xl bg-stone-100 dark:bg-slate-800 border border-stone-200 dark:border-slate-700 text-xs font-bold text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-slate-700 transition-all font-bold"
-                    >
-                        Tải lại
-                    </button>
-
-                    <div className="relative flex items-center">
-                        <Scale size={14} className="absolute left-3 text-stone-400 pointer-events-none" />
-                        <select
-                            value={targetUnitId || ''}
-                            onChange={(e) => setTargetUnitId(e.target.value || null)}
-                            className="pl-9 pr-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-stone-200 dark:border-slate-700 text-xs font-bold text-stone-600 dark:text-stone-300 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none appearance-none transition-all cursor-pointer min-w-[160px]"
-                        >
-                            <option value="">Đơn vị gốc</option>
-                            {units.map(u => (
-                                <option key={u.id} value={u.id}>{u.name}</option>
-                            ))}
-                        </select>
-                        <div className="absolute right-3 pointer-events-none text-stone-400">
-                            <ChevronDown size={14} />
+                    {/* Date Range Picker Group */}
+                    <div className="flex items-center gap-1 p-1 bg-stone-100/80 dark:bg-slate-800/80 rounded-2xl border border-stone-200/50 dark:border-slate-700/50">
+                        <div className="relative group flex-1 min-w-[140px]">
+                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-indigo-500" size={16} />
+                            <input
+                                type="date"
+                                value={startDate}
+                                onChange={(e) => setStartDate(e.target.value)}
+                                className="w-full pl-9 pr-2 py-2 rounded-xl bg-transparent text-xs focus:outline-none transition-all font-black text-stone-700 dark:text-stone-200 appearance-none cursor-pointer"
+                            />
+                        </div>
+                        <div className="px-1 text-stone-400 font-bold text-[10px] uppercase tracking-widest">đến</div>
+                        <div className="relative group flex-1 min-w-[140px]">
+                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-indigo-500" size={16} />
+                            <input
+                                type="date"
+                                value={endDate}
+                                onChange={(e) => setEndDate(e.target.value)}
+                                className="w-full pl-9 pr-2 py-2 rounded-xl bg-transparent text-xs focus:outline-none transition-all font-black text-stone-700 dark:text-stone-200 appearance-none cursor-pointer"
+                            />
                         </div>
                     </div>
                 </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-stone-100 dark:border-slate-800/50">
+                    <div className="flex items-center gap-3">
+                        <div className="relative flex items-center group">
+                            <Scale size={14} className="absolute left-3 text-stone-400 pointer-events-none group-focus-within:text-indigo-500 transition-colors" />
+                            <select
+                                value={targetUnitId || ''}
+                                onChange={(e) => setTargetUnitId(e.target.value || null)}
+                                className="pl-9 pr-10 py-2 rounded-xl bg-stone-50 dark:bg-slate-800 border border-stone-200 dark:border-slate-700 text-[11px] font-black text-stone-600 dark:text-stone-300 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none appearance-none transition-all cursor-pointer min-w-[140px] uppercase tracking-wider"
+                            >
+                                <option value="">Đơn vị gốc</option>
+                                {units.map(u => (
+                                    <option key={u.id} value={u.id}>{u.name}</option>
+                                ))}
+                            </select>
+                            <div className="absolute right-3 pointer-events-none text-stone-400">
+                                <ChevronDown size={14} />
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={() => fetchData()}
+                            className="px-5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-[11px] font-black text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-all uppercase tracking-widest border border-indigo-100 dark:border-indigo-900/50"
+                        >
+                            Làm mới dữ liệu
+                        </button>
+                    </div>
+
+                    {selectedProductIds.length > 0 && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/30 rounded-lg animate-in fade-in zoom-in-95">
+                            <Filter size={12} className="text-amber-500" />
+                            <span className="text-[10px] font-black text-amber-600 dark:text-amber-500 uppercase tracking-widest">
+                                Đang lọc {selectedProductIds.length} sản phẩm
+                            </span>
+                            <button 
+                                onClick={() => setSelectedProductIds([])}
+                                className="ml-1 p-0.5 hover:bg-amber-200 dark:hover:bg-amber-900/50 rounded transition-colors text-amber-600"
+                            >
+                                <X size={12} />
+                            </button>
+                        </div>
+                    )}
+                </div>
             </div>
 
-            {/* NXT Table */}
+            {/* NXT Table or Daily Log Table */}
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-stone-200 dark:border-slate-800 shadow-sm overflow-hidden text-[11px]">
                 <div className="overflow-x-auto">
                     {loading ? (
@@ -397,6 +535,54 @@ export default function AccountingHistoryPage() {
                             <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent"></div>
                             <p className="mt-4 text-stone-500 font-medium">Đang hạch toán dữ liệu...</p>
                         </div>
+                    ) : viewMode === 'daily' ? (
+                        // Daily Log Table
+                        <table className="w-full border-collapse border-spacing-0">
+                            <thead>
+                                <tr className="bg-stone-50/80 dark:bg-slate-800/50">
+                                    <th className="px-4 py-4 border-r border-b border-stone-200 dark:border-slate-700 text-left font-bold uppercase text-stone-400 tracking-wider w-28">Ngày</th>
+                                    <th className="px-4 py-4 border-r border-b border-stone-200 dark:border-slate-700 text-left font-bold uppercase text-stone-400 tracking-wider w-24">Mã SP</th>
+                                    <th className="px-4 py-4 border-r border-b border-stone-200 dark:border-slate-700 text-left font-bold uppercase text-stone-400 tracking-wider min-w-[200px]">Tên Sản Phẩm</th>
+                                    <th className="px-4 py-4 border-r border-b border-stone-200 dark:border-slate-700 text-center font-bold uppercase text-stone-400 tracking-wider w-16">ĐVT</th>
+                                    <th className="px-4 py-4 border-r border-b border-emerald-100 dark:border-emerald-900/50 bg-emerald-50/30 dark:bg-emerald-900/5 text-center font-black uppercase text-emerald-600 tracking-wider">Nhập kho</th>
+                                    <th className="px-4 py-4 border-r border-b border-orange-100 dark:border-orange-900/50 bg-orange-50/30 dark:bg-orange-900/5 text-center font-black uppercase text-orange-600 tracking-wider">Xuất kho</th>
+                                    <th className="px-4 py-4 border-b border-stone-200 dark:border-slate-700 text-center font-bold uppercase text-stone-400 tracking-wider w-16">Phiếu</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-stone-100 dark:divide-slate-800">
+                                {dailyMovements.filter(m => {
+                                    const matchesSearch = m.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                        m.name.toLowerCase().includes(searchTerm.toLowerCase())
+                                    const matchesProducts = selectedProductIds.length === 0 || selectedProductIds.includes(m.productId)
+                                    return matchesSearch && matchesProducts
+                                }).map((mov, idx) => (
+                                    <tr key={`${mov.date}-${mov.productId}-${idx}`} className="group hover:bg-indigo-50/20 dark:hover:bg-indigo-900/5 transition-colors">
+                                        <td className="px-4 py-3 border-r border-stone-100 dark:border-slate-800 font-bold text-stone-600 dark:text-stone-400">
+                                            {format(parseISO(mov.date), 'dd/MM/yyyy')}
+                                        </td>
+                                        <td className="px-4 py-3 border-r border-stone-100 dark:border-slate-800 font-mono font-bold text-stone-400">{mov.sku}</td>
+                                        <td className="px-4 py-3 border-r border-stone-100 dark:border-slate-800">
+                                            <div className="font-bold text-stone-800 dark:text-stone-200">{mov.name}</div>
+                                        </td>
+                                        <td className="px-4 py-3 border-r border-stone-100 dark:border-slate-800 text-center text-stone-400 italic">{mov.unit}</td>
+                                        <td className="px-4 py-3 border-r border-emerald-100 dark:border-emerald-900 text-center font-black text-emerald-600 tabular-nums bg-emerald-50/20 dark:bg-emerald-900/5">
+                                            {mov.totalIn ? formatQuantityFull(mov.totalIn) : '-'}
+                                        </td>
+                                        <td className="px-4 py-3 border-r border-orange-100 dark:border-orange-900 text-center font-black text-orange-600 tabular-nums bg-orange-50/20 dark:bg-orange-900/5">
+                                            {mov.totalOut ? formatQuantityFull(mov.totalOut) : '-'}
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                            <button
+                                                onClick={() => setSelectedVouchersProduct({ id: mov.productId, name: mov.name, sku: mov.sku, unit: mov.unit, date: mov.date })}
+                                                className="p-1 px-2 rounded bg-stone-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-stone-500 hover:text-indigo-600 transition-colors font-bold"
+                                            >
+                                                {mov.vouchers.size}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     ) : filteredMovements.length === 0 ? (
                         <div className="p-20 text-center flex flex-col items-center">
                             <div className="p-4 bg-stone-50 dark:bg-slate-800 rounded-full mb-4">
@@ -534,12 +720,13 @@ export default function AccountingHistoryPage() {
                 targetUnitId={targetUnitId}
                 units={units}
                 products={products}
+                targetDate={selectedVouchersProduct?.date}
             />
         </div>
     )
 }
 
-function VoucherDetailModal({ isOpen, onClose, productId, unit, productName, sku, startDate, endDate, systemType, orderTypes, targetUnitId, units, products }: any) {
+function VoucherDetailModal({ isOpen, onClose, productId, unit, productName, sku, startDate, endDate, systemType, orderTypes, targetUnitId, units, products, targetDate }: any) {
     const [loading, setLoading] = useState(false)
     const [vouchers, setVouchers] = useState<any[]>([])
     const { convertUnit, conversionMap, unitNameMap } = useUnitConversion()
@@ -548,13 +735,13 @@ function VoucherDetailModal({ isOpen, onClose, productId, unit, productName, sku
         if (isOpen && productId) {
             fetchVouchers()
         }
-    }, [isOpen, productId, unit, startDate, endDate, targetUnitId])
+    }, [isOpen, productId, unit, startDate, endDate, targetUnitId, targetDate])
 
     async function fetchVouchers() {
         setLoading(true)
         try {
-            const start = startDate
-            const end = endDate + 'T23:59:59'
+            const start = targetDate ? targetDate : startDate
+            const end = targetDate ? targetDate + 'T23:59:59' : endDate + 'T23:59:59'
 
             const prod = products.find((p: any) => p.id === productId)
             const targetUnit = units.find((u: any) => u.id === targetUnitId)
@@ -690,6 +877,113 @@ function VoucherDetailModal({ isOpen, onClose, productId, unit, productName, sku
                     </button>
                 </div>
             </div>
+        </div>
+    )
+}
+
+function ProductMultiSelect({ products, selectedIds, onChange }: any) {
+    const [isOpen, setIsOpen] = useState(false)
+    const [search, setSearch] = useState('')
+    const containerRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+                setIsOpen(false)
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside)
+        return () => document.removeEventListener("mousedown", handleClickOutside)
+    }, [])
+
+    const filtered = products.filter((p: any) =>
+        p.name.toLowerCase().includes(search.toLowerCase()) ||
+        p.sku.toLowerCase().includes(search.toLowerCase())
+    )
+
+    const toggle = (id: string) => {
+        if (selectedIds.includes(id)) {
+            onChange(selectedIds.filter((sid: string) => sid !== id))
+        } else {
+            onChange([...selectedIds, id])
+        }
+    }
+
+    return (
+        <div className="relative w-full" ref={containerRef}>
+            <button
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full px-4 py-2.5 rounded-xl bg-stone-50 dark:bg-slate-800 border border-stone-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium flex items-center justify-between"
+            >
+                <div className="flex items-center gap-2 truncate text-stone-600 dark:text-stone-300">
+                    <Boxes size={18} className="text-stone-400 flex-shrink-0" />
+                    <span className="truncate">
+                        {selectedIds.length === 0 ? "Tất cả sản phẩm" : `Đã chọn ${selectedIds.length} sản phẩm`}
+                    </span>
+                </div>
+                <ChevronDown size={16} className={`text-stone-400 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isOpen && (
+                <div className="absolute top-full left-0 right-0 mt-2 p-2 bg-white dark:bg-slate-900 border border-stone-200 dark:border-slate-700 rounded-2xl shadow-2xl z-[100] animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="relative mb-2">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={14} />
+                        <input
+                            autoFocus
+                            type="text"
+                            placeholder="Tìm nhanh..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2 rounded-lg bg-stone-50 dark:bg-slate-800 border border-stone-100 dark:border-slate-700 text-xs outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                    </div>
+                    
+                    <div className="max-h-60 overflow-y-auto space-y-1 [scrollbar-width:thin] pr-1">
+                        {filtered.length === 0 ? (
+                            <div className="py-8 text-center text-stone-400 text-xs">Không tìm thấy sản phẩm</div>
+                        ) : (
+                            filtered.map((p: any) => (
+                                <label
+                                    key={p.id}
+                                    className="flex items-center gap-3 p-2 hover:bg-stone-50 dark:hover:bg-slate-800 rounded-xl cursor-pointer transition-colors group"
+                                >
+                                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${
+                                        selectedIds.includes(p.id) 
+                                        ? 'bg-indigo-500 border-indigo-500 text-white' 
+                                        : 'border-stone-300 dark:border-slate-600'
+                                    }`}>
+                                        {selectedIds.includes(p.id) && <Check size={12} strokeWidth={4} />}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-[11px] font-bold text-stone-800 dark:text-stone-200 truncate">{p.name}</div>
+                                        <div className="text-[10px] text-stone-400 font-mono">{p.sku}</div>
+                                    </div>
+                                    <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={selectedIds.includes(p.id)}
+                                        onChange={() => toggle(p.id)}
+                                    />
+                                </label>
+                            ))
+                        )}
+                    </div>
+
+                    {selectedIds.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-stone-100 dark:border-slate-800 flex justify-between items-center px-1">
+                            <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider">Đã chọn {selectedIds.length}</span>
+                            <button
+                                type="button"
+                                onClick={() => onChange([])}
+                                className="text-[10px] font-bold text-red-500 hover:text-red-600 transition-colors uppercase tracking-wider"
+                            >
+                                Xóa tất cả
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     )
 }
