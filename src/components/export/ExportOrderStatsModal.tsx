@@ -226,7 +226,7 @@ function ZoneDetailSubModal({
                                         <div className="col-span-2 text-center">
                                             {info ? (
                                                 <span className="text-sm font-bold text-slate-800 dark:text-white">
-                                                    {info.quantity} <span className="text-[10px] text-slate-400">{info.unit}</span>
+                                                    {Number(info.quantity?.toFixed(6))} <span className="text-[10px] text-slate-400">{info.unit}</span>
                                                 </span>
                                             ) : (
                                                 <span className="text-xs text-slate-400">-</span>
@@ -393,7 +393,7 @@ export function ExportOrderStatsModal({
             // Batch update
             if (updates.length > 0) {
                 const updatePromises = updates.map(u =>
-                    supabase.from('export_task_items').update({ priority: u.priority } as any).eq('id', u.id)
+                    (supabase.from('export_task_items') as any).update({ priority: u.priority }).eq('id', u.id)
                 )
                 await Promise.all(updatePromises)
             }
@@ -490,7 +490,7 @@ export function ExportOrderStatsModal({
         exportPos.forEach(p => {
             const info = exportItemInfoMap[p.id]
             if (info) {
-                totalQty += info.quantity || 0
+                totalQty = Number((totalQty + (info.quantity || 0)).toFixed(10))
                 if (!totalUnit && info.unit) totalUnit = info.unit
             }
             if (isPositionInHall(p.id)) {
@@ -625,7 +625,7 @@ export function ExportOrderStatsModal({
                                     <div className="w-2 h-2 rounded-full bg-blue-500"></div>
                                     <span>Tổng: <strong className="text-slate-800 dark:text-white">{zoneStats.totalPositions}</strong> vị trí</span>
                                     {zoneStats.totalQty > 0 && (
-                                        <span className="text-slate-400">({zoneStats.totalQty.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} {zoneStats.totalUnit})</span>
+                                        <span className="text-slate-400">({Number(zoneStats.totalQty.toFixed(6)).toLocaleString('vi-VN')} {zoneStats.totalUnit})</span>
                                     )}
                                 </div>
                                 <div className="w-px h-4 bg-slate-200 dark:bg-slate-700"></div>

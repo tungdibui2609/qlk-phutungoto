@@ -306,7 +306,7 @@ onClick={() => !readOnly && onPositionSelect?.(item.id!)}
                                                                                             >
                                                                                                 <div className="flex items-start justify-between gap-1">
                                                                                                     <div className="text-[12px] font-black text-blue-700 dark:text-blue-400 leading-none whitespace-nowrap">
-                                                                                                        {item.quantity} <span className="text-[8px] font-bold text-slate-400 uppercase">{item.unit}</span>
+                                                                                                        {Number(item.quantity?.toFixed(6))} <span className="text-[8px] font-bold text-slate-400 uppercase">{item.unit}</span>
                                                                                                     </div>
                                                                                                 </div>
                                                                                                 <div className="text-[10px] font-bold text-slate-700 dark:text-zinc-200 line-clamp-2 leading-tight">

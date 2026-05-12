@@ -170,7 +170,7 @@ function ExportOrderDetailContent() {
                 }
             }
 
-            groups[key].totalQuantity += qty
+            groups[key].totalQuantity = Number((groups[key].totalQuantity + qty).toFixed(10))
             groups[key].positionCount += 1
             if (item.lot_code) groups[key].lotCodes.add(item.lot_code)
         })
@@ -181,7 +181,7 @@ function ExportOrderDetailContent() {
     const totalByUnit = useMemo(() => {
         const units: Record<string, number> = {}
         aggregatedItems.forEach(item => {
-            units[item.unit] = (units[item.unit] || 0) + item.totalQuantity
+            units[item.unit] = Number(((units[item.unit] || 0) + item.totalQuantity).toFixed(10))
         })
         return units
     }, [aggregatedItems])
@@ -1150,7 +1150,7 @@ function ExportOrderDetailContent() {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right">
-                                        <span className="font-bold text-lg text-stone-900 dark:text-stone-100">{item.quantity}</span> <span className="text-xs text-stone-500 dark:text-stone-400">{item.unit}</span>
+                                        <span className="font-bold text-lg text-stone-900 dark:text-stone-100">{Number(item.quantity?.toFixed(6))}</span> <span className="text-xs text-stone-500 dark:text-stone-400">{item.unit}</span>
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         {item.exported_quantity !== undefined && item.exported_quantity !== null ? (
@@ -1305,7 +1305,7 @@ function ExportOrderDetailContent() {
                                         {Object.entries(totalByUnit).map(([unit, qty], i) => (
                                             <div key={i} className="flex items-center gap-1.5">
                                                 <span className="text-sm font-black text-blue-600 dark:text-blue-400 tabular-nums">
-                                                    {qty}
+                                                    {Number(qty?.toFixed(6))}
                                                 </span>
                                                 <span className="text-[10px] font-bold text-stone-500 uppercase">
                                                     {unit}
@@ -1336,7 +1336,7 @@ function ExportOrderDetailContent() {
                                                 {/* Column 2: Quantity */}
                                                 <div className="flex items-center justify-end py-1.5 bg-white dark:bg-zinc-800 border-y border-stone-200 dark:border-zinc-700 group-hover:border-blue-300 dark:group-hover:border-blue-700 transition-colors">
                                                     <span className="text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap">
-                                                        {item.totalQuantity} {item.unit}
+                                                        {Number(item.totalQuantity?.toFixed(6))} {item.unit}
                                                     </span>
                                                 </div>
 
