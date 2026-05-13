@@ -55,40 +55,26 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
             const startStr = format(start, "yyyy-MM-dd")
             const endStr = format(end, "yyyy-MM-dd")
 
-            // Query 1: Lấy tất cả lot có ngày nhập hoặc ngày tạo trong khoảng thời gian
-            // Không dùng status.eq.exported nữa vì nó kéo về TẤT CẢ lot đã xuất bất kể ngày tháng
-            const { data: allLots, error } = await supabase
-                .from('lots')
-                .select(`
-                    *,
-                    productions(code, name),
-                    lot_items(
-                        id,
-                        product_id,
-                        quantity,
-                        unit,
-                        products(name, sku, unit)
-                    ),
-                    positions!positions_lot_id_fkey(id, code),
-                    products(name, sku, unit)
-                `)
-                .eq('system_code', currentSystem?.code)
-                .or(`inbound_date.gte.${startStr},created_at.gte.${format(start, "yyyy-MM-dd'T'00:00:00")}`)
-                .order('inbound_date', { ascending: false })
-
-            if (error) {
-                console.error('Supabase query error:', error)
-                throw new Error(error.message || 'Lỗi không xác định từ cơ sở dữ liệu')
+            // Helper để lấy toàn bộ dữ liệu không bị giới hạn 1000 dòng của Supabase
+            const fetchLargeData = async (table: string, select: string, filter: (q: any) => any) => {
+                let allData: any[] = []
+                let from = 0
+                const PAGE_SIZE = 1000
+                while (true) {
+                    let query = supabase.from(table).select(select).range(from, from + PAGE_SIZE - 1)
+                    query = filter(query)
+                    const { data, error } = await query
+                    if (error) throw error
+                    if (!data || data.length === 0) break
+                    allData = [...allData, ...data]
+                    if (data.length < PAGE_SIZE) break
+                    from += PAGE_SIZE
+                }
+                return allData
             }
 
-            // Query 1b: Lấy thêm các lot đã xuất CŨ (tạo trước khoảng ngày đang xem)
-            // Chỉ dùng cho phần Outward - kiểm tra metadata exports có ngày xuất trong khoảng
-            // Giới hạn trong 1 năm để tránh kéo quá nhiều dữ liệu
-            const oneYearBefore = new Date(start)
-            oneYearBefore.setFullYear(oneYearBefore.getFullYear() - 1)
-            const { data: exportedLots } = await supabase
-                .from('lots')
-                .select(`
+            // Query 1: Lấy tất cả lot có ngày nhập hoặc ngày tạo trong khoảng thời gian
+            const allLots = await fetchLargeData('lots', `
                     *,
                     productions(code, name),
                     lot_items(
@@ -100,11 +86,32 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                     ),
                     positions!positions_lot_id_fkey(id, code),
                     products(name, sku, unit)
-                `)
-                .eq('system_code', currentSystem?.code)
-                .eq('status', 'exported')
-                .lt('created_at', format(start, "yyyy-MM-dd'T'00:00:00"))
-                .gte('created_at', format(oneYearBefore, "yyyy-MM-dd'T'00:00:00"))
+                `, q => q.eq('system_code', currentSystem?.code)
+                        .or(`inbound_date.gte.${startStr},created_at.gte.${format(start, "yyyy-MM-dd'T'00:00:00")}`)
+                        .order('inbound_date', { ascending: false })
+            )
+
+            // Query 1b: Lấy thêm các lot đã xuất CŨ (tạo trước khoảng ngày đang xem)
+            const oneYearBefore = new Date(start)
+            oneYearBefore.setFullYear(oneYearBefore.getFullYear() - 1)
+            const exportedLots = await fetchLargeData('lots', `
+                    *,
+                    productions(code, name),
+                    lot_items(
+                        id,
+                        product_id,
+                        quantity,
+                        unit,
+                        products(name, sku, unit)
+                    ),
+                    positions!positions_lot_id_fkey(id, code),
+                    products(name, sku, unit)
+                `, q => q.eq('system_code', currentSystem?.code)
+                        .eq('status', 'exported')
+                        .lt('created_at', format(start, "yyyy-MM-dd'T'00:00:00"))
+                        .gte('created_at', format(oneYearBefore, "yyyy-MM-dd'T'00:00:00"))
+            )
+
 
             // Merge 2 danh sách, loại trùng bằng id
             const allLotsIds = new Set((allLots || []).map((l: any) => l.id))
@@ -187,9 +194,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
             })
 
             // Step 2c: Fetch export data from export_tasks / export_task_items (export-order page path)
-            const { data: exportTasksData } = await (supabase as any)
-                .from('export_tasks')
-                .select(`
+            const exportTasksData = await fetchLargeData('export_tasks', `
                     id,
                     code,
                     status,
@@ -209,11 +214,12 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                         ),
                         products(name, sku)
                     )
-                `)
-                .eq('system_code', currentSystem?.code)
-                .gte('created_at', startStr)
-                .lte('created_at', endStr)
-                .order('created_at', { ascending: false })
+                `, q => q.eq('system_code', currentSystem?.code)
+                        .gte('created_at', startStr)
+                        .lte('created_at', endStr)
+                        .order('created_at', { ascending: false })
+            )
+
 
             console.log('[LOT Report] Export Tasks query result:', exportTasksData?.length, 'tasks found', exportTasksData)
 

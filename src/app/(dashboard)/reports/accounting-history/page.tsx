@@ -70,6 +70,22 @@ export default function AccountingHistoryPage() {
         fetchData()
     }, [systemType, startDate, endDate, targetUnitId])
 
+    async function fetchAllPaginated(table: string, filter?: (query: any) => any, selectFields = '*', pageSize = 1000) {
+        let allData: any[] = []
+        let from = 0
+        while (true) {
+            let query = (supabase.from(table as any) as any).select(selectFields).range(from, from + pageSize - 1)
+            if (filter) query = filter(query)
+            const { data, error } = await query
+            if (error) { console.error(`Error fetching ${table}:`, error); break }
+            if (!data || data.length === 0) break
+            allData = [...allData, ...data]
+            if (data.length < pageSize) break
+            from += pageSize
+        }
+        return allData
+    }
+
     async function fetchData() {
         setLoading(true)
         try {
@@ -94,28 +110,26 @@ export default function AccountingHistoryPage() {
             setUnits(unitData || [])
 
             // 3. Fetch Inbound Movements (All history to calculate opening)
-            const { data: inboundItems } = await (supabase
-                .from('inbound_order_items') as any)
-                .select(`
+            const inboundItems = await fetchAllPaginated('inbound_order_items', q => 
+                q.eq('order.system_type', systemType).eq('order.status', 'Completed'),
+                `
                     quantity,
                     product_id,
                     unit,
                     order:inbound_orders!inner(code, created_at, order_type_id, status)
-                `)
-                .eq('order.system_type', systemType)
-                .eq('order.status', 'Completed')
+                `
+            )
 
             // 4. Fetch Outbound Movements
-            const { data: outboundItems } = await (supabase
-                .from('outbound_order_items') as any)
-                .select(`
+            const outboundItems = await fetchAllPaginated('outbound_order_items', q => 
+                q.eq('order.system_type', systemType).eq('order.status', 'Completed'),
+                `
                     quantity,
                     product_id,
                     unit,
                     order:outbound_orders!inner(code, created_at, order_type_id, status)
-                `)
-                .eq('order.system_type', systemType)
-                .eq('order.status', 'Completed')
+                `
+            )
 
             // 5. Calculate NXT
             const start = parseISO(startDate)

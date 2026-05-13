@@ -126,6 +126,15 @@ export const UTILITY_MODULES: UtilityModule[] = [
         icon: HardHat,
         category: 'specialized',
         default_enabled: false
+    },
+    {
+        id: 'handover',
+        name: 'Bàn giao hàng hóa',
+        description: 'Quản lý nhận và giao hàng hóa trực tiếp giữa các bộ phận, không cần tạo sản phẩm/đơn vị.',
+        icon: ArrowRightLeft,
+        category: 'core',
+        is_basic: true,
+        default_enabled: true
     }
 ]
 

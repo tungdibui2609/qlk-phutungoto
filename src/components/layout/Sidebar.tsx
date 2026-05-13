@@ -112,6 +112,7 @@ const menuItems: MenuItem[] = [
             { id: 'inbound', name: 'Nhập kho', href: '/inbound', icon: ArrowDownToLine, requiredPermission: 'inventory.manage' },
             { id: 'outbound', name: 'Xuất kho', href: '/outbound', icon: ArrowUpFromLine, requiredPermission: 'inventory.manage' },
             { id: 'audit', name: 'Kiểm kê', href: '/operations/audit', icon: ClipboardCheck, requiredPermission: 'audit.view' },
+            { id: 'handover', name: 'Bàn giao hàng hóa', href: '/handover', icon: ArrowRightLeft, requiredModule: 'handover' },
         ]
     },
     {

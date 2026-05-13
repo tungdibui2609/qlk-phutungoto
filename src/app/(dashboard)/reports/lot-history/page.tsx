@@ -57,6 +57,7 @@ export default function LotHistoryPage() {
             `)
             .eq('system_code', systemType)
             .order('created_at', { ascending: false })
+            .limit(5000)
 
         if (error) {
             console.error('Error fetching lot history:', error)
