@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
-import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2, Trash2, RotateCcw, FileText, FileSpreadsheet } from 'lucide-react'
+import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2, Trash2, RotateCcw, FileText, FileSpreadsheet, CheckSquare, Square, Download } from 'lucide-react'
 import InboundOrderModal from '@/components/inventory/inbound/InboundOrderModal'
 import InboundOrderDetailModal from './InboundOrderDetailModal'
 import { LotInboundBuffer } from '@/components/warehouse/lots/LotInboundBuffer'
@@ -28,6 +28,10 @@ export default function InboundPage() {
     const [isBufferOpen, setIsBufferOpen] = useState(false)
     const [isExportModalOpen, setIsExportModalOpen] = useState(false)
     const [isAllExportModalOpen, setIsAllExportModalOpen] = useState(false)
+
+    // Batch download state
+    const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set())
+    const [isBatchDownloading, setIsBatchDownloading] = useState(false)
 
     // Helper: Utility Check
     const isUtilityEnabled = (utilityId: string) => {
@@ -184,6 +188,72 @@ export default function InboundPage() {
         }
     }
 
+    // Batch selection handlers
+    const toggleSelectOrder = (orderId: string) => {
+        setSelectedOrderIds(prev => {
+            const next = new Set(prev)
+            if (next.has(orderId)) {
+                next.delete(orderId)
+            } else {
+                next.add(orderId)
+            }
+            return next
+        })
+    }
+
+    const toggleSelectAll = () => {
+        const selectableOrders = orders.filter(o => o.status !== 'Cancelled')
+        if (selectedOrderIds.size === selectableOrders.length && selectableOrders.length > 0) {
+            setSelectedOrderIds(new Set())
+        } else {
+            setSelectedOrderIds(new Set(selectableOrders.map((o: any) => o.id)))
+        }
+    }
+
+    const handleBatchDownload = async () => {
+        if (selectedOrderIds.size === 0 || !systemType) return
+        setIsBatchDownloading(true)
+        try {
+            const orderIdsArray = Array.from(selectedOrderIds)
+            const token = (await supabase.auth.getSession()).data.session?.access_token
+
+            const res = await fetch('/api/export/batch-inbound', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {})
+                },
+                body: JSON.stringify({
+                    orderIds: orderIdsArray,
+                    system_code: systemType,
+                    printType: 'official'
+                })
+            })
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => null)
+                throw new Error(errData?.error || `Lỗi ${res.status}`)
+            }
+
+            const blob = await res.blob()
+            const url = window.URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `Phieu_Nhap_${orderIdsArray.length}_phieu.zip`
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
+            window.URL.revokeObjectURL(url)
+
+            showToast(`Đã tải ${orderIdsArray.length} phiếu nhập thành công!`, 'success')
+            setSelectedOrderIds(new Set())
+        } catch (error: any) {
+            showToast('Lỗi tải file: ' + error.message, 'error')
+        } finally {
+            setIsBatchDownloading(false)
+        }
+    }
+
     const getStatusText = (status: string) => {
         switch (status) {
             case 'Completed': return 'Đã hoàn tất'
@@ -235,6 +305,32 @@ export default function InboundPage() {
                         <Plus className="w-4 h-4 mr-2" />
                         Tạo phiếu mới
                     </button>
+                    <button
+                        disabled={selectedOrderIds.size === 0 || isBatchDownloading}
+                        onClick={handleBatchDownload}
+                        className={`flex items-center h-10 px-4 rounded-lg shadow-md transition-all active:scale-95 font-medium ${
+                            selectedOrderIds.size === 0
+                                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                        }`}
+                    >
+                        {isBatchDownloading ? (
+                            <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                                Đang tải...
+                            </>
+                        ) : (
+                            <>
+                                <Download className="w-4 h-4 mr-2" />
+                                Tải về hàng loạt
+                                {selectedOrderIds.size > 0 && (
+                                    <span className="ml-2 bg-white/20 text-white text-xs px-1.5 py-0.5 rounded-full">
+                                        {selectedOrderIds.size}
+                                    </span>
+                                )}
+                            </>
+                        )}
+                    </button>
                 </div>
             </div>
 
@@ -285,6 +381,15 @@ export default function InboundPage() {
                                 <table className="w-full text-left border-collapse">
                                     <thead>
                                         <tr className="bg-gray-50/50 border-b">
+                                            <th className="px-4 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">
+                                                <button onClick={toggleSelectAll} className="flex items-center justify-center w-full hover:text-indigo-600 transition-colors">
+                                                    {selectedOrderIds.size > 0 && selectedOrderIds.size === orders.filter(o => o.status !== 'Cancelled').length ? (
+                                                        <CheckSquare className="w-4 h-4 text-indigo-600" />
+                                                    ) : (
+                                                        <Square className="w-4 h-4 text-gray-400" />
+                                                    )}
+                                                </button>
+                                            </th>
                                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Mã phiếu</th>
                                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Nhà cung cấp</th>
                                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Ngày tạo</th>
@@ -296,6 +401,19 @@ export default function InboundPage() {
                                     <tbody className="divide-y divide-gray-100">
                                         {orders.map((order) => (
                                             <tr key={order.id} className="hover:bg-gray-50/80 transition-colors">
+                                                <td className="px-4 py-4 whitespace-nowrap">
+                                                    <button 
+                                                        disabled={order.status === 'Cancelled'}
+                                                        onClick={() => toggleSelectOrder(order.id)}
+                                                        className={`flex items-center justify-center w-full ${order.status === 'Cancelled' ? 'cursor-not-allowed opacity-30' : 'hover:text-indigo-600 cursor-pointer'} transition-colors`}
+                                                    >
+                                                        {selectedOrderIds.has(order.id) ? (
+                                                            <CheckSquare className="w-4 h-4 text-indigo-600" />
+                                                        ) : (
+                                                            <Square className="w-4 h-4 text-gray-400" />
+                                                        )}
+                                                    </button>
+                                                </td>
                                                 <td className="px-6 py-4 whitespace-nowrap">
                                                     <div className="flex flex-col">
                                                         <span className="text-sm font-semibold text-indigo-600 cursor-pointer" onClick={() => { setSelectedOrderId(order.id); setIsDetailModalOpen(true); }}>
