@@ -381,7 +381,7 @@ export default function InboundPage() {
                                 <table className="w-full text-left border-collapse">
                                     <thead>
                                         <tr className="bg-gray-50/50 border-b">
-                                            <th className="px-4 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">
+                                            <th className="w-10 px-2 py-3 text-xs font-semibold text-gray-500 uppercase">
                                                 <button onClick={toggleSelectAll} className="flex items-center justify-center w-full hover:text-indigo-600 transition-colors">
                                                     {selectedOrderIds.size > 0 && selectedOrderIds.size === orders.filter(o => o.status !== 'Cancelled').length ? (
                                                         <CheckSquare className="w-4 h-4 text-indigo-600" />
@@ -390,18 +390,18 @@ export default function InboundPage() {
                                                     )}
                                                 </button>
                                             </th>
-                                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Mã phiếu</th>
-                                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Nhà cung cấp</th>
-                                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Ngày tạo</th>
-                                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Người tạo</th>
-                                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Trạng thái</th>
-                                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase text-right">Thao tác</th>
+                                            <th className="px-3 py-3 text-xs font-semibold text-gray-500 uppercase">Mã phiếu</th>
+                                            <th className="px-3 py-3 text-xs font-semibold text-gray-500 uppercase">Nhà cung cấp</th>
+                                            <th className="px-3 py-3 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Ngày tạo</th>
+                                            <th className="px-3 py-3 text-xs font-semibold text-gray-500 uppercase">Người tạo</th>
+                                            <th className="px-3 py-3 text-xs font-semibold text-gray-500 uppercase">Trạng thái</th>
+                                            <th className="px-3 py-3 text-xs font-semibold text-gray-500 uppercase text-right">Thao tác</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
                                         {orders.map((order) => (
                                             <tr key={order.id} className="hover:bg-gray-50/80 transition-colors">
-                                                <td className="px-4 py-4 whitespace-nowrap">
+                                                <td className="px-2 py-3 whitespace-nowrap">
                                                     <button 
                                                         disabled={order.status === 'Cancelled'}
                                                         onClick={() => toggleSelectOrder(order.id)}
@@ -414,7 +414,7 @@ export default function InboundPage() {
                                                         )}
                                                     </button>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-3 py-3 whitespace-nowrap">
                                                     <div className="flex flex-col">
                                                         <span className="text-sm font-semibold text-indigo-600 cursor-pointer" onClick={() => { setSelectedOrderId(order.id); setIsDetailModalOpen(true); }}>
                                                             {order.code}
@@ -422,26 +422,26 @@ export default function InboundPage() {
                                                         <span className="text-[11px] text-gray-400 mt-0.5">{order.order_types?.name || 'Nhập kho'}</span>
                                                     </div>
                                                 </td>
-                                                <td className="px-6 py-4">
+                                                <td className="px-3 py-3">
                                                     <div className="flex flex-col">
                                                         <span className="text-sm font-medium text-gray-900">{order.supplier_name || 'Hệ thống'}</span>
                                                         <span className="text-xs text-gray-500">Kho: {order.warehouse_name || '---'}</span>
                                                     </div>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-3 py-3 whitespace-nowrap">
                                                     <span className="text-sm text-gray-600">
                                                         {format(new Date(order.created_at), 'dd/MM/yyyy HH:mm', { locale: vi })}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-3 py-3 whitespace-nowrap">
                                                     <span className="text-sm text-gray-600">{order.created_by_name || 'Hệ thống'}</span>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-3 py-3 whitespace-nowrap">
                                                     <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${getStatusColor(order.status)} border`}>
                                                         {getStatusText(order.status)}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-right">
+                                                <td className="px-3 py-3 whitespace-nowrap text-right">
                                                     <div className="flex justify-end items-center gap-2">
                                                         <button 
                                                             className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"

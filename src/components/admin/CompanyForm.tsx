@@ -25,6 +25,7 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
         email: '',
         tax_code: '',
         custom_domain: '',
+        joined_date: '',
         // Admin User Data (Create Mode)
         admin_name: '',
         admin_email: '',
@@ -49,7 +50,8 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
                 phone: initialData.phone || '',
                 email: initialData.email || '',
                 tax_code: initialData.tax_code || '',
-                custom_domain: initialData.custom_domain || ''
+                custom_domain: initialData.custom_domain || '',
+                joined_date: initialData.joined_date || ''
             }))
             fetchAdmins(initialData.id)
         }
@@ -206,7 +208,8 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
                     phone: formData.phone,
                     email: formData.email,
                     tax_code: formData.tax_code,
-                    custom_domain: formData.custom_domain || null
+                    custom_domain: formData.custom_domain || null,
+                    joined_date: formData.joined_date || null
                 }).eq('id', initialData.id)
                 if (error) throw error
                 showToast('Cập nhật thông tin công ty thành công', 'success')
@@ -223,6 +226,7 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
                         email: formData.email,
                         tax_code: formData.tax_code,
                         custom_domain: formData.custom_domain,
+                        joined_date: formData.joined_date || null,
                         admin_name: formData.admin_name,
                         admin_email: formData.admin_email,
                         admin_password: formData.admin_password
@@ -346,6 +350,18 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
                                         className="w-full px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-900 focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all placeholder:text-slate-400"
                                         placeholder="contact@company.com"
                                     />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Ngày tham gia (Khởi tạo)</label>
+                                    <input
+                                        type="date"
+                                        name="joined_date"
+                                        value={formData.joined_date}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-900 focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all placeholder:text-slate-400"
+                                    />
+                                    <p className="text-xs text-slate-400 mt-1.5 pl-1">Ngày công ty chính thức tham gia hệ thống</p>
                                 </div>
 
                                 <div className="md:col-span-2">
@@ -545,7 +561,7 @@ export default function CompanyForm({ initialData, onClose, onSuccess }: Company
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Δổi mật khẩu</label>
+                                                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Đổi mật khẩu</label>
                                                     <input
                                                         type="password"
                                                         name="edit_admin_password"

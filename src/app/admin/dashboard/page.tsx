@@ -158,7 +158,11 @@ export default function AdminDashboard() {
                                                     onClick={() => handleManageModules(company)}
                                                 >
                                                     <div className="font-bold text-base text-slate-800 hover:text-amber-600 transition-colors">{company.name}</div>
-                                                    <div className="text-xs text-slate-500 font-medium whitespace-nowrap">TG: {new Date(company.created_at).toLocaleDateString('vi-VN')}</div>
+                                                    <div className="text-xs text-amber-600 font-medium whitespace-nowrap">
+                                                        {company.joined_date
+                                                            ? `Ngày tham gia: ${new Date(company.joined_date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
+                                                            : 'Chưa có ngày tham gia'}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </td>
@@ -268,6 +272,18 @@ export default function AdminDashboard() {
                                 <div>
                                     <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mb-1">Điện thoại</p>
                                     <p className="text-xs text-slate-700 font-bold">{company.phone || '-'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mb-1">Ngày tham gia</p>
+                                    <p className="text-xs text-slate-700 font-bold">
+                                        {company.joined_date
+                                            ? new Date(company.joined_date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                                            : '-'}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mb-1">Mã số thuế</p>
+                                    <p className="text-xs text-slate-700 font-bold">{company.tax_code || '-'}</p>
                                 </div>
                             </div>
 
