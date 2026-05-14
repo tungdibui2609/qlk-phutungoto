@@ -73,7 +73,7 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
 
                             return (
                                 <button
-                                    key={sys.code}
+                                    key={sys.id}
                                     onClick={() => {
                                         if (isAllowed) {
                                             setSystemType(sys.code)
@@ -130,7 +130,7 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
 
                                         return (
                                             <button
-                                                key={sys.code}
+                                                key={sys.id}
                                                 disabled={!isAllowed}
                                                 onClick={() => {
                                                     if (isAllowed) {

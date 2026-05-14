@@ -106,7 +106,13 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     // Assuming protected:
     if (!accessToken) return
 
-    const { data: systemsData } = await (supabase.from('systems') as any).select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
+    // [FIX] Lọc systems theo company_id để tránh dữ liệu lẫn giữa các công ty
+    // Superadmin (company_id = null) vẫn thấy tất cả systems
+    let query = (supabase.from('systems') as any).select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
+    if (profile?.company_id) {
+      query = query.eq('company_id', profile.company_id)
+    }
+    const { data: systemsData } = await query
 
     if (systemsData) {
       let mergedSystems = systemsData.map((sys: any) => {
@@ -240,7 +246,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       supabase.removeChannel(systemChannel)
       supabase.removeChannel(companyChannel)
     }
-  }, [accessToken])
+  }, [accessToken, profile?.company_id])
 
   useEffect(() => {
     // Load from local storage on mount
