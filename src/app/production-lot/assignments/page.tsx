@@ -254,7 +254,7 @@ export default function AssignmentApprovalPage() {
 
             // 4. Fetch LOTs for these dates to match product info
             const dailySeqs = Array.from(new Set(assignments.map((a: any) => a.lot_stt)))
-            const knownLotIds = assignments
+            const knownLotIds = Array.from(new Set(assignments
                 .map((a: any) => {
                     const status = a.status || ''
                     const parts = status.split(':')
@@ -262,7 +262,7 @@ export default function AssignmentApprovalPage() {
                     if (parts.length >= 3 && parts[0] === 'approved') return parts[parts.length - 1]
                     return null
                 })
-                .filter(Boolean) as string[]
+                .filter(Boolean))) as string[]
 
             let lotsQuery = supabase
                 .from('lots')
@@ -276,15 +276,43 @@ export default function AssignmentApprovalPage() {
                 `)
                 .eq('system_code', currentSystem.code)
             
+            // Limit search to the relevant date range to improve performance and accuracy
+            // We expand the range slightly (±2 days) to catch edge cases
+            const expandedDateFrom = format(subDays(new Date(historyDateFrom), 2), 'yyyy-MM-dd')
+            const expandedDateTo = format(parseISO(historyDateTo), 'yyyy-MM-dd') + 'T23:59:59'
+            
+            lotsQuery = lotsQuery.gte('inbound_date', expandedDateFrom).lte('inbound_date', expandedDateTo)
+
             if (knownLotIds.length > 0) {
                 // Fetch by ID OR by STT (for backward compatibility)
-                lotsQuery = lotsQuery.or(`id.in.(${knownLotIds.map(id => `"${id}"`).join(',')}),daily_seq.in.(${dailySeqs.join(',')})`)
-            } else {
+                // PostgREST "in" with UUIDs doesn't need quotes
+                const idFilter = `id.in.(${knownLotIds.join(',')})`
+                const seqFilter = dailySeqs.length > 0 ? `,daily_seq.in.(${dailySeqs.join(',')})` : ''
+                lotsQuery = lotsQuery.or(`${idFilter}${seqFilter}`)
+            } else if (dailySeqs.length > 0) {
                 lotsQuery = lotsQuery.in('daily_seq', dailySeqs)
             }
 
-            const { data: lotsData } = await lotsQuery.limit(5000)
+            let { data: lotsData, error: lotsErr } = await lotsQuery.order('inbound_date', { ascending: false }).limit(5000)
             
+            if (lotsErr) {
+                console.error('Lots fetch error in history:', lotsErr)
+                // Fallback to fetch without complex joins if it failed (maybe schema mismatch)
+                const { data: simpleLotsData } = await supabase
+                    .from('lots')
+                    .select('id, code, daily_seq, inbound_date, lot_items(quantity, unit, products(name, sku, weight_kg))')
+                    .eq('system_code', currentSystem.code)
+                    .or(`id.in.(${knownLotIds.join(',')}),daily_seq.in.(${dailySeqs.join(',')})`)
+                    .gte('inbound_date', expandedDateFrom)
+                    .lte('inbound_date', expandedDateTo)
+                    .limit(2000)
+                
+                if (simpleLotsData) {
+                    // Use simple data
+                    lotsData = simpleLotsData as any
+                }
+            }
+
             const processedLots = (lotsData || []).map((l: any) => {
                 const totalQty = l.lot_items?.reduce((sum: number, li: any) => sum + (li.quantity || 0), 0) || 0
                 const unit = l.lot_items?.[0]?.unit || ''
