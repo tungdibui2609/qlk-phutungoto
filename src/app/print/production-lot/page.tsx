@@ -57,7 +57,6 @@ function ProductionLotPrintContent() {
     const [resetStep, setResetStep] = useState<'password' | 'confirm'>('password')
     const [toast, setToast] = useState<{ show: boolean; message: string; type: 'success' | 'error' }>({ show: false, message: '', type: 'success' })
 
-    // Print Config State
     const [printConfig, setPrintConfig] = useState({
         specification: '',
         net_weight: '',
@@ -162,6 +161,10 @@ function ProductionLotPrintContent() {
         }
 
         await executePrint('', count, startIndex)
+    }
+
+    const navigateToCustomPrint = () => {
+        window.open('/print/custom-production-lot?id=' + lotId, '_blank')
     }
 
     const executePrint = async (reason: string, count: number, startIndex: number) => {
@@ -503,16 +506,19 @@ function ProductionLotPrintContent() {
                             <span className="text-zinc-600 font-bold text-sm italic">Sẵn sàng in {printConfig.label_count} tem từ {printConfig.start_index.toString().padStart(2, '0')}</span>
                         </div>
                         <div className="flex gap-3">
-                            <div className="flex items-center px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-[10px] font-black uppercase tracking-widest border border-emerald-100 shadow-sm shadow-emerald-500/5">
-                                <span className="w-2 h-2 bg-emerald-500 rounded-full mr-2 animate-pulse" />
-                                Đã đồng bộ Database
-                            </div>
                             <button
                                 onClick={handlePrint}
-                                className="flex items-center gap-2 bg-zinc-900 hover:bg-orange-600 text-white px-10 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all active:scale-95 shadow-xl shadow-zinc-900/20"
+                                className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-900 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.1em] transition-all active:scale-95 shadow-xl shadow-zinc-900/10"
                             >
-                                <Printer size={20} />
-                                RA LỆNH IN
+                                <Printer size={18} />
+                                In Tem Chuẩn
+                            </button>
+                            <button
+                                onClick={navigateToCustomPrint}
+                                className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.1em] transition-all active:scale-95 shadow-xl shadow-orange-500/20"
+                            >
+                                <Printer size={18} />
+                                Sang trang In Khách Hàng
                             </button>
                         </div>
                     </div>
