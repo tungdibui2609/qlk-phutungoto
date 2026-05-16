@@ -89,11 +89,11 @@ export default function WarehouseMapLogPage() {
             }
 
             // 2. Collect unique user IDs, position IDs, and lot IDs
-            const userIds = Array.from(new Set((logs as any[]).map(l => l.changed_by).filter(Boolean)))
-            const posIds = Array.from(new Set((logs as any[]).map(l => l.record_id).filter(Boolean)))
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+            const userIds = Array.from(new Set((logs as any[]).map(l => l.changed_by).filter(id => Boolean(id) && typeof id === 'string' && uuidRegex.test(id))))
+            const posIds = Array.from(new Set((logs as any[]).map(l => l.record_id).filter(id => Boolean(id) && typeof id === 'string' && uuidRegex.test(id))))
             
             const lotIdsSet = new Set<string>()
-            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
             ;(logs as any[]).forEach(l => {
                 const oldLotId = l.old_data?.lot_id
@@ -103,15 +103,29 @@ export default function WarehouseMapLogPage() {
             })
             const lotIds = Array.from(lotIdsSet)
 
-            // 3. Fetch related data with chunks if lotIds > 1000
+            // Helper để fetch dữ liệu an toàn tránh lỗi URL Too Long (Bad Request)
+            const fetchInChunks = async (table: string, selectQuery: string, ids: string[], chunkSize = 150) => {
+                if (!ids || ids.length === 0) return []
+                const results: any[] = []
+                for (let i = 0; i < ids.length; i += chunkSize) {
+                    const chunk = ids.slice(i, i + chunkSize)
+                    const { data, error } = await supabase.from(table as any).select(selectQuery).in('id', chunk)
+                    if (error) throw error
+                    results.push(...(data || []))
+                }
+                return results
+            }
+
+            // 3. Fetch related data with smaller chunks (150) to prevent URL length limits causing Bad Request
             const fetchLots = async (ids: string[]) => {
+                if (!ids || ids.length === 0) return []
                 const chunks: any[] = []
-                for (let i = 0; i < ids.length; i += 1000) {
-                    const chunk = ids.slice(i, i + 1000)
+                for (let i = 0; i < ids.length; i += 150) {
+                    const chunk = ids.slice(i, i + 150)
                     const { data, error } = await supabase.from('lots').select(`
                         id, code, production_code, production_lot_id,
-                        production_lots:production_lot_id(lot_code),
-                        productions:production_id(code),
+                        production_lots!production_lot_id(lot_code),
+                        productions!production_id(code),
                         lot_items(quantity, unit, products(name, sku))
                     `).in('id', chunk)
                     if (error) throw error
@@ -120,14 +134,14 @@ export default function WarehouseMapLogPage() {
                 return chunks
             }
 
-            const [usersRes, posRes, allLots] = await Promise.all([
-                supabase.from('user_profiles' as any).select('id, full_name, email').in('id', userIds),
-                supabase.from('positions').select('id, code').in('id', posIds),
+            const [usersData, posData, allLots] = await Promise.all([
+                fetchInChunks('user_profiles', 'id, full_name, email', userIds),
+                fetchInChunks('positions', 'id, code', posIds),
                 fetchLots(lotIds)
             ])
 
-            const userMap = new Map<string, any>((usersRes.data?.map((u: any) => [u.id, u]) || []) as any)
-            const posMap = new Map<string, string>((posRes.data?.map((p: any) => [p.id, p.code]) || []) as any)
+            const userMap = new Map<string, any>(usersData.map((u: any) => [u.id, u]))
+            const posMap = new Map<string, string>(posData.map((p: any) => [p.id, p.code]))
             
             const lotMap = new Map<string, any>()
             allLots.forEach((l: any) => {
@@ -270,7 +284,8 @@ export default function WarehouseMapLogPage() {
             setMovements(processedMovements)
         } catch (e: any) {
             console.error('Error fetching movements:', e)
-            showToast('Lỗi tải dữ liệu: ' + e.message, 'error')
+            const detail = e.details || e.message || JSON.stringify(e)
+            showToast('Lỗi tải dữ liệu: ' + detail, 'error')
         } finally {
             setLoading(false)
         }
