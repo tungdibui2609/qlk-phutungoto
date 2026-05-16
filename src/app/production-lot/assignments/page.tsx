@@ -172,32 +172,60 @@ export default function AssignmentApprovalPage() {
             const pendingStts = Array.from(new Set(assignments.map((a: any) => a.lot_stt)))
             const expandedLotDateFrom = format(subDays(new Date(dateFrom), 45), 'yyyy-MM-dd')
 
-            let lotsQuery = supabase
+            // === SPLIT INTO 2 QUERIES to avoid PostgREST .or() + .neq() interaction issues ===
+            
+            // Query 1: Lots in the selected date range
+            const { data: dateRangeLots, error: lErr1 } = await supabase
                 .from('lots')
-                .select(`
-                    *,
-                    lot_items(products(name))
-                `)
+                .select(`*, lot_items(products(name))`)
                 .eq('system_code', currentSystem.code)
                 .neq('status', 'hidden')
                 .neq('status', 'exported')
-
-            if (pendingStts.length > 0) {
-                const seqFilter = pendingStts.join(',')
-                lotsQuery = lotsQuery.or(`and(inbound_date.gte.${dateFrom},inbound_date.lte.${dateTo}T23:59:59),and(inbound_date.gte.${expandedLotDateFrom},daily_seq.in.(${seqFilter}))`)
-            } else {
-                lotsQuery = lotsQuery.gte('inbound_date', dateFrom).lte('inbound_date', dateTo + 'T23:59:59')
-            }
-
-            const { data: lData, error: lErr } = await lotsQuery
+                .gte('inbound_date', dateFrom)
+                .lte('inbound_date', dateTo + 'T23:59:59')
                 .order('inbound_date', { ascending: false })
                 .order('daily_seq', { ascending: true })
                 .limit(5000)
 
-            if (lErr) throw lErr
+            if (lErr1) throw lErr1
 
-            const fetchedLots = lData || []
+            // Query 2: Lots matching pending STTs (expanded date range for older lots)
+            let sttMatchedLots: any[] = []
+            if (pendingStts.length > 0) {
+                // Batch STTs to avoid overly long URL filters
+                for (let i = 0; i < pendingStts.length; i += 50) {
+                    const sttChunk = pendingStts.slice(i, i + 50)
+                    const { data: sttData, error: sttErr } = await supabase
+                        .from('lots')
+                        .select(`*, lot_items(products(name))`)
+                        .eq('system_code', currentSystem.code)
+                        .neq('status', 'hidden')
+                        .neq('status', 'exported')
+                        .in('daily_seq', sttChunk)
+                        .gte('inbound_date', expandedLotDateFrom)
+                        .order('inbound_date', { ascending: false })
+                        .limit(5000)
+                    
+                    if (sttErr) {
+                        console.error('[LOTS] STT query chunk error:', sttErr)
+                    } else if (sttData) {
+                        sttMatchedLots.push(...sttData)
+                    }
+                }
+            }
+
+            // Deduplicate by lot ID
+            const seenLotIds = new Set<string>()
+            const fetchedLots: any[] = []
+            for (const lot of [...(dateRangeLots || []), ...sttMatchedLots]) {
+                if (!seenLotIds.has(lot.id)) {
+                    seenLotIds.add(lot.id)
+                    fetchedLots.push(lot)
+                }
+            }
+            
             const lotIds = fetchedLots.map((l: any) => l.id)
+            console.log(`[LOTS] Fetched: ${fetchedLots.length} (dateRange=${(dateRangeLots||[]).length}, sttMatch=${sttMatchedLots.length}, pendingStts=${pendingStts.length})`)
             
             // Explicitly fetch the positions for THESE lots to bypass the 10k row limit on allPosData
             let assignedPosData: any[] = []
@@ -604,9 +632,15 @@ export default function AssignmentApprovalPage() {
         pendingList.forEach(ass => {
             const targetStt = manualEdits[ass.id]?.lot_stt || ass.lot_stt
             const allMatchedLotsRaw = lotsInDay.filter(l => l.daily_seq === targetStt)
-            const allMatchedLots = showOnlyUnassigned ? allMatchedLotsRaw.filter(l => !l.positions?.[0]) : allMatchedLotsRaw
+            const unassignedLots = allMatchedLotsRaw.filter(l => !l.positions?.[0])
+            const allMatchedLots = showOnlyUnassigned ? unassignedLots : allMatchedLotsRaw
             const dateMatchedLots = allMatchedLots.filter(l => l.inbound_date?.split('T')[0] === ass.production_date)
-            const perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
+            let perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
+            
+            // Fallback: if no date match, but exactly 1 unassigned lot exists, use it
+            if (!perfectMatch && unassignedLots.length === 1) {
+                perfectMatch = unassignedLots[0]
+            }
             
             if (perfectMatch && !perfectMatch.positions?.[0]) {
                 if (!seenLots.has(perfectMatch.id)) {
@@ -625,9 +659,15 @@ export default function AssignmentApprovalPage() {
         pendingList.forEach(ass => {
             const targetStt = manualEdits[ass.id]?.lot_stt || ass.lot_stt
             const allMatchedLotsRaw = lotsInDay.filter(l => l.daily_seq === targetStt)
-            const allMatchedLots = showOnlyUnassigned ? allMatchedLotsRaw.filter(l => !l.positions?.[0]) : allMatchedLotsRaw
+            const unassignedLots = allMatchedLotsRaw.filter(l => !l.positions?.[0])
+            const allMatchedLots = showOnlyUnassigned ? unassignedLots : allMatchedLotsRaw
             const dateMatchedLots = allMatchedLots.filter(l => l.inbound_date?.split('T')[0] === ass.production_date)
-            const perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
+            let perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
+            
+            // Fallback: if no date match, but exactly 1 unassigned lot exists, use it
+            if (!perfectMatch && unassignedLots.length === 1) {
+                perfectMatch = unassignedLots[0]
+            }
             
             if (perfectMatch && !perfectMatch.positions?.[0]) {
                 if (!seenLots.has(perfectMatch.id)) {
@@ -770,8 +810,17 @@ export default function AssignmentApprovalPage() {
                                 const allMatchedLots = showOnlyUnassigned ? allMatchedLotsRaw.filter(l => !l.positions?.[0]) : allMatchedLotsRaw
                                 const dateMatchedLots = allMatchedLots.filter(l => l.inbound_date?.split('T')[0] === ass.production_date)
                                 const perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
+                                // Fallback: if no date match but we have unassigned lots, use the closest one
                                 const hasOtherMatches = allMatchedLots.length > 0
                                 const hiddenByFilter = allMatchedLotsRaw.length > 0 && allMatchedLots.length === 0
+                                // NEW: Check if filter is hiding unassigned lots — if allMatchedLotsRaw has unassigned, show them
+                                const unassignedInRaw = allMatchedLotsRaw.filter(l => !l.positions?.[0])
+                                const effectiveHiddenByFilter = hiddenByFilter && unassignedInRaw.length === 0
+                                // If filter hides assigned lots but unassigned exist, show them directly
+                                const effectiveMatchedLots = hiddenByFilter && unassignedInRaw.length > 0 
+                                    ? unassignedInRaw 
+                                    : allMatchedLots
+                                const effectiveHasMatches = effectiveMatchedLots.length > 0
 
                                 return (
                                     <div key={ass.id} className="bg-white dark:bg-zinc-900 border-2 border-zinc-100 dark:border-zinc-800 rounded-[28px] p-6 shadow-sm hover:shadow-md transition-all group">
@@ -839,17 +888,17 @@ export default function AssignmentApprovalPage() {
                                                             </div>
                                                         </div>
                                                     </div>
-                                                ) : hasOtherMatches ? (
+                                                ) : effectiveHasMatches ? (
                                                     <div className="space-y-3">
                                                         <div className="flex items-center justify-between px-2">
-                                                            <div className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest flex items-center gap-2"><Info size={14} />PHÁT HIỆN {allMatchedLots.length} LÔ HÀNG TRÙNG STT</div>
+                                                            <div className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest flex items-center gap-2"><Info size={14} />PHÁT HIỆN {effectiveMatchedLots.length} LÔ HÀNG TRÙNG STT</div>
                                                             <div className="flex gap-2">
                                                                 <button onClick={() => startEdit(ass)} className="p-1 text-zinc-400 hover:text-blue-500 transition-colors"><Edit2 size={14} /></button>
                                                                 <button onClick={() => handleReject(ass)} className="p-1 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
                                                             </div>
                                                         </div>
                                                         <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto scrollbar-thin pr-1">
-                                                            {allMatchedLots.sort((a,b)=>{
+                                                            {effectiveMatchedLots.sort((a,b)=>{
                                                                 const aHasPos = a.positions?.[0] ? 1 : 0;
                                                                 const bHasPos = b.positions?.[0] ? 1 : 0;
                                                                 if (aHasPos !== bHasPos) return aHasPos - bHasPos;
@@ -873,7 +922,7 @@ export default function AssignmentApprovalPage() {
                                                             ))}
                                                         </div>
                                                     </div>
-                                                ) : hiddenByFilter ? (
+                                                ) : effectiveHiddenByFilter ? (
                                                     <div className="space-y-3">
                                                         <div className="flex items-center justify-between px-2">
                                                             <div className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest flex items-center gap-2">
