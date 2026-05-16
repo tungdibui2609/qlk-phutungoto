@@ -169,20 +169,30 @@ export default function AssignmentApprovalPage() {
             setApprovedList(enrichedAssignments.filter((a: any) => a.status.startsWith('approved')))
             setRejectedList(enrichedAssignments.filter((a: any) => a.status === 'rejected'))
 
-            // 5. Fetch LOTs for matching list
-            const { data: lData, error: lErr } = await supabase
+            const pendingStts = Array.from(new Set(assignments.map((a: any) => a.lot_stt)))
+            const expandedLotDateFrom = format(subDays(new Date(dateFrom), 45), 'yyyy-MM-dd')
+
+            let lotsQuery = supabase
                 .from('lots')
                 .select(`
                     *,
                     lot_items(products(name))
                 `)
                 .eq('system_code', currentSystem.code)
-                .gte('inbound_date', dateFrom)
-                .lte('inbound_date', dateTo + 'T23:59:59')
                 .neq('status', 'hidden')
                 .neq('status', 'exported')
+
+            if (pendingStts.length > 0) {
+                const seqFilter = pendingStts.join(',')
+                lotsQuery = lotsQuery.or(`and(inbound_date.gte.${dateFrom},inbound_date.lte.${dateTo}T23:59:59),and(inbound_date.gte.${expandedLotDateFrom},daily_seq.in.(${seqFilter}))`)
+            } else {
+                lotsQuery = lotsQuery.gte('inbound_date', dateFrom).lte('inbound_date', dateTo + 'T23:59:59')
+            }
+
+            const { data: lData, error: lErr } = await lotsQuery
+                .order('inbound_date', { ascending: false })
                 .order('daily_seq', { ascending: true })
-                .limit(2000)
+                .limit(5000)
 
             if (lErr) throw lErr
 
@@ -277,8 +287,8 @@ export default function AssignmentApprovalPage() {
                 .eq('system_code', currentSystem.code)
             
             // Limit search to the relevant date range to improve performance and accuracy
-            // We expand the range slightly (±2 days) to catch edge cases
-            const expandedDateFrom = format(subDays(new Date(historyDateFrom), 2), 'yyyy-MM-dd')
+            // We expand the range by 45 days to catch older lots assigned later
+            const expandedDateFrom = format(subDays(new Date(historyDateFrom), 45), 'yyyy-MM-dd')
             const expandedDateTo = format(parseISO(historyDateTo), 'yyyy-MM-dd') + 'T23:59:59'
             
             lotsQuery = lotsQuery.gte('inbound_date', expandedDateFrom).lte('inbound_date', expandedDateTo)
@@ -305,7 +315,7 @@ export default function AssignmentApprovalPage() {
                     .or(`id.in.(${knownLotIds.join(',')}),daily_seq.in.(${dailySeqs.join(',')})`)
                     .gte('inbound_date', expandedDateFrom)
                     .lte('inbound_date', expandedDateTo)
-                    .limit(2000)
+                    .limit(5000)
                 
                 if (simpleLotsData) {
                     // Use simple data
@@ -761,6 +771,7 @@ export default function AssignmentApprovalPage() {
                                 const dateMatchedLots = allMatchedLots.filter(l => l.inbound_date?.split('T')[0] === ass.production_date)
                                 const perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
                                 const hasOtherMatches = allMatchedLots.length > 0
+                                const hiddenByFilter = allMatchedLotsRaw.length > 0 && allMatchedLots.length === 0
 
                                 return (
                                     <div key={ass.id} className="bg-white dark:bg-zinc-900 border-2 border-zinc-100 dark:border-zinc-800 rounded-[28px] p-6 shadow-sm hover:shadow-md transition-all group">
@@ -860,6 +871,28 @@ export default function AssignmentApprovalPage() {
                                                                     </div>
                                                                 </button>
                                                             ))}
+                                                        </div>
+                                                    </div>
+                                                ) : hiddenByFilter ? (
+                                                    <div className="space-y-3">
+                                                        <div className="flex items-center justify-between px-2">
+                                                            <div className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest flex items-center gap-2">
+                                                                <Filter size={14} /> LÔ HÀNG ĐANG BỊ ẨN
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => setShowOnlyUnassigned(false)} className="px-3 py-1 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-lg text-[10px] font-black transition-colors">TẮT BỘ LỌC</button>
+                                                                <button onClick={() => startEdit(ass)} className="p-1.5 text-zinc-400 hover:text-blue-500 transition-colors"><Edit2 size={16} /></button>
+                                                                <button onClick={() => handleReject(ass)} className="p-1.5 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
+                                                            </div>
+                                                        </div>
+                                                        <div className="bg-amber-50 dark:bg-amber-900/5 border border-amber-100 dark:border-amber-900/20 rounded-3xl p-6 text-center">
+                                                            <MapPin size={32} className="mx-auto text-amber-400 mb-3 opacity-50" />
+                                                            <p className="text-sm font-black text-zinc-900 dark:text-white mb-1">
+                                                                STT #{targetStt} đã được gán vị trí
+                                                            </p>
+                                                            <p className="text-[10px] text-zinc-500 font-bold max-w-[250px] mx-auto">
+                                                                Hệ thống tìm thấy {allMatchedLotsRaw.length} lô hàng mang STT này, nhưng chúng đều đã có vị trí. Vui lòng tắt bộ lọc "Lô Chưa Gán" để duyệt di chuyển.
+                                                            </p>
                                                         </div>
                                                     </div>
                                                 ) : (
