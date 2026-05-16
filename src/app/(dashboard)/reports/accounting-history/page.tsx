@@ -342,7 +342,14 @@ export default function AccountingHistoryPage() {
     }, [filteredMovements])
 
     const handleExportExcel = async () => {
-        if (filteredMovements.length === 0) {
+        const currentData = viewMode === 'summary' ? filteredMovements : dailyMovements.filter(m => {
+            const matchesSearch = m.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                m.name.toLowerCase().includes(searchTerm.toLowerCase())
+            const matchesProducts = selectedProductIds.length === 0 || selectedProductIds.includes(m.productId)
+            return matchesSearch && matchesProducts
+        })
+
+        if (currentData.length === 0) {
             showToast('Không có dữ liệu để xuất Excel', 'warning')
             return
         }
@@ -351,12 +358,14 @@ export default function AccountingHistoryPage() {
         try {
             const targetUnit = units.find(u => u.id === targetUnitId)
             await exportAccountingHistoryToExcel({
+                viewMode,
                 startDate,
                 endDate,
                 systemType: systemType || '',
                 inboundTypes,
                 outboundTypes,
                 movements: filteredMovements,
+                dailyMovements: currentData,
                 summary,
                 targetUnitName: targetUnit?.name,
                 companyInfo
