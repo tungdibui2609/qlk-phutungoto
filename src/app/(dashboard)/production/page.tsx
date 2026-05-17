@@ -16,6 +16,8 @@ export default function ProductionPage() {
     const [editingItem, setEditingItem] = useState<any>(null)
     const [isReadOnly, setIsReadOnly] = useState(false)
     const [actualStats, setActualStats] = useState<Record<string, { actual: number, by_unit: any[] }>>({}) // production_lot_id -> stats
+    const [statusFilter, setStatusFilter] = useState<string>('ALL')
+    const [lotFilter, setLotFilter] = useState<string>('ALL')
 
     const {
         filteredData: productions,
@@ -65,14 +67,31 @@ export default function ProductionPage() {
     }, [productions])
 
     // Map stats into productions for display
-    const productionsWithStats = productions.map(p => ({
-        ...p,
-        production_lots: (p as any).production_lots?.map((l: any) => ({
+    const productionsWithStats = productions.map(p => {
+        let mappedLots = (p as any).production_lots?.map((l: any) => ({
             ...l,
             actual_quantity: actualStats[l.id]?.actual || 0,
             quantity_by_unit: actualStats[l.id]?.by_unit || []
-        }))
-    }))
+        })) || [];
+
+        if (lotFilter === 'LOCKED') {
+            mappedLots = mappedLots.filter((l: any) => l.is_locked);
+        } else if (lotFilter === 'ACTIVE') {
+            mappedLots = mappedLots.filter((l: any) => !l.is_locked);
+        }
+
+        return {
+            ...p,
+            production_lots: mappedLots
+        }
+    })
+
+    const displayProductions = productionsWithStats.filter(p => {
+        if (statusFilter !== 'ALL' && p.status !== statusFilter) return false;
+        // Optional: Hide production if it has no lots matching the lot filter (except if ALL)
+        // if (lotFilter !== 'ALL' && (!p.production_lots || p.production_lots.length === 0)) return false;
+        return true
+    })
 
     const handleAdd = () => {
         setEditingItem(null)
@@ -157,8 +176,59 @@ export default function ProductionPage() {
                         className="w-full pl-12 pr-4 py-3 rounded-2xl bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-stone-800 dark:text-gray-200 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-100 transition-all font-medium"
                     />
                 </div>
+                
+                <div className="flex gap-4 items-center flex-wrap">
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase text-stone-400 tracking-widest hidden md:block">Lệnh:</span>
+                        <div className="flex bg-stone-100 dark:bg-zinc-800 p-1.5 rounded-2xl">
+                            <button
+                                onClick={() => setStatusFilter('ALL')}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${statusFilter === 'ALL' ? 'bg-white dark:bg-zinc-700 text-stone-800 dark:text-zinc-100 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
+                            >
+                                Tất cả
+                            </button>
+                            <button
+                                onClick={() => setStatusFilter('IN_PROGRESS')}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${statusFilter === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-600 shadow-sm' : 'text-stone-500 hover:text-blue-500'}`}
+                            >
+                                Đang chạy
+                            </button>
+                            <button
+                                onClick={() => setStatusFilter('DONE')}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${statusFilter === 'DONE' ? 'bg-emerald-50 text-emerald-600 shadow-sm' : 'text-stone-500 hover:text-emerald-500'}`}
+                            >
+                                Hoàn thành
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase text-stone-400 tracking-widest hidden md:block">Mã Lot:</span>
+                        <div className="flex bg-stone-100 dark:bg-zinc-800 p-1.5 rounded-2xl">
+                            <button
+                                onClick={() => setLotFilter('ALL')}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${lotFilter === 'ALL' ? 'bg-white dark:bg-zinc-700 text-stone-800 dark:text-zinc-100 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
+                            >
+                                Tất cả
+                            </button>
+                            <button
+                                onClick={() => setLotFilter('ACTIVE')}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${lotFilter === 'ACTIVE' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-stone-500 hover:text-orange-500'}`}
+                            >
+                                Đang chạy
+                            </button>
+                            <button
+                                onClick={() => setLotFilter('LOCKED')}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${lotFilter === 'LOCKED' ? 'bg-rose-50 text-rose-600 shadow-sm' : 'text-stone-500 hover:text-rose-500'}`}
+                            >
+                                Đã khóa
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <div className="flex items-center gap-2 px-4 py-2 bg-stone-100 dark:bg-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest text-stone-400">
-                    {productions.length} / {allData.length} Lệnh sản xuất
+                    {displayProductions.length} / {allData.length} Lệnh
                 </div>
             </div>
 
@@ -168,15 +238,15 @@ export default function ProductionPage() {
                     <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
                     <p className="text-stone-500 font-bold uppercase tracking-widest text-xs">Đang tải dữ liệu...</p>
                 </div>
-            ) : productions.length === 0 ? (
+            ) : displayProductions.length === 0 ? (
                 <EmptyState
                     icon={Factory}
                     title="Chưa có lệnh sản xuất nào"
-                    description={searchTerm ? `Không tìm thấy kết quả nào khớp với "${searchTerm}"` : "Hãy bắt đầu bằng cách tạo lệnh sản xuất đầu tiên để gắn vào công việc."}
+                    description={searchTerm || statusFilter !== 'ALL' ? `Không tìm thấy kết quả nào phù hợp.` : "Hãy bắt đầu bằng cách tạo lệnh sản xuất đầu tiên để gắn vào công việc."}
                 />
             ) : (
                 <ProductionTable 
-                    data={productionsWithStats} 
+                    data={displayProductions} 
                     onEdit={handleEdit} 
                     onDelete={handleDelete} 
                     onStatusToggle={handleStatusToggle}
