@@ -150,9 +150,15 @@ export default function DeliverySettingsPage() {
     const getAvailableLots = (): ProductionLot[] => {
         if (!selectedMo?.production_lots) return []
         const existingProductNames = new Set(settings.map((s: DeliverySetting) => s.product_name.toLowerCase()))
+        const seenNames = new Set<string>()
         return selectedMo.production_lots.filter((lot: ProductionLot) => {
             const name = lot.products?.name || ''
-            return !existingProductNames.has(name.toLowerCase())
+            if (!name) return false
+            const lowerName = name.toLowerCase()
+            if (existingProductNames.has(lowerName)) return false
+            if (seenNames.has(lowerName)) return false
+            seenNames.add(lowerName)
+            return true
         })
     }
 

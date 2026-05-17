@@ -123,6 +123,7 @@ const menuItems: MenuItem[] = [
         children: [
             { id: 'delivery_settings_kho', name: 'Cài đặt giao nhận', href: '/delivery-settings', icon: Settings, requiredPermission: 'delivery_journal.manage' },
             { id: 'delivery_journal_kho', name: 'Nhật ký giao nhận kho', href: '/delivery-journal', icon: ClipboardList, requiredPermission: 'delivery_journal.view' },
+            { id: 'delivery_shifts_kho', name: 'Ca làm & Thống kê', href: '/delivery-shifts', icon: History, requiredPermission: 'delivery_journal.view' },
         ]
     },
     {
