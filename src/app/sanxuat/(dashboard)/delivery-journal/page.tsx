@@ -1,549 +1,621 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Factory, Search, X, Check, PackageOpen, ClipboardCheck, RefreshCw, ChevronLeft, ChevronRight, ArrowLeftRight } from 'lucide-react'
+import { Factory, Search, Check, PackageOpen, ClipboardCheck, Truck, RefreshCw, X, ArrowLeftRight, Bell, Hash, Send } from 'lucide-react'
+import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
 import { supabase } from '@/lib/supabaseClient'
 
-interface DeliveryRecord {
+interface DeliverySetting {
     id: string
     system_code: string
     company_id: string | null
+    mo_id: string
+    mo_code: string
+    product_id: string | null
+    product_name: string
+    product_code: string | null
+    quantity: number
+    unit: string
+    direction: 'warehouse_to_production' | 'production_to_warehouse'
+    notes: string | null
+}
+
+interface DeliveryJournal {
+    id: string
     delivery_code: string | null
     item_name: string
     quantity_sent: number
     unit: string
-    from_department: string
-    to_department: string
     status: 'sent' | 'received_by_production' | 'completed_by_production' | 'received_by_warehouse' | 'cancelled'
     result_item_name: string | null
     result_quantity: number | null
     result_unit: string | null
     notes: string | null
-    sent_by: string | null
     sent_by_name: string | null
-    received_by_production: string | null
     received_by_production_name: string | null
-    completed_by: string | null
     completed_by_name: string | null
-    received_by_warehouse: string | null
     received_by_warehouse_name: string | null
     sent_at: string
-    received_by_production_at: string | null
     completed_by_production_at: string | null
-    received_by_warehouse_at: string | null
-    created_by: string | null
-    created_by_name: string | null
-    created_at: string
-    updated_at: string
 }
 
-const STATUS_CONFIG: Record<string, { label: string; className: string; icon: any; step: number }> = {
-    sent: { label: 'Chờ SX nhận', className: 'bg-blue-100 text-blue-800 border-blue-200', icon: PackageOpen, step: 1 },
-    received_by_production: { label: 'SX đã nhận', className: 'bg-cyan-100 text-cyan-800 border-cyan-200', icon: PackageOpen, step: 2 },
-    completed_by_production: { label: 'SX hoàn thành', className: 'bg-amber-100 text-amber-800 border-amber-200', icon: ClipboardCheck, step: 3 },
-    received_by_warehouse: { label: 'Kho đã nhận lại', className: 'bg-emerald-100 text-emerald-800 border-emerald-200', icon: Check, step: 4 },
-    cancelled: { label: 'Đã hủy', className: 'bg-red-100 text-red-800 border-red-200', icon: X, step: -1 },
+interface MOGroup {
+    mo_id: string
+    mo_code: string
+    products: (DeliverySetting & { journal: DeliveryJournal | null })[]
 }
 
-const STATUS_ORDER = ['sent', 'received_by_production', 'completed_by_production', 'received_by_warehouse']
-
-export default function SanxuatDeliveryJournalPage() {
+export default function SanXuatDeliveryJournalPage() {
+    const { currentSystem, hasModule } = useSystem()
     const { profile } = useUser()
-    const [records, setRecords] = useState<DeliveryRecord[]>([])
-    const [loading, setLoading] = useState(false)
-    const [totalCount, setTotalCount] = useState(0)
-    const [page, setPage] = useState(1)
-    const [searchTerm, setSearchTerm] = useState('')
-    const [statusFilter, setStatusFilter] = useState<string>('')
-    const limit = 50
 
-    // Step action modal (SX nhận, SX hoàn thành)
-    const [stepModal, setStepModal] = useState<{
-        action: string
-        record: DeliveryRecord | null
-    }>({ action: '', record: null })
-    const [stepForm, setStepForm] = useState({
-        name: '',
-        result_item_name: '',
-        result_quantity: 0,
-        result_unit: 'Cái',
-    })
+    const [moGroups, setMoGroups] = useState<MOGroup[]>([])
+    const [loading, setLoading] = useState(true)
+    const [selectedMoId, setSelectedMoId] = useState<string | null>(null)
+    const [searchMo, setSearchMo] = useState('')
 
-    const realtimeChannelRef = useRef<any>(null)
+    // Receive from warehouse modal
+    const [receiveModal, setReceiveModal] = useState<{ journal: DeliveryJournal } | null>(null)
 
-    // Lấy system_code từ profile - dùng SANXUAT làm phân hệ mặc định
-    const systemCode = 'SANXUAT'
+    // Complete & send back modal
+    const [completeModal, setCompleteModal] = useState<{ journal: DeliveryJournal } | null>(null)
+    const [resultName, setResultName] = useState('')
+    const [resultQty, setResultQty] = useState(0)
+    const [resultUnit, setResultUnit] = useState('Cái')
 
-    // Fetch records
-    const fetchRecords = useCallback(async () => {
+    // Notification: warehouse sent new items
+    const [notifications, setNotifications] = useState<{ mo_id: string; count: number }[]>([])
+    const [showNotifications, setShowNotifications] = useState(false)
+
+    const realtimeRef = useRef<any>(null)
+
+    const loadData = useCallback(async () => {
+        if (!currentSystem) return
         setLoading(true)
         try {
-            const params = new URLSearchParams({
-                system_code: systemCode,
-                page: String(page),
-                limit: String(limit),
+            const [settingsResult, journalResult] = await Promise.all([
+                (supabase as any)
+                    .from('delivery_settings')
+                    .select('*')
+                    .eq('system_code', currentSystem.code)
+                    .order('created_at', { ascending: false }),
+                (supabase as any)
+                    .from('delivery_journal')
+                    .select('*')
+                    .eq('system_code', currentSystem.code)
+                    .order('sent_at', { ascending: false })
+                    .limit(500)
+            ])
+
+            if (settingsResult.error) throw settingsResult.error
+            if (journalResult.error) throw journalResult.error
+
+            const settings: DeliverySetting[] = (settingsResult.data || []).filter(
+                (s: DeliverySetting) => s.direction === 'warehouse_to_production'
+            )
+            const journals: DeliveryJournal[] = journalResult.data || []
+
+            const moMap = new Map<string, MOGroup>()
+
+            for (const s of settings) {
+                if (!moMap.has(s.mo_id)) {
+                    moMap.set(s.mo_id, {
+                        mo_id: s.mo_id,
+                        mo_code: s.mo_code,
+                        products: [],
+                    })
+                }
+                const group = moMap.get(s.mo_id)!
+                const journal = journals.find(
+                    j => j.item_name === s.product_name && j.unit === s.unit
+                ) || null
+
+                group.products.push({ ...s, journal })
+            }
+
+            const groups = Array.from(moMap.values()).sort((a, b) => {
+                const aNeedsAction = a.products.some(p => p.journal?.status === 'sent')
+                const bNeedsAction = b.products.some(p => p.journal?.status === 'sent')
+                if (aNeedsAction && !bNeedsAction) return -1
+                if (!aNeedsAction && bNeedsAction) return 1
+                return a.mo_code.localeCompare(b.mo_code)
             })
-            if (statusFilter) params.set('status', statusFilter)
-            if (searchTerm) params.set('search', searchTerm)
 
-            const res = await fetch(`/api/delivery-journal?${params}`)
-            const json = await res.json()
+            setMoGroups(groups)
 
-            if (json.data) {
-                setRecords(json.data as DeliveryRecord[])
-                setTotalCount(json.count || 0)
+            const notifs = groups
+                .filter(g => g.products.some(p => p.journal?.status === 'sent'))
+                .map(g => ({ mo_id: g.mo_id, count: g.products.filter(p => p.journal?.status === 'sent').length }))
+            setNotifications(notifs)
+
+            if (groups.length > 0 && !selectedMoId) {
+                setSelectedMoId(groups[0].mo_id)
             }
         } catch (err) {
-            console.error('Fetch delivery journal error:', err)
+            console.error('Load data error:', err)
         } finally {
             setLoading(false)
         }
-    }, [page, statusFilter, searchTerm, systemCode])
+    }, [currentSystem, selectedMoId])
 
-    // Real-time subscription
     useEffect(() => {
-        fetchRecords()
+        if (!currentSystem) return
+        loadData()
 
         const channel = supabase
-            .channel('sanxuat_delivery_journal_realtime')
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'delivery_journal',
-                    filter: `system_code=eq.${systemCode}`,
-                },
-                () => {
-                    fetchRecords()
-                }
-            )
+            .channel('delivery_journal_sanxuat')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'delivery_journal',
+                filter: `system_code=eq.${currentSystem.code}`,
+            }, () => loadData())
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'delivery_settings',
+                filter: `system_code=eq.${currentSystem.code}`,
+            }, () => loadData())
             .subscribe()
 
-        realtimeChannelRef.current = channel
+        realtimeRef.current = channel
+        return () => { supabase.removeChannel(channel) }
+    }, [currentSystem, loadData])
 
-        return () => {
-            supabase.removeChannel(channel)
+    const handleReceiveFromWarehouse = async () => {
+        if (!receiveModal) return
+        try {
+            const { error } = await (supabase as any)
+                .from('delivery_journal')
+                .update({
+                    status: 'received_by_production',
+                    received_by_production: profile?.id || null,
+                    received_by_production_name: profile?.full_name || 'Nhân viên SX',
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', receiveModal.journal.id)
+
+            if (error) throw error
+
+            setReceiveModal(null)
+            loadData()
+        } catch (err: any) {
+            console.error('Receive error:', err)
+            alert('Lỗi nhận vật tư: ' + (err?.message || err))
         }
-    }, [fetchRecords, systemCode])
-
-    // Workflow actions
-    const executeAction = async (id: string, action: string, extraData: any = {}) => {
-        await fetch('/api/delivery-journal', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id, action, ...extraData }),
-        })
-        fetchRecords()
     }
 
-    const openStepModal = (action: string, record: DeliveryRecord) => {
-        setStepModal({ action, record })
-        setStepForm({
-            name: profile?.full_name || 'Nhân viên SX',
-            result_item_name: record.result_item_name || '',
-            result_quantity: record.result_quantity || 0,
-            result_unit: record.result_unit || 'Cái',
-        })
-    }
+    const handleCompleteAndSendBack = async () => {
+        if (!completeModal) return
+        try {
+            const { error } = await (supabase as any)
+                .from('delivery_journal')
+                .update({
+                    status: 'completed_by_production',
+                    completed_by: profile?.id || null,
+                    completed_by_name: profile?.full_name || 'Nhân viên SX',
+                    result_item_name: resultName,
+                    result_quantity: resultQty,
+                    result_unit: resultUnit,
+                    completed_by_production_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', completeModal.journal.id)
 
-    const handleStepConfirm = async () => {
-        const { action, record } = stepModal
-        if (!record) return
+            if (error) throw error
 
-        const extraData: any = {}
-
-        switch (action) {
-            case 'receive_by_production':
-                extraData.received_by_production = profile?.id
-                extraData.received_by_production_name = stepForm.name || profile?.full_name || 'Nhân viên SX'
-                break
-            case 'complete_by_production':
-                extraData.completed_by = profile?.id
-                extraData.completed_by_name = stepForm.name || profile?.full_name || 'Nhân viên SX'
-                extraData.result_item_name = stepForm.result_item_name || record.item_name + ' (TP)'
-                extraData.result_quantity = stepForm.result_quantity || record.quantity_sent
-                extraData.result_unit = stepForm.result_unit || record.unit
-                break
+            setCompleteModal(null)
+            loadData()
+        } catch (err: any) {
+            console.error('Complete error:', err)
+            alert('Lỗi hoàn thành vật tư: ' + (err?.message || err))
         }
-
-        await executeAction(record.id, action, extraData)
-        setStepModal({ action: '', record: null })
     }
 
-    const getStatusBadge = (status: string) => {
-        const c = STATUS_CONFIG[status] || { label: status, className: 'bg-gray-100 text-gray-800 border-gray-200' }
-        const Icon = c.icon
-        return (
-            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border ${c.className}`}>
-                <Icon size={12} />
-                {c.label}
-            </span>
-        )
+    const openReceiveModal = (journal: DeliveryJournal) => {
+        setReceiveModal({ journal })
     }
 
-    const getProgressSteps = (record: DeliveryRecord) => {
-        const currentStep = STATUS_CONFIG[record.status]?.step || 0
-        if (currentStep < 0) return null
+    const openCompleteModal = (journal: DeliveryJournal) => {
+        setCompleteModal({ journal })
+        setResultName(journal.item_name + ' thành phẩm')
+        setResultQty(journal.quantity_sent)
+        setResultUnit(journal.unit)
+    }
 
+    const selectedGroup = moGroups.find(g => g.mo_id === selectedMoId)
+    const filteredGroups = moGroups.filter(g =>
+        !searchMo || g.mo_code.toLowerCase().includes(searchMo.toLowerCase())
+    )
+    const totalNotifs = notifications.reduce((sum, n) => sum + n.count, 0)
+
+    if (!currentSystem) return null
+
+    if (!hasModule('delivery_journal')) {
         return (
-            <div className="flex items-center gap-1">
-                {STATUS_ORDER.map((s, idx) => {
-                    const config = STATUS_CONFIG[s]
-                    const isCompleted = config.step <= currentStep
-                    const isCurrent = config.step === currentStep
-                    return (
-                        <React.Fragment key={s}>
-                            <div
-                                className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border-2 transition-all ${isCompleted
-                                    ? 'bg-emerald-500 border-emerald-500 text-white'
-                                    : 'bg-gray-100 border-gray-300 text-gray-400'
-                                    } ${isCurrent ? 'ring-2 ring-emerald-300 ring-offset-1' : ''}`}
-                                title={config.label}
-                            >
-                                {isCompleted ? <Check size={12} /> : idx + 1}
-                            </div>
-                            {idx < STATUS_ORDER.length - 1 && (
-                                <div className={`w-4 h-0.5 ${config.step < currentStep ? 'bg-emerald-400' : 'bg-gray-200'}`} />
-                            )}
-                        </React.Fragment>
-                    )
-                })}
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8">
+                <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-3xl flex items-center justify-center mb-6">
+                    <Factory size={40} className="text-slate-400" />
+                </div>
+                <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-100 mb-2">Giao nhận Kho ↔ Sản xuất</h2>
+                <p className="text-stone-500 max-w-md">Tính năng chưa được kích hoạt. Vào Cài đặt → Tiện ích để bật.</p>
             </div>
         )
     }
-
-    const getAvailableActions = (record: DeliveryRecord) => {
-        const actions: { type: string; label: string; icon: any; className: string }[] = []
-
-        if (record.status === 'sent') {
-            actions.push({
-                type: 'receive_by_production',
-                label: 'Xác nhận đã nhận',
-                icon: PackageOpen,
-                className: 'bg-cyan-600 hover:bg-cyan-700 text-white shadow-lg shadow-cyan-500/20'
-            })
-        }
-        if (record.status === 'received_by_production') {
-            actions.push({
-                type: 'complete_by_production',
-                label: 'Hoàn thành & gửi kết quả',
-                icon: ClipboardCheck,
-                className: 'bg-amber-600 hover:bg-amber-700 text-white shadow-lg shadow-amber-500/20'
-            })
-        }
-
-        return actions
-    }
-
-    const formatDate = (dateStr: string | null) => {
-        if (!dateStr) return '-'
-        return new Date(dateStr).toLocaleString('vi-VN', {
-            day: '2-digit', month: '2-digit', year: 'numeric',
-            hour: '2-digit', minute: '2-digit'
-        })
-    }
-
-    // Đếm số đang chờ xử lý
-    const pendingReceiveCount = records.filter(r => r.status === 'sent').length
-    const inProgressCount = records.filter(r => r.status === 'received_by_production').length
-    const completedCount = records.filter(r => r.status === 'completed_by_production').length
-    const finishedCount = records.filter(r => r.status === 'received_by_warehouse').length
 
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-zinc-900 text-gray-900 dark:text-gray-100 p-6">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-white flex items-center gap-3">
-                        <Factory className="text-emerald-600" size={32} />
-                        Giao nhận Kho ↔ Sản xuất
+        <div className="h-[calc(100vh-4rem)] flex flex-col bg-stone-50 dark:bg-zinc-900">
+            {/* Top bar */}
+            <div className="flex items-center justify-between px-6 py-3 bg-white dark:bg-zinc-800 border-b border-stone-200 dark:border-zinc-700 shrink-0">
+                <div className="flex items-center gap-3">
+                    <h1 className="text-xl font-bold text-stone-900 dark:text-white flex items-center gap-2">
+                        <Factory size={24} className="text-emerald-600" />
+                        Giao nhận Kho → Sản xuất
                     </h1>
-                    <p className="text-stone-500 dark:text-gray-400 mt-1">
-                        Bảng điều khiển Sản xuất: Nhận vật tư từ Kho và hoàn thành gửi kết quả. Đồng bộ real-time.
-                    </p>
+                    <span className="flex items-center gap-1 text-xs text-stone-500">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        Live
+                    </span>
                 </div>
-
-                <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-2xl">
-                    <ArrowLeftRight size={18} className="text-emerald-600" />
-                    <span className="text-sm font-bold text-emerald-700">Góc Sản Xuất</span>
-                </div>
-            </div>
-
-            {/* Stats Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                {[
-                    { label: 'Chờ SX nhận', value: pendingReceiveCount, color: 'blue' },
-                    { label: 'Đang xử lý', value: inProgressCount, color: 'cyan' },
-                    { label: 'Đã hoàn thành', value: completedCount, color: 'amber' },
-                    { label: 'Kho đã nhận', value: finishedCount, color: 'emerald' },
-                ].map((stat, idx) => (
-                    <div key={idx} className="bg-white dark:bg-zinc-800 rounded-2xl border border-stone-200 dark:border-zinc-700 p-4 shadow-sm">
-                        <div className={`text-3xl font-bold text-${stat.color}-600 dark:text-${stat.color}-500`}>{stat.value}</div>
-                        <div className="text-xs text-stone-500 dark:text-stone-400 mt-1">{stat.label}</div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Highlight: Cần nhận ngay */}
-            {pendingReceiveCount > 0 && (
-                <div className="mb-4 p-4 bg-cyan-50 border border-cyan-200 rounded-2xl flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-cyan-100 flex items-center justify-center flex-shrink-0">
-                        <PackageOpen size={20} className="text-cyan-600" />
-                    </div>
-                    <div className="flex-1">
-                        <p className="font-bold text-cyan-800 text-sm">Có {pendingReceiveCount} vật tư từ Kho đang chờ bạn nhận!</p>
-                        <p className="text-xs text-cyan-600">Hãy xác nhận đã nhận hàng để tiếp tục sản xuất.</p>
-                    </div>
-                </div>
-            )}
-
-            {/* Filters */}
-            <div className="flex flex-col sm:flex-row gap-3 mb-4">
-                <div className="relative flex-1 max-w-md">
-                    <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-                    <input
-                        type="text"
-                        placeholder="Tìm mã GN, tên hàng, thành phẩm..."
-                        value={searchTerm}
-                        onChange={(e) => { setSearchTerm(e.target.value); setPage(1) }}
-                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-                    />
-                </div>
-                <select
-                    value={statusFilter}
-                    onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
-                    className="px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
-                >
-                    <option value="">Tất cả trạng thái</option>
-                    {Object.entries(STATUS_CONFIG).map(([key, config]) => (
-                        <option key={key} value={key}>{config.label}</option>
-                    ))}
-                </select>
-                <button
-                    onClick={fetchRecords}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-2xl text-sm font-medium hover:bg-stone-100 dark:hover:bg-zinc-700 transition-colors"
-                >
-                    <RefreshCw size={16} />
-                    Làm mới
-                </button>
-                <span className="flex items-center text-xs text-stone-500 gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    Live
-                </span>
-            </div>
-
-            {/* Table */}
-            <div className="bg-white dark:bg-zinc-800 rounded-2xl border border-stone-200 dark:border-zinc-700 overflow-hidden shadow-sm">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="border-b border-stone-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-900/50">
-                                <th className="text-left px-4 py-3 font-bold text-stone-600 dark:text-stone-400">Mã GN</th>
-                                <th className="text-left px-4 py-3 font-bold text-stone-600 dark:text-stone-400">Vật tư</th>
-                                <th className="text-left px-4 py-3 font-bold text-stone-600 dark:text-stone-400">SL</th>
-                                <th className="text-left px-4 py-3 font-bold text-stone-600 dark:text-stone-400">ĐV</th>
-                                <th className="text-left px-4 py-3 font-bold text-stone-600 dark:text-stone-400">Ghi chú</th>
-                                <th className="text-left px-4 py-3 font-bold text-stone-600 dark:text-stone-400">Trạng thái</th>
-                                <th className="text-left px-4 py-3 font-bold text-stone-600 dark:text-stone-400">Tiến độ</th>
-                                <th className="text-left px-4 py-3 font-bold text-stone-600 dark:text-stone-400">Kho gửi lúc</th>
-                                <th className="text-right px-4 py-3 font-bold text-stone-600 dark:text-stone-400">Thao tác</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
-                            {loading ? (
-                                <tr>
-                                    <td colSpan={9} className="text-center py-12 text-stone-400">
-                                        <RefreshCw size={20} className="animate-spin inline-block mr-2" />
-                                        Đang tải dữ liệu...
-                                    </td>
-                                </tr>
-                            ) : records.length === 0 ? (
-                                <tr>
-                                    <td colSpan={9} className="text-center py-12 text-stone-400">
-                                        <div className="flex flex-col items-center gap-2">
-                                            <ArrowLeftRight size={40} className="text-stone-300" />
-                                            <span>Chưa có nhật ký giao nhận nào từ Kho.</span>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ) : (
-                                records.map((record) => {
-                                    const actions = getAvailableActions(record)
-                                    const isActionNeeded = record.status === 'sent' || record.status === 'received_by_production'
-                                    return (
-                                        <tr
-                                            key={record.id}
-                                            className={`transition-colors ${isActionNeeded
-                                                ? 'bg-amber-50/40 dark:bg-amber-900/10 hover:bg-amber-50 dark:hover:bg-amber-900/20'
-                                                : 'hover:bg-stone-50 dark:hover:bg-zinc-700/50'
-                                                }`}
-                                        >
-                                            <td className="px-4 py-3 font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                                                {record.delivery_code || '-'}
-                                            </td>
-                                            <td className="px-4 py-3 font-bold text-stone-800 dark:text-stone-200 max-w-[180px] truncate" title={record.item_name}>
-                                                {record.item_name}
-                                            </td>
-                                            <td className="px-4 py-3 font-mono text-stone-700 dark:text-stone-300">{record.quantity_sent}</td>
-                                            <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{record.unit}</td>
-                                            <td className="px-4 py-3 text-xs text-stone-500 dark:text-stone-400 max-w-[150px] truncate" title={record.notes || ''}>
-                                                {record.notes || '-'}
-                                            </td>
-                                            <td className="px-4 py-3">{getStatusBadge(record.status)}</td>
-                                            <td className="px-4 py-3">{getProgressSteps(record)}</td>
-                                            <td className="px-4 py-3 text-xs text-stone-500 dark:text-stone-400 whitespace-nowrap">
-                                                {formatDate(record.sent_at)}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                                                    {actions.map((action) => (
-                                                        <button
-                                                            key={action.type}
-                                                            onClick={() => openStepModal(action.type, record)}
-                                                            className={`inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 ${action.className}`}
-                                                            title={action.label}
-                                                        >
-                                                            <action.icon size={14} />
-                                                            <span className="hidden md:inline">{action.label}</span>
-                                                        </button>
-                                                    ))}
-                                                    {actions.length === 0 && record.status !== 'cancelled' && (
-                                                        <span className="text-xs text-stone-400 italic">
-                                                            {record.status === 'received_by_warehouse' ? 'Đã hoàn tất' :
-                                                                record.status === 'completed_by_production' ? 'Chờ Kho nhận' : '-'}
-                                                        </span>
-                                                    )}
-                                                    {record.status === 'cancelled' && (
-                                                        <span className="text-xs text-red-400 italic">Đã hủy</span>
-                                                    )}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    )
-                                })
+                <div className="flex items-center gap-3">
+                    {totalNotifs > 0 && (
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowNotifications(!showNotifications)}
+                                className="relative p-2 rounded-xl hover:bg-stone-100 dark:hover:bg-zinc-700 transition-colors"
+                            >
+                                <Bell size={20} className="text-amber-500" />
+                                <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center animate-bounce">
+                                    {totalNotifs}
+                                </span>
+                            </button>
+                            {showNotifications && (
+                                <div className="absolute right-0 top-full mt-2 w-72 bg-white dark:bg-zinc-800 rounded-2xl shadow-2xl border border-stone-200 dark:border-zinc-700 z-50 overflow-hidden">
+                                    <div className="p-3 border-b border-stone-100 dark:border-zinc-700">
+                                        <p className="text-sm font-bold text-stone-900 dark:text-white">Kho vừa gửi vật tư</p>
+                                    </div>
+                                    {notifications.map(n => {
+                                        const grp = moGroups.find(g => g.mo_id === n.mo_id)
+                                        return (
+                                            <button
+                                                key={n.mo_id}
+                                                onClick={() => { setSelectedMoId(n.mo_id); setShowNotifications(false) }}
+                                                className="w-full text-left px-4 py-3 hover:bg-stone-50 dark:hover:bg-zinc-700/50 border-b border-stone-100 dark:border-zinc-700/50 transition-colors"
+                                            >
+                                                <p className="text-sm font-bold text-stone-800 dark:text-stone-200">{grp?.mo_code || n.mo_id}</p>
+                                                <p className="text-xs text-blue-600">{n.count} vật tư Kho đã gửi, cần nhận</p>
+                                            </button>
+                                        )
+                                    })}
+                                </div>
                             )}
-                        </tbody>
-                    </table>
+                        </div>
+                    )}
+                    <button onClick={loadData} className="p-2 rounded-xl hover:bg-stone-100 dark:hover:bg-zinc-700 transition-colors" title="Làm mới">
+                        <RefreshCw size={18} />
+                    </button>
                 </div>
+            </div>
 
-                {/* Pagination */}
-                {totalCount > limit && (
-                    <div className="flex items-center justify-between px-4 py-3 border-t border-stone-200 dark:border-zinc-700">
-                        <span className="text-xs text-stone-500">
-                            Hiển thị {Math.min((page - 1) * limit + 1, totalCount)}-{Math.min(page * limit, totalCount)} / {totalCount}
-                        </span>
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => setPage(p => Math.max(1, p - 1))}
-                                disabled={page === 1}
-                                className="px-3 py-1 text-sm rounded-lg border border-stone-200 dark:border-zinc-700 disabled:opacity-30 hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-1"
-                            >
-                                <ChevronLeft size={14} /> Trước
-                            </button>
-                            <span className="text-sm font-bold px-3">{page}</span>
-                            <button
-                                onClick={() => setPage(p => p + 1)}
-                                disabled={page * limit >= totalCount}
-                                className="px-3 py-1 text-sm rounded-lg border border-stone-200 dark:border-zinc-700 disabled:opacity-30 hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-1"
-                            >
-                                Sau <ChevronRight size={14} />
-                            </button>
+            {/* Main content: 2 columns */}
+            <div className="flex flex-1 overflow-hidden">
+                {/* Left: MO List */}
+                <div className="w-80 bg-white dark:bg-zinc-800 border-r border-stone-200 dark:border-zinc-700 flex flex-col shrink-0">
+                    <div className="p-3 border-b border-stone-100 dark:border-zinc-700">
+                        <div className="relative">
+                            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                            <input
+                                type="text"
+                                placeholder="Tìm lệnh sản xuất..."
+                                value={searchMo}
+                                onChange={e => setSearchMo(e.target.value)}
+                                className="w-full pl-9 pr-3 py-2 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                            />
                         </div>
                     </div>
-                )}
+                    <div className="flex-1 overflow-y-auto">
+                        {loading ? (
+                            <div className="p-6 text-center text-stone-400 text-sm">Đang tải...</div>
+                        ) : filteredGroups.length === 0 ? (
+                            <div className="p-6 text-center text-stone-400 text-sm">
+                                <PackageOpen size={32} className="mx-auto mb-2 text-stone-300" />
+                                Chưa có vật tư nào được Kho gửi.<br />
+                                <span className="text-xs">Kho cần cấu hình giao nhận trước.</span>
+                            </div>
+                        ) : (
+                            filteredGroups.map(group => {
+                                const isSelected = group.mo_id === selectedMoId
+                                const waitingCount = group.products.filter(p => p.journal?.status === 'sent').length
+                                const inProgressCount = group.products.filter(p => p.journal?.status === 'received_by_production').length
+                                const hasWaiting = waitingCount > 0
+
+                                return (
+                                    <button
+                                        key={group.mo_id}
+                                        onClick={() => setSelectedMoId(group.mo_id)}
+                                        className={`w-full text-left px-4 py-3 border-b border-stone-100 dark:border-zinc-700/50 transition-colors ${
+                                            isSelected
+                                                ? 'bg-emerald-50 dark:bg-emerald-900/20 border-l-4 border-l-emerald-600'
+                                                : 'hover:bg-stone-50 dark:hover:bg-zinc-700/50 border-l-4 border-l-transparent'
+                                        } ${hasWaiting && !isSelected ? 'bg-blue-50/30 dark:bg-blue-900/5' : ''}`}
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <Hash size={14} className={isSelected ? 'text-emerald-500' : 'text-stone-400'} />
+                                                <p className={`text-sm font-bold ${isSelected ? 'text-emerald-700 dark:text-emerald-300' : 'text-stone-800 dark:text-stone-200'}`}>
+                                                    {group.mo_code}
+                                                </p>
+                                                {hasWaiting && (
+                                                    <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center animate-pulse">
+                                                        {waitingCount}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3 mt-1.5">
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                                {waitingCount} chờ nhận
+                                            </span>
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400">
+                                                {inProgressCount} đang xử lý
+                                            </span>
+                                        </div>
+                                    </button>
+                                )
+                            })
+                        )}
+                    </div>
+                </div>
+
+                {/* Right: Products */}
+                <div className="flex-1 overflow-y-auto p-6">
+                    {!selectedGroup ? (
+                        <div className="flex flex-col items-center justify-center h-full text-center">
+                            <ArrowLeftRight size={48} className="text-stone-300 mb-4" />
+                            <p className="text-stone-500 text-lg font-medium">Chọn một lệnh sản xuất bên trái</p>
+                            <p className="text-stone-400 text-sm mt-1">để xem vật tư và thao tác nhận / hoàn thành</p>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="mb-6">
+                                <h2 className="text-2xl font-bold text-stone-900 dark:text-white">{selectedGroup.mo_code}</h2>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                {selectedGroup.products.map((product) => {
+                                    const journal = product.journal
+                                    const status = journal?.status || null
+                                    const isWaitingForReceive = status === 'sent'
+                                    const isReceived = status === 'received_by_production'
+                                    const isCompleted = status === 'completed_by_production'
+                                    const isFullyComplete = status === 'received_by_warehouse'
+
+                                    let cardBg = 'bg-white dark:bg-zinc-800 border-stone-200 dark:border-zinc-700'
+                                    let cardBorder = ''
+                                    if (isWaitingForReceive) cardBorder = 'border-l-4 border-l-blue-500 animate-pulse'
+                                    if (isReceived) cardBorder = 'border-l-4 border-l-cyan-500'
+                                    if (isCompleted) cardBorder = 'border-l-4 border-l-amber-500'
+                                    if (isFullyComplete) cardBorder = 'border-l-4 border-l-emerald-500'
+                                    if (!status) cardBorder = 'border-l-4 border-l-stone-300'
+
+                                    return (
+                                        <div
+                                            key={product.id}
+                                            className={`${cardBg} ${cardBorder} rounded-2xl border p-4 shadow-sm hover:shadow-md transition-all`}
+                                        >
+                                            <div className="flex items-start justify-between mb-2">
+                                                <h3 className="font-bold text-stone-800 dark:text-stone-100 text-sm pr-2">
+                                                    {product.product_name}
+                                                </h3>
+                                                {product.product_code && (
+                                                    <span className="text-[10px] font-mono text-stone-400 bg-stone-100 dark:bg-zinc-700 px-1.5 py-0.5 rounded">
+                                                        {product.product_code}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center gap-3 text-xs text-stone-500 dark:text-stone-400 mb-3">
+                                                <span>SL: <strong className="text-stone-700 dark:text-stone-300">{product.quantity}</strong></span>
+                                                <span>ĐVT: <strong className="text-stone-700 dark:text-stone-300">{product.unit}</strong></span>
+                                            </div>
+
+                                            {/* Status */}
+                                            {status && (
+                                                <div className="mb-3">
+                                                    {!status && (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-400">
+                                                            Chưa gửi
+                                                        </span>
+                                                    )}
+                                                    {isWaitingForReceive && (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                                            <Send size={10} /> Kho đã gửi
+                                                        </span>
+                                                    )}
+                                                    {isReceived && (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400">
+                                                            <PackageOpen size={10} /> Đã nhận
+                                                        </span>
+                                                    )}
+                                                    {isCompleted && (
+                                                        <div>
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                                                <ClipboardCheck size={10} /> Đã gửi lại kho
+                                                            </span>
+                                                            {journal?.result_item_name && (
+                                                                <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 font-medium">
+                                                                    → {journal.result_item_name} ({journal.result_quantity} {journal.result_unit})
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {isFullyComplete && (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                                                            <Check size={10} /> Kho đã nhận lại
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Journal info */}
+                                            {journal && (
+                                                <div className="text-[10px] text-stone-400 mb-3 space-y-0.5">
+                                                    {journal.delivery_code && <p>Mã: {journal.delivery_code}</p>}
+                                                    {journal.sent_by_name && <p>Gửi: {journal.sent_by_name}</p>}
+                                                    {journal.received_by_production_name && <p>Nhận: {journal.received_by_production_name}</p>}
+                                                </div>
+                                            )}
+
+                                            {/* Actions */}
+                                            <div className="flex items-center gap-2">
+                                                {isWaitingForReceive && (
+                                                    <button
+                                                        onClick={() => openReceiveModal(journal!)}
+                                                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-500/20 transition-all active:scale-95"
+                                                    >
+                                                        <PackageOpen size={14} />
+                                                        Nhận từ Kho
+                                                    </button>
+                                                )}
+                                                {isReceived && (
+                                                    <button
+                                                        onClick={() => openCompleteModal(journal!)}
+                                                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-amber-500/20 transition-all active:scale-95"
+                                                    >
+                                                        <ClipboardCheck size={14} />
+                                                        Hoàn thành & Gửi lại
+                                                    </button>
+                                                )}
+                                                {isCompleted && (
+                                                    <span className="flex-1 text-center text-xs text-stone-400 py-2">
+                                                        Đang chờ Kho nhận lại...
+                                                    </span>
+                                                )}
+                                                {!status && (
+                                                    <span className="flex-1 text-center text-xs text-stone-400 py-2">
+                                                        Chưa có giao nhận
+                                                    </span>
+                                                )}
+                                                {isFullyComplete && (
+                                                    <span className="flex-1 text-center text-xs text-emerald-600 dark:text-emerald-400 py-2 font-medium">
+                                                        ✓ Hoàn tất
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+
+                            {selectedGroup.products.length === 0 && (
+                                <div className="flex flex-col items-center justify-center py-20 text-center">
+                                    <PackageOpen size={48} className="text-stone-300 mb-4" />
+                                    <p className="text-stone-500">Chưa có vật tư nào cho lệnh này</p>
+                                    <p className="text-stone-400 text-sm mt-1">Kho cần cấu hình giao nhận</p>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
             </div>
 
-            {/* Step Action Modal */}
-            {stepModal.record && (
+            {/* Receive from Warehouse Modal */}
+            {receiveModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
                     <div className="bg-white dark:bg-zinc-800 rounded-3xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
                         <div className="p-6">
                             <div className="flex items-center justify-between mb-6">
-                                <h3 className="text-xl font-bold text-stone-900 dark:text-white flex items-center gap-2">
-                                    {stepModal.action === 'receive_by_production' && <><PackageOpen size={24} className="text-cyan-600" /> Xác nhận nhận hàng</>}
-                                    {stepModal.action === 'complete_by_production' && <><ClipboardCheck size={24} className="text-amber-600" /> Hoàn thành & gửi kết quả</>}
+                                <h3 className="text-lg font-bold text-stone-900 dark:text-white flex items-center gap-2">
+                                    <PackageOpen size={22} className="text-blue-600" />
+                                    Nhận vật tư từ Kho
                                 </h3>
-                                <button onClick={() => setStepModal({ action: '', record: null })} className="p-2 rounded-xl hover:bg-stone-100 dark:hover:bg-zinc-700">
-                                    <X size={20} />
+                                <button onClick={() => setReceiveModal(null)} className="p-2 rounded-xl hover:bg-stone-100 dark:hover:bg-zinc-700">
+                                    <X size={18} />
                                 </button>
                             </div>
 
                             <div className="bg-stone-50 dark:bg-zinc-900 rounded-2xl p-3 mb-4">
-                                <p className="text-sm font-bold text-stone-800 dark:text-stone-200">{stepModal.record.item_name}</p>
-                                <p className="text-xs text-stone-500">
-                                    SL: {stepModal.record.quantity_sent} {stepModal.record.unit} | Mã: {stepModal.record.delivery_code}
-                                </p>
-                                <p className="text-xs text-stone-400 mt-1">
-                                    Người gửi: {stepModal.record.sent_by_name || '-'} • {formatDate(stepModal.record.sent_at)}
-                                </p>
-                            </div>
-
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1">Tên người thực hiện</label>
-                                    <input
-                                        type="text"
-                                        value={stepForm.name}
-                                        onChange={(e) => setStepForm({ ...stepForm, name: e.target.value })}
-                                        className="w-full px-4 py-2.5 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                                    />
-                                </div>
-
-                                {stepModal.action === 'complete_by_production' && (
-                                    <>
-                                        <div>
-                                            <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1">Tên thành phẩm làm ra</label>
-                                            <input
-                                                type="text"
-                                                value={stepForm.result_item_name}
-                                                onChange={(e) => setStepForm({ ...stepForm, result_item_name: e.target.value })}
-                                                placeholder="VD: Chi tiết máy A-123"
-                                                className="w-full px-4 py-2.5 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                                            />
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1">SL thành phẩm</label>
-                                                <input
-                                                    type="number"
-                                                    min={0}
-                                                    step="any"
-                                                    value={stepForm.result_quantity}
-                                                    onChange={(e) => setStepForm({ ...stepForm, result_quantity: parseFloat(e.target.value) || 0 })}
-                                                    className="w-full px-4 py-2.5 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1">Đơn vị</label>
-                                                <input
-                                                    type="text"
-                                                    value={stepForm.result_unit}
-                                                    onChange={(e) => setStepForm({ ...stepForm, result_unit: e.target.value })}
-                                                    className="w-full px-4 py-2.5 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                                                />
-                                            </div>
-                                        </div>
-                                    </>
+                                <p className="font-bold text-stone-800 dark:text-stone-200">{receiveModal.journal.item_name}</p>
+                                <p className="text-xs text-stone-500">SL: {receiveModal.journal.quantity_sent} {receiveModal.journal.unit}</p>
+                                {receiveModal.journal.sent_by_name && (
+                                    <p className="text-xs text-stone-500">Người gửi: {receiveModal.journal.sent_by_name}</p>
                                 )}
                             </div>
 
                             <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-stone-200 dark:border-zinc-700">
-                                <button
-                                    onClick={() => setStepModal({ action: '', record: null })}
-                                    className="px-4 py-2 text-sm font-bold text-stone-600 hover:bg-stone-100 dark:hover:bg-zinc-700 rounded-2xl transition-colors"
-                                >
+                                <button onClick={() => setReceiveModal(null)} className="px-4 py-2 text-sm font-bold text-stone-600 hover:bg-stone-100 dark:hover:bg-zinc-700 rounded-2xl">
                                     Hủy
                                 </button>
-                                <button
-                                    onClick={handleStepConfirm}
-                                    className={`px-6 py-2 text-sm font-bold text-white rounded-2xl shadow-lg transition-all active:scale-95 ${stepModal.action === 'receive_by_production'
-                                            ? 'bg-cyan-600 hover:bg-cyan-700 shadow-cyan-500/20'
-                                            : 'bg-amber-600 hover:bg-amber-700 shadow-amber-500/20'
-                                        }`}
-                                >
-                                    Xác nhận
+                                <button onClick={handleReceiveFromWarehouse} className="px-6 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-2xl shadow-lg shadow-blue-500/20 active:scale-95">
+                                    Xác nhận đã nhận
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Complete & Send Back Modal */}
+            {completeModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-zinc-800 rounded-3xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+                        <div className="p-6">
+                            <div className="flex items-center justify-between mb-6">
+                                <h3 className="text-lg font-bold text-stone-900 dark:text-white flex items-center gap-2">
+                                    <ClipboardCheck size={22} className="text-amber-600" />
+                                    Hoàn thành & Gửi kết quả
+                                </h3>
+                                <button onClick={() => setCompleteModal(null)} className="p-2 rounded-xl hover:bg-stone-100 dark:hover:bg-zinc-700">
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            <div className="bg-stone-50 dark:bg-zinc-900 rounded-2xl p-3 mb-4">
+                                <p className="font-bold text-stone-800 dark:text-stone-200">{completeModal.journal.item_name}</p>
+                                <p className="text-xs text-stone-500">Đã nhận: {completeModal.journal.quantity_sent} {completeModal.journal.unit}</p>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1">Tên thành phẩm *</label>
+                                    <input
+                                        type="text"
+                                        value={resultName}
+                                        onChange={e => setResultName(e.target.value)}
+                                        className="w-full px-4 py-2.5 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-2xl text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1">Số lượng</label>
+                                        <input
+                                            type="number"
+                                            min={0.01}
+                                            step="any"
+                                            value={resultQty}
+                                            onChange={e => setResultQty(parseFloat(e.target.value) || 0)}
+                                            className="w-full px-4 py-2.5 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-2xl text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1">Đơn vị</label>
+                                        <input
+                                            type="text"
+                                            value={resultUnit}
+                                            onChange={e => setResultUnit(e.target.value)}
+                                            className="w-full px-4 py-2.5 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-2xl text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-stone-200 dark:border-zinc-700">
+                                <button onClick={() => setCompleteModal(null)} className="px-4 py-2 text-sm font-bold text-stone-600 hover:bg-stone-100 dark:hover:bg-zinc-700 rounded-2xl">
+                                    Hủy
+                                </button>
+                                <button onClick={handleCompleteAndSendBack} className="px-6 py-2 text-sm font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-2xl shadow-lg shadow-amber-500/20 active:scale-95">
+                                    Hoàn thành & Gửi
                                 </button>
                             </div>
                         </div>

@@ -35,31 +35,44 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json()
-        const { system_code, mo_id, mo_code, product_id, product_name, product_code, quantity, unit, direction, notes, company_id } = body
+        const { system_code, mo_id, mo_code, product_id, product_name, product_code, quantity, unit, direction, notes, company_id, production_lot_id } = body
 
         if (!system_code || !mo_id || !product_name) {
             return NextResponse.json({ error: 'system_code, mo_id, product_name are required' }, { status: 400 })
         }
 
+        const payload = {
+            system_code,
+            company_id: company_id || null,
+            mo_id,
+            mo_code: mo_code || '',
+            production_lot_id: production_lot_id || null,
+            product_id: product_id || null,
+            product_name,
+            product_code: product_code || null,
+            quantity: quantity || 0,
+            unit: unit || 'Cái',
+            direction: direction || 'warehouse_to_production',
+            notes: notes || null,
+            updated_at: new Date().toISOString(),
+        }
+
+        console.log('[POST /api/delivery-settings] Payload:', JSON.stringify(payload, null, 2))
+
         const { data, error } = await db()
-            .insert({
-                system_code,
-                company_id: company_id || null,
-                mo_id,
-                mo_code: mo_code || '',
-                product_id: product_id || null,
-                product_name,
-                product_code: product_code || null,
-                quantity: quantity || 0,
-                unit: unit || 'Cái',
-                direction: direction || 'warehouse_to_production',
-                notes: notes || null,
-                updated_at: new Date().toISOString(),
-            })
+            .insert(payload)
             .select()
             .single()
 
-        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        if (error) {
+            console.error('[POST /api/delivery-settings] Supabase error:', JSON.stringify(error, null, 2))
+            return NextResponse.json({
+                error: error.message,
+                details: error.details || null,
+                code: error.code || null,
+                hint: error.hint || null,
+            }, { status: 500 })
+        }
 
         return NextResponse.json({ data }, { status: 201 })
     } catch (error: any) {
