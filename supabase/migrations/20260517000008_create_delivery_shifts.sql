@@ -38,6 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_delivery_shifts_status ON public.delivery_shifts(
 ALTER TABLE public.delivery_shifts ENABLE ROW LEVEL SECURITY;
 
 -- Policies
+DROP POLICY IF EXISTS "Users can view shifts in their company" ON public.delivery_shifts;
 CREATE POLICY "Users can view shifts in their company" ON public.delivery_shifts
     FOR SELECT USING (
         company_id IN (
@@ -45,6 +46,7 @@ CREATE POLICY "Users can view shifts in their company" ON public.delivery_shifts
         )
     );
 
+DROP POLICY IF EXISTS "Users can create shifts" ON public.delivery_shifts;
 CREATE POLICY "Users can create shifts" ON public.delivery_shifts
     FOR INSERT WITH CHECK (
         company_id IN (
@@ -52,6 +54,7 @@ CREATE POLICY "Users can create shifts" ON public.delivery_shifts
         )
     );
 
+DROP POLICY IF EXISTS "Users can update shifts" ON public.delivery_shifts;
 CREATE POLICY "Users can update shifts" ON public.delivery_shifts
     FOR UPDATE USING (
         company_id IN (
@@ -59,6 +62,7 @@ CREATE POLICY "Users can update shifts" ON public.delivery_shifts
         )
     );
 
+DROP POLICY IF EXISTS "Users can delete shifts" ON public.delivery_shifts;
 CREATE POLICY "Users can delete shifts" ON public.delivery_shifts
     FOR DELETE USING (
         company_id IN (
@@ -75,10 +79,21 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS set_delivery_shifts_updated_at ON public.delivery_shifts;
 CREATE TRIGGER set_delivery_shifts_updated_at
     BEFORE UPDATE ON public.delivery_shifts
     FOR EACH ROW
     EXECUTE FUNCTION public.update_delivery_shifts_updated_at();
 
 -- Enable Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE public.delivery_shifts;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables 
+        WHERE pubname = 'supabase_realtime' 
+          AND schemaname = 'public' 
+          AND tablename = 'delivery_shifts'
+    ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.delivery_shifts;
+    END IF;
+END $$;

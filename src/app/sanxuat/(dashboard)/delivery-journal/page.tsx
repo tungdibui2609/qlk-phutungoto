@@ -673,8 +673,30 @@ export default function SanXuatDeliveryJournalPage() {
                             </Link>
                             <button
                                 onClick={async () => {
-                                    await calculateShiftSummary(activeShift.opened_at)
-                                    setCloseShiftModal(true)
+                                    const companyId = currentSystem?.company_id || profile?.company_id
+                                    if (!companyId) return
+                                    
+                                    try {
+                                        const { data: pendingData, error: pendingErr } = await (supabase as any)
+                                            .from('delivery_journal')
+                                            .select('id')
+                                            .eq('company_id', companyId)
+                                            .gte('sent_at', activeShift.opened_at)
+                                            .eq('status', 'sent')
+                                            
+                                        if (pendingErr) throw pendingErr
+                                        
+                                        if (pendingData && pendingData.length > 0) {
+                                            alert(`Không thể chốt ca! Hiện tại đang còn ${pendingData.length} đợt giao nhận chưa được bên nhận xác nhận (chờ nhận). Vui lòng xử lý hết các đợt này trước khi chốt ca.`);
+                                            return;
+                                        }
+                                        
+                                        await calculateShiftSummary(activeShift.opened_at)
+                                        setCloseShiftModal(true)
+                                    } catch (err) {
+                                        console.error('Error checking pending journals:', err)
+                                        alert('Lỗi kiểm tra đợt giao nhận dở dang')
+                                    }
                                 }}
                                 className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-black shadow-sm active:scale-95 transition-all flex items-center gap-1"
                             >
