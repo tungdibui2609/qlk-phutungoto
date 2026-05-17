@@ -32,7 +32,8 @@ interface UserProfile {
 }
 
 export default function SanxuatUsersPage() {
-    const { profile } = useUser()
+    const { profile, isLoading: isUserLoading } = useUser()
+    const isReadOnly = profile?.account_level === 3 || !profile?.email || profile.email.endsWith('@system.local')
     const [users, setUsers] = useState<UserProfile[]>([])
     const [roles, setRoles] = useState<Role[]>([])
     const [loading, setLoading] = useState(true)
@@ -77,9 +78,11 @@ export default function SanxuatUsersPage() {
     }, [profile])
 
     async function toggleUserStatus(id: string, currentStatus: boolean) {
+        if (isReadOnly) return
+
         const oldUser = users.find(u => u.id === id);
 
-        const { error } = await supabase.from('user_profiles')
+        const { error } = await (supabase as any).from('user_profiles')
             .update({ is_active: !currentStatus })
             .eq('id', id)
 
@@ -101,6 +104,8 @@ export default function SanxuatUsersPage() {
     }
     
     async function handleDelete(id: string) {
+        if (isReadOnly) return
+
         const oldUser = users.find(u => u.id === id);
 
         const { error } = await supabase.from('user_profiles')
@@ -153,20 +158,22 @@ export default function SanxuatUsersPage() {
                     <h1 className="text-xl font-bold text-stone-800">Cơ Cấu Tổ Chức & Người Dùng</h1>
                     <p className="text-stone-500 text-xs mt-0.5">Quản lý tài khoản thuộc bộ phận Sản Xuất</p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                    <Link
-                        href="/sanxuat/users/new"
-                        className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
-                        style={{
-                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                            boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
-                        }}
-                    >
-                        <Plus size={16} />
-                        <span className="hidden sm:inline">Thêm người dùng</span>
-                        <span className="sm:hidden">Thêm mới</span>
-                    </Link>
-                </div>
+                {!isReadOnly && (
+                    <div className="flex flex-wrap gap-2">
+                        <Link
+                            href="/sanxuat/users/new"
+                            className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-all duration-200 hover:-translate-y-0.5"
+                            style={{
+                                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
+                            }}
+                        >
+                            <Plus size={16} />
+                            <span className="hidden sm:inline">Thêm người dùng</span>
+                            <span className="sm:hidden">Thêm mới</span>
+                        </Link>
+                    </div>
+                )}
             </div>
 
             <div className="bg-white rounded-xl p-4 border border-stone-200 flex flex-col md:flex-row items-center gap-4">
@@ -192,7 +199,7 @@ export default function SanxuatUsersPage() {
                 </select>
             </div>
 
-            {loading ? (
+            {loading || isUserLoading ? (
                 <div className="bg-white rounded-xl border border-stone-200 p-8 text-center text-stone-500 text-sm">Đang tải...</div>
             ) : filteredUsers.length === 0 ? (
                 <div className="bg-white rounded-xl border border-stone-200 p-8 text-center text-stone-500">
@@ -206,6 +213,7 @@ export default function SanxuatUsersPage() {
                             users={filteredUsers} 
                             onToggleStatus={toggleUserStatus} 
                             onDelete={(id) => setConfirmDeleteId(id)}
+                            isReadOnly={isReadOnly}
                         />
                     </div>
 
@@ -219,7 +227,7 @@ export default function SanxuatUsersPage() {
                                     <th className="text-left px-4 py-3 font-semibold text-stone-600">Vai trò</th>
                                     <th className="text-left px-4 py-3 font-semibold text-stone-600">Phòng ban</th>
                                     <th className="text-center px-4 py-3 font-semibold text-stone-600">Trạng thái</th>
-                                    <th className="text-center px-4 py-3 font-semibold text-stone-600 w-24">Thao tác</th>
+                                    {!isReadOnly && <th className="text-center px-4 py-3 font-semibold text-stone-600 w-24">Thao tác</th>}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-stone-100">
@@ -286,46 +294,59 @@ export default function SanxuatUsersPage() {
                                             )}
                                         </td>
                                         <td className="px-4 py-3 text-center">
-                                            {/* Note: In production we'd want specific Sanxuat admin perms */}
-                                            <Protected permission="user.manage">
-                                                <button
-                                                    onClick={() => toggleUserStatus(user.id, user.is_active ?? false)}
-                                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${user.is_active
-                                                        ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                                                        : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
-                                                        }`}
+                                            {isReadOnly ? (
+                                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                                    user.is_active
+                                                        ? 'bg-emerald-100 text-emerald-700'
+                                                        : 'bg-stone-100 text-stone-500'
+                                                    }`}
                                                 >
                                                     {user.is_active ? <CheckCircle size={12} /> : <XCircle size={12} />}
                                                     {user.is_active ? 'Hoạt động' : 'Vô hiệu'}
-                                                </button>
-                                            </Protected>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <div className="flex items-center justify-center gap-1">
+                                                </span>
+                                            ) : (
                                                 <Protected permission="user.manage">
-                                                    <Link
-                                                        href={`/sanxuat/users/${user.id}`}
-                                                        className="p-1.5 rounded-lg text-stone-500 hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
-                                                    >
-                                                        <Edit size={14} />
-                                                    </Link>
                                                     <button
-                                                        onClick={() => setViewingHistoryId(user.id)}
-                                                        className="p-1.5 rounded-lg text-stone-500 hover:bg-purple-50 hover:text-purple-600 transition-colors"
-                                                        title="Lịch sử hoạt động"
+                                                        onClick={() => toggleUserStatus(user.id, user.is_active ?? false)}
+                                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${user.is_active
+                                                            ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                                            : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
+                                                            }`}
                                                     >
-                                                        <History size={14} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setConfirmDeleteId(user.id)}
-                                                        className="p-1.5 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                                        title="Xóa người dùng"
-                                                    >
-                                                        <Trash2 size={14} />
+                                                        {user.is_active ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                                                        {user.is_active ? 'Hoạt động' : 'Vô hiệu'}
                                                     </button>
                                                 </Protected>
-                                            </div>
+                                            )}
                                         </td>
+                                        {!isReadOnly && (
+                                            <td className="px-4 py-3">
+                                                <div className="flex items-center justify-center gap-1">
+                                                    <Protected permission="user.manage">
+                                                        <Link
+                                                            href={`/sanxuat/users/${user.id}`}
+                                                            className="p-1.5 rounded-lg text-stone-500 hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
+                                                        >
+                                                            <Edit size={14} />
+                                                        </Link>
+                                                        <button
+                                                            onClick={() => setViewingHistoryId(user.id)}
+                                                            className="p-1.5 rounded-lg text-stone-500 hover:bg-purple-50 hover:text-purple-600 transition-colors"
+                                                            title="Lịch sử hoạt động"
+                                                        >
+                                                            <History size={14} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setConfirmDeleteId(user.id)}
+                                                            className="p-1.5 rounded-lg text-stone-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                            title="Xóa người dùng"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </Protected>
+                                                </div>
+                                            </td>
+                                        )}
                                     </tr>
                                 ))}
                             </tbody>

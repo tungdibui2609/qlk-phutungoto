@@ -34,7 +34,7 @@ interface UserFormProps {
 
 export default function SanxuatUserForm({ initialData, isEditMode = false }: UserFormProps) {
     const router = useRouter()
-    const { profile: loggedInProfile } = useUser()
+    const { profile: loggedInProfile, isLoading: isUserLoading } = useUser()
     const [loading, setLoading] = useState(false)
     const [roles, setRoles] = useState<Role[]>([])
 
@@ -108,7 +108,7 @@ export default function SanxuatUserForm({ initialData, isEditMode = false }: Use
                 .ilike('employee_code', `${codePrefix}-SX%`)
                 .order('employee_code', { ascending: false })
                 .limit(1)
-                .maybeSingle()
+                .maybeSingle() as any
 
             let nextCode = `${codePrefix}-SX001`
             if (data && data.employee_code) {
@@ -188,7 +188,7 @@ export default function SanxuatUserForm({ initialData, isEditMode = false }: Use
                     allowed_systems: formData.allowed_systems?.includes('SANXUAT') ? formData.allowed_systems : [...(formData.allowed_systems || []), 'SANXUAT'],
                 }
 
-                const { error } = await supabase
+                const { error } = await (supabase as any)
                     .from('user_profiles')
                     .update(updatePayload)
                     .eq('id', initialData.id)
@@ -286,6 +286,34 @@ export default function SanxuatUserForm({ initialData, isEditMode = false }: Use
     }
 
     const inputClass = "w-full p-2.5 rounded-lg outline-none transition-all duration-200 bg-stone-50 border border-stone-200 text-stone-800 text-sm placeholder:text-stone-400 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-stone-100"
+
+    if (isUserLoading) {
+        return (
+            <div className="flex items-center justify-center py-20">
+                <div className="flex flex-col items-center gap-4 text-stone-500">
+                    <Loader2 className="animate-spin text-emerald-500" size={32} />
+                    <p className="text-sm font-medium">Đang xác thực quyền truy cập...</p>
+                </div>
+            </div>
+        )
+    }
+
+    if (loggedInProfile?.account_level === 3 || !loggedInProfile?.email || loggedInProfile.email.endsWith('@system.local')) {
+        return (
+            <div className="max-w-2xl mx-auto py-12 text-center">
+                <div className="bg-red-50 text-red-600 p-6 rounded-2xl border border-red-100 mb-6">
+                    <p className="font-semibold text-sm">Bạn không có quyền thực hiện hành động này.</p>
+                </div>
+                <Link
+                    href="/sanxuat/users"
+                    className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-stone-100 text-stone-600 hover:bg-stone-200 font-medium transition-colors text-sm"
+                >
+                    <ArrowLeft size={18} />
+                    Quay lại danh sách
+                </Link>
+            </div>
+        )
+    }
 
     return (
         <div className="max-w-3xl mx-auto space-y-6">

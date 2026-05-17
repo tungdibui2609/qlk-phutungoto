@@ -27,9 +27,10 @@ interface MobileUserListProps {
     users: UserProfile[]
     onToggleStatus: (id: string, currentStatus: boolean) => void
     onDelete: (id: string) => void
+    isReadOnly?: boolean
 }
 
-export default function MobileUserList({ users, onToggleStatus, onDelete }: MobileUserListProps) {
+export default function MobileUserList({ users, onToggleStatus, onDelete, isReadOnly = false }: MobileUserListProps) {
     const getRoleBadgeColor = (code?: string) => {
         switch (code) {
             case 'admin': return 'bg-red-100 text-red-700'
@@ -59,7 +60,18 @@ export default function MobileUserList({ users, onToggleStatus, onDelete }: Mobi
                                 {user.full_name.charAt(0).toUpperCase()}
                             </div>
                             <div>
-                                <h3 className="font-bold text-stone-800">{user.full_name}</h3>
+                                <h3 className="font-bold text-stone-800 flex items-center gap-2">
+                                    {user.full_name}
+                                    {isReadOnly && (
+                                        <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
+                                            user.is_active
+                                            ? 'bg-emerald-100 text-emerald-700'
+                                            : 'bg-stone-100 text-stone-500'
+                                        }`}>
+                                            {user.is_active ? 'Hoạt động' : 'Vô hiệu'}
+                                        </span>
+                                    )}
+                                </h3>
                                 {user.employee_code && (
                                     <div className="mt-1">
                                         <span className="font-mono text-xs bg-stone-100 px-2 py-0.5 rounded text-stone-600">
@@ -102,40 +114,42 @@ export default function MobileUserList({ users, onToggleStatus, onDelete }: Mobi
                     </div>
 
                     {/* Actions */}
-                    <div className="pt-3 mt-3 border-t border-stone-100 flex gap-3">
-                        <Protected permission="user.manage">
-                            <button
-                                onClick={() => onToggleStatus(user.id, user.is_active ?? false)}
-                                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-medium transition-colors ${
-                                    user.is_active
-                                    ? 'bg-green-50 text-green-700 hover:bg-green-100'
-                                    : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-                                }`}
-                            >
-                                {user.is_active ? <CheckCircle size={16} /> : <XCircle size={16} />}
-                                <span>{user.is_active ? 'Đang hoạt động' : 'Vô hiệu hóa'}</span>
-                            </button>
-                        </Protected>
+                    {!isReadOnly && (
+                        <div className="pt-3 mt-3 border-t border-stone-100 flex gap-3">
+                            <Protected permission="user.manage">
+                                <button
+                                    onClick={() => onToggleStatus(user.id, user.is_active ?? false)}
+                                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-medium transition-colors ${
+                                        user.is_active
+                                        ? 'bg-green-50 text-green-700 hover:bg-green-100'
+                                        : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                                    }`}
+                                >
+                                    {user.is_active ? <CheckCircle size={16} /> : <XCircle size={16} />}
+                                    <span>{user.is_active ? 'Đang hoạt động' : 'Vô hiệu hóa'}</span>
+                                </button>
+                            </Protected>
 
-                        <Protected permission="user.manage">
-                            <Link
-                                href={`/users/${user.id}`}
-                                className="flex items-center justify-center p-2.5 rounded-xl bg-stone-50 text-stone-600 hover:bg-orange-50 hover:text-orange-600 transition-colors border border-stone-100"
-                            >
-                                <Edit size={20} />
-                            </Link>
-                        </Protected>
+                            <Protected permission="user.manage">
+                                <Link
+                                    href={`/users/${user.id}`}
+                                    className="flex items-center justify-center p-2.5 rounded-xl bg-stone-50 text-stone-600 hover:bg-orange-50 hover:text-orange-600 transition-colors border border-stone-100"
+                                >
+                                    <Edit size={20} />
+                                </Link>
+                            </Protected>
 
-                        <Protected permission="user.manage">
-                            <button
-                                onClick={() => onDelete(user.id)}
-                                className="flex items-center justify-center p-2.5 rounded-xl bg-stone-50 text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors border border-stone-100"
-                                title="Xóa người dùng"
-                            >
-                                <Trash2 size={20} />
-                            </button>
-                        </Protected>
-                    </div>
+                            <Protected permission="user.manage">
+                                <button
+                                    onClick={() => onDelete(user.id)}
+                                    className="flex items-center justify-center p-2.5 rounded-xl bg-stone-50 text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors border border-stone-100"
+                                    title="Xóa người dùng"
+                                >
+                                    <Trash2 size={20} />
+                                </button>
+                            </Protected>
+                        </div>
+                    )}
                 </div>
             ))}
         </div>
