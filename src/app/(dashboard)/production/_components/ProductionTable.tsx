@@ -125,10 +125,10 @@ export default function ProductionTable({ data, onEdit, onDelete, onStatusToggle
                                     <div className="flex flex-col gap-2 mt-1">
                                         {(item.production_lots && item.production_lots.length > 0) ? (
                                             <div className="flex flex-wrap items-center gap-2">
-                                                <span className="px-3 py-1.5 bg-stone-100 dark:bg-zinc-800 text-stone-600 dark:text-stone-300 rounded-xl text-xs font-black shadow-sm border border-stone-200 dark:border-zinc-700">
+                                                <span className="px-3 py-1.5 bg-stone-100 dark:bg-zinc-800 text-stone-600 dark:text-stone-300 rounded-xl text-xs font-black shadow-sm border border-stone-200 dark:border-zinc-700 whitespace-nowrap inline-block">
                                                     {item.production_lots.length} MÃ LOT
                                                 </span>
-                                                <span className="px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm border border-blue-100 dark:border-blue-900/30">
+                                                <span className="px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm border border-blue-100 dark:border-blue-900/30 whitespace-nowrap inline-flex">
                                                     {formatQuantityFull(item.production_lots.reduce((acc: number, lot: any) => acc + (lot.actual_quantity || 0), 0))} KG
                                                 </span>
                                             </div>
@@ -140,7 +140,7 @@ export default function ProductionTable({ data, onEdit, onDelete, onStatusToggle
 
                                 <td className="px-6 py-5 align-top">
                                     <div className="mt-2">
-                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${statusConfig.color}`}>
+                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap inline-block ${statusConfig.color}`}>
                                             {statusConfig.label}
                                         </span>
                                     </div>

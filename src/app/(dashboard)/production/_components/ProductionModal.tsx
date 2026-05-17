@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Plus, Save, FileText, Calendar, Info, Activity, Factory, Package, Users, Weight, Hash, Trash2, Wand2, Search, Loader2, Warehouse, ChevronDown, CheckCircle2, X, Scale, Truck, TrendingUp, PieChart, ArrowRight, Leaf, RotateCw, Lock, Unlock, QrCode, Copy } from 'lucide-react'
+import { Plus, Save, FileText, Calendar, Info, Activity, Factory, Package, Users, Weight, Hash, Trash2, Wand2, Search, Loader2, Warehouse, ChevronDown, CheckCircle2, X, Scale, Truck, TrendingUp, PieChart, ArrowRight, Leaf, RotateCw, Lock, Unlock, QrCode, Copy, Edit } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
@@ -119,7 +119,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const [loadingAllocations, setLoadingAllocations] = useState(false)
     const [activeTab, setActiveTab] = useState<'products' | 'allocations' | 'analysis'>('products')
     const [mainTab, setMainTab] = useState<'LOTS' | 'STATS'>('LOTS')
-    const [lotStatusFilter, setLotStatusFilter] = useState<'ALL' | 'ACTIVE' | 'LOCKED'>('ALL')
+    const [lotStatusFilter, setLotStatusFilter] = useState<'ALL' | 'ACTIVE' | 'LOCKED'>('ACTIVE')
 
     // Raw Material Input
     const [inputSource, setInputSource] = useState<'MANUAL' | 'FRESH_MATERIAL'>('MANUAL')
@@ -146,6 +146,24 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const [activeRowIdx, setActiveRowIdx] = useState<number | null>(null)
     const [isRefreshingFm, setIsRefreshingFm] = useState(false)
     const [isFetchingLots, setIsFetchingLots] = useState(false)
+    
+    // States for inline add lot (under readOnly/isLocked mode for IN_PROGRESS orders)
+    const [showInlineAddLot, setShowInlineAddLot] = useState(false)
+    const [inlineProductId, setInlineProductId] = useState('')
+    const [inlineLotCode, setInlineLotCode] = useState('')
+    const [inlinePlannedQty, setInlinePlannedQty] = useState(0)
+    const [inlineWeightPerUnit, setInlineWeightPerUnit] = useState(0)
+    const [inlineSearchTerm, setInlineSearchTerm] = useState('')
+    const [inlineShowSuggestions, setInlineShowSuggestions] = useState(false)
+
+    // States for editing a lot directly under readOnly mode
+    const [editingLot, setEditingLot] = useState<any | null>(null)
+    const [editLotProductId, setEditLotProductId] = useState('')
+    const [editLotLotCode, setEditLotLotCode] = useState('')
+    const [editLotPlannedQty, setEditLotPlannedQty] = useState(0)
+    const [editLotWeightPerUnit, setEditLotWeightPerUnit] = useState(0)
+    const [editLotSearchTerm, setEditLotSearchTerm] = useState('')
+    const [editLotShowSuggestions, setEditLotShowSuggestions] = useState(false)
     
     // Stats Date Filters
     const [statsStartDate, setStatsStartDate] = useState<string>('')
@@ -480,7 +498,8 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                 quantity_by_unit: statsMap[l.id]?.by_unit || [],
                 unit: l.products?.unit || '',
                 product_name: l.products?.name || '',
-                conversion_rules: l.conversion_rules || []
+                conversion_rules: l.conversion_rules || [],
+                is_locked: l.is_locked
             }))
             setLots(formattedLots)
             
@@ -544,6 +563,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             setDailyStats([])
             setRowSearchTerms({})
             setIsFetchingLots(true)
+            setLotStatusFilter('ACTIVE')
 
             setCode(editItem.code)
             setName(editItem.name)
@@ -595,7 +615,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             setDailyStats([])
             setActiveTab('products')
             setMainTab('LOTS')
-            setLotStatusFilter('ALL')
+            setLotStatusFilter('ACTIVE')
             setRowSearchTerms({})
             setIsFetchingLots(false)
             
@@ -823,7 +843,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     }
 
     const toggleLotLock = async (lotId: string, currentLocked: boolean) => {
-        const { error } = await (supabase.from('production_lots').update({ is_locked: !currentLocked }) as any).eq('id', lotId)
+        const { error } = await (supabase.from('production_lots') as any).update({ is_locked: !currentLocked }).eq('id', lotId)
         
         if (error) {
             showToast('Lỗi: ' + error.message, 'error')
@@ -831,6 +851,177 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             showToast(`Đã ${!currentLocked ? 'khóa' : 'mở khóa'} mã lot thành công`, 'success')
             setLots(prev => prev.map(l => l.id === lotId ? { ...l, is_locked: !currentLocked } : l))
             onSuccess()
+        }
+    }
+
+    const handleDuplicateLot = async (lot: any) => {
+        if (!editItem?.id) return
+        
+        let nextIndex = lots.length + 1
+        const codePrefix = code || 'LOT'
+        let newLotCode = `${codePrefix}-L${nextIndex}`
+        
+        const checkDup = async (codeStr: string) => {
+            const { data } = await supabase
+                .from('production_lots')
+                .select('id')
+                .eq('lot_code', codeStr.trim().toUpperCase())
+                .maybeSingle()
+            return !!data
+        }
+
+        let isDup = await checkDup(newLotCode)
+        while (isDup) {
+            nextIndex++
+            newLotCode = `${codePrefix}-L${nextIndex}`
+            isDup = await checkDup(newLotCode)
+        }
+
+        const newLotData = {
+            production_id: editItem.id,
+            lot_code: newLotCode,
+            product_id: lot.product_id,
+            weight_per_unit: lot.weight_per_unit || 0,
+            planned_quantity: lot.planned_quantity || null,
+            conversion_rules: lot.conversion_rules || [],
+            company_id: profile?.company_id,
+            is_locked: false
+        }
+
+        if (!await showConfirm(`Bạn có muốn nhân bản mã Lot "${lot.lot_code}" thành mã Lot mới "${newLotCode}"?`)) return
+
+        const { error } = await (supabase.from('production_lots') as any)
+            .insert(newLotData)
+
+        if (error) {
+            showToast('Lỗi nhân bản mã Lot: ' + error.message, 'error')
+        } else {
+            showToast('Nhân bản mã Lot thành công!', 'success')
+            fetchProductionLots(editItem.id)
+            if (onSuccess) onSuccess()
+        }
+    }
+
+    const handleSaveInlineLot = async () => {
+        if (!editItem?.id) return
+        if (!inlineProductId) {
+            showToast('Vui lòng chọn sản phẩm!', 'warning')
+            return
+        }
+        if (!inlineLotCode.trim()) {
+            showToast('Vui lòng nhập mã Lot!', 'warning')
+            return
+        }
+        
+        const { data: dupLot } = await supabase
+            .from('production_lots')
+            .select('id')
+            .eq('lot_code', inlineLotCode.trim().toUpperCase())
+            .maybeSingle()
+            
+        if (dupLot) {
+            showToast(`Mã Lot "${inlineLotCode.trim()}" đã tồn tại trên hệ thống!`, 'warning')
+            return
+        }
+
+        const product = products.find(p => p.id === inlineProductId)
+        const defaultWeight = inlineWeightPerUnit || product?.weight_kg || 0
+        const defaultUnit = product?.unit || 'Kg'
+        const initialRules = defaultWeight > 0 
+            ? [{ factor: defaultWeight, unit_name: `Thùng (${defaultWeight}kg)`, ref_unit_name: defaultUnit }] 
+            : []
+
+        const newLotData = {
+            production_id: editItem.id,
+            lot_code: inlineLotCode.trim().toUpperCase(),
+            product_id: inlineProductId,
+            weight_per_unit: defaultWeight,
+            planned_quantity: inlinePlannedQty || null,
+            conversion_rules: initialRules,
+            company_id: profile?.company_id,
+            is_locked: false
+        }
+
+        const { error } = await (supabase.from('production_lots') as any)
+            .insert(newLotData)
+
+        if (error) {
+            showToast('Lỗi tạo mã Lot: ' + error.message, 'error')
+        } else {
+            showToast('Tạo mã Lot thành công!', 'success')
+            setShowInlineAddLot(false)
+            setInlineProductId('')
+            setInlineLotCode('')
+            setInlinePlannedQty(0)
+            setInlineSearchTerm('')
+            
+            fetchProductionLots(editItem.id)
+            if (onSuccess) onSuccess()
+        }
+    }
+
+    const handleStartEditLot = (lot: any) => {
+        const product = products.find(p => p.id === lot.product_id)
+        setEditingLot(lot)
+        setEditLotProductId(lot.product_id)
+        setEditLotLotCode(lot.lot_code)
+        setEditLotPlannedQty(lot.planned_quantity || 0)
+        setEditLotWeightPerUnit(lot.weight_per_unit || 0)
+        setEditLotSearchTerm(product?.name || '')
+        setEditLotShowSuggestions(false)
+    }
+
+    const handleSaveEditedLot = async () => {
+        if (!editingLot?.id || !editItem?.id) return
+        if (!editLotProductId) {
+            showToast('Vui lòng chọn sản phẩm!', 'warning')
+            return
+        }
+        if (!editLotLotCode.trim()) {
+            showToast('Vui lòng nhập mã Lot!', 'warning')
+            return
+        }
+
+        // Kiểm tra xem mã Lot mới có bị trùng trên hệ thống hay không (chỉ check nếu người dùng đổi mã Lot)
+        if (editLotLotCode.trim().toUpperCase() !== editingLot.lot_code.toUpperCase()) {
+            const { data: dupLot } = await supabase
+                .from('production_lots')
+                .select('id')
+                .eq('lot_code', editLotLotCode.trim().toUpperCase())
+                .maybeSingle()
+                
+            if (dupLot) {
+                showToast(`Mã Lot "${editLotLotCode.trim()}" đã tồn tại trên hệ thống!`, 'warning')
+                return
+            }
+        }
+
+        const product = products.find(p => p.id === editLotProductId)
+        const defaultWeight = editLotWeightPerUnit || product?.weight_kg || 0
+        const defaultUnit = product?.unit || 'Kg'
+        
+        // Cập nhật quy tắc quy đổi mới nếu trọng lượng thay đổi
+        const initialRules = defaultWeight > 0 
+            ? [{ factor: defaultWeight, unit_name: `Thùng (${defaultWeight}kg)`, ref_unit_name: defaultUnit }] 
+            : []
+
+        const { error } = await (supabase.from('production_lots') as any)
+            .update({
+                product_id: editLotProductId,
+                lot_code: editLotLotCode.trim().toUpperCase(),
+                planned_quantity: editLotPlannedQty || null,
+                weight_per_unit: defaultWeight,
+                conversion_rules: initialRules
+            })
+            .eq('id', editingLot.id)
+
+        if (error) {
+            showToast('Lỗi cập nhật mã Lot: ' + error.message, 'error')
+        } else {
+            showToast('Cập nhật mã Lot thành công!', 'success')
+            setEditingLot(null)
+            fetchProductionLots(editItem.id)
+            if (onSuccess) onSuccess()
         }
     }
 
@@ -973,7 +1164,8 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                         weight_per_unit: l.weight_per_unit || 0,
                         planned_quantity: l.planned_quantity || null,
                         conversion_rules: l.conversion_rules || [],
-                        company_id: profile.company_id
+                        company_id: profile.company_id,
+                        is_locked: l.is_locked || false
                     }))
 
                 if (lotsToUpsert.length > 0) {
@@ -1123,7 +1315,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                             </div>
                         )}
 
-                        {(!isLocked || mainTab === 'LOTS') && (
+                        {!isLocked && (
                             <>
                                 {/* Section 1: General Info */}
                                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1849,8 +2041,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                 </div>
                                             </div>
 
-                                            {/* Bộ lọc trạng thái mã Lot */}
-                                            <div className="flex p-1 bg-stone-100 dark:bg-zinc-800 rounded-2xl border border-stone-200 dark:border-zinc-700 shadow-sm w-fit">
+                                            {/* Bộ lọc trạng thái mã Lot & Thao tác nhanh */}
+                                            <div className="flex flex-wrap items-center justify-between gap-4 w-full">
+                                                <div className="flex p-1 bg-stone-100 dark:bg-zinc-800 rounded-2xl border border-stone-200 dark:border-zinc-700 shadow-sm w-fit">
                                                 <button
                                                     type="button"
                                                     onClick={() => setLotStatusFilter('ALL')}
@@ -1872,7 +2065,140 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                 >
                                                     Đã khóa ({lots.filter(l => l.is_locked).length})
                                                 </button>
+                                                </div>
+
+                                                {editItem?.status === 'IN_PROGRESS' && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowInlineAddLot(true)}
+                                                        className="px-4 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center gap-1.5 border border-orange-400/20"
+                                                    >
+                                                        <Plus size={12} />
+                                                        Tạo mã Lot mới
+                                                    </button>
+                                                )}
                                             </div>
+
+                                            {/* Inline Form để thêm Lot trực tiếp */}
+                                            {showInlineAddLot && editItem?.status === 'IN_PROGRESS' && (
+                                                <div className="bg-stone-50 dark:bg-zinc-800/40 p-5 rounded-[24px] border border-orange-200 dark:border-zinc-800/80 shadow-inner space-y-4 animate-in slide-in-from-top duration-200 w-full mb-4">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-[10px] font-black uppercase tracking-widest text-orange-600 dark:text-orange-400 flex items-center gap-1.5">
+                                                            <Plus size={14} className="text-orange-500" />
+                                                            Tạo mã Lot mới trực tiếp
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setShowInlineAddLot(false)
+                                                                setInlineProductId('')
+                                                                setInlineLotCode('')
+                                                                setInlinePlannedQty(0)
+                                                                setInlineSearchTerm('')
+                                                            }}
+                                                            className="text-stone-400 hover:text-stone-600 p-1 rounded-lg hover:bg-stone-100 dark:hover:bg-zinc-700/50"
+                                                        >
+                                                            <X size={16} />
+                                                        </button>
+                                                    </div>
+                                                    
+                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                        {/* 1. Chọn sản phẩm */}
+                                                        <div className="relative">
+                                                            <label className="text-[9px] font-black text-stone-400 dark:text-zinc-500 uppercase mb-1 block px-1 tracking-wider">Sản phẩm sản xuất</label>
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Tìm sản phẩm..."
+                                                                value={inlineSearchTerm}
+                                                                onChange={(e) => {
+                                                                    setInlineSearchTerm(e.target.value)
+                                                                    setInlineShowSuggestions(true)
+                                                                }}
+                                                                onFocus={() => setInlineShowSuggestions(true)}
+                                                                className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs font-bold text-stone-800 dark:text-stone-100 placeholder:text-stone-400 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                                                            />
+                                                            
+                                                            {inlineShowSuggestions && inlineSearchTerm.trim() !== '' && (
+                                                                <div className="absolute left-0 right-0 mt-1 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl shadow-lg max-h-48 overflow-y-auto z-50">
+                                                                    {products
+                                                                        .filter(p => p.name.toLowerCase().includes(inlineSearchTerm.toLowerCase()) || p.sku.toLowerCase().includes(inlineSearchTerm.toLowerCase()))
+                                                                        .map(p => (
+                                                                            <button
+                                                                                key={p.id}
+                                                                                type="button"
+                                                                                onClick={async () => {
+                                                                                    setInlineProductId(p.id)
+                                                                                    setInlineSearchTerm(p.name)
+                                                                                    setInlineShowSuggestions(false)
+                                                                                    
+                                                                                    let nextIndex = lots.length + 1;
+                                                                                    const codePrefix = code || 'LOT';
+                                                                                    let newLotCode = `${codePrefix}-L${nextIndex}`;
+                                                                                    
+                                                                                    const checkDup = async (codeStr: string) => {
+                                                                                        const { data } = await supabase
+                                                                                            .from('production_lots')
+                                                                                            .select('id')
+                                                                                            .eq('lot_code', codeStr.trim().toUpperCase())
+                                                                                            .maybeSingle()
+                                                                                        return !!data
+                                                                                    }
+
+                                                                                    let isDup = await checkDup(newLotCode)
+                                                                                    while (isDup) {
+                                                                                        nextIndex++;
+                                                                                        newLotCode = `${codePrefix}-L${nextIndex}`;
+                                                                                        isDup = await checkDup(newLotCode)
+                                                                                    }
+                                                                                    setInlineLotCode(newLotCode)
+                                                                                    setInlineWeightPerUnit(p.weight_kg || 0)
+                                                                                }}
+                                                                                className="w-full text-left px-3 py-2 text-xs font-semibold hover:bg-stone-50 dark:hover:bg-zinc-700 text-stone-800 dark:text-stone-200 border-b border-stone-100 dark:border-zinc-700 last:border-0"
+                                                                            >
+                                                                                <div className="font-bold">{p.name}</div>
+                                                                                <div className="text-[9px] text-stone-400">SKU: {p.sku} | Trọng lượng: {p.weight_kg}kg</div>
+                                                                            </button>
+                                                                        ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        
+                                                        {/* 2. Mã Lot */}
+                                                        <div>
+                                                            <label className="text-[9px] font-black text-stone-400 dark:text-zinc-500 uppercase mb-1 block px-1 tracking-wider">Mã Lot</label>
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Mã Lot sản xuất..."
+                                                                value={inlineLotCode}
+                                                                onChange={(e) => setInlineLotCode(e.target.value)}
+                                                                className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs font-bold uppercase text-stone-800 dark:text-stone-100 focus:outline-none focus:border-orange-500"
+                                                            />
+                                                        </div>
+                                                        
+                                                        {/* 3. Số lượng kế hoạch */}
+                                                        <div>
+                                                            <label className="text-[9px] font-black text-stone-400 dark:text-zinc-500 uppercase mb-1 block px-1 tracking-wider">Kế hoạch (Số Thùng / Bao)</label>
+                                                            <div className="flex gap-2">
+                                                                <input
+                                                                    type="number"
+                                                                    placeholder="Kế hoạch..."
+                                                                    value={inlinePlannedQty || ''}
+                                                                    onChange={(e) => setInlinePlannedQty(parseFloat(e.target.value) || 0)}
+                                                                    className="flex-1 px-3 py-2.5 rounded-xl bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs font-bold text-stone-800 dark:text-stone-100 focus:outline-none focus:border-orange-500"
+                                                                />
+                                                                
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={handleSaveInlineLot}
+                                                                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all active:scale-95"
+                                                                >
+                                                                    Lưu Lot
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 
@@ -1947,7 +2273,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                                          <div className="font-black text-blue-600 dark:text-blue-400 text-sm">
                                                                              {(lot as any).quantity_by_unit && (lot as any).quantity_by_unit.length > 0 ? (
                                                                                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                                                                     {(lot as any).quantity_by_unit.map((q, i) => (
+                                                                                     {(lot as any).quantity_by_unit.map((q: any, i: number) => (
                                                                                          <span key={i} className={q.current_qty === 0 ? 'text-rose-500 line-through opacity-60' : 'text-blue-600'}>
                                                                                              {Number(q.qty).toLocaleString('vi-VN')} {q.unit}
                                                                                          </span>
@@ -1965,7 +2291,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                                          <div className="font-black text-indigo-600 dark:text-indigo-400 text-sm">
                                                                              {(lot as any).quantity_by_unit && (lot as any).quantity_by_unit.length > 0 ? (
                                                                                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                                                                     {(lot as any).quantity_by_unit.map((q, i) => {
+                                                                                     {(lot as any).quantity_by_unit.map((q: any, i: number) => {
                                                                                          const isOutOfStock = q.current_qty === 0;
                                                                                          return (
                                                                                              <span key={i} className={isOutOfStock ? 'text-rose-500 line-through opacity-60' : 'text-indigo-600 dark:text-indigo-400'}>
@@ -1991,6 +2317,26 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
 
                                                                  {/* Right: Print / Lock options */}
                                                                  <div className="flex items-center gap-2 justify-end border-t lg:border-t-0 border-stone-100 dark:border-zinc-800 pt-3 lg:pt-0 mt-2 lg:mt-0">
+                                                                     {editItem?.status === 'IN_PROGRESS' && (
+                                                                         <>
+                                                                             <button
+                                                                                 type="button"
+                                                                                 onClick={(e) => { e.stopPropagation(); handleStartEditLot(lot) }}
+                                                                                 className="p-2 bg-amber-50 text-amber-600 border border-amber-100 hover:bg-amber-100 rounded-xl transition-all shadow-sm active:scale-95 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/30"
+                                                                                 title="Chỉnh sửa Lot"
+                                                                             >
+                                                                                 <Edit size={14} />
+                                                                             </button>
+                                                                             <button
+                                                                                 type="button"
+                                                                                 onClick={(e) => { e.stopPropagation(); handleDuplicateLot(lot) }}
+                                                                                 className="p-2 bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 rounded-xl transition-all shadow-sm active:scale-95 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-900/30"
+                                                                                 title="Nhân bản Lot"
+                                                                             >
+                                                                                 <Copy size={14} />
+                                                                             </button>
+                                                                         </>
+                                                                     )}
                                                                      <button
                                                                          type="button"
                                                                          onClick={(e) => { e.stopPropagation(); if (lot.id) toggleLotLock(lot.id, !!lot.is_locked) }}
@@ -2368,6 +2714,112 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                     )}
                 </div>
             </div>
+
+            {/* Modal chỉnh sửa Lot con */}
+            {editingLot && (
+                <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-zinc-900 rounded-[32px] border border-stone-200 dark:border-zinc-800 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="px-6 py-5 border-b border-stone-100 dark:border-zinc-800/80 flex items-center justify-between bg-stone-50/50 dark:bg-zinc-900/50">
+                            <div className="flex items-center gap-2">
+                                <Edit size={16} className="text-orange-500" />
+                                <span className="text-xs font-black uppercase tracking-widest text-stone-700 dark:text-zinc-300">Chỉnh sửa thông tin Lot</span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setEditingLot(null)}
+                                className="text-stone-400 hover:text-stone-600 p-1.5 rounded-xl hover:bg-stone-100 dark:hover:bg-zinc-800"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-6 space-y-5">
+                            {/* 1. Chọn sản phẩm */}
+                            <div className="relative">
+                                <label className="text-[10px] font-black text-stone-400 dark:text-zinc-500 uppercase mb-1 block tracking-wider">Sản phẩm sản xuất</label>
+                                <input
+                                    type="text"
+                                    placeholder="Tìm sản phẩm..."
+                                    value={editLotSearchTerm}
+                                    onChange={(e) => {
+                                        setEditLotSearchTerm(e.target.value)
+                                        setEditLotShowSuggestions(true)
+                                    }}
+                                    onFocus={() => setEditLotShowSuggestions(true)}
+                                    className="w-full px-3 py-2.5 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs font-bold text-stone-800 dark:text-stone-100 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                                />
+                                
+                                {editLotShowSuggestions && editLotSearchTerm.trim() !== '' && (
+                                    <div className="absolute left-0 right-0 mt-1 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl shadow-lg max-h-48 overflow-y-auto z-[160]">
+                                        {products
+                                            .filter(p => p.name.toLowerCase().includes(editLotSearchTerm.toLowerCase()) || p.sku.toLowerCase().includes(editLotSearchTerm.toLowerCase()))
+                                            .map(p => (
+                                                <button
+                                                    key={p.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setEditLotProductId(p.id)
+                                                        setEditLotSearchTerm(p.name)
+                                                        setEditLotShowSuggestions(false)
+                                                        setEditLotWeightPerUnit(p.weight_kg || 0)
+                                                    }}
+                                                    className="w-full text-left px-3 py-2 text-xs font-semibold hover:bg-stone-50 dark:hover:bg-zinc-700 text-stone-800 dark:text-stone-200 border-b border-stone-100 dark:border-zinc-700 last:border-0"
+                                                >
+                                                    <div className="font-bold">{p.name}</div>
+                                                    <div className="text-[9px] text-stone-400">SKU: {p.sku} | Trọng lượng: {p.weight_kg}kg</div>
+                                                </button>
+                                            ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 2. Mã Lot */}
+                            <div>
+                                <label className="text-[10px] font-black text-stone-400 dark:text-zinc-500 uppercase mb-1 block tracking-wider">Mã Lot sản xuất</label>
+                                <input
+                                    type="text"
+                                    placeholder="Nhập mã Lot..."
+                                    value={editLotLotCode}
+                                    onChange={(e) => setEditLotLotCode(e.target.value)}
+                                    className="w-full px-3 py-2.5 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs font-bold uppercase text-stone-800 dark:text-stone-100 focus:outline-none focus:border-orange-500"
+                                />
+                            </div>
+
+                            {/* 3. Sản lượng kế hoạch */}
+                            <div>
+                                <label className="text-[10px] font-black text-stone-400 dark:text-zinc-500 uppercase mb-1 block tracking-wider">Sản lượng kế hoạch (Thùng / Bao)</label>
+                                <input
+                                    type="number"
+                                    placeholder="Kế hoạch..."
+                                    value={editLotPlannedQty || ''}
+                                    onChange={(e) => setEditLotPlannedQty(parseFloat(e.target.value) || 0)}
+                                    className="w-full px-3 py-2.5 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs font-bold text-stone-800 dark:text-stone-100 focus:outline-none focus:border-orange-500"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 bg-stone-50 dark:bg-zinc-900/50 border-t border-stone-100 dark:border-zinc-800/80 flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setEditingLot(null)}
+                                className="px-4 py-2 border border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-zinc-300 rounded-xl text-xs font-bold hover:bg-stone-100 dark:hover:bg-zinc-800 active:scale-95 transition-all"
+                            >
+                                Hủy bỏ
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSaveEditedLot}
+                                className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-black uppercase tracking-widest active:scale-95 transition-all shadow-md"
+                            >
+                                Lưu thay đổi
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

@@ -181,7 +181,7 @@ export default function ManufacturingOrdersPage() {
                                             </div>
                                         </td>
                                         <td className="p-5">
-                                            <span className={`px-3 py-1 text-xs font-bold rounded-full border ${STATUS_COLORS[item.status || 'DRAFT']}`}>
+                                            <span className={`px-3 py-1 text-xs font-bold rounded-full border whitespace-nowrap inline-block ${STATUS_COLORS[item.status || 'DRAFT']}`}>
                                                 {STATUS_LABELS[item.status || 'DRAFT']}
                                             </span>
                                         </td>

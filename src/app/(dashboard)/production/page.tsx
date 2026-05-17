@@ -16,8 +16,8 @@ export default function ProductionPage() {
     const [editingItem, setEditingItem] = useState<any>(null)
     const [isReadOnly, setIsReadOnly] = useState(false)
     const [actualStats, setActualStats] = useState<Record<string, { actual: number, by_unit: any[] }>>({}) // production_lot_id -> stats
-    const [statusFilter, setStatusFilter] = useState<string>('ALL')
-    const [lotFilter, setLotFilter] = useState<string>('ALL')
+    const [statusFilter, setStatusFilter] = useState<string>('IN_PROGRESS')
+    const [lotFilter, setLotFilter] = useState<string>('ACTIVE')
 
     const {
         filteredData: productions,
