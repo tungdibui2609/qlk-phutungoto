@@ -76,19 +76,20 @@ export default function DeliveryJournalPage() {
     const realtimeRef = useRef<any>(null)
 
     const loadData = useCallback(async () => {
-        if (!currentSystem) return
+        const companyId = currentSystem?.company_id || profile?.company_id
+        if (!companyId) return
         setLoading(true)
         try {
             const [settingsResult, journalResult] = await Promise.all([
                 (supabase as any)
                     .from('delivery_settings')
                     .select('*')
-                    .eq('system_code', currentSystem.code)
+                    .eq('company_id', companyId)
                     .order('created_at', { ascending: false }),
                 (supabase as any)
                     .from('delivery_journal')
                     .select('*')
-                    .eq('system_code', currentSystem.code)
+                    .eq('company_id', companyId)
                     .order('sent_at', { ascending: false })
                     .limit(500)
             ])
@@ -156,10 +157,11 @@ export default function DeliveryJournalPage() {
         } finally {
             setLoading(false)
         }
-    }, [currentSystem, selectedMoId])
+    }, [currentSystem, profile, selectedMoId])
 
     useEffect(() => {
-        if (!currentSystem) return
+        const companyId = currentSystem?.company_id || profile?.company_id
+        if (!companyId) return
         loadData()
 
         const channel = supabase
@@ -168,19 +170,19 @@ export default function DeliveryJournalPage() {
                 event: '*',
                 schema: 'public',
                 table: 'delivery_journal',
-                filter: `system_code=eq.${currentSystem.code}`,
+                filter: `company_id=eq.${companyId}`,
             }, () => loadData())
             .on('postgres_changes', {
                 event: '*',
                 schema: 'public',
                 table: 'delivery_settings',
-                filter: `system_code=eq.${currentSystem.code}`,
+                filter: `company_id=eq.${companyId}`,
             }, () => loadData())
             .subscribe()
 
         realtimeRef.current = channel
         return () => { supabase.removeChannel(channel) }
-    }, [currentSystem, loadData])
+    }, [currentSystem, profile, loadData])
 
     const handleSend = async () => {
         if (!sendModal || !currentSystem) return
