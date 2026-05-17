@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf } from 'lucide-react'
+import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -113,6 +113,16 @@ const menuItems: MenuItem[] = [
             { id: 'outbound', name: 'Xuất kho', href: '/outbound', icon: ArrowUpFromLine, requiredPermission: 'inventory.manage' },
             { id: 'audit', name: 'Kiểm kê', href: '/operations/audit', icon: ClipboardCheck, requiredPermission: 'audit.view' },
             { id: 'handover', name: 'Bàn giao hàng hóa', href: '/handover', icon: ArrowRightLeft, requiredModule: 'handover' },
+        ]
+    },
+    {
+        id: 'delivery_journal_cat',
+        name: 'Giao nhận',
+        icon: ClipboardList,
+        requiredModule: 'delivery_journal',
+        children: [
+            { id: 'delivery_settings_kho', name: 'Cài đặt giao nhận', href: '/delivery-settings', icon: Settings, requiredPermission: 'delivery_journal.manage' },
+            { id: 'delivery_journal_kho', name: 'Nhật ký giao nhận kho', href: '/delivery-journal', icon: ClipboardList, requiredPermission: 'delivery_journal.view' },
         ]
     },
     {

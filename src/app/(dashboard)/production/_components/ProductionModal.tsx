@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Plus, Save, FileText, Calendar, Info, Activity, Factory, Package, Users, Weight, Hash, Trash2, Wand2, Search, Loader2, Warehouse, ChevronDown, CheckCircle2, X, Scale, Truck, TrendingUp, PieChart, ArrowRight, Leaf, RotateCw, Lock, Copy } from 'lucide-react'
+import { Plus, Save, FileText, Calendar, Info, Activity, Factory, Package, Users, Weight, Hash, Trash2, Wand2, Search, Loader2, Warehouse, ChevronDown, CheckCircle2, X, Scale, Truck, TrendingUp, PieChart, ArrowRight, Leaf, RotateCw, Lock, Unlock, QrCode, Copy } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
@@ -22,6 +22,7 @@ interface ProductionLot {
     product_name?: string // UI helper
     conversion_rules?: { factor: number; unit_name: string; ref_unit_name: string }[] // Linked rules
     quantity_by_unit?: { qty: number; current_qty?: number; unit: string }[] // Linked units stats
+    is_locked?: boolean // Locked status
 }
 
 interface ProductionModalProps {
@@ -117,6 +118,8 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const [productionInputs, setProductionInputs] = useState<any[]>([])
     const [loadingAllocations, setLoadingAllocations] = useState(false)
     const [activeTab, setActiveTab] = useState<'products' | 'allocations' | 'analysis'>('products')
+    const [mainTab, setMainTab] = useState<'LOTS' | 'STATS'>('LOTS')
+    const [lotStatusFilter, setLotStatusFilter] = useState<'ALL' | 'ACTIVE' | 'LOCKED'>('ALL')
 
     // Raw Material Input
     const [inputSource, setInputSource] = useState<'MANUAL' | 'FRESH_MATERIAL'>('MANUAL')
@@ -591,6 +594,8 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             setProductionInputs([])
             setDailyStats([])
             setActiveTab('products')
+            setMainTab('LOTS')
+            setLotStatusFilter('ALL')
             setRowSearchTerms({})
             setIsFetchingLots(false)
             
@@ -815,6 +820,18 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
         const newLots = [...lots]
         newLots[index] = { ...newLots[index], [field]: val }
         setLots(newLots)
+    }
+
+    const toggleLotLock = async (lotId: string, currentLocked: boolean) => {
+        const { error } = await (supabase.from('production_lots').update({ is_locked: !currentLocked }) as any).eq('id', lotId)
+        
+        if (error) {
+            showToast('Lỗi: ' + error.message, 'error')
+        } else {
+            showToast(`Đã ${!currentLocked ? 'khóa' : 'mở khóa'} mã lot thành công`, 'success')
+            setLots(prev => prev.map(l => l.id === lotId ? { ...l, is_locked: !currentLocked } : l))
+            onSuccess()
+        }
     }
 
     const selectProductForRow = (index: number, product: any) => {
@@ -1048,7 +1065,29 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                         </div>
                     )}
                     <form id="prod-form" onSubmit={handleSubmit} className="space-y-8">
+                        {/* --- TOP-LEVEL MAIN TABS --- */}
                         {isLocked && (
+                            <div className="flex p-1 bg-stone-100 dark:bg-zinc-800 rounded-[20px] w-fit mb-6 shadow-inner border border-stone-200/50 dark:border-zinc-700/30">
+                                <button
+                                    type="button"
+                                    onClick={() => setMainTab('LOTS')}
+                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${mainTab === 'LOTS' ? 'bg-white dark:bg-zinc-700 text-orange-600 shadow-sm' : 'text-stone-400 hover:text-stone-600 dark:hover:text-stone-300'}`}
+                                >
+                                    <Package size={14} />
+                                    Quản lý mã Lot
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setMainTab('STATS'); if (activeTab === 'products') setActiveTab('allocations'); }}
+                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${mainTab === 'STATS' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-stone-400 hover:text-stone-600 dark:hover:text-stone-300'}`}
+                                >
+                                    <TrendingUp size={14} />
+                                    Thống kê
+                                </button>
+                            </div>
+                        )}
+
+                        {isLocked && mainTab === 'STATS' && (
                             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                 <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm flex flex-col items-center justify-center gap-2">
                                     <span className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-400">Tổng kế hoạch</span>
@@ -1084,8 +1123,10 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                             </div>
                         )}
 
-                        {/* Section 1: General Info */}
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {(!isLocked || mainTab === 'LOTS') && (
+                            <>
+                                {/* Section 1: General Info */}
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                             <div className="lg:col-span-2 space-y-6">
                                 <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm space-y-6">
                                     <div className="flex items-center justify-between text-stone-400 font-black text-[10px] uppercase tracking-widest">
@@ -1394,10 +1435,12 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                 </div>
                             </div>
                         )}
+                            </>
+                        )}
 
                         {/* Section 3: Product & Lot List (DYNAMIC) */}
                         <div className="space-y-4">
-                            {!isLocked && (
+                            {!isLocked && mainTab === 'LOTS' && (
                                 <div className="flex items-center justify-between px-2">
                                     <div className="flex items-center gap-2 text-stone-400 font-black text-[10px] uppercase tracking-widest">
                                         <Package size={14} className="text-orange-500" /> Danh sách sản phẩm & Lot
@@ -1416,21 +1459,14 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                             {/* Section Header for ReadOnly Mode */}
                             {isLocked && (
                                 <div className="flex items-center gap-2 px-2 text-stone-400 font-black text-[10px] uppercase tracking-widest mb-2">
-                                    <Package size={14} className="text-orange-500" /> Chi tiết Lệnh sản xuất {activeTab === 'allocations' && '& Cấp phát'}
+                                    <Package size={14} className="text-orange-500" /> 
+                                    {mainTab === 'LOTS' ? 'Chi tiết Lệnh sản xuất' : 'Thống kê & Cấp phát chi tiết'}
                                 </div>
                             )}
                             
                             {/* Tabs for View Mode */}
-                            {isLocked && (
+                            {isLocked && mainTab === 'STATS' && (
                                 <div className="flex p-1 bg-stone-100 dark:bg-zinc-800 rounded-2xl w-fit mb-6">
-                                    <button
-                                        type="button"
-                                        onClick={() => setActiveTab('products')}
-                                        className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === 'products' ? 'bg-white dark:bg-zinc-700 text-orange-600 shadow-sm' : 'text-stone-400'}`}
-                                    >
-                                        <Package size={14} />
-                                        Sản phẩm đầu ra
-                                    </button>
                                     <button
                                         type="button"
                                         onClick={() => setActiveTab('allocations')}
@@ -1455,7 +1491,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                 </div>
                             )}
 
-                            {isLocked && activeTab === 'analysis' && analysisSummary ? (
+                            {isLocked && mainTab === 'STATS' && activeTab === 'analysis' && analysisSummary ? (
                                 <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
                                     {/* Progress Grid */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1699,7 +1735,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                         </div>
                                     )}
                                 </div>
-                            ) : isLocked && activeTab === 'allocations' ? (
+                            ) : isLocked && mainTab === 'STATS' && activeTab === 'allocations' ? (
                                 <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
                                     {loadingAllocations ? (
                                         <div className="p-12 text-center bg-white dark:bg-zinc-800/40 rounded-[32px] border border-stone-200 dark:border-zinc-800 border-dashed">
@@ -1769,197 +1805,230 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                             ) : (
                                 <div className="space-y-4">
                                     {isLocked && (
-                                        <div className="flex flex-wrap items-center justify-between gap-4 bg-blue-50/50 dark:bg-blue-500/5 p-4 rounded-[28px] border border-blue-100/50 dark:border-blue-900/20">
-                                            <div className="flex items-center gap-3">
-                                                <div className="p-2.5 bg-blue-500/10 rounded-xl">
-                                                    <Calendar size={20} className="text-blue-600" />
-                                                </div>
-                                                <div>
-                                                    <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest leading-none mb-1">Lọc sản lượng thực tế</div>
-                                                    <div className="text-[11px] font-bold text-stone-500 uppercase tracking-tight">Dựa trên ngày nhập kho của lô hàng</div>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-3">
-                                                <div className="flex items-center gap-2 bg-white dark:bg-zinc-800 px-4 py-2 rounded-2xl border border-stone-100 dark:border-zinc-700 shadow-sm">
-                                                    <div className="flex items-center gap-2 text-xs font-bold text-stone-600 dark:text-stone-300">
-                                                        <input 
-                                                            type="date" 
-                                                            value={statsStartDate}
-                                                            onChange={e => setStatsStartDate(e.target.value)}
-                                                            className="bg-transparent border-none focus:ring-0 outline-none w-32"
-                                                        />
-                                                        <ArrowRight size={14} className="text-stone-300" />
-                                                        <input 
-                                                            type="date" 
-                                                            value={statsEndDate}
-                                                            onChange={e => setStatsEndDate(e.target.value)}
-                                                            className="bg-transparent border-none focus:ring-0 outline-none w-32"
-                                                        />
+                                        <div className="flex flex-wrap items-center justify-between gap-4 bg-stone-50 dark:bg-zinc-800/40 p-5 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm mb-4 w-full">
+                                            <div className="flex flex-wrap items-center gap-6">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="p-2.5 bg-blue-500/10 rounded-xl">
+                                                        <Calendar size={20} className="text-blue-600" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest leading-none mb-1">Lọc sản lượng thực tế</div>
+                                                        <div className="text-[11px] font-bold text-stone-500 uppercase tracking-tight">Dựa trên ngày nhập kho</div>
                                                     </div>
                                                 </div>
-                                                <button 
-                                                    type="button" 
-                                                    onClick={() => {
-                                                        setStatsStartDate('')
-                                                        setStatsEndDate('')
-                                                    }}
-                                                    className="p-2 text-stone-400 hover:text-stone-600 transition-colors"
-                                                    title="Xóa bộ lọc"
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex items-center gap-2 bg-white dark:bg-zinc-800 px-4 py-2 rounded-2xl border border-stone-200 dark:border-zinc-700 shadow-sm">
+                                                        <div className="flex items-center gap-2 text-xs font-bold text-stone-600 dark:text-stone-300">
+                                                            <input 
+                                                                type="date" 
+                                                                value={statsStartDate}
+                                                                onChange={e => setStatsStartDate(e.target.value)}
+                                                                className="bg-transparent border-none focus:ring-0 outline-none w-32 font-bold text-stone-800 dark:text-stone-100"
+                                                            />
+                                                            <ArrowRight size={14} className="text-stone-300" />
+                                                            <input 
+                                                                type="date" 
+                                                                value={statsEndDate}
+                                                                onChange={e => setStatsEndDate(e.target.value)}
+                                                                className="bg-transparent border-none focus:ring-0 outline-none w-32 font-bold text-stone-800 dark:text-stone-100"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <button 
+                                                        type="button" 
+                                                        onClick={() => {
+                                                            setStatsStartDate('')
+                                                            setStatsEndDate('')
+                                                        }}
+                                                        className="p-2 text-stone-400 hover:text-stone-600 transition-colors"
+                                                        title="Xóa bộ lọc"
+                                                    >
+                                                        <X size={18} />
+                                                    </button>
+                                                    {isRefreshingStats && <Loader2 size={18} className="animate-spin text-blue-500 ml-2" />}
+                                                </div>
+                                            </div>
+
+                                            {/* Bộ lọc trạng thái mã Lot */}
+                                            <div className="flex p-1 bg-stone-100 dark:bg-zinc-800 rounded-2xl border border-stone-200 dark:border-zinc-700 shadow-sm w-fit">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setLotStatusFilter('ALL')}
+                                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${lotStatusFilter === 'ALL' ? 'bg-orange-600 text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
                                                 >
-                                                    <X size={18} />
+                                                    Tất cả ({lots.length})
                                                 </button>
-                                                {isRefreshingStats && <Loader2 size={18} className="animate-spin text-blue-500 ml-2" />}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setLotStatusFilter('ACTIVE')}
+                                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${lotStatusFilter === 'ACTIVE' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                                                >
+                                                    Đang chạy ({lots.filter(l => !l.is_locked).length})
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setLotStatusFilter('LOCKED')}
+                                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${lotStatusFilter === 'LOCKED' ? 'bg-rose-600 text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                                                >
+                                                    Đã khóa ({lots.filter(l => l.is_locked).length})
+                                                </button>
                                             </div>
                                         </div>
                                     )}
 
-                                    <div className={isLocked ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-3'}>
-                                    {lots.map((lot, idx) => {
-                                        const product = products.find(p => p.id === lot.product_id);
-                                        // Placeholder for convertUnit, assuming it would be provided by a context or hook
-                                        // For now, it's a no-op to avoid runtime errors.
-                                        // const convertUnit = (productId: string, fromUnit: string, toUnit: string, quantity: number, baseUnit: string, unitMap: Map<string, string>, convMap: Map<string, Map<string, number>>) => quantity;
-                                        // Example usage if `selectedProduct` was defined:
-                                        // (qty, from, to) => convertUnit(selectedProduct.id, from, to, qty, selectedProduct.unit, unitNameMap, conversionMap);
-                                        
-                                        if (isLocked) {
+                                    {(() => {
+                                        const displayLots = lots.filter(lot => {
+                                            if (lotStatusFilter === 'ACTIVE') return !lot.is_locked;
+                                            if (lotStatusFilter === 'LOCKED') return lot.is_locked;
+                                            return true;
+                                        });
+
+                                        if (isLocked && displayLots.length === 0) {
                                             return (
-                                                <div key={idx} className="bg-white dark:bg-zinc-800/60 p-6 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm flex flex-col gap-4 relative overflow-hidden group hover:border-blue-400 transition-all duration-300">
-                                                    <div className="flex items-start justify-between">
-                                                        <div className="flex gap-3">
-                                                            <div className="p-2.5 bg-blue-500/10 rounded-xl">
-                                                                <Package size={20} className="text-blue-600" />
-                                                            </div>
-                                                            <div>
-                                                                <div className="font-black text-stone-900 dark:text-white leading-tight">{pName(lot, product)}</div>
-                                                                <div className="flex items-center gap-2 mt-1">
-                                                                    <div className="text-[10px] font-mono font-bold text-stone-400 tracking-tighter uppercase leading-none">{lot.lot_code}</div>
-                                                                    <div className="text-[9px] text-orange-600 font-bold bg-orange-100/50 dark:bg-orange-950/30 px-2 py-0.5 rounded-md leading-none flex items-center gap-1">
-                                                                        Quy cách:
-                                                                        {lot.conversion_rules && (lot.conversion_rules as any[]).length > 0 ? (
-                                                                            (lot.conversion_rules as any[]).map((r: any, i: number) => (
-                                                                                <span key={i} className="flex items-center gap-1">
-                                                                                    1 {r.unit_name || '?'} = {r.factor} {r.ref_unit_name}
-                                                                                    {i < (lot.conversion_rules?.length || 0) - 1 && <span className="mx-1 text-orange-200">|</span>}
-                                                                                </span>
-                                                                            ))
-                                                                        ) : (
-                                                                            <span> 1 {lot.unit || 'đv'} = {lot.weight_per_unit || 0} Kg</span>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="text-right">
-                                                            <div className="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1">Kế hoạch</div>
-                                                            <div className="font-black text-stone-800 dark:text-white text-sm">
-                                                                {(lot.planned_quantity || 0).toLocaleString('vi-VN')}
-                                                                <span className="text-[10px] ml-1 text-stone-400 italic">{(lot.unit || product?.unit || 'Kg')}</span>
-                                                            </div>
-                                                            <div className="text-[8px] text-zinc-400 font-bold block mt-1">~ {((lot.planned_quantity || 0) * (lot.weight_per_unit || product?.weight_kg || 1)).toLocaleString('vi-VN')} kg</div>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="h-px bg-stone-100 dark:bg-zinc-800 w-full" />
-
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex flex-col gap-3">
-                                                            {/* Original Production Qty */}
-                                                            <div>
-                                                                <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                                                                    <div className="w-1 h-1 bg-blue-500 rounded-full" /> Sản lượng gốc (Ban đầu)
-                                                                </div>
-                                                                <div className="font-black text-blue-600 dark:text-blue-400 text-lg flex flex-wrap items-center gap-x-2 gap-y-1">
-                                                                    {(lot as any).quantity_by_unit && (lot as any).quantity_by_unit.length > 0 ? (
-                                                                        (lot as any).quantity_by_unit.map((q: any, i: number) => {
-                                                                            const isExported = q.current_qty === 0;
-                                                                            const isPartiallyExported = q.current_qty > 0 && q.current_qty < q.qty;
-                                                                            
-                                                                            return (
-                                                                                <div key={i} className="flex items-center gap-2">
-                                                                                    <span className={`flex items-baseline gap-1 whitespace-nowrap transition-colors ${isExported ? 'text-rose-500 line-through opacity-60' : isPartiallyExported ? 'text-orange-500' : 'text-blue-600'}`}>
-                                                                                        <span className="text-xl">{Number(q.qty).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}</span>
-                                                                                        <span className="text-[10px] font-bold uppercase tracking-wider">{q.unit}</span>
-                                                                                        {(isExported || isPartiallyExported) && (
-                                                                                            <span className={`ml-1 text-[11px] font-black underline decoration-2 underline-offset-4 ${isExported ? 'text-rose-600 bg-rose-50 px-1.5 rounded' : 'text-orange-600 bg-orange-50 px-1.5 rounded'}`}>
-                                                                                                Còn {Number(q.current_qty).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
-                                                                                            </span>
-                                                                                        )}
-                                                                                    </span>
-                                                                                    {i < (lot as any).quantity_by_unit.length - 1 && (
-                                                                                        <span className="text-stone-300 font-black text-xs mx-1">•</span>
-                                                                                    )}
-                                                                                </div>
-                                                                            )
-                                                                        })
-                                                                    ) : (
-                                                                        <span>{(lot.actual_quantity || 0).toLocaleString('vi-VN')} <span className="text-xs">{lot.unit || 'Kg'}</span></span>
-                                                                    )}
-                                                                </div>
-                                                                <div className="text-[9px] font-bold text-stone-400 italic">
-                                                                    ~ {(lot.actual_quantity || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} kg
-                                                                </div>
-                                                            </div>
-
-                                                            {/* Current Inventory Balance */}
-                                                            <div>
-                                                                <div className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                                                                    <div className="w-1 h-1 bg-indigo-500 rounded-full" /> Tồn kho thực tế (Hiện tại)
-                                                                </div>
-                                                                <div className="font-black text-indigo-600 dark:text-indigo-400 text-base">
-                                                                    {((lot as any).inventory_quantity || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
-                                                                    <span className="text-[10px] ml-1 text-stone-400 uppercase tracking-widest">{lot.unit || product?.unit || 'Kg'}</span>
-                                                                </div>
-                                                                <div className="text-[9px] font-bold text-stone-400 italic">
-                                                                    ~ {((lot as any).inventory_quantity || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} kg
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        
-                                                        {/* Circular Progress (Mini) */}
-                                                        {(() => {
-                                                             const pk = (lot.planned_quantity || 0) * (lot.weight_per_unit || product?.weight_kg || 1)
-                                                             const ak = lot.actual_quantity || 0
-                                                             const percent = pk > 0 ? Math.min(100, (ak / pk) * 100) : 0
-                                                             return (
-                                                                <div className="flex flex-col items-end gap-3">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <div className="text-right">
-                                                                            <div className="text-[14px] font-black text-stone-800 dark:text-white leading-none">{percent.toFixed(0)}%</div>
-                                                                            <div className="text-[8px] text-zinc-400 font-bold uppercase tracking-tighter">Hoàn thành</div>
-                                                                        </div>
-                                                                        <div className="relative w-10 h-10">
-                                                                            <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
-                                                                                <path
-                                                                                    className="stroke-stone-100 dark:stroke-zinc-800 fill-none"
-                                                                                    strokeWidth="4"
-                                                                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                                                                />
-                                                                                <path
-                                                                                    className="stroke-blue-500 fill-none transition-all duration-1000"
-                                                                                    strokeWidth="4"
-                                                                                    strokeDasharray={`${percent}, 100`}
-                                                                                    strokeLinecap="round"
-                                                                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                                                                />
-                                                                            </svg>
-                                                                        </div>
-                                                                    </div>
-                                                                    {(lot.actual_quantity || 0) > (lot.inventory_quantity || 0) && (
-                                                                        <div className="px-2 py-1 bg-orange-100 dark:bg-orange-950/30 text-orange-600 dark:text-orange-400 rounded-lg text-[9px] font-black uppercase tracking-tighter animate-pulse">
-                                                                            Đang xuất hàng
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                             )
-                                                        })()}
-                                                    </div>
+                                                <div className="p-16 text-center bg-white dark:bg-zinc-800/40 rounded-[32px] border border-stone-200 dark:border-zinc-800 border-dashed text-stone-400 font-bold uppercase tracking-widest text-xs flex flex-col items-center justify-center gap-3 w-full">
+                                                    <Package size={32} className="text-stone-300 animate-bounce" />
+                                                    Không có mã lot nào {lotStatusFilter === 'ACTIVE' ? 'đang chạy' : 'đã khóa'}.
                                                 </div>
-                                            )
+                                            );
                                         }
 
-                                        return (
-                                        <div key={idx} className="bg-white dark:bg-zinc-800/40 p-5 rounded-[32px] border border-stone-200 dark:border-zinc-800 shadow-sm relative animate-in slide-in-from-right-2 duration-200 flex flex-col gap-4">
+                                         if (isLocked) {
+                                             return (
+                                                 <div className="space-y-4 animate-in fade-in duration-200">
+                                                     {displayLots.map((lot, idx) => {
+                                                         const product = products.find(p => p.id === lot.product_id);
+                                                         const pk = (lot.planned_quantity || 0) * (lot.weight_per_unit || product?.weight_kg || 1);
+                                                         const ak = lot.actual_quantity || 0;
+                                                         const percent = pk > 0 ? Math.min(100, (ak / pk) * 100) : 0;
+                                                         const isExported = ak > (lot.inventory_quantity || 0);
+
+                                                         return (
+                                                             <div key={lot.id || idx} className="bg-white dark:bg-zinc-800/40 p-5 rounded-[24px] border border-stone-200 dark:border-zinc-800 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:border-blue-400 transition-all duration-300">
+                                                                 {/* Left: Package icon + Product Name + Lot code */}
+                                                                 <div className="flex items-center gap-4 flex-1">
+                                                                     <div className={`p-3 rounded-2xl ${lot.is_locked ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-600' : 'bg-blue-50 dark:bg-blue-950/20 text-blue-600'}`}>
+                                                                         <Package size={20} />
+                                                                     </div>
+                                                                     <div className="space-y-1">
+                                                                         <div className="font-bold text-stone-900 dark:text-white text-sm">{pName(lot, product)}</div>
+                                                                         <div className="flex flex-wrap items-center gap-2">
+                                                                             <span className="text-[10px] font-mono font-black text-stone-500 bg-stone-100 dark:bg-zinc-800 px-2 py-0.5 rounded uppercase">{lot.lot_code}</span>
+                                                                             <span className="text-[9px] text-orange-600 font-bold bg-orange-50 dark:bg-orange-950/30 px-2 py-0.5 rounded leading-none">
+                                                                                 Quy cách: {lot.conversion_rules && (lot.conversion_rules as any[]).length > 0 ? (
+                                                                                     (lot.conversion_rules as any[]).map((r, i) => (
+                                                                                         <span key={i}>
+                                                                                             1 {r.unit_name || '?'} = {r.factor} {r.ref_unit_name}
+                                                                                         </span>
+                                                                                     ))
+                                                                                 ) : (
+                                                                                     <span>1 {lot.unit || 'đv'} = {lot.weight_per_unit || 0} Kg</span>
+                                                                                 )}
+                                                                             </span>
+                                                                             {lot.is_locked && (
+                                                                                 <span className="text-[9px] bg-rose-100 text-rose-600 font-bold px-1.5 py-0.5 rounded leading-none">ĐÃ KHÓA</span>
+                                                                             )}
+                                                                         </div>
+                                                                     </div>
+                                                                 </div>
+
+                                                                 {/* Middle: planning, actual, remaining, progress */}
+                                                                 <div className="flex flex-wrap items-center gap-6 lg:gap-8 mt-2 lg:mt-0">
+                                                                     <div>
+                                                                         <div className="text-[9px] font-black text-stone-400 uppercase tracking-widest mb-0.5">Kế hoạch</div>
+                                                                         <div className="font-bold text-stone-800 dark:text-white text-sm">
+                                                                             {(lot.planned_quantity || 0).toLocaleString('vi-VN')}
+                                                                             <span className="text-[10px] ml-1 text-stone-400 italic">{(lot.unit || product?.unit || 'Kg')}</span>
+                                                                         </div>
+                                                                         <div className="text-[9px] text-zinc-400 font-bold block mt-0.5">~ {((lot.planned_quantity || 0) * (lot.weight_per_unit || product?.weight_kg || 1)).toLocaleString('vi-VN')} kg</div>
+                                                                     </div>
+
+                                                                     <div>
+                                                                         <div className="text-[9px] font-black text-blue-500 uppercase tracking-widest mb-0.5">Sản lượng gốc (Ban đầu)</div>
+                                                                         <div className="font-black text-blue-600 dark:text-blue-400 text-sm">
+                                                                             {(lot as any).quantity_by_unit && (lot as any).quantity_by_unit.length > 0 ? (
+                                                                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                                                                     {(lot as any).quantity_by_unit.map((q, i) => (
+                                                                                         <span key={i} className={q.current_qty === 0 ? 'text-rose-500 line-through opacity-60' : 'text-blue-600'}>
+                                                                                             {Number(q.qty).toLocaleString('vi-VN')} {q.unit}
+                                                                                         </span>
+                                                                                     ))}
+                                                                                 </div>
+                                                                             ) : (
+                                                                                 <span>{(lot.actual_quantity || 0).toLocaleString('vi-VN')} {lot.unit || 'Kg'}</span>
+                                                                             )}
+                                                                         </div>
+                                                                         <div className="text-[9px] font-bold text-stone-400 italic mt-0.5">~ {(lot.actual_quantity || 0).toLocaleString('vi-VN')} kg</div>
+                                                                     </div>
+
+                                                                     <div>
+                                                                         <div className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-0.5">Tồn thực tế (Hiện tại)</div>
+                                                                         <div className="font-black text-indigo-600 dark:text-indigo-400 text-sm">
+                                                                             {(lot as any).quantity_by_unit && (lot as any).quantity_by_unit.length > 0 ? (
+                                                                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                                                                     {(lot as any).quantity_by_unit.map((q, i) => {
+                                                                                         const isOutOfStock = q.current_qty === 0;
+                                                                                         return (
+                                                                                             <span key={i} className={isOutOfStock ? 'text-rose-500 line-through opacity-60' : 'text-indigo-600 dark:text-indigo-400'}>
+                                                                                                 {Number(q.current_qty || 0).toLocaleString('vi-VN')} {q.unit}
+                                                                                             </span>
+                                                                                         );
+                                                                                     })}
+                                                                                 </div>
+                                                                             ) : (
+                                                                                 <span>{((lot as any).inventory_quantity || 0).toLocaleString('vi-VN')} {lot.unit || 'Kg'}</span>
+                                                                             )}
+                                                                         </div>
+                                                                         <div className="text-[9px] font-bold text-stone-400 italic mt-0.5">~ {((lot as any).inventory_quantity || 0).toLocaleString('vi-VN')} kg</div>
+                                                                     </div>
+
+                                                                     <div className="flex items-center gap-2">
+                                                                         <div className="w-12 bg-stone-100 dark:bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+                                                                             <div className="bg-blue-500 h-full rounded-full" style={{ width: `${percent}%` }} />
+                                                                         </div>
+                                                                         <span className="text-xs font-black text-stone-700 dark:text-zinc-300">{percent.toFixed(0)}%</span>
+                                                                     </div>
+                                                                 </div>
+
+                                                                 {/* Right: Print / Lock options */}
+                                                                 <div className="flex items-center gap-2 justify-end border-t lg:border-t-0 border-stone-100 dark:border-zinc-800 pt-3 lg:pt-0 mt-2 lg:mt-0">
+                                                                     <button
+                                                                         type="button"
+                                                                         onClick={(e) => { e.stopPropagation(); if (lot.id) toggleLotLock(lot.id, !!lot.is_locked) }}
+                                                                         className={`p-2 rounded-xl transition-all shadow-sm active:scale-95 ${lot.is_locked ? 'bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100 dark:bg-rose-950/20 dark:text-rose-400 dark:border-rose-900/30' : 'bg-stone-50 text-stone-600 border border-stone-200 hover:bg-stone-100 dark:bg-zinc-800 dark:text-stone-300 dark:border-zinc-700'}`}
+                                                                         title={lot.is_locked ? 'Mở khóa Lot' : 'Khóa Lot'}
+                                                                     >
+                                                                          {lot.is_locked ? <Lock size={14} /> : <Unlock size={14} />}
+                                                                     </button>
+                                                                     <button
+                                                                         type="button"
+                                                                         onClick={(e) => { e.stopPropagation(); window.open(`/print/production-lot?id=${lot.id}&type=label`, '_blank') }}
+                                                                         className="p-2 bg-orange-50 text-orange-600 border border-orange-100 hover:bg-orange-100 rounded-xl transition-all shadow-sm active:scale-95 dark:bg-orange-950/20 dark:text-orange-400 dark:border-orange-900/30"
+                                                                         title="In tem nhãn QR"
+                                                                     >
+                                                                         <QrCode size={14} />
+                                                                     </button>
+                                                                     <button
+                                                                         type="button"
+                                                                         onClick={(e) => { e.stopPropagation(); window.open(`/print/production-lot?id=${lot.id}&type=sheet`, '_blank') }}
+                                                                         className="p-2 bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 rounded-xl transition-all shadow-sm active:scale-95 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-900/30"
+                                                                         title="In phiếu nhận hàng"
+                                                                     >
+                                                                         <FileText size={14} />
+                                                                     </button>
+                                                                 </div>
+                                                             </div>
+                                                         );
+                                                     })}
+                                                 </div>
+                                             );
+                                         }
+
+                                         return (
+                                             <div className="space-y-3">
+                                                 {displayLots.map((lot, idx) => {
+                                                     const product = products.find(p => p.id === lot.product_id);
+                                                     return (
+                                                         <div key={idx} className="bg-white dark:bg-zinc-800/40 p-5 rounded-[32px] border border-stone-200 dark:border-zinc-800 shadow-sm relative animate-in slide-in-from-right-2 duration-200 flex flex-col gap-4">
                                             {/* Row 1: Product Selection (Full Width) */}
                                             <div className="relative">
                                                 <label className="text-[10px] font-bold text-stone-400 uppercase mb-1.5 block px-1 tracking-widest">Sản phẩm sản xuất</label>
@@ -2247,29 +2316,33 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                 </div>
                                             </div>
                                         </div>
-                                        )
-                                    })}
-                                </div>
+                                                )
+                                            })}
+                                        </div>
+                                    );
+                                })()}
                             </div>
                             )}
                         </div>
 
                         {/* Description */}
-                        <div className="space-y-2 px-2">
-                             <label className="text-[10px] font-black uppercase tracking-widest text-stone-400">Ghi chú lệnh sản xuất</label>
-                             {isLocked ? (
-                                <div className="p-6 rounded-[24px] bg-white dark:bg-zinc-800/40 border border-stone-100 dark:border-zinc-800 text-stone-600 dark:text-gray-400 text-sm italic">
-                                    {description || 'Không có ghi chú.'}
-                                </div>
-                             ) : (
-                                <textarea
-                                    value={description}
-                                    onChange={e => setDescription(e.target.value)}
-                                    rows={2}
-                                    className="w-full px-6 py-4 rounded-[24px] bg-white dark:bg-zinc-800/40 border border-stone-100 dark:border-zinc-800 focus:outline-none focus:ring-4 focus:ring-orange-100 outline-none transition-all font-medium text-stone-800 dark:text-gray-200"
-                                />
-                             )}
-                        </div>
+                        {(!isLocked || mainTab === 'LOTS') && (
+                            <div className="space-y-2 px-2">
+                                 <label className="text-[10px] font-black uppercase tracking-widest text-stone-400">Ghi chú lệnh sản xuất</label>
+                                 {isLocked ? (
+                                    <div className="p-6 rounded-[24px] bg-white dark:bg-zinc-800/40 border border-stone-100 dark:border-zinc-800 text-stone-600 dark:text-gray-400 text-sm italic">
+                                        {description || 'Không có ghi chú.'}
+                                    </div>
+                                 ) : (
+                                    <textarea
+                                        value={description}
+                                        onChange={e => setDescription(e.target.value)}
+                                        rows={2}
+                                        className="w-full px-6 py-4 rounded-[24px] bg-white dark:bg-zinc-800/40 border border-stone-100 dark:border-zinc-800 focus:outline-none focus:ring-4 focus:ring-orange-100 outline-none transition-all font-medium text-stone-800 dark:text-gray-200"
+                                    />
+                                 )}
+                            </div>
+                        )}
                     </form>
                 </div>
 

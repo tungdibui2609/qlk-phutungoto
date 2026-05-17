@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, LogOut, ChevronRight, ChevronDown, List, FolderTree, Boxes, ShieldAlert, Users, Shield, Tag, PackageSearch, KanbanSquare, FileText, Settings } from 'lucide-react'
+import { LayoutDashboard, Package, LogOut, ChevronRight, ChevronDown, List, FolderTree, Boxes, ShieldAlert, Users, Shield, Tag, PackageSearch, KanbanSquare, FileText, Settings, ClipboardList, Factory } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -39,6 +39,15 @@ const menuItems: MenuItem[] = [
             { id: 'boms', name: 'Định mức (BOM)', href: '/sanxuat/boms', icon: FileText },
             { id: 'manufacturing_orders', name: 'Lệnh sản xuất (MO)', href: '/sanxuat/mo', icon: Settings },
             { id: 'production_codes', name: 'Quản lý mã sản xuất', href: '/sanxuat/production-codes', icon: Tag },
+        ]
+    },
+    {
+        id: 'delivery_journal_cat',
+        name: 'Giao nhận',
+        icon: ClipboardList,
+        children: [
+            { id: 'delivery_settings_sanxuat', name: 'Cài đặt giao nhận', href: '/sanxuat/delivery-settings', icon: Settings },
+            { id: 'delivery_journal_sanxuat', name: 'Nhật ký giao nhận sản xuất', href: '/sanxuat/delivery-journal', icon: Factory },
         ]
     },
     {

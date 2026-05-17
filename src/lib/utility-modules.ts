@@ -1,4 +1,4 @@
-import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown, Leaf, AlertTriangle } from 'lucide-react'
+import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown, Leaf, AlertTriangle, ClipboardList } from 'lucide-react'
 
 export type ModuleCategory = 'core' | 'automation' | 'specialized' | 'info'
 
@@ -132,6 +132,15 @@ export const UTILITY_MODULES: UtilityModule[] = [
         name: 'Bàn giao hàng hóa',
         description: 'Quản lý nhận và giao hàng hóa trực tiếp giữa các bộ phận, không cần tạo sản phẩm/đơn vị.',
         icon: ArrowRightLeft,
+        category: 'core',
+        is_basic: true,
+        default_enabled: true
+    },
+    {
+        id: 'delivery_journal',
+        name: 'Nhật ký giao nhận',
+        description: 'Nhật ký giao nhận giữa Kho và Sản xuất: Kho gửi vật tư, SX nhận và hoàn trả thành phẩm. Đồng bộ real-time.',
+        icon: ClipboardList,
         category: 'core',
         is_basic: true,
         default_enabled: true
