@@ -242,6 +242,26 @@ export default function DeliveryJournalPage() {
         }
     }
 
+    const handleReceiveFromProductionDirect = async (journalId: string) => {
+        try {
+            const { error } = await (supabase as any)
+                .from('delivery_journal')
+                .update({
+                    status: 'received_by_warehouse',
+                    received_by_warehouse: profile?.id || null,
+                    received_by_warehouse_name: profile?.full_name || 'Nhân viên kho',
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', journalId)
+
+            if (error) throw error
+            loadData()
+        } catch (err: any) {
+            console.error('Receive error:', err)
+            alert('Lỗi nhận hàng từ SX: ' + (err?.message || err))
+        }
+    }
+
     const openSendModal = (setting: DeliverySetting) => {
         setSendModal({ setting })
         setSendQty(setting.quantity)
@@ -424,18 +444,33 @@ export default function DeliveryJournalPage() {
                                 {selectedGroup.products.map((product) => {
                                     const journal = product.journal
                                     const status = journal?.status || null
+                                    const direction = product.direction
+
+                                    const isWarehouseToProd = direction === 'warehouse_to_production'
+                                    
                                     const isCompleted = status === 'received_by_warehouse'
                                     const isCancelled = status === 'cancelled'
                                     const isPending = !status || isCancelled
-                                    const isWaitingReceive = status === 'completed_by_production'
-                                    const isInProgress = status === 'sent' || status === 'received_by_production'
+                                    const isWaitingReceive = isWarehouseToProd && status === 'completed_by_production'
+                                    const isInProgress = isWarehouseToProd && (status === 'sent' || status === 'received_by_production')
+
+                                    const isProdToWarehouse = direction === 'production_to_warehouse'
+                                    const isProdPending = isProdToWarehouse && !status
+                                    const isProdWaitingReceive = isProdToWarehouse && status === 'sent'
+                                    const isProdCompleted = isProdToWarehouse && status === 'received_by_warehouse'
 
                                     let cardBg = 'bg-white dark:bg-zinc-800 border-stone-200 dark:border-zinc-700'
                                     let cardBorder = ''
-                                    if (isPending) cardBorder = 'border-l-4 border-l-blue-500'
-                                    if (isInProgress) cardBorder = 'border-l-4 border-l-cyan-500'
-                                    if (isWaitingReceive) cardBorder = 'border-l-4 border-l-amber-500 animate-pulse'
-                                    if (isCompleted) cardBorder = 'border-l-4 border-l-emerald-500'
+                                    if (isWarehouseToProd) {
+                                        if (isPending) cardBorder = 'border-l-4 border-l-blue-500'
+                                        if (isInProgress) cardBorder = 'border-l-4 border-l-cyan-500'
+                                        if (isWaitingReceive) cardBorder = 'border-l-4 border-l-amber-500 animate-pulse'
+                                        if (isCompleted) cardBorder = 'border-l-4 border-l-emerald-500'
+                                    } else {
+                                        if (isProdPending) cardBorder = 'border-l-4 border-l-stone-300'
+                                        if (isProdWaitingReceive) cardBorder = 'border-l-4 border-l-amber-500 animate-pulse'
+                                        if (isProdCompleted) cardBorder = 'border-l-4 border-l-emerald-500'
+                                    }
                                     if (isCancelled) cardBorder = 'border-l-4 border-l-red-500'
 
                                     return (
@@ -444,9 +479,14 @@ export default function DeliveryJournalPage() {
                                             className={`${cardBg} ${cardBorder} rounded-2xl border p-4 shadow-sm hover:shadow-md transition-all`}
                                         >
                                             <div className="flex items-start justify-between mb-2">
-                                                <h3 className="font-bold text-stone-800 dark:text-stone-100 text-sm pr-2">
-                                                    {product.product_name}
-                                                </h3>
+                                                <div className="flex flex-col gap-0.5">
+                                                    <h3 className="font-bold text-stone-800 dark:text-stone-100 text-sm pr-2">
+                                                        {product.product_name}
+                                                    </h3>
+                                                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md w-fit bg-stone-100 dark:bg-zinc-700 text-stone-500">
+                                                        {isWarehouseToProd ? 'Kho → SX (Vật tư)' : 'SX → Kho (Thành phẩm)'}
+                                                    </span>
+                                                </div>
                                                 {product.product_code && (
                                                     <span className="text-[10px] font-mono text-stone-400 bg-stone-100 dark:bg-zinc-700 px-1.5 py-0.5 rounded">
                                                         {product.product_code}
@@ -460,48 +500,68 @@ export default function DeliveryJournalPage() {
                                             </div>
 
                                             {/* Status badge */}
-                                            {status && (
-                                                <div className="mb-3">
-                                                    {isPending && !isCancelled && (
-                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                                                            Chưa gửi
-                                                        </span>
-                                                    )}
-                                                    {isCancelled && (
-                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                                                            <X size={10} /> Đã hủy
-                                                        </span>
-                                                    )}
-                                                    {status === 'sent' && (
-                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                                            <Send size={10} /> Đã gửi SX
-                                                        </span>
-                                                    )}
-                                                    {status === 'received_by_production' && (
-                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400">
-                                                            <PackageOpen size={10} /> SX đã nhận
-                                                        </span>
-                                                    )}
-                                                    {isWaitingReceive && (
-                                                        <div>
-                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                                                                <ClipboardCheck size={10} /> SX hoàn thành
+                                            <div className="mb-3">
+                                                {isWarehouseToProd ? (
+                                                    <>
+                                                        {isPending && !isCancelled && (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                                                                Chưa gửi
                                                             </span>
-                                                            {journal?.result_item_name && (
-                                                                <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 font-medium">
-                                                                    → {journal.result_item_name} ({journal.result_quantity} {journal.result_unit})
-                                                                </p>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                    {isCompleted && (
-                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                                                            <Check size={10} /> Hoàn tất
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            )}
+                                                        )}
+                                                        {status === 'sent' && (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                                                <Send size={10} /> Đã gửi SX
+                                                            </span>
+                                                        )}
+                                                        {status === 'received_by_production' && (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400">
+                                                                <PackageOpen size={10} /> SX đã nhận
+                                                            </span>
+                                                        )}
+                                                        {isWaitingReceive && (
+                                                            <div>
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                                                    <ClipboardCheck size={10} /> SX hoàn thành
+                                                                </span>
+                                                                {journal?.result_item_name && (
+                                                                    <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 font-medium">
+                                                                        → {journal.result_item_name} ({journal.result_quantity} {journal.result_unit})
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        {isCompleted && (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                                                                <Check size={10} /> Hoàn tất
+                                                            </span>
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        {isProdPending && (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-400">
+                                                                Chờ SX gửi hàng
+                                                            </span>
+                                                        )}
+                                                        {isProdWaitingReceive && (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 animate-pulse">
+                                                                <Send size={10} /> SX đã gửi, chờ nhận
+                                                            </span>
+                                                        )}
+                                                        {isProdCompleted && (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                                                                <Check size={10} /> Hoàn tất
+                                                            </span>
+                                                        )}
+                                                    </>
+                                                )}
+                                                {isCancelled && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                                                        <X size={10} /> Đã hủy
+                                                    </span>
+                                                )}
+                                            </div>
 
                                             {/* Journal info */}
                                             {journal && (
@@ -515,33 +575,59 @@ export default function DeliveryJournalPage() {
 
                                             {/* Actions */}
                                             <div className="flex items-center gap-2">
-                                                {(isPending) && (
-                                                    <button
-                                                        onClick={() => openSendModal(product)}
-                                                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95"
-                                                    >
-                                                        <Send size={14} />
-                                                        Gửi cho SX
-                                                    </button>
-                                                )}
-                                                {isWaitingReceive && (
-                                                    <button
-                                                        onClick={() => setReceiveModal({ journal: journal! })}
-                                                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
-                                                    >
-                                                        <Truck size={14} />
-                                                        Nhận lại từ SX
-                                                    </button>
-                                                )}
-                                                {isInProgress && (
-                                                    <span className="flex-1 text-center text-xs text-stone-400 py-2">
-                                                        Đang chờ SX xử lý...
-                                                    </span>
-                                                )}
-                                                {isCompleted && (
-                                                    <span className="flex-1 text-center text-xs text-emerald-600 dark:text-emerald-400 py-2 font-medium">
-                                                        ✓ Đã hoàn tất giao nhận
-                                                    </span>
+                                                {isWarehouseToProd ? (
+                                                    <>
+                                                        {isPending && (
+                                                            <button
+                                                                onClick={() => openSendModal(product)}
+                                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95"
+                                                            >
+                                                                <Send size={14} />
+                                                                Gửi cho SX
+                                                            </button>
+                                                        )}
+                                                        {isWaitingReceive && (
+                                                            <button
+                                                                onClick={() => setReceiveModal({ journal: journal! })}
+                                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                                                            >
+                                                                <Truck size={14} />
+                                                                Nhận lại từ SX
+                                                            </button>
+                                                        )}
+                                                        {isInProgress && (
+                                                            <span className="flex-1 text-center text-xs text-stone-400 py-2">
+                                                                Đang chờ SX xử lý...
+                                                            </span>
+                                                        )}
+                                                        {isCompleted && (
+                                                            <span className="flex-1 text-center text-xs text-emerald-600 dark:text-emerald-400 py-2 font-medium">
+                                                                ✓ Đã hoàn tất giao nhận
+                                                            </span>
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        {isProdPending && (
+                                                            <span className="flex-1 text-center text-xs text-stone-400 py-2">
+                                                                Đang chờ SX gửi hàng về...
+                                                            </span>
+                                                        )}
+                                                        {isProdWaitingReceive && (
+                                                            <button
+                                                                onClick={() => handleReceiveFromProductionDirect(journal!.id)}
+                                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                                                            >
+                                                                <Check size={14} />
+                                                                Nhận từ SX
+                                                            </button>
+                                                        )}
+                                                        {isProdCompleted && (
+                                                            <span className="flex-1 text-center text-xs text-emerald-600 dark:text-emerald-400 py-2 font-medium">
+                                                                ✓ Kho đã nhận hàng
+                                                            </span>
+                                                        )}
+                                                    </>
                                                 )}
                                             </div>
                                         </div>
