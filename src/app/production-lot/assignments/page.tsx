@@ -78,6 +78,18 @@ export default function AssignmentApprovalPage() {
     const [historySearchTerm, setHistorySearchTerm] = useState('')
     const [historyProdOrderSearch, setHistoryProdOrderSearch] = useState('')
     const [historyProdLotSearch, setHistoryProdLotSearch] = useState('')
+    const [debugInfo, setDebugInfo] = useState<{
+        sysCode: string,
+        expandedDateFrom: string,
+        expandedDateTo: string,
+        knownLotIdsCount: number,
+        dailySeqsCount: number,
+        lotsError: string | null,
+        lotsCount: number,
+        fallbackLotsCount: number,
+        fallbackError: string | null
+    } | null>(null)
+    const [showDebugBox, setShowDebugBox] = useState(false)
     
     // Global positions for manual join
     const [allPositions, setAllPositions] = useState<any[]>([])
@@ -255,10 +267,19 @@ export default function AssignmentApprovalPage() {
     async function fetchHistory() {
         if (!currentSystem?.code) return
         setHistoryLoading(true)
+        let debugLotsErr: string | null = null
+        let debugFallbackErr: string | null = null
+        let debugLotsCount = 0
+        let debugFallbackLotsCount = 0
+
         try {
+            // Chuẩn hóa mã phân hệ để đảm bảo tương thích giữa FROZEN và KHO_DONG_LANH
+            let sysCode = currentSystem.code
+            if (sysCode === 'FROZEN') sysCode = 'KHO_DONG_LANH'
+
             let query = (supabase.from('pending_assignments') as any)
                 .select('*')
-                .eq('system_code', currentSystem.code)
+                .in('system_code', [sysCode, 'FROZEN'])
                 .neq('status', 'pending')
                 .gte('production_date', historyDateFrom)
                 .lte('production_date', historyDateTo)
@@ -270,6 +291,12 @@ export default function AssignmentApprovalPage() {
             const { data, error } = await query
             if (error) throw error
             const assignments = data || []
+
+            if (assignments.length === 0) {
+                setHistoryList([])
+                setHistoryLoading(false)
+                return
+            }
 
             // Extract all unique position IDs from history
             const posIds = Array.from(new Set(assignments.map((a: any) => a.position_id).filter(Boolean)))
@@ -297,57 +324,89 @@ export default function AssignmentApprovalPage() {
                     const status = a.status || ''
                     const parts = status.split(':')
                     // Format: "approved:new:LOT_ID" or "approved:move:OLD_POS:LOT_ID"
-                    if (parts.length >= 3 && parts[0] === 'approved') return parts[parts.length - 1]
+                    if (parts.length >= 3 && parts[0] === 'approved') {
+                        const potentialId = parts[parts.length - 1]
+                        // Kiểm tra UUID hợp lệ bằng regex để tránh crash query Supabase
+                        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(potentialId)) {
+                            return potentialId
+                        }
+                    }
                     return null
                 })
                 .filter(Boolean))) as string[]
 
+            const expandedDateFrom = format(subDays(new Date(historyDateFrom), 45), 'yyyy-MM-dd')
+            const expandedDateTo = format(parseISO(historyDateTo), 'yyyy-MM-dd') + 'T23:59:59'
+
+            // 1. Lấy tất cả các lot trong khoảng thời gian gieo (Tránh Bad Request do URL quá dài khi lọc hàng trăm ID)
             let lotsQuery = supabase
                 .from('lots')
                 .select(`
                     id, code, daily_seq, inbound_date,
                     production_code,
                     production_lot_id,
-                    production_lots:production_lot_id(lot_code),
-                    productions:production_id(code),
+                    production_lots!production_lot_id(lot_code),
+                    productions!production_id(code),
                     lot_items(quantity, unit, products(name, sku, weight_kg))
                 `)
-                .eq('system_code', currentSystem.code)
-            
-            // Limit search to the relevant date range to improve performance and accuracy
-            // We expand the range by 45 days to catch older lots assigned later
-            const expandedDateFrom = format(subDays(new Date(historyDateFrom), 45), 'yyyy-MM-dd')
-            const expandedDateTo = format(parseISO(historyDateTo), 'yyyy-MM-dd') + 'T23:59:59'
-            
-            lotsQuery = lotsQuery.gte('inbound_date', expandedDateFrom).lte('inbound_date', expandedDateTo)
+                .eq('system_code', sysCode)
+                .gte('inbound_date', expandedDateFrom)
+                .lte('inbound_date', expandedDateTo)
+                .order('inbound_date', { ascending: false })
+                .limit(4000)
 
-            if (knownLotIds.length > 0) {
-                // Fetch by ID OR by STT (for backward compatibility)
-                // PostgREST "in" with UUIDs doesn't need quotes
-                const idFilter = `id.in.(${knownLotIds.join(',')})`
-                const seqFilter = dailySeqs.length > 0 ? `,daily_seq.in.(${dailySeqs.join(',')})` : ''
-                lotsQuery = lotsQuery.or(`${idFilter}${seqFilter}`)
-            } else if (dailySeqs.length > 0) {
-                lotsQuery = lotsQuery.in('daily_seq', dailySeqs)
-            }
-
-            let { data: lotsData, error: lotsErr } = await lotsQuery.order('inbound_date', { ascending: false }).limit(5000)
+            let { data: fetchedLotsData, error: lotsErr } = await lotsQuery
+            let lotsData: any[] = fetchedLotsData || []
+            if (fetchedLotsData) debugLotsCount = fetchedLotsData.length
             
             if (lotsErr) {
+                debugLotsErr = JSON.stringify(lotsErr)
                 console.error('Lots fetch error in history:', lotsErr)
-                // Fallback to fetch without complex joins if it failed (maybe schema mismatch)
-                const { data: simpleLotsData } = await supabase
+                
+                // Fallback lấy dữ liệu đơn giản nếu query chính lỗi
+                let fallbackQuery = supabase
                     .from('lots')
                     .select('id, code, daily_seq, inbound_date, lot_items(quantity, unit, products(name, sku, weight_kg))')
-                    .eq('system_code', currentSystem.code)
-                    .or(`id.in.(${knownLotIds.join(',')}),daily_seq.in.(${dailySeqs.join(',')})`)
+                    .eq('system_code', sysCode)
                     .gte('inbound_date', expandedDateFrom)
                     .lte('inbound_date', expandedDateTo)
-                    .limit(5000)
-                
+                    .limit(4000)
+
+                const { data: simpleLotsData, error: fallbackErr } = await fallbackQuery
                 if (simpleLotsData) {
-                    // Use simple data
                     lotsData = simpleLotsData as any
+                    debugFallbackLotsCount = simpleLotsData.length
+                }
+                if (fallbackErr) {
+                    debugFallbackErr = JSON.stringify(fallbackErr)
+                }
+            }
+
+            // 2. Thuật toán Smart Lazy Loading: Lấy bổ sung các Lô hàng siêu cũ nằm ngoài khoảng 52 ngày
+            const fetchedIds = new Set(lotsData.map((l: any) => l.id))
+            const missingIds = knownLotIds.filter(id => !fetchedIds.has(id))
+
+            if (missingIds.length > 0) {
+                let additionalLots: any[] = []
+                // Chia nhỏ chunk tối đa 100 ID mỗi lần để đảm bảo tuyệt đối không bao giờ bị Bad Request
+                for (let i = 0; i < missingIds.length; i += 100) {
+                    const chunk = missingIds.slice(i, i + 100)
+                    const { data: chunkData } = await supabase
+                        .from('lots')
+                        .select(`
+                            id, code, daily_seq, inbound_date,
+                            production_code,
+                            production_lot_id,
+                            production_lots!production_lot_id(lot_code),
+                            productions!production_id(code),
+                            lot_items(quantity, unit, products(name, sku, weight_kg))
+                        `)
+                        .in('id', chunk)
+                    if (chunkData) additionalLots.push(...chunkData)
+                }
+                if (additionalLots.length > 0) {
+                    lotsData = [...lotsData, ...additionalLots]
+                    debugLotsCount = lotsData.length
                 }
             }
 
@@ -457,6 +516,17 @@ export default function AssignmentApprovalPage() {
                 }
             })
             setHistoryList(enriched)
+            setDebugInfo({
+                sysCode,
+                expandedDateFrom,
+                expandedDateTo,
+                knownLotIdsCount: knownLotIds.length,
+                dailySeqsCount: dailySeqs.length,
+                lotsError: debugLotsErr,
+                lotsCount: debugLotsCount,
+                fallbackLotsCount: debugFallbackLotsCount,
+                fallbackError: debugFallbackErr
+            })
         } catch (e: any) {
             showToast('Lỗi tải lịch sử: ' + e.message, 'error')
         } finally {
@@ -976,13 +1046,79 @@ export default function AssignmentApprovalPage() {
 
                     {/* History Section */}
                     <div className="mt-12">
-                        <button onClick={() => {setShowHistory(!showHistory); if(!showHistory) fetchHistory();}} className="w-full flex items-center justify-between px-6 py-5 bg-white dark:bg-zinc-900 border-2 border-zinc-100 dark:border-zinc-800 rounded-3xl transition-all hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
-                            <div className="flex items-center gap-3"><History size={20} className="text-blue-600" /><span className="text-base font-black text-zinc-900 dark:text-white">Lịch Sử Duyệt Gán</span></div>
+                        <button onDoubleClick={() => setShowDebugBox(!showDebugBox)} onClick={() => {setShowHistory(!showHistory); if(!showHistory) fetchHistory();}} className="w-full flex items-center justify-between px-6 py-5 bg-white dark:bg-zinc-900 border-2 border-zinc-100 dark:border-zinc-800 rounded-3xl transition-all hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
+                            <div className="flex items-center gap-3"><History size={20} className="text-blue-600" /><span className="text-base font-black text-zinc-900 dark:text-white select-none">Lịch Sử Duyệt Gán</span></div>
                             <ChevronDown className={`transition-transform text-zinc-400 ${showHistory?'rotate-180':''}`} />
                         </button>
                         {showHistory && (
                             <div className="mt-4 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-[32px] p-6 space-y-4 shadow-xl">
-                                <div className="space-y-4 bg-zinc-50/50 dark:bg-zinc-900/50 p-4 rounded-[32px] border border-zinc-100 dark:border-zinc-800">
+                                {/* Hộp chẩn đoán lỗi (Debug Box) */}
+                                {showDebugBox && (
+                                    <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border-2 border-zinc-200 dark:border-zinc-800 rounded-3xl text-xs font-semibold text-zinc-650 dark:text-zinc-400 space-y-3">
+                                    <div className="text-[10px] font-black text-red-600 dark:text-red-400 uppercase tracking-widest flex items-center gap-1.5">
+                                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> HỘP CHẨN ĐOÁN LỖI LỊCH SỬ (NÂNG CẤP V2)
+                                    </div>
+                                    
+                                    {/* Dòng 1: Client code, Lọc Ngày, Tổng số dòng */}
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-1">
+                                        <div>
+                                            <span className="text-[9px] text-zinc-450 dark:text-zinc-500 block uppercase font-bold">Mã hệ thống thực tế (Client):</span>
+                                            <code className="text-zinc-900 dark:text-white font-black">{currentSystem?.code || 'NULL'}</code>
+                                        </div>
+                                        <div>
+                                            <span className="text-[9px] text-zinc-450 dark:text-zinc-500 block uppercase font-bold">Lọc Ngày Lịch Sử:</span>
+                                            <code className="text-zinc-900 dark:text-white font-black">{historyDateFrom} → {historyDateTo}</code>
+                                        </div>
+                                        <div>
+                                            <span className="text-[9px] text-zinc-450 dark:text-zinc-500 block uppercase font-bold">Dòng lịch sử:</span>
+                                            <code className="text-zinc-900 dark:text-white font-black">{historyList.length}</code>
+                                        </div>
+                                        <div>
+                                            <span className="text-[9px] text-zinc-450 dark:text-zinc-500 block uppercase font-bold">Số Lô Khớp Thành Công:</span>
+                                            <code className={`${historyList.filter(h => h.lot).length > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'} font-black`}>
+                                                {historyList.filter(h => h.lot).length}
+                                            </code>
+                                        </div>
+                                    </div>
+
+                                    {/* Dòng 2: Supabase Query Debug Info */}
+                                    {debugInfo && (
+                                        <div className="p-3 bg-white dark:bg-zinc-900 border border-zinc-150 dark:border-zinc-800 rounded-2xl space-y-2 text-[10px]">
+                                            <div className="font-bold text-zinc-800 dark:text-zinc-200">Supabase Query Stats:</div>
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-zinc-650 dark:text-zinc-450">
+                                                <div>• sysCode chuẩn hóa: <code className="font-bold text-zinc-800 dark:text-zinc-300">{debugInfo.sysCode}</code></div>
+                                                <div>• Khoảng Inbound: <code className="font-bold text-zinc-800 dark:text-zinc-300">{debugInfo.expandedDateFrom} → {debugInfo.expandedDateTo.split('T')[0]}</code></div>
+                                                <div>• UUIDs / STTs: <code className="font-bold text-zinc-800 dark:text-zinc-300">{debugInfo.knownLotIdsCount} / {debugInfo.dailySeqsCount}</code></div>
+                                                <div>• Số Lots Tìm Thấy: <code className="font-bold text-blue-600 dark:text-blue-400">{debugInfo.lotsCount} (Fallback: {debugInfo.fallbackLotsCount})</code></div>
+                                            </div>
+                                            
+                                            {/* Báo lỗi query nếu có */}
+                                            {debugInfo.lotsError && (
+                                                <div className="text-red-500 font-mono text-[9px] mt-1 bg-red-50 dark:bg-red-900/10 p-2 rounded-lg border border-red-200/50">
+                                                    ⚠️ Lỗi Query Chính: {debugInfo.lotsError}
+                                                </div>
+                                            )}
+                                            {debugInfo.fallbackError && (
+                                                <div className="text-amber-500 font-mono text-[9px] mt-1 bg-amber-50 dark:bg-amber-900/10 p-2 rounded-lg border border-amber-200/50">
+                                                    ⚠️ Lỗi Fallback: {debugInfo.fallbackError}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div className="pt-2 border-t border-zinc-200/60 dark:border-zinc-800/80">
+                                        <span className="text-[9px] text-zinc-450 dark:text-zinc-500 block uppercase font-bold mb-1">Chuỗi Status chi tiết của các dòng:</span>
+                                        <div className="bg-white dark:bg-zinc-900 border border-zinc-150 dark:border-zinc-800 rounded-xl p-2.5 max-h-[100px] overflow-y-auto font-mono text-[9px] whitespace-pre-wrap break-all leading-normal text-zinc-700 dark:text-zinc-350">
+                                            {historyList.length > 0 ? (
+                                                historyList.map(h => `STT #${h.lot_stt} | Status: "${h.status}"`).join('\n')
+                                            ) : (
+                                                'Không có dòng lịch sử nào'
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            <div className="space-y-4 bg-zinc-50/50 dark:bg-zinc-900/50 p-4 rounded-[32px] border border-zinc-100 dark:border-zinc-800">
                                     {/* Dòng 1: Thời gian & Hành động */}
                                     <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                                         <div className="flex items-center gap-3 px-5 py-2.5 bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-200/60 dark:border-zinc-800 shadow-sm">
