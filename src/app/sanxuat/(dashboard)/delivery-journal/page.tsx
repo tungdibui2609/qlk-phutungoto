@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { Factory, Search, Check, PackageOpen, ClipboardCheck, Truck, RefreshCw, X, ArrowLeftRight, Bell, Hash, Send, AlertTriangle, Camera, Loader2, ArrowLeft } from 'lucide-react'
+import { Factory, Search, Check, PackageOpen, ClipboardCheck, Truck, RefreshCw, X, ArrowLeftRight, Bell, Hash, Send, AlertTriangle, Camera, Loader2, ArrowLeft, Pencil } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
 import { supabase } from '@/lib/supabaseClient'
@@ -149,6 +149,16 @@ export default function SanXuatDeliveryJournalPage() {
     const [closeShiftModal, setCloseShiftModal] = useState(false)
     const [closeNotes, setCloseNotes] = useState('')
     const [shiftSummary, setShiftSummary] = useState<any>(null)
+
+    // Chỉnh sửa số liệu (Edit)
+    const [editModal, setEditModal] = useState<DeliveryJournal | null>(null)
+    const [editQtySent, setEditQtySent] = useState<number>(0)
+    const [editUnitSent, setEditUnitSent] = useState<string>('Thùng')
+    const [editQtyResult, setEditQtyResult] = useState<number | null>(null)
+    const [editUnitResult, setEditUnitResult] = useState<string | null>(null)
+    const [editNotes, setEditNotes] = useState<string>('')
+    const [confirmPassword, setConfirmPassword] = useState<string>('')
+    const [isSaving, setIsSaving] = useState<boolean>(false)
 
     const loadActiveShift = useCallback(async () => {
         const companyId = currentSystem?.company_id || profile?.company_id
@@ -479,6 +489,7 @@ export default function SanXuatDeliveryJournalPage() {
     }, [currentSystem, profile, loadData, loadActiveShift])
 
     const handleDirectReceive = async (j: DeliveryJournal) => {
+        if (!currentSystem) return
         try {
             const updatePayload = {
                 status: 'received_by_production',
@@ -493,6 +504,7 @@ export default function SanXuatDeliveryJournalPage() {
                 .from('delivery_journal')
                 .update(updatePayload)
                 .eq('id', j.id)
+                .eq('system_code', currentSystem.code) // Ràng buộc cô lập dữ liệu!
 
             if (error) throw error
             loadData()
@@ -503,7 +515,7 @@ export default function SanXuatDeliveryJournalPage() {
     }
 
     const handleRejectConfirm = async () => {
-        if (!rejectModal) return
+        if (!rejectModal || !currentSystem) return
         if (!rejectReason.trim()) {
             alert('Vui lòng nhập lý do từ chối trả về!')
             return
@@ -525,6 +537,7 @@ export default function SanXuatDeliveryJournalPage() {
                 .from('delivery_journal')
                 .update(updatePayload)
                 .eq('id', j.id)
+                .eq('system_code', currentSystem.code) // Ràng buộc cô lập dữ liệu!
 
             if (error) throw error
 
@@ -533,6 +546,61 @@ export default function SanXuatDeliveryJournalPage() {
         } catch (err: any) {
             console.error('Reject error:', err)
             alert('Lỗi từ chối: ' + (err?.message || err))
+        }
+    }
+
+    const openEditModal = (j: DeliveryJournal) => {
+        setEditModal(j)
+        setEditQtySent(j.quantity_sent)
+        setEditUnitSent(j.unit || 'Thùng')
+        setEditQtyResult(j.result_quantity)
+        setEditUnitResult(j.result_unit || 'Thùng')
+        
+        const { text } = parseNotes(j.notes)
+        setEditNotes(text)
+        setConfirmPassword('')
+    }
+
+    const handleSaveEdit = async () => {
+        if (!editModal || !currentSystem) return
+        if (confirmPassword !== 'Chanhthu@123') {
+            alert('Mật khẩu xác nhận không chính xác!')
+            return
+        }
+        
+        setIsSaving(true)
+        try {
+            const { imageUrl } = parseNotes(editModal.notes)
+            const finalNotes = imageUrl ? `${editNotes} [Ảnh minh chứng]: ${imageUrl}` : editNotes
+
+            const updatePayload: any = {
+                quantity_sent: editQtySent,
+                unit: editUnitSent,
+                notes: finalNotes || null,
+                updated_at: new Date().toISOString()
+            }
+
+            if (editModal.result_quantity !== null || editModal.status !== 'sent') {
+                updatePayload.result_quantity = editQtyResult
+                updatePayload.result_unit = editUnitResult
+            }
+
+            const { error } = await (supabase as any)
+                .from('delivery_journal')
+                .update(updatePayload)
+                .eq('id', editModal.id)
+                .eq('system_code', currentSystem.code) // Ràng buộc cô lập dữ liệu!
+
+            if (error) throw error
+
+            setEditModal(null)
+            setConfirmPassword('')
+            loadData()
+        } catch (err: any) {
+            console.error('Error updating delivery journal:', err)
+            alert('Lỗi cập nhật số liệu: ' + (err?.message || err))
+        } finally {
+            setIsSaving(false)
         }
     }
 
@@ -1023,6 +1091,17 @@ export default function SanXuatDeliveryJournalPage() {
                                                                                         </>
                                                                                     )
                                                                                 })()}
+                                                                                <div className="mt-2 flex items-center justify-end border-t border-stone-150/40 dark:border-zinc-700/40 pt-2 animate-fadeIn">
+                                                                                    <button
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation()
+                                                                                            openEditModal(j)
+                                                                                        }}
+                                                                                        className="px-2.5 py-1 bg-stone-50 hover:bg-stone-150 dark:bg-zinc-800 dark:hover:bg-zinc-750 text-stone-600 dark:text-stone-300 rounded-lg text-[9px] font-bold flex items-center gap-1 transition-all active:scale-95 border border-stone-200 dark:border-zinc-700"
+                                                                                    >
+                                                                                        <Pencil size={9} className="text-stone-500" /> Chỉnh sửa số liệu
+                                                                                    </button>
+                                                                                </div>
                                                                             </div>
                                                                         )}
                                                                     </div>
@@ -1288,6 +1367,151 @@ export default function SanXuatDeliveryJournalPage() {
                                 </button>
                                 <button onClick={handleCloseShift} className="px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md">
                                     Xác nhận chốt ca
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Modal */}
+            {editModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white dark:bg-zinc-800 rounded-3xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+                        <div className="p-6">
+                            <div className="flex items-center justify-between mb-5">
+                                <h3 className="text-base font-black text-stone-900 dark:text-white flex items-center gap-2">
+                                    <Pencil size={18} className="text-indigo-600 dark:text-indigo-400" />
+                                    Chỉnh sửa số liệu giao nhận
+                                </h3>
+                                <button onClick={() => setEditModal(null)} className="p-2 rounded-xl hover:bg-stone-100 dark:hover:bg-zinc-700">
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            <div className="bg-stone-50 dark:bg-zinc-900 rounded-2xl p-3.5 mb-4 space-y-1 text-xs">
+                                <div className="flex justify-between">
+                                    <span className="text-stone-400">Mặt hàng:</span>
+                                    <span className="font-bold text-stone-855 dark:text-stone-200">{editModal.item_name}</span>
+                                </div>
+                                {editModal.delivery_code && (
+                                    <div className="flex justify-between">
+                                        <span className="text-stone-400">Mã giao nhận:</span>
+                                        <span className="font-mono text-stone-700 dark:text-stone-300">{editModal.delivery_code}</span>
+                                    </div>
+                                )}
+                                <div className="flex justify-between">
+                                    <span className="text-stone-400">Trạng thái hiện tại:</span>
+                                    <span className="font-bold text-indigo-650 dark:text-indigo-400">
+                                        {editModal.status === 'sent' && 'Đang gửi'}
+                                        {editModal.status === 'received_by_production' && 'Sản xuất đã nhận'}
+                                        {editModal.status === 'completed_by_production' && 'Sản xuất hoàn thành'}
+                                        {editModal.status === 'received_by_warehouse' && 'Kho đã nhận'}
+                                        {editModal.status === 'cancelled' && 'Đã hủy'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                {/* Phần số liệu gửi */}
+                                <div className="border-b border-stone-100 dark:border-zinc-700/50 pb-4">
+                                    <h4 className="text-xs font-bold text-stone-450 dark:text-stone-400 mb-2 uppercase tracking-wider">Thông tin gửi hàng</h4>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-bold text-stone-600 dark:text-stone-300 mb-1">Số lượng gửi</label>
+                                            <input
+                                                type="number"
+                                                min={0.01}
+                                                step="any"
+                                                value={editQtySent}
+                                                onChange={e => setEditQtySent(parseFloat(e.target.value) || 0)}
+                                                className="w-full px-3 py-2 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 outline-none font-bold"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-stone-600 dark:text-stone-300 mb-1">Đơn vị gửi</label>
+                                            <select
+                                                value={editUnitSent}
+                                                onChange={e => setEditUnitSent(e.target.value)}
+                                                className="w-full px-3 py-2 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 outline-none font-bold"
+                                            >
+                                                <option value="Thùng">Thùng</option>
+                                                <option value="Kg">Kg</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Phần số liệu nhận (nếu có) */}
+                                {(editModal.result_quantity !== null || editModal.status !== 'sent') && (
+                                    <div className="border-b border-stone-100 dark:border-zinc-700/50 pb-4">
+                                        <h4 className="text-xs font-bold text-stone-450 dark:text-stone-400 mb-2 uppercase tracking-wider">Thông tin nhận hàng / kết quả</h4>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-xs font-bold text-stone-600 dark:text-stone-300 mb-1">Số lượng nhận</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    step="any"
+                                                    value={editQtyResult === null ? '' : editQtyResult}
+                                                    onChange={e => setEditQtyResult(e.target.value === '' ? null : (parseFloat(e.target.value) || 0))}
+                                                    placeholder="Chưa nhận"
+                                                    className="w-full px-3 py-2 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 outline-none font-bold"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-stone-600 dark:text-stone-300 mb-1">Đơn vị nhận</label>
+                                                <select
+                                                    value={editUnitResult || 'Thùng'}
+                                                    onChange={e => setEditUnitResult(e.target.value)}
+                                                    className="w-full px-3 py-2 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 outline-none font-bold"
+                                                >
+                                                    <option value="Thùng">Thùng</option>
+                                                    <option value="Kg">Kg</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Ghi chú */}
+                                <div>
+                                    <label className="block text-xs font-bold text-stone-600 dark:text-stone-300 mb-1">Ghi chú</label>
+                                    <textarea
+                                        rows={2}
+                                        value={editNotes}
+                                        onChange={e => setEditNotes(e.target.value)}
+                                        className="w-full px-3 py-2 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    />
+                                </div>
+
+                                {/* Mật khẩu xác nhận */}
+                                <div className="bg-rose-50 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/30 rounded-2xl p-3.5">
+                                    <label className="block text-xs font-bold text-rose-700 dark:text-rose-350 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
+                                        <AlertTriangle size={14} className="text-rose-500 animate-pulse" />
+                                        Nhập mật khẩu xác nhận <span className="text-rose-600 font-extrabold">*</span>
+                                    </label>
+                                    <input
+                                        type="password"
+                                        value={confirmPassword}
+                                        onChange={e => setConfirmPassword(e.target.value)}
+                                        placeholder="Mật khẩu bảo mật..."
+                                        className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-rose-250 dark:border-rose-800 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-rose-500 font-bold"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2.5 mt-6 pt-4 border-t border-stone-200 dark:border-zinc-700">
+                                <button onClick={() => setEditModal(null)} className="px-4 py-2 text-xs font-bold text-stone-500 hover:bg-stone-100 dark:hover:bg-zinc-700 rounded-xl">
+                                    Hủy
+                                </button>
+                                <button
+                                    onClick={handleSaveEdit}
+                                    disabled={isSaving}
+                                    className="px-5 py-2 text-xs font-bold text-white bg-indigo-650 hover:bg-indigo-750 disabled:bg-stone-300 rounded-xl shadow-lg shadow-indigo-500/20 active:scale-95 transition-all flex items-center gap-1.5"
+                                >
+                                    {isSaving ? <Loader2 size={12} className="animate-spin" /> : <ClipboardCheck size={12} />}
+                                    Lưu thay đổi
                                 </button>
                             </div>
                         </div>
