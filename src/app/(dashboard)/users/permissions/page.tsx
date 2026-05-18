@@ -549,6 +549,7 @@ export default function UserPermissionsPage() {
                                                             supplier: 'Nhà cung cấp',
                                                             audit: 'Kiểm kê',
                                                             utility: 'Tiện ích (Quét QR)',
+                                                            delivery_journal: 'Giao nhận',
                                                             inbound: 'Nhập kho (Kế toán)',
                                                             outbound: 'Xuất kho (Kế toán)',
                                                         }

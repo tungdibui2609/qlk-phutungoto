@@ -1,37 +1,53 @@
-# Walkthrough: Sửa lỗi tính năng "Hạ sảnh" (Move to Hall)
+# Walkthrough: Mở Mặc Định & Cấu Hình Phân Quyền Nhật Ký Giao Nhận
 
-Tài liệu này mô tả các thay đổi kỹ thuật để khắc phục lỗi không hiển thị Sảnh và lỗi khi thực hiện di chuyển hàng hóa vào Sảnh trong giao diện Chi tiết Lệnh xuất kho.
+Tài liệu này mô tả các thay đổi kỹ thuật nhằm giải quyết vấn đề tài khoản nhân viên không truy cập được trang **Nhật ký giao nhận** (`/delivery-journal`) và **Ca làm & Thống kê** (`/delivery-shifts`), đồng thời nâng cấp hệ thống phân quyền để quản trị viên có thể tùy biến chặn trang linh hoạt.
 
 ## 1. Vấn đề (Problem)
-- **Giới hạn dữ liệu**: Khi số lượng Zone trong hệ thống vượt quá 1000 (hiện tại là 3473), các Zone được đánh dấu là "Sảnh" có thể không được tải lên Client do giới hạn mặc định của Supabase.
-- **Thiếu lọc Phân hệ**: Các truy vấn Zone chưa được lọc theo `system_type`, dẫn đến việc tải thừa dữ liệu của các kho khác và vi phạm nguyên tắc cô lập dữ liệu.
-- **Logic di chuyển chưa tối ưu**: Logic di chuyển hàng vào Sảnh dựa trên Lot ID thay vì Placement (Vị trí), dẫn đến sai sót nếu một Lô hàng nằm ở nhiều vị trí.
+- **Thiếu định nghĩa Quyền**: Trong cơ sở dữ liệu (bảng `permissions`), hai quyền `delivery_journal.view` và `delivery_journal.manage` chưa được khai báo. Do đó, quản trị viên không thể gán quyền này cho bất kỳ nhân viên nào trong giao diện phân quyền.
+- **Ràng buộc quá chặt chẽ**: Menu "Nhật ký giao nhận kho" và "Ca làm & Thống kê" yêu cầu quyền `delivery_journal.view`, khiến nhân viên mặc định bị ẩn menu và không thể truy cập, trong khi nhu cầu thực tế là **tất cả nhân viên đều nên vào được mặc định** để ghi nhận dữ liệu giao nhận.
+- **Thiếu kiểm soát chặn trang**: Các trang giao nhận chưa được cấu hình trong `APP_ROUTES` của Client, làm cho Admin không thể cấu hình chặn truy cập các trang này khi cần thiết.
 
 ## 2. Giải pháp (Solution)
 
-### A. Tải dữ liệu Zone theo phân đoạn (Chunked Fetching) & Lọc Phân hệ
-Đã cập nhật hàm `fetchZones` và logic tải zone trong `fetchTaskDetails` để:
-- Sử dụng vòng lặp `while` để tải tất cả các Zone theo từng trang (1000 row/trang).
-- Luôn thêm điều kiện lọc `.eq('system_type', currentSystem?.code)` để đảm bảo chỉ lấy dữ liệu của phân hệ hiện hành.
+### A. Mở mặc định truy cập (Default Access)
+Để giải quyết yêu cầu *"tốt nhất là tài khoản nào cũng vào được"* của khách hàng, chúng tôi đã loại bỏ ràng buộc `requiredPermission` đối với menu Nhật ký giao nhận và Thống kê ca trong hệ thống:
+- **File sửa đổi**: [Sidebar.tsx](file:///d:/chanh%20thu/web/src/components/layout/Sidebar.tsx)
+- **Chi tiết**: Loại bỏ thuộc tính `requiredPermission: 'delivery_journal.view'` khỏi menu `delivery_journal_kho` và `delivery_shifts_kho`.
+- **Kết quả**: Tất cả tài khoản nhân viên khi đăng nhập vào phân hệ kho có kích hoạt module `delivery_journal` đều sẽ nhìn thấy và truy cập được hai trang này một cách mặc định.
 
-### B. Cải tiến logic "Hạ sảnh" (`handleMoveToHall`)
-- **Theo dõi Vị trí Hiện tại**: Cập nhật query `fetchTaskDetails` để lấy thêm `id` của vị trí hiện tại của Lô hàng.
-- **Di chuyển theo Item**: Thay vì gom nhóm theo Lot ID, hệ thống giờ đây di chuyển từng Item được chọn. Điều này đảm bảo nếu bạn chọn 3 pallet của cùng 1 Lô, hệ thống sẽ tìm đúng 3 vị trí trống trong Sảnh để hạ.
-- **Lọc Phân hệ cho Vị trí Trống**: Khi tìm vị trí trống trong Sảnh, đã thêm điều kiện lọc `system_type` để đảm bảo không lấy nhầm vị trí của phân hệ khác.
+### B. Tích hợp Quản lý Chặn Trang (Blocked Pages Management)
+Để Admin vẫn giữ được quyền kiểm soát tối cao (có thể chặn một số nhân viên cụ thể không được vào các trang này):
+- **File sửa đổi**: [routes.ts](file:///d:/chanh%20thu/web/src/config/routes.ts)
+- **Chi tiết**: Đã khai báo nhóm route `Giao nhận` vào danh sách `APP_ROUTES`:
+  ```typescript
+  {
+      name: 'Giao nhận',
+      path: '/delivery-management',
+      children: [
+          { name: 'Cài đặt giao nhận', path: '/delivery-settings' },
+          { name: 'Nhật ký giao nhận kho', path: '/delivery-journal' },
+          { name: 'Ca làm & Thống kê', path: '/delivery-shifts' },
+      ]
+  }
+  ```
+- **Kết quả**: Admin sẽ nhìn thấy các trang này xuất hiện trong tab **"Chặn Trang (Blocked Pages)"** tại màn hình Phân quyền người dùng. Admin có thể tích chọn để chặn một nhân viên bất kỳ không cho truy cập trang giao nhận.
 
-### C. Tự động tìm Sảnh (Automatic Hall Selection)
-Đã thêm khả năng chọn toàn bộ Kho (Warehouse) thay vì phải chọn chính xác từng Sảnh:
-- **Giao diện Modal**: Người dùng có thể chọn trực tiếp các Warehouse (như KHO 2, KHO 3). Giao diện hiển thị nhãn "Tự động tìm sảnh trống" để chỉ dẫn.
-- **Xử lý thông minh**: Khi một Warehouse được chọn, hệ thống sẽ:
-    1. Tìm tất cả các khu vực được đánh dấu là `is_hall` bên trong Warehouse đó.
-    2. Tập hợp tất cả các vị trí con của các sảnh này.
-    3. Tìm các vị trí còn trống và tự động phân bổ hàng hóa vào đó.
-- **Tiết kiệm thao tác**: Giúp giảm thiểu sai sót và tăng tốc độ xử lý khi người dùng không cần nhớ chính xác hàng sẽ được hạ vào sảnh nào.
+### C. Đồng bộ hiển thị Phân quyền & Khai báo Database
+Để hệ thống chuẩn chỉ và sẵn sàng cho việc phân quyền chi tiết:
+- **File sửa đổi**: [page.tsx](file:///d:/chanh%20thu/web/src/app/%28dashboard%29/users/permissions/page.tsx)
+- **Chi tiết**: Thêm nhãn dịch `"Giao nhận"` cho mã module `delivery_journal` trong `featureNames` để hiển thị trực quan trong bảng phân quyền.
+- **Migration SQL**: Tạo file [20260518000000_add_delivery_journal_permissions.sql](file:///d:/chanh%20thu/web/supabase/migrations/20260518000000_add_delivery_journal_permissions.sql) để chèn hai quyền này vào bảng `permissions` của cơ sở dữ liệu:
+  ```sql
+  INSERT INTO public.permissions (code, name, module, description)
+  VALUES 
+      ('delivery_journal.view', 'Xem nhật ký giao nhận', 'Giao nhận', 'Cho phép xem nhật ký giao nhận và ca làm việc'),
+      ('delivery_journal.manage', 'Quản lý giao nhận', 'Giao nhận', 'Cho phép cấu hình cài đặt giao nhận và ca làm việc')
+  ON CONFLICT (code) DO NOTHING;
+  ```
 
-## 3. Kết quả (Results)
-- Danh sách Sảnh trong Modal `SelectHallModal` sẽ luôn hiển thị đầy đủ các khu vực được đánh dấu là Sảnh của kho hiện tại.
-- Tính năng "Hạ sảnh" hoạt động chính xác, giải phóng đúng vị trí cũ và gán vào vị trí mới trong Sảnh.
-- Tuân thủ quy tắc "System-Aware" trong `AGENTS.md`.
+## 3. Tuân thủ kiến trúc "System-Aware" & Cô lập dữ liệu (AGENTS.md)
+- **Kiến trúc Modular**: Các trang giao nhận được bảo vệ ở mức phân hệ thông qua thuộc tính `requiredModule: 'delivery_journal'` trong Sidebar. Chỉ những phân hệ kho nào được đăng ký và kích hoạt module này mới hiển thị menu.
+- **Cô lập dữ liệu**: Logic xử lý bên trong các trang `/delivery-journal` và `/delivery-shifts` đã tích hợp bộ lọc `system_code` chặt chẽ từ trước. Khi nhân viên truy cập, họ chỉ nhìn thấy dữ liệu giao nhận thuộc phân hệ kho hiện hành mà họ đang làm việc, tuyệt đối không bị rò rỉ dữ liệu sang các phân hệ kho khác.
 
 ---
 *Người thực hiện: Antigravity Agent*
