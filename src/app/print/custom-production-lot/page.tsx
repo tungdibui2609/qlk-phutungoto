@@ -24,9 +24,14 @@ function getJulianDay(dateString: string): string {
 
 // ─── Mẫu tem khách hàng (dạng bảng) ─────────────────────────────────────────
 function CustomLabel({ data, config, index }: { data: any; config: any; index: number }) {
-    const julian = getJulianDay(config.production_date)
-    const defaultLotCode = `${config.product_sign || 'MG'}${config.group_sign || '004'}F${julian}N7`
-    const lotCode = config.lot_number_custom || defaultLotCode
+    const julian = config.julian_custom || getJulianDay(config.print_date || new Date().toISOString().split('T')[0])
+    const defaultLotCode = `${config.product_sign || 'MG'}${config.group_sign || '004'}F${julian}${config.year_sign || 'N7'}`
+    
+    let lotCode = config.lot_number_custom || defaultLotCode
+    if (config.lot_number_custom && config.lot_number_custom.includes('F')) {
+        lotCode = config.lot_number_custom.replace(/F\d{3}/, `F${julian}`)
+    }
+
     const productName = config.product_name_custom || data?.products?.name || ''
     const nsxDisplay = config.production_date ? new Date(config.production_date).toLocaleDateString('vi-VN') : '---'
     const hsdDisplay = config.expiry_date ? new Date(config.expiry_date).toLocaleDateString('vi-VN') : '---'
@@ -128,15 +133,19 @@ function CustomLabelContent() {
     const [toast, setToast] = useState<{ show: boolean; msg: string; type: 'success' | 'error' }>({ show: false, msg: '', type: 'success' })
     const [isNsxLocked, setIsNsxLocked] = useState(true)
     const [isLotLocked, setIsLotLocked] = useState(true)
+    const [isBarcodeLocked, setIsBarcodeLocked] = useState(true)
 
     const [config, setConfig] = useState({
         product_name_custom: '',
         customer_name: 'CT',
         product_sign: 'MG',
         group_sign: '004',
+        year_sign: 'N7',
+        julian_custom: '',
         order_code: 'NF-CT',
         net_weight: '10',
         unit: 'Kg',
+        print_date: new Date().toISOString().split('T')[0],
         production_date: new Date().toISOString().split('T')[0],
         expiry_years: 2,
         expiry_date: '',
@@ -170,11 +179,15 @@ function CustomLabelContent() {
                 const merged = { ...config, ...local, ...db }
                 const expYears = merged.expiry_years || 2
                 const pDate = merged.production_date || new Date().toISOString().split('T')[0]
+                const prDate = merged.print_date || new Date().toISOString().split('T')[0]
                 const eDate = merged.expiry_date || new Date(new Date(pDate).setFullYear(new Date(pDate).getFullYear() + expYears)).toISOString().split('T')[0]
                 setConfig({
                     ...merged,
+                    print_date: prDate,
                     product_name_custom: merged.product_name_custom || raw.products?.name || '',
                     customer_name: merged.customer_name || raw.productions?.customers?.name || 'CT',
+                    year_sign: merged.year_sign || 'N7',
+                    julian_custom: merged.julian_custom || '',
                     net_weight: merged.net_weight || (raw.weight_per_unit ? `${raw.weight_per_unit}` : '10'),
                     barcode: merged.barcode || raw.lot_code || '',
                     lot_number_custom: merged.lot_number_custom || '',
@@ -324,6 +337,24 @@ function CustomLabelContent() {
                                 placeholder="004" />
                         </div>
 
+                        {/* Mã Julian */}
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-black uppercase text-zinc-400">Mã Julian (Tùy chỉnh)</label>
+                            <input value={config.julian_custom || ''}
+                                onChange={e => setConfig(p => ({ ...p, julian_custom: e.target.value }))}
+                                className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 border border-zinc-200 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-orange-200"
+                                placeholder={`Tự động: ${getJulianDay(config.print_date)}`} />
+                        </div>
+
+                        {/* Mã Năm */}
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-black uppercase text-zinc-400">Mã năm</label>
+                            <input value={config.year_sign || ''}
+                                onChange={e => setConfig(p => ({ ...p, year_sign: e.target.value }))}
+                                className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 border border-zinc-200 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-orange-200"
+                                placeholder="N7" />
+                        </div>
+
                         {/* Số Lot (Tự chỉnh) */}
                         <div className="space-y-1">
                             <div className="flex items-center justify-between">
@@ -380,6 +411,14 @@ function CustomLabelContent() {
                                 placeholder="NF-CT" />
                         </div>
 
+                        {/* Ngày in tem */}
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-black uppercase text-zinc-400">Ngày in tem (Julian)</label>
+                            <input type="date" value={config.print_date || ''}
+                                onChange={e => setConfig(p => ({ ...p, print_date: e.target.value }))}
+                                className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 border border-zinc-200 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                        </div>
+
                         {/* NSX */}
                         <div className="space-y-1">
                             <div className="flex items-center justify-between">
@@ -426,10 +465,30 @@ function CustomLabelContent() {
 
                         {/* Barcode text */}
                         <div className="lg:col-span-2 space-y-1">
-                            <label className="text-[9px] font-black uppercase text-zinc-400">Tham chiếu</label>
+                            <div className="flex items-center justify-between">
+                                <label className="text-[9px] font-black uppercase text-zinc-400">Tham chiếu</label>
+                                <button
+                                    onClick={() => {
+                                        if (isBarcodeLocked) {
+                                            const pwd = window.prompt("Nhập mật khẩu để mở khóa:")
+                                            if (pwd === "Chanhthu@123") {
+                                                setIsBarcodeLocked(false)
+                                            } else if (pwd !== null) {
+                                                alert("Mật khẩu không đúng!")
+                                            }
+                                        } else {
+                                            setIsBarcodeLocked(true)
+                                        }
+                                    }}
+                                    className={`p-1 rounded-md transition-colors ${isBarcodeLocked ? 'bg-zinc-100 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-200' : 'bg-orange-100 text-orange-500 hover:bg-orange-200'}`}
+                                >
+                                    {isBarcodeLocked ? <Lock size={12} /> : <Unlock size={12} />}
+                                </button>
+                            </div>
                             <input value={config.barcode}
                                 onChange={e => setConfig(p => ({ ...p, barcode: e.target.value }))}
-                                className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 border border-zinc-200 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-orange-200"
+                                disabled={isBarcodeLocked}
+                                className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 border border-zinc-200 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-orange-200 disabled:opacity-60 disabled:cursor-not-allowed"
                                 placeholder="G010801213TC06P023CTF" />
                         </div>
 
@@ -454,15 +513,24 @@ function CustomLabelContent() {
                     <div className="mt-6 p-4 rounded-2xl bg-gradient-to-r from-orange-50 to-rose-50 border border-orange-200">
                         <p className="text-[10px] font-black uppercase text-orange-500 mb-1">Xem trước Số Lot</p>
                         <p className="text-xl font-black tracking-wider">
-                            {config.lot_number_custom ? config.lot_number_custom : (
-                                <>
-                                    {config.product_sign}{config.group_sign}F
-                                    <span className="text-orange-500 underline">{getJulianDay(config.production_date)}</span>
-                                    N7
-                                </>
-                            )}
+                            {(() => {
+                                const julian = config.julian_custom || getJulianDay(config.print_date)
+                                let displayLot = config.lot_number_custom || ''
+                                if (displayLot && displayLot.includes('F')) {
+                                    displayLot = displayLot.replace(/F\d{3}/, `F${julian}`)
+                                }
+                                
+                                if (displayLot) return displayLot
+                                return (
+                                    <>
+                                        {config.product_sign}{config.group_sign}F
+                                        <span className="text-orange-500 underline">{julian}</span>
+                                        {config.year_sign || 'N7'}
+                                    </>
+                                )
+                            })()}
                         </p>
-                        <p className="text-xs text-zinc-500 mt-1">Julian ngày {getJulianDay(config.production_date)} · NSX {config.production_date} · HSD {config.expiry_date}</p>
+                        <p className="text-xs text-zinc-500 mt-1">Julian ngày {getJulianDay(config.print_date)} · NSX {config.production_date} · HSD {config.expiry_date}</p>
                     </div>
                 </div>
 
