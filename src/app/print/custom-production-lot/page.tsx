@@ -178,12 +178,22 @@ function CustomLabelContent() {
                 const local = (() => { try { return JSON.parse(localStorage.getItem(`cpl_${lotId}`) || '{}') } catch { return {} } })()
                 const merged = { ...config, ...local, ...db }
                 const expYears = merged.expiry_years || 2
-                const pDate = merged.production_date || new Date().toISOString().split('T')[0]
-                const prDate = merged.print_date || new Date().toISOString().split('T')[0]
-                const eDate = merged.expiry_date || new Date(new Date(pDate).setFullYear(new Date(pDate).getFullYear() + expYears)).toISOString().split('T')[0]
+                
+                // NSX: Ưu tiên db > local > ngày tạo lot gốc > hôm nay
+                const pDate = db.production_date || local.production_date || raw.production_date || (raw.created_at ? raw.created_at.split('T')[0] : new Date().toISOString().split('T')[0])
+                
+                // Ngày in tem: Luôn cập nhật là ngày hôm nay mỗi khi mở trang
+                const prDate = new Date().toISOString().split('T')[0]
+                
+                // HSD
+                const eDate = db.expiry_date || local.expiry_date || new Date(new Date(pDate).setFullYear(new Date(pDate).getFullYear() + expYears)).toISOString().split('T')[0]
+                
                 setConfig({
                     ...merged,
+                    production_date: pDate,
                     print_date: prDate,
+                    expiry_date: eDate,
+                    expiry_years: expYears,
                     product_name_custom: merged.product_name_custom || raw.products?.name || '',
                     customer_name: merged.customer_name || raw.productions?.customers?.name || 'CT',
                     year_sign: merged.year_sign || 'N7',
@@ -191,8 +201,7 @@ function CustomLabelContent() {
                     net_weight: merged.net_weight || (raw.weight_per_unit ? `${raw.weight_per_unit}` : '10'),
                     barcode: merged.barcode || raw.lot_code || '',
                     lot_number_custom: merged.lot_number_custom || '',
-                    expiry_years: expYears,
-                    expiry_date: eDate,
+
                     start_index: (raw.last_printed_index || 0) + 1,
                 })
             }
