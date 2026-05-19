@@ -1,13 +1,14 @@
 'use client'
 
 import React, { Suspense, useState, useEffect, useMemo } from 'react'
-import { FileText, LayoutList, Loader2, Trash2, Printer, CheckCircle, RotateCcw, PackageCheck, XCircle, MapPin, Clock, User, ShieldAlert } from 'lucide-react'
+import { FileText, LayoutList, Loader2, Trash2, Printer, CheckCircle, RotateCcw, PackageCheck, XCircle, MapPin, Clock, User, ShieldAlert, Search } from 'lucide-react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { CreateExportTaskModal } from '@/components/export/CreateExportTaskModal'
+import { ExportItemSearchModal } from '@/components/export/ExportItemSearchModal'
 import { logActivity } from '@/lib/audit'
 
 // Types for DB Data
@@ -83,6 +84,7 @@ function ExportOrderContent() {
     const lotIds = searchParams.get('lotIds')
 
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+    const [isSearchModalOpen, setIsSearchModalOpen] = useState(false)
     const [createModalData, setCreateModalData] = useState<{
         positionIds: string[]
         lotIds: string[]
@@ -501,6 +503,15 @@ function ExportOrderContent() {
                     </h1>
                     <p className="text-stone-500 dark:text-stone-400 mt-1">Quản lý các yêu cầu xuất hàng từ kho</p>
                 </div>
+                <div>
+                    <button
+                        onClick={() => setIsSearchModalOpen(true)}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-zinc-800 border-2 border-stone-200 dark:border-zinc-700 hover:border-blue-500 dark:hover:border-blue-500 text-stone-700 dark:text-stone-300 font-bold rounded-lg transition-all active:scale-95 shadow-sm"
+                    >
+                        <Search size={18} className="text-blue-500" />
+                        Tra cứu lịch sử xuất
+                    </button>
+                </div>
             </div>
 
             {/* Filter Tabs */}
@@ -751,6 +762,11 @@ function ExportOrderContent() {
 
                     fetchTasks()
                 }}
+            />
+
+            <ExportItemSearchModal
+                isOpen={isSearchModalOpen}
+                onClose={() => setIsSearchModalOpen(false)}
             />
         </div>
     )
