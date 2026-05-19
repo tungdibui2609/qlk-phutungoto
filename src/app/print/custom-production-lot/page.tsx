@@ -24,7 +24,7 @@ function getJulianDay(dateString: string): string {
 
 // ─── Mẫu tem khách hàng (dạng bảng) ─────────────────────────────────────────
 function CustomLabel({ data, config, index }: { data: any; config: any; index: number }) {
-    const julian = config.julian_custom || getJulianDay(config.print_date || new Date().toISOString().split('T')[0])
+    const julian = config.julian_custom || getJulianDay(config.production_date || new Date().toISOString().split('T')[0])
     const defaultLotCode = `${config.product_sign || 'MG'}${config.group_sign || '004'}F${julian}${config.year_sign || 'N7'}`
     
     let lotCode = config.lot_number_custom || defaultLotCode
@@ -352,7 +352,7 @@ function CustomLabelContent() {
                             <input value={config.julian_custom || ''}
                                 onChange={e => setConfig(p => ({ ...p, julian_custom: e.target.value }))}
                                 className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 border border-zinc-200 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-orange-200"
-                                placeholder={`Tự động: ${getJulianDay(config.print_date)}`} />
+                                placeholder={`Tự động: ${getJulianDay(config.production_date)}`} />
                         </div>
 
                         {/* Mã Năm */}
@@ -523,7 +523,7 @@ function CustomLabelContent() {
                         <p className="text-[10px] font-black uppercase text-orange-500 mb-1">Xem trước Số Lot</p>
                         <p className="text-xl font-black tracking-wider">
                             {(() => {
-                                const julian = config.julian_custom || getJulianDay(config.print_date)
+                                const julian = config.julian_custom || getJulianDay(config.production_date)
                                 let displayLot = config.lot_number_custom || ''
                                 if (displayLot && displayLot.includes('F')) {
                                     displayLot = displayLot.replace(/F\d{3}/, `F${julian}`)
@@ -539,7 +539,7 @@ function CustomLabelContent() {
                                 )
                             })()}
                         </p>
-                        <p className="text-xs text-zinc-500 mt-1">Julian ngày {getJulianDay(config.print_date)} · NSX {config.production_date} · HSD {config.expiry_date}</p>
+                        <p className="text-xs text-zinc-500 mt-1">Julian ngày {getJulianDay(config.production_date)} · NSX {config.production_date} · HSD {config.expiry_date}</p>
                     </div>
                 </div>
 
