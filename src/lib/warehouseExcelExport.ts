@@ -999,7 +999,7 @@ export async function exportExportOrderToExcel(data: ExportOrderExcelData) {
         { header: 'Vị trí', key: 'position', width: 18 },
         { header: 'Mã SP (SKU)', key: 'sku', width: 18 },
         { header: 'Sản phẩm', key: 'productName', width: 40 },
-        { header: 'Ngày bóc múi', key: 'peelingDate', width: 15 },
+        { header: 'Ngày sản xuất', key: 'peelingDate', width: 15 },
         { header: 'Ngày nhập kho', key: 'inboundDate', width: 15 },
         { header: 'Số lượng', key: 'quantity', width: 12 },
         { header: 'ĐVT', key: 'unit', width: 10 },
@@ -1009,17 +1009,17 @@ export async function exportExportOrderToExcel(data: ExportOrderExcelData) {
 
     // 2. Header công ty
     if (data.companyInfo) {
-        worksheet.mergeCells('A1:E1');
+        worksheet.mergeCells('A1:K1');
         const nameCell = worksheet.getCell('A1');
         nameCell.value = data.companyInfo.name?.toUpperCase();
         nameCell.font = { bold: true, size: 11 };
 
-        worksheet.mergeCells('A2:E2');
+        worksheet.mergeCells('A2:K2');
         const addrCell = worksheet.getCell('A2');
         addrCell.value = `Địa chỉ: ${data.companyInfo.address || ''}`;
         addrCell.font = { size: 10 };
 
-        worksheet.mergeCells('A3:E3');
+        worksheet.mergeCells('A3:K3');
         const contactCell = worksheet.getCell('A3');
         contactCell.value = `ĐT: ${data.companyInfo.phone || ''} | Email: ${data.companyInfo.email || ''}`;
         contactCell.font = { size: 10 };
@@ -1049,7 +1049,7 @@ export async function exportExportOrderToExcel(data: ExportOrderExcelData) {
 
     // 5. Header bảng
     const tableHeaderRow = worksheet.getRow(currRow);
-    const headers = ['STT', 'Mã LOT', 'Vị trí', 'Mã SP (SKU)', 'Sản phẩm', 'Ngày bóc múi', 'Ngày nhập kho', 'Số lượng', 'ĐVT', 'STT (LOT)', 'Ghi chú'];
+    const headers = ['STT', 'Mã LOT', 'Vị trí', 'Mã SP (SKU)', 'Sản phẩm', 'Ngày sản xuất', 'Ngày nhập kho', 'Số lượng', 'ĐVT', 'STT (LOT)', 'Ghi chú'];
     headers.forEach((h, i) => {
         const cell = tableHeaderRow.getCell(i + 1);
         cell.value = h;

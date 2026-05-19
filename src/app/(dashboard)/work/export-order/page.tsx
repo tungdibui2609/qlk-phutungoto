@@ -71,6 +71,7 @@ function ExportOrderContent() {
     const [pickGroups, setPickGroups] = useState<PickRequestGroup[]>([])
     const [loadingPicks, setLoadingPicks] = useState(false)
     const [approvingGroup, setApprovingGroup] = useState<string | null>(null)
+    const [statusFilter, setStatusFilter] = useState<'ALL' | 'RUNNING' | 'COMPLETED'>('RUNNING')
 
     useEffect(() => {
         fetchTasks()
@@ -480,6 +481,15 @@ function ExportOrderContent() {
         }
     }
 
+    const filteredTasks = useMemo(() => {
+        return tasks.filter(task => {
+            if (statusFilter === 'ALL') return true;
+            if (statusFilter === 'COMPLETED') return task.status === 'Completed';
+            if (statusFilter === 'RUNNING') return task.status !== 'Completed' && task.status !== 'Cancelled';
+            return true;
+        })
+    }, [tasks, statusFilter])
+
     return (
         <div className="p-2 md:p-4 w-full mx-auto space-y-6 pb-24 h-full">
             {/* Header */}
@@ -491,6 +501,28 @@ function ExportOrderContent() {
                     </h1>
                     <p className="text-stone-500 dark:text-stone-400 mt-1">Quản lý các yêu cầu xuất hàng từ kho</p>
                 </div>
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex bg-stone-100 dark:bg-zinc-800 p-1 rounded-lg w-max overflow-x-auto">
+                <button
+                    onClick={() => setStatusFilter('ALL')}
+                    className={`px-4 py-2 rounded-md text-sm font-bold transition-colors whitespace-nowrap ${statusFilter === 'ALL' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
+                >
+                    Tất cả
+                </button>
+                <button
+                    onClick={() => setStatusFilter('RUNNING')}
+                    className={`px-4 py-2 rounded-md text-sm font-bold transition-colors whitespace-nowrap ${statusFilter === 'RUNNING' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
+                >
+                    Đang chạy
+                </button>
+                <button
+                    onClick={() => setStatusFilter('COMPLETED')}
+                    className={`px-4 py-2 rounded-md text-sm font-bold transition-colors whitespace-nowrap ${statusFilter === 'COMPLETED' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
+                >
+                    Hoàn thành
+                </button>
             </div>
 
             {/* Pick Requests Pending Approval */}
@@ -591,13 +623,13 @@ function ExportOrderContent() {
                 </div>
             ) : (
                 <div className="grid gap-4">
-                    {tasks.length === 0 ? (
+                    {filteredTasks.length === 0 ? (
                         <div className="text-center p-12 bg-stone-50 rounded-xl border border-dashed border-stone-200">
                             <FileText className="mx-auto text-stone-300 mb-4" size={48} />
                             <p className="text-stone-500 font-medium">Chưa có lệnh xuất kho nào</p>
                         </div>
                     ) : (
-                        tasks.map((task) => (
+                        filteredTasks.map((task) => (
                             <div
                                 key={task.id}
                                 className="bg-white dark:bg-zinc-800 rounded-xl border border-stone-200 dark:border-zinc-700 shadow-sm overflow-hidden hover:shadow-md transition-shadow group"
