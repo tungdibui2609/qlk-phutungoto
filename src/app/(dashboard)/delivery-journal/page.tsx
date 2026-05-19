@@ -658,9 +658,14 @@ export default function DeliveryJournalPage() {
     }
 
     const selectedGroup = moGroups.find(g => g.mo_id === selectedMoId)
-    const filteredGroups = moGroups.filter(g =>
-        !searchMo || g.mo_code.toLowerCase().includes(searchMo.toLowerCase())
-    )
+    const filteredGroups = moGroups.filter(g => {
+        if (!searchMo) return true
+        const keyword = searchMo.toLowerCase()
+        if (g.mo_code.toLowerCase().includes(keyword)) return true
+        if (g.mo_name && g.mo_name.toLowerCase().includes(keyword)) return true
+        if (g.products.some(p => p.setting.product_name.toLowerCase().includes(keyword))) return true
+        return false
+    })
     const totalNotifs = notifications.reduce((sum, n) => sum + n.count, 0)
 
     if (!currentSystem) return null
@@ -803,17 +808,25 @@ export default function DeliveryJournalPage() {
             {/* Main content: 2 columns responsive */}
             <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
                 {/* Left: MO List */}
-                <div className={`w-full lg:w-80 bg-white dark:bg-zinc-800 border-r border-stone-200 dark:border-zinc-700 flex flex-col shrink-0 ${selectedMoId ? 'hidden lg:flex' : 'flex'}`}>
+                <div className={`w-full lg:w-80 bg-white dark:bg-zinc-800 border-r border-stone-200 dark:border-zinc-700 flex flex-col lg:shrink-0 min-h-0 flex-1 lg:flex-none ${selectedMoId ? 'hidden lg:flex' : 'flex'}`}>
                     <div className="p-3 border-b border-stone-100 dark:border-zinc-700">
                         <div className="relative">
                             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
                             <input
                                 type="text"
-                                placeholder="Tìm lệnh sản xuất..."
+                                placeholder="Tìm lệnh sản xuất, tên sản phẩm..."
                                 value={searchMo}
                                 onChange={e => setSearchMo(e.target.value)}
-                                className="w-full pl-9 pr-3 py-2 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                className="w-full pl-9 pr-9 py-2 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                             />
+                            {searchMo && (
+                                <button
+                                    onClick={() => setSearchMo('')}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 dark:hover:text-stone-300"
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
                         </div>
                     </div>
                     <div className="flex-1 overflow-y-auto">
