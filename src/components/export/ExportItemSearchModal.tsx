@@ -1,13 +1,13 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import {
     Dialog,
     DialogContent,
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/Dialog"
-import { Search, Loader2, Package, MapPin, FileText, Calendar, Box, Download } from 'lucide-react'
+import { Search, Loader2, Package, MapPin, FileText, Calendar, Box, Download, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { format, startOfDay, endOfDay } from 'date-fns'
@@ -34,6 +34,12 @@ interface SearchResult {
     position_code: string
 }
 
+interface ProductOption {
+    id: string
+    name: string
+    sku: string
+}
+
 export function ExportItemSearchModal({ isOpen, onClose }: ExportItemSearchModalProps) {
     const { currentSystem } = useSystem()
     const { showToast } = useToast()
@@ -45,13 +51,87 @@ export function ExportItemSearchModal({ isOpen, onClose }: ExportItemSearchModal
     const [results, setResults] = useState<SearchResult[]>([])
     const [hasSearched, setHasSearched] = useState(false)
 
+    // Các state cho việc chọn nhiều sản phẩm
+    const [productsList, setProductsList] = useState<ProductOption[]>([])
+    const [selectedProductIds, setSelectedProductIds] = useState<string[]>([])
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+    const [loadingProducts, setLoadingProducts] = useState(false)
+    const dropdownRef = useRef<HTMLDivElement>(null)
+
     useEffect(() => {
         if (!isOpen) {
             setSearchQuery('')
             setResults([])
             setHasSearched(false)
+            setSelectedProductIds([])
+            setIsDropdownOpen(false)
         }
     }, [isOpen])
+
+    useEffect(() => {
+        if (isOpen && currentSystem) {
+            fetchProducts()
+        }
+    }, [isOpen, currentSystem])
+
+    const fetchProducts = async () => {
+        if (!currentSystem) return
+        setLoadingProducts(true)
+        try {
+            const { data, error } = await supabase
+                .from('products')
+                .select('id, name, sku')
+                .eq('system_type', currentSystem.code)
+                .order('name', { ascending: true })
+
+            if (error) throw error
+            setProductsList(data || [])
+        } catch (err) {
+            console.error('Error fetching products list:', err)
+        } finally {
+            setLoadingProducts(false)
+        }
+    }
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsDropdownOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
+
+    const handleToggleProduct = (productId: string) => {
+        setSelectedProductIds(prev => 
+            prev.includes(productId) 
+                ? prev.filter(id => id !== productId)
+                : [...prev, productId]
+        )
+    }
+
+    const handleClearSelectedProducts = () => {
+        setSelectedProductIds([])
+    }
+
+    const filteredProductsList = useMemo(() => {
+        if (!searchQuery.trim()) return productsList
+        const q = searchQuery.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
+        return productsList.filter(p => {
+            const nameNorm = p.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+            const skuNorm = p.sku.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+            return nameNorm.includes(q) || skuNorm.includes(q)
+        })
+    }, [productsList, searchQuery])
+
+    const handleSelectAllProducts = () => {
+        if (selectedProductIds.length === filteredProductsList.length) {
+            setSelectedProductIds([])
+        } else {
+            setSelectedProductIds(filteredProductsList.map(p => p.id))
+        }
+    }
 
     const handleSearch = async () => {
         if (!currentSystem) return
@@ -59,107 +139,274 @@ export function ExportItemSearchModal({ isOpen, onClose }: ExportItemSearchModal
         setLoading(true)
         setHasSearched(true)
         try {
-            // First, find products matching the search query if it exists
-            let productIds: string[] = []
-            if (searchQuery.trim()) {
-                const { data: products } = await supabase
-                    .from('products')
-                    .select('id')
-                    .or(`name.ilike.%${searchQuery}%,sku.ilike.%${searchQuery}%`)
-                    .eq('system_type', currentSystem.code)
-                    .limit(50)
-                productIds = products?.map((p: any) => p.id) || []
-            }
+            const searchQueryClean = searchQuery.trim()
+            let formattedResults: SearchResult[] = []
+            const PAGE_SIZE = 1000
 
-            let query = supabase
-                .from('export_task_items')
-                .select(`
-                    id,
-                    quantity,
-                    exported_quantity,
-                    unit,
-                    status,
-                    export_tasks!inner(code, status, created_at, system_code),
-                    products!inner(name, sku),
-                    lots(production_code, code),
-                    positions(code)
-                `)
-                .eq('export_tasks.system_code', currentSystem.code)
+            // 1. Trường hợp có tích chọn sản phẩm cụ thể
+            if (selectedProductIds.length > 0) {
+                let allResults: SearchResult[] = []
+                let currentFrom = 0
+                let hasMore = true
 
-            if (startDate) {
-                query = query.gte('export_tasks.created_at', startOfDay(new Date(startDate)).toISOString())
-            }
-            if (endDate) {
-                query = query.lte('export_tasks.created_at', endOfDay(new Date(endDate)).toISOString())
-            }
+                while (hasMore) {
+                    let query = supabase
+                        .from('export_task_items')
+                        .select(`
+                            id,
+                            quantity,
+                            exported_quantity,
+                            unit,
+                            status,
+                            export_tasks!inner(code, status, created_at, system_code),
+                            products!inner(name, sku),
+                            lots(production_code, code),
+                            positions(code)
+                        `)
+                        .eq('export_tasks.system_code', currentSystem.code)
+                        .in('product_id', selectedProductIds)
 
-            if (searchQuery.trim()) {
-                if (productIds.length > 0) {
-                    query = query.in('product_id', productIds)
-                } else {
-                    // Tricky to filter joined tables dynamically without dropping results if empty
-                    // In this case we do nothing and hope the second query handles it
+                    if (startDate) {
+                        query = query.gte('export_tasks.created_at', startOfDay(new Date(startDate)).toISOString())
+                    }
+                    if (endDate) {
+                        query = query.lte('export_tasks.created_at', endOfDay(new Date(endDate)).toISOString())
+                    }
+
+                    const { data, error } = await query
+                        .order('created_at', { ascending: false })
+                        .range(currentFrom, currentFrom + PAGE_SIZE - 1)
+
+                    if (error) throw error
+
+                    if (!data || data.length === 0) {
+                        hasMore = false
+                    } else {
+                        const formatted = data.map((item: any) => ({
+                            id: item.id,
+                            quantity: item.quantity,
+                            exported_quantity: item.exported_quantity,
+                            unit: item.unit,
+                            status: item.status,
+                            task_code: item.export_tasks?.code || 'N/A',
+                            task_status: item.export_tasks?.status || 'N/A',
+                            task_created_at: item.export_tasks?.created_at,
+                            product_name: item.products?.name || 'N/A',
+                            sku: item.products?.sku || 'N/A',
+                            production_code: item.lots?.production_code || null,
+                            lot_code: item.lots?.code || 'N/A',
+                            position_code: item.positions?.code || 'N/A'
+                        }))
+                        allResults = [...allResults, ...formatted]
+                        if (data.length < PAGE_SIZE) {
+                            hasMore = false
+                        } else {
+                            currentFrom += PAGE_SIZE
+                        }
+                    }
                 }
-            }
+                formattedResults = allResults
+            } 
+            // 2. Trường hợp KHÔNG tích chọn sản phẩm nào (lấy tất cả hoặc theo từ khóa gõ)
+            else {
+                if (searchQueryClean) {
+                    // Thử tìm các sản phẩm khớp với từ khóa
+                    const { data: products } = await supabase
+                        .from('products')
+                        .select('id')
+                        .or(`name.ilike.%${searchQueryClean}%,sku.ilike.%${searchQueryClean}%`)
+                        .eq('system_type', currentSystem.code)
+                        .limit(100)
+                    const productIds = products?.map((p: any) => p.id) || []
 
-            const { data, error } = await query.order('created_at', { ascending: false }).limit(500)
+                    if (productIds.length > 0) {
+                        let allResults: SearchResult[] = []
+                        let currentFrom = 0
+                        let hasMore = true
 
-            if (error) throw error
+                        while (hasMore) {
+                            let query = supabase
+                                .from('export_task_items')
+                                .select(`
+                                    id,
+                                    quantity,
+                                    exported_quantity,
+                                    unit,
+                                    status,
+                                    export_tasks!inner(code, status, created_at, system_code),
+                                    products!inner(name, sku),
+                                    lots(production_code, code),
+                                    positions(code)
+                                `)
+                                .eq('export_tasks.system_code', currentSystem.code)
+                                .in('product_id', productIds)
 
-            let formattedResults: SearchResult[] = (data || []).map((item: any) => ({
-                id: item.id,
-                quantity: item.quantity,
-                exported_quantity: item.exported_quantity,
-                unit: item.unit,
-                status: item.status,
-                task_code: item.export_tasks?.code || 'N/A',
-                task_status: item.export_tasks?.status || 'N/A',
-                task_created_at: item.export_tasks?.created_at,
-                product_name: item.products?.name || 'N/A',
-                sku: item.products?.sku || 'N/A',
-                production_code: item.lots?.production_code || null,
-                lot_code: item.lots?.code || 'N/A',
-                position_code: item.positions?.code || 'N/A'
-            }))
+                            if (startDate) {
+                                query = query.gte('export_tasks.created_at', startOfDay(new Date(startDate)).toISOString())
+                            }
+                            if (endDate) {
+                                query = query.lte('export_tasks.created_at', endOfDay(new Date(endDate)).toISOString())
+                            }
 
-            if (searchQuery.trim() && productIds.length === 0) {
-                let lotQuery = supabase
-                    .from('export_task_items')
-                    .select(`
-                        id,
-                        quantity,
-                        exported_quantity,
-                        unit,
-                        status,
-                        export_tasks!inner(code, status, created_at, system_code),
-                        products!inner(name, sku),
-                        lots!inner(production_code, code),
-                        positions(code)
-                    `)
-                    .eq('export_tasks.system_code', currentSystem.code)
-                    .ilike('lots.production_code', `%${searchQuery}%`)
-                
-                if (startDate) lotQuery = lotQuery.gte('export_tasks.created_at', startOfDay(new Date(startDate)).toISOString())
-                if (endDate) lotQuery = lotQuery.lte('export_tasks.created_at', endOfDay(new Date(endDate)).toISOString())
+                            const { data, error } = await query
+                                .order('created_at', { ascending: false })
+                                .range(currentFrom, currentFrom + PAGE_SIZE - 1)
 
-                const { data: lotData } = await lotQuery.order('created_at', { ascending: false }).limit(500)
+                            if (error) throw error
 
-                if (lotData) {
-                    formattedResults = lotData.map((item: any) => ({
-                        id: item.id,
-                        quantity: item.quantity,
-                        exported_quantity: item.exported_quantity,
-                        unit: item.unit,
-                        status: item.status,
-                        task_code: item.export_tasks?.code || 'N/A',
-                        task_status: item.export_tasks?.status || 'N/A',
-                        task_created_at: item.export_tasks?.created_at,
-                        product_name: item.products?.name || 'N/A',
-                        sku: item.products?.sku || 'N/A',
-                        production_code: item.lots?.production_code || null,
-                        lot_code: item.lots?.code || 'N/A',
-                        position_code: item.positions?.code || 'N/A'
-                    }))
+                            if (!data || data.length === 0) {
+                                hasMore = false
+                            } else {
+                                const formatted = data.map((item: any) => ({
+                                    id: item.id,
+                                    quantity: item.quantity,
+                                    exported_quantity: item.exported_quantity,
+                                    unit: item.unit,
+                                    status: item.status,
+                                    task_code: item.export_tasks?.code || 'N/A',
+                                    task_status: item.export_tasks?.status || 'N/A',
+                                    task_created_at: item.export_tasks?.created_at,
+                                    product_name: item.products?.name || 'N/A',
+                                    sku: item.products?.sku || 'N/A',
+                                    production_code: item.lots?.production_code || null,
+                                    lot_code: item.lots?.code || 'N/A',
+                                    position_code: item.positions?.code || 'N/A'
+                                }))
+                                allResults = [...allResults, ...formatted]
+                                if (data.length < PAGE_SIZE) {
+                                    hasMore = false
+                                } else {
+                                    currentFrom += PAGE_SIZE
+                                }
+                            }
+                        }
+                        formattedResults = allResults
+                    } else {
+                        // Không tìm thấy sản phẩm nào -> Tìm theo Lệnh SX (lots.production_code)
+                        let lotResults: SearchResult[] = []
+                        let currentFromLot = 0
+                        let hasMoreLot = true
+
+                        while (hasMoreLot) {
+                            let lotQuery = supabase
+                                .from('export_task_items')
+                                .select(`
+                                    id,
+                                    quantity,
+                                    exported_quantity,
+                                    unit,
+                                    status,
+                                    export_tasks!inner(code, status, created_at, system_code),
+                                    products!inner(name, sku),
+                                    lots!inner(production_code, code),
+                                    positions(code)
+                                `)
+                                .eq('export_tasks.system_code', currentSystem.code)
+                                .ilike('lots.production_code', `%${searchQueryClean}%`)
+                            
+                            if (startDate) {
+                                lotQuery = lotQuery.gte('export_tasks.created_at', startOfDay(new Date(startDate)).toISOString())
+                            }
+                            if (endDate) {
+                                lotQuery = lotQuery.lte('export_tasks.created_at', endOfDay(new Date(endDate)).toISOString())
+                            }
+
+                            const { data: lotData, error: lotError } = await lotQuery
+                                .order('created_at', { ascending: false })
+                                .range(currentFromLot, currentFromLot + PAGE_SIZE - 1)
+
+                            if (lotError) throw lotError
+
+                            if (!lotData || lotData.length === 0) {
+                                hasMoreLot = false
+                            } else {
+                                const formatted = lotData.map((item: any) => ({
+                                    id: item.id,
+                                    quantity: item.quantity,
+                                    exported_quantity: item.exported_quantity,
+                                    unit: item.unit,
+                                    status: item.status,
+                                    task_code: item.export_tasks?.code || 'N/A',
+                                    task_status: item.export_tasks?.status || 'N/A',
+                                    task_created_at: item.export_tasks?.created_at,
+                                    product_name: item.products?.name || 'N/A',
+                                    sku: item.products?.sku || 'N/A',
+                                    production_code: item.lots?.production_code || null,
+                                    lot_code: item.lots?.code || 'N/A',
+                                    position_code: item.positions?.code || 'N/A'
+                                }))
+                                lotResults = [...lotResults, ...formatted]
+                                if (lotData.length < PAGE_SIZE) {
+                                    hasMoreLot = false
+                                } else {
+                                    currentFromLot += PAGE_SIZE
+                                }
+                            }
+                        }
+                        formattedResults = lotResults
+                    }
+                } else {
+                    // Rỗng -> Lấy tất cả danh sách lệnh xuất
+                    let allResults: SearchResult[] = []
+                    let currentFrom = 0
+                    let hasMore = true
+
+                    while (hasMore) {
+                        let query = supabase
+                            .from('export_task_items')
+                            .select(`
+                                id,
+                                quantity,
+                                exported_quantity,
+                                unit,
+                                status,
+                                export_tasks!inner(code, status, created_at, system_code),
+                                products!inner(name, sku),
+                                lots(production_code, code),
+                                positions(code)
+                            `)
+                            .eq('export_tasks.system_code', currentSystem.code)
+
+                        if (startDate) {
+                            query = query.gte('export_tasks.created_at', startOfDay(new Date(startDate)).toISOString())
+                        }
+                        if (endDate) {
+                            query = query.lte('export_tasks.created_at', endOfDay(new Date(endDate)).toISOString())
+                        }
+
+                        const { data, error } = await query
+                            .order('created_at', { ascending: false })
+                            .range(currentFrom, currentFrom + PAGE_SIZE - 1)
+
+                        if (error) throw error
+
+                        if (!data || data.length === 0) {
+                            hasMore = false
+                        } else {
+                            const formatted = data.map((item: any) => ({
+                                id: item.id,
+                                quantity: item.quantity,
+                                exported_quantity: item.exported_quantity,
+                                unit: item.unit,
+                                status: item.status,
+                                task_code: item.export_tasks?.code || 'N/A',
+                                task_status: item.export_tasks?.status || 'N/A',
+                                task_created_at: item.export_tasks?.created_at,
+                                product_name: item.products?.name || 'N/A',
+                                sku: item.products?.sku || 'N/A',
+                                production_code: item.lots?.production_code || null,
+                                lot_code: item.lots?.code || 'N/A',
+                                position_code: item.positions?.code || 'N/A'
+                            }))
+                            allResults = [...allResults, ...formatted]
+                            if (data.length < PAGE_SIZE) {
+                                hasMore = false
+                            } else {
+                                currentFrom += PAGE_SIZE
+                            }
+                        }
+                    }
+                    formattedResults = allResults
                 }
             }
 
@@ -247,16 +494,100 @@ export function ExportItemSearchModal({ isOpen, onClose }: ExportItemSearchModal
 
                 <div className="p-6 flex-1 overflow-hidden flex flex-col bg-stone-50/50 dark:bg-stone-900/50">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
-                        <div className="md:col-span-2 relative">
+                        <div className="md:col-span-2 relative" ref={dropdownRef}>
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
                             <input
                                 type="text"
-                                placeholder="Tên hàng, SKU, hoặc Lệnh SX (bỏ trống để tìm tất cả)..."
-                                className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-stone-950 border border-stone-200 dark:border-stone-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder={
+                                    selectedProductIds.length > 0
+                                        ? `Đã chọn ${selectedProductIds.length} sản phẩm`
+                                        : "Tên hàng, SKU, hoặc Lệnh SX (bỏ trống để tìm tất cả)..."
+                                }
+                                className={`w-full pl-10 ${selectedProductIds.length > 0 ? 'pr-10' : 'pr-4'} py-2.5 bg-white dark:bg-stone-950 border border-stone-200 dark:border-stone-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500`}
                                 value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                onChange={(e) => {
+                                    setSearchQuery(e.target.value)
+                                    setIsDropdownOpen(true)
+                                }}
+                                onFocus={() => setIsDropdownOpen(true)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        setIsDropdownOpen(false)
+                                        handleSearch()
+                                    }
+                                }}
                             />
+                            {selectedProductIds.length > 0 && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleClearSelectedProducts()
+                                    }}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-red-500 p-0.5 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors"
+                                    title="Bỏ chọn tất cả"
+                                >
+                                    <X size={16} />
+                                </button>
+                            )}
+
+                            {isDropdownOpen && (
+                                <div className="absolute left-0 right-0 mt-1 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-lg shadow-xl z-50 flex flex-col overflow-hidden max-h-72">
+                                    {/* Action Header */}
+                                    <div className="px-3 py-2 bg-stone-50 dark:bg-stone-800 border-b border-stone-100 dark:border-stone-700 flex items-center justify-between text-xs">
+                                        <span className="font-medium text-stone-500 dark:text-stone-400">
+                                            Tìm thấy {filteredProductsList.length} sản phẩm
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={handleSelectAllProducts}
+                                            className="text-blue-600 dark:text-blue-400 hover:underline font-bold"
+                                        >
+                                            {selectedProductIds.length === filteredProductsList.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                                        </button>
+                                    </div>
+
+                                    {/* Product List */}
+                                    <div className="overflow-y-auto flex-1 divide-y divide-stone-50 dark:divide-stone-800 max-h-60 [scrollbar-width:thin]">
+                                        {loadingProducts ? (
+                                            <div className="p-4 text-center text-sm text-stone-500 dark:text-stone-400 flex items-center justify-center gap-2">
+                                                <Loader2 className="animate-spin text-blue-500" size={16} />
+                                                Đang tải danh sách sản phẩm...
+                                            </div>
+                                        ) : filteredProductsList.length === 0 ? (
+                                            <div className="p-4 text-center text-sm text-stone-500 dark:text-stone-400">
+                                                Không tìm thấy sản phẩm nào khớp
+                                            </div>
+                                        ) : (
+                                            filteredProductsList.map((product) => {
+                                                const isChecked = selectedProductIds.includes(product.id)
+                                                return (
+                                                    <div
+                                                        key={product.id}
+                                                        onClick={() => handleToggleProduct(product.id)}
+                                                        className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors text-sm
+                                                            ${isChecked
+                                                                ? 'bg-blue-50/50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 font-medium'
+                                                                : 'text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-800'
+                                                            }
+                                                        `}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={() => {}} // click is handled on wrapper
+                                                            className="rounded border-stone-300 dark:border-stone-700 text-blue-600 focus:ring-blue-500 h-4 w-4 cursor-pointer"
+                                                        />
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="truncate">{product.name}</div>
+                                                            <div className="text-[10px] text-stone-400 font-mono">SKU: {product.sku}</div>
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                         <div className="flex gap-2 items-center">
                             <span className="text-sm font-medium text-stone-500">Từ:</span>

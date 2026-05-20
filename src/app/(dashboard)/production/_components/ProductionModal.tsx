@@ -23,6 +23,7 @@ interface ProductionLot {
     conversion_rules?: { factor: number; unit_name: string; ref_unit_name: string }[] // Linked rules
     quantity_by_unit?: { qty: number; current_qty?: number; unit: string }[] // Linked units stats
     is_locked?: boolean // Locked status
+    production_date?: string | null // Production date
 }
 
 interface ProductionModalProps {
@@ -155,6 +156,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const [inlineWeightPerUnit, setInlineWeightPerUnit] = useState(0)
     const [inlineSearchTerm, setInlineSearchTerm] = useState('')
     const [inlineShowSuggestions, setInlineShowSuggestions] = useState(false)
+    const [inlineProductionDate, setInlineProductionDate] = useState(new Date().toISOString().split('T')[0])
 
     // States for editing a lot directly under readOnly mode
     const [editingLot, setEditingLot] = useState<any | null>(null)
@@ -164,6 +166,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const [editLotWeightPerUnit, setEditLotWeightPerUnit] = useState(0)
     const [editLotSearchTerm, setEditLotSearchTerm] = useState('')
     const [editLotShowSuggestions, setEditLotShowSuggestions] = useState(false)
+    const [editLotProductionDate, setEditLotProductionDate] = useState('')
     
     // Stats Date Filters
     const [statsStartDate, setStatsStartDate] = useState<string>('')
@@ -499,7 +502,8 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                 unit: l.products?.unit || '',
                 product_name: l.products?.name || '',
                 conversion_rules: l.conversion_rules || [],
-                is_locked: l.is_locked
+                is_locked: l.is_locked,
+                production_date: l.production_date
             }))
             setLots(formattedLots)
             
@@ -939,7 +943,8 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             planned_quantity: inlinePlannedQty || null,
             conversion_rules: initialRules,
             company_id: profile?.company_id,
-            is_locked: false
+            is_locked: false,
+            production_date: inlineProductionDate || null
         }
 
         const { error } = await (supabase.from('production_lots') as any)
@@ -954,6 +959,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             setInlineLotCode('')
             setInlinePlannedQty(0)
             setInlineSearchTerm('')
+            setInlineProductionDate(new Date().toISOString().split('T')[0])
             
             fetchProductionLots(editItem.id)
             if (onSuccess) onSuccess()
@@ -969,6 +975,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
         setEditLotWeightPerUnit(lot.weight_per_unit || 0)
         setEditLotSearchTerm(product?.name || '')
         setEditLotShowSuggestions(false)
+        setEditLotProductionDate(lot.production_date || '')
     }
 
     const handleSaveEditedLot = async () => {
@@ -1011,7 +1018,8 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                 lot_code: editLotLotCode.trim().toUpperCase(),
                 planned_quantity: editLotPlannedQty || null,
                 weight_per_unit: defaultWeight,
-                conversion_rules: initialRules
+                conversion_rules: initialRules,
+                production_date: editLotProductionDate || null
             })
             .eq('id', editingLot.id)
 
@@ -1165,7 +1173,8 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                         planned_quantity: l.planned_quantity || null,
                         conversion_rules: l.conversion_rules || [],
                         company_id: profile.company_id,
-                        is_locked: l.is_locked || false
+                        is_locked: l.is_locked || false,
+                        production_date: l.production_date || null
                     }))
 
                 if (lotsToUpsert.length > 0) {
@@ -2095,6 +2104,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                                 setInlineLotCode('')
                                                                 setInlinePlannedQty(0)
                                                                 setInlineSearchTerm('')
+                                                                setInlineProductionDate(new Date().toISOString().split('T')[0])
                                                             }}
                                                             className="text-stone-400 hover:text-stone-600 p-1 rounded-lg hover:bg-stone-100 dark:hover:bg-zinc-700/50"
                                                         >
@@ -2102,7 +2112,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                         </button>
                                                     </div>
                                                     
-                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                                         {/* 1. Chọn sản phẩm */}
                                                         <div className="relative">
                                                             <label className="text-[9px] font-black text-stone-400 dark:text-zinc-500 uppercase mb-1 block px-1 tracking-wider">Sản phẩm sản xuất</label>
@@ -2172,6 +2182,17 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                                 value={inlineLotCode}
                                                                 onChange={(e) => setInlineLotCode(e.target.value)}
                                                                 className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs font-bold uppercase text-stone-800 dark:text-stone-100 focus:outline-none focus:border-orange-500"
+                                                            />
+                                                        </div>
+                                                        
+                                                        {/* Ngày sản xuất Inline */}
+                                                        <div>
+                                                            <label className="text-[9px] font-black text-stone-400 dark:text-zinc-500 uppercase mb-1 block px-1 tracking-wider">Ngày sản xuất</label>
+                                                            <input
+                                                                type="date"
+                                                                value={inlineProductionDate}
+                                                                onChange={(e) => setInlineProductionDate(e.target.value)}
+                                                                className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs font-bold text-stone-800 dark:text-stone-100 focus:outline-none focus:border-orange-500"
                                                             />
                                                         </div>
                                                         
@@ -2422,7 +2443,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                             <div className="grid grid-cols-12 gap-4 items-end bg-stone-50/50 dark:bg-zinc-900/30 p-4 rounded-2xl border border-stone-100 dark:border-zinc-800/50">
                                                 {/* Details Section: Lot Code & Conversion Rules */}
                                                 <div className="col-span-12 bg-white dark:bg-zinc-900/50 p-6 space-y-6 border border-stone-200 dark:border-zinc-800 rounded-2xl mt-1">
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                                         {/* Lot Code Input */}
                                                         <div>
                                                             <label className="block text-xs font-bold text-stone-500 mb-2 uppercase tracking-wider flex items-center gap-1.5">
@@ -2435,6 +2456,20 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                                 value={lot.lot_code}
                                                                 onChange={e => updateLotRow(idx, 'lot_code', e.target.value.toUpperCase())}
                                                                 className="w-full px-4 py-2.5 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 font-black focus:ring-4 focus:ring-orange-100 outline-none transition-all text-sm uppercase text-stone-900 dark:text-white"
+                                                            />
+                                                        </div>
+
+                                                        {/* Production Date Input */}
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-stone-500 mb-2 uppercase tracking-wider flex items-center gap-1.5">
+                                                                <Calendar size={14} className="text-orange-500" />
+                                                                Ngày sản xuất
+                                                            </label>
+                                                            <input
+                                                                type="date"
+                                                                value={lot.production_date || ''}
+                                                                onChange={e => updateLotRow(idx, 'production_date', e.target.value || null)}
+                                                                className="w-full px-4 py-2.5 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 font-bold focus:ring-4 focus:ring-orange-100 outline-none transition-all text-sm text-stone-900 dark:text-white"
                                                             />
                                                         </div>
 
@@ -2784,6 +2819,17 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                     value={editLotLotCode}
                                     onChange={(e) => setEditLotLotCode(e.target.value)}
                                     className="w-full px-3 py-2.5 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs font-bold uppercase text-stone-800 dark:text-stone-100 focus:outline-none focus:border-orange-500"
+                                />
+                            </div>
+
+                            {/* Ngày sản xuất (edit) */}
+                            <div>
+                                <label className="text-[10px] font-black text-stone-400 dark:text-zinc-500 uppercase mb-1 block tracking-wider">Ngày sản xuất</label>
+                                <input
+                                    type="date"
+                                    value={editLotProductionDate}
+                                    onChange={(e) => setEditLotProductionDate(e.target.value)}
+                                    className="w-full px-3 py-2.5 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs font-bold text-stone-800 dark:text-stone-100 focus:outline-none focus:border-orange-500"
                                 />
                             </div>
 

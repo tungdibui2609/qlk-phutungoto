@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
-import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2, Trash2, RotateCcw, FileText, FileSpreadsheet, CheckSquare, Square, Download } from 'lucide-react'
+import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2, Trash2, RotateCcw, FileText, FileSpreadsheet, CheckSquare, Square, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import InboundOrderModal from '@/components/inventory/inbound/InboundOrderModal'
 import InboundOrderDetailModal from './InboundOrderDetailModal'
 import { LotInboundBuffer } from '@/components/warehouse/lots/LotInboundBuffer'
@@ -22,6 +22,9 @@ export default function InboundPage() {
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
     const [statusFilter, setStatusFilter] = useState('all')
+    const [currentPage, setCurrentPage] = useState(0)
+    const [totalCount, setTotalCount] = useState(0)
+    const PAGE_SIZE = 20
 
     // Buffer Stats
     const [bufferCount, setBufferCount] = useState(0)
@@ -80,9 +83,35 @@ export default function InboundPage() {
         setBufferCount(count)
     }
 
-    async function fetchOrders() {
+    async function fetchOrders(page?: number) {
+        let activePage = page ?? currentPage
         setLoading(true)
         try {
+            // Đếm tổng số phiếu
+            let countQuery = supabase
+                .from('inbound_orders')
+                .select('*', { count: 'exact', head: true })
+                .eq('system_code', systemType)
+
+            if (statusFilter !== 'all') {
+                countQuery = countQuery.eq('status', statusFilter)
+            }
+
+            const { count } = await countQuery
+            const total = count || 0
+            setTotalCount(total)
+
+            // Tự động quay về trang cuối nếu vượt quá
+            const totalPages = Math.ceil(total / PAGE_SIZE)
+            if (activePage >= totalPages && totalPages > 0) {
+                activePage = 0
+                setCurrentPage(0)
+            }
+
+            // Lấy dữ liệu theo trang
+            const from = activePage * PAGE_SIZE
+            const to = from + PAGE_SIZE - 1
+
             let query = supabase
                 .from('inbound_orders')
                 .select(`
@@ -92,7 +121,7 @@ export default function InboundPage() {
                 `)
                 .eq('system_code', systemType)
                 .order('created_at', { ascending: false })
-                .range(0, 49);
+                .range(from, to);
 
             if (statusFilter !== 'all') {
                 query = query.eq('status', statusFilter)
@@ -101,6 +130,7 @@ export default function InboundPage() {
             const { data, error } = await query
             if (error) throw error
             setOrders(data || [])
+            setSelectedOrderIds(new Set())
         } catch (error: any) {
             showToast('Lỗi tải danh sách phiếu: ' + error.message, 'error')
         } finally {
@@ -110,7 +140,8 @@ export default function InboundPage() {
 
     const handleSearch = async () => {
         if (!searchQuery.trim()) {
-            fetchOrders()
+            setCurrentPage(0)
+            fetchOrders(0)
             return
         }
         setLoading(true)
@@ -129,6 +160,9 @@ export default function InboundPage() {
 
             if (error) throw error
             setOrders(data || [])
+            setTotalCount(data?.length || 0)
+            setCurrentPage(0)
+            setSelectedOrderIds(new Set())
         } catch (e: any) {
             showToast('Lỗi tìm kiếm: ' + e.message, 'error')
         } finally {
@@ -353,7 +387,8 @@ export default function InboundPage() {
                                 value={statusFilter} 
                                 onChange={(e) => {
                                     setStatusFilter(e.target.value);
-                                    setTimeout(() => fetchOrders(), 0);
+                                    setCurrentPage(0);
+                                    setTimeout(() => fetchOrders(0), 0);
                                 }}
                             >
                                 <option value="all">Tất cả trạng thái</option>
@@ -485,10 +520,53 @@ export default function InboundPage() {
                                 </table>
                             </div>
                         )}
-                        <div className="p-4 border-t border-gray-100 bg-gray-50/30">
-                           <p className="text-xs text-gray-500 text-center">
-                              Hiển thị 50 phiếu mới nhất. Sử dụng tìm kiếm để xem các phiếu cũ hơn.
-                           </p>
+                        <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/30">
+                            <div className="flex items-center justify-between">
+                                <p className="text-sm text-gray-500">
+                                    {totalCount > 0
+                                        ? `Hiển thị ${currentPage * PAGE_SIZE + 1} - ${Math.min((currentPage + 1) * PAGE_SIZE, totalCount)} trên ${totalCount} phiếu`
+                                        : 'Không có phiếu nào'}
+                                </p>
+                                {totalCount > PAGE_SIZE && (
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={() => { setCurrentPage(0); fetchOrders(0); }}
+                                            disabled={currentPage === 0}
+                                            className="p-1.5 rounded-lg hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-gray-600"
+                                            title="Trang đầu"
+                                        >
+                                            <ChevronsLeft className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => { const p = currentPage - 1; setCurrentPage(p); fetchOrders(p); }}
+                                            disabled={currentPage === 0}
+                                            className="p-1.5 rounded-lg hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-gray-600"
+                                            title="Trang trước"
+                                        >
+                                            <ChevronLeft className="w-4 h-4" />
+                                        </button>
+                                        <span className="px-3 py-1 text-sm font-medium text-gray-700 bg-white rounded-lg border border-gray-200 shadow-sm min-w-[80px] text-center">
+                                            {currentPage + 1} / {Math.ceil(totalCount / PAGE_SIZE)}
+                                        </span>
+                                        <button
+                                            onClick={() => { const p = currentPage + 1; setCurrentPage(p); fetchOrders(p); }}
+                                            disabled={(currentPage + 1) * PAGE_SIZE >= totalCount}
+                                            className="p-1.5 rounded-lg hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-gray-600"
+                                            title="Trang sau"
+                                        >
+                                            <ChevronRight className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => { const p = Math.ceil(totalCount / PAGE_SIZE) - 1; setCurrentPage(p); fetchOrders(p); }}
+                                            disabled={(currentPage + 1) * PAGE_SIZE >= totalCount}
+                                            className="p-1.5 rounded-lg hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-gray-600"
+                                            title="Trang cuối"
+                                        >
+                                            <ChevronsRight className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -501,7 +579,7 @@ export default function InboundPage() {
                             </div>
                             <div>
                                 <p className="text-sm font-medium text-indigo-600">Tổng phiếu nhập</p>
-                                <h3 className="text-2xl font-bold text-gray-900">{orders.length}</h3>
+                                <h3 className="text-2xl font-bold text-gray-900">{totalCount}</h3>
                             </div>
                         </div>
                     </div>
