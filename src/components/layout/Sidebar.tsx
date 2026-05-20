@@ -109,8 +109,8 @@ const menuItems: MenuItem[] = [
         name: 'Kế toán',
         icon: FileText,
         children: [
-            { id: 'inbound', name: 'Nhập kho', href: '/inbound', icon: ArrowDownToLine, requiredPermission: 'inventory.manage' },
-            { id: 'outbound', name: 'Xuất kho', href: '/outbound', icon: ArrowUpFromLine, requiredPermission: 'inventory.manage' },
+            { id: 'inbound', name: 'Nhập kho', href: '/inbound', icon: ArrowDownToLine, requiredPermission: 'inbound.view' },
+            { id: 'outbound', name: 'Xuất kho', href: '/outbound', icon: ArrowUpFromLine, requiredPermission: 'outbound.view' },
             { id: 'audit', name: 'Kiểm kê', href: '/operations/audit', icon: ClipboardCheck, requiredPermission: 'audit.view' },
             { id: 'handover', name: 'Bàn giao hàng hóa', href: '/handover', icon: ArrowRightLeft, requiredModule: 'handover' },
         ]
