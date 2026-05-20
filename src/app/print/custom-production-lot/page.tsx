@@ -37,16 +37,16 @@ function CustomLabel({ data, config, index }: { data: any; config: any; index: n
     const hsdDisplay = config.expiry_date ? new Date(config.expiry_date).toLocaleDateString('vi-VN') : '---'
     const barcode = config.barcode || data?.lot_code || ''
     // Cột cố định thẳng hàng: C1=25% | C2=25% | C3=25% | C4=25%
-    const cell = 'border-b border-r border-zinc-400 px-1.5 py-[4px]'
-    const cellLast = 'border-b border-zinc-400 px-1.5 py-[4px]'
+    const cell = 'border-b-[1.5px] border-r-[1.5px] border-zinc-800 print:border-black px-1.5 py-[4px]'
+    const cellLast = 'border-b-[1.5px] border-zinc-800 print:border-black px-1.5 py-[4px]'
     const lbl = 'text-[9px] font-black text-black uppercase tracking-tighter'
     const val = 'text-[10px] font-black text-black'
     const valLg = 'text-[12px] font-black text-black'
 
     return (
-        <div className="bg-white border border-zinc-400 overflow-hidden flex flex-col shadow-lg print:shadow-none print:border-zinc-300" style={{ width: '90mm', height: '60mm', boxSizing: 'border-box', fontFamily: "'Inter', 'Segoe UI', Roboto, system-ui, sans-serif" }}>
+        <div className="bg-white border-[2px] border-zinc-800 overflow-hidden flex flex-col shadow-lg print:shadow-none print:border-black" style={{ width: '90mm', height: '60mm', boxSizing: 'border-box', fontFamily: "'Inter', 'Segoe UI', Roboto, system-ui, sans-serif" }}>
             {/* ── Header: Tên sản phẩm (Cân đối lại) ── */}
-            <div className="bg-white px-2 py-3 flex-shrink-0 border-b border-zinc-400 min-h-[15mm] flex items-center justify-center overflow-hidden">
+            <div className="bg-white px-2 py-3 flex-shrink-0 border-b-[1.5px] border-zinc-800 print:border-black min-h-[15mm] flex items-center justify-center overflow-hidden">
                 <h1
                     className="font-black text-black leading-[1.1] uppercase text-center tracking-tight"
                     style={{
@@ -67,13 +67,13 @@ function CustomLabel({ data, config, index }: { data: any; config: any; index: n
             {/* ── Bảng thông tin (Chiếm không gian trung tâm) ── */}
             <div className="flex-1 flex flex-col text-[9px]" style={{ fontFamily: "'Inter', 'Segoe UI', Roboto, system-ui, sans-serif" }}>
                 {/* NCC | value */}
-                <div className="flex border-b border-zinc-400">
+                <div className="flex border-b-[1.5px] border-zinc-800 print:border-black">
                     <div className={`w-[18%] ${cell} ${lbl}`}>NCC</div>
-                    <div className={`flex-1 border-b border-zinc-400 px-1.5 py-[2px] ${val} text-center`}>{config.customer_name || 'CT'}</div>
+                    <div className={`flex-1 border-b-[1.5px] border-zinc-800 print:border-black px-1.5 py-[2px] ${val} text-center`}>{config.customer_name || 'CT'}</div>
                 </div>
 
                 {/* Số Lot | value | TL | value */}
-                <div className="flex border-b border-zinc-400">
+                <div className="flex border-b-[1.5px] border-zinc-800 print:border-black">
                     <div className={`w-[18%] ${cell} ${lbl}`}>Số Lot</div>
                     <div className={`w-[40%] ${cell} ${valLg} tracking-tight`}>
                         {lotCode}
@@ -83,7 +83,7 @@ function CustomLabel({ data, config, index }: { data: any; config: any; index: n
                 </div>
 
                 {/* Kiện số | value | NSX | value */}
-                <div className="flex border-b border-zinc-400">
+                <div className="flex border-b-[1.5px] border-zinc-800 print:border-black">
                     <div className={`w-[18%] ${cell} ${lbl}`}>Kiện số</div>
                     <div className={`w-[40%] ${cell} ${valLg}`}>{index.toString().padStart(2, '0')}</div>
                     <div className={`w-[12%] ${cell} ${lbl}`}>NSX</div>
@@ -91,7 +91,7 @@ function CustomLabel({ data, config, index }: { data: any; config: any; index: n
                 </div>
 
                 {/* ĐVT | value | HSD | value */}
-                <div className="flex border-b border-zinc-400">
+                <div className="flex border-b-[1.5px] border-zinc-800 print:border-black">
                     <div className={`w-[18%] ${cell} ${lbl}`}>ĐVT</div>
                     <div className={`w-[40%] ${cell} ${val}`}>{config.unit || 'Kg'}</div>
                     <div className={`w-[12%] ${cell} ${lbl}`}>HSD</div>
@@ -99,15 +99,15 @@ function CustomLabel({ data, config, index }: { data: any; config: any; index: n
                 </div>
 
                 {/* Đơn hàng | value | Tham chiếu */}
-                <div className="flex border-b border-zinc-400">
+                <div className="flex border-b-[1.5px] border-zinc-800 print:border-black">
                     <div className={`w-[18%] ${cell} ${lbl}`}>Đơn hàng</div>
                     <div className={`w-[40%] ${cell} ${val} text-right font-black`}>{config.order_code || 'NF-CT'}</div>
-                    <div className={`flex-1 border-b border-zinc-400 px-1.5 py-[2px] text-center ${lbl}`}>BARCODE</div>
+                    <div className={`flex-1 border-b-[1.5px] border-zinc-800 print:border-black px-1.5 py-[2px] text-center ${lbl}`}>BARCODE</div>
                 </div>
 
                 {/* Tham chiếu text | Barcode sọc (Mã Lot) ── */}
                 <div className="flex text-zinc-800" style={{ height: '12mm' }}>
-                    <div className="w-[58%] border-r border-zinc-400 flex items-center justify-center px-1 text-[10px] font-black tracking-tight text-center break-all leading-tight">
+                    <div className="w-[58%] border-r-[1.5px] border-zinc-800 print:border-black flex items-center justify-center px-1 text-[10px] font-black tracking-tight text-center break-all leading-tight">
                         {config.barcode || '---'}
                     </div>
                     <div className="flex-1 flex flex-col items-center justify-center py-1 overflow-hidden px-4">
@@ -210,15 +210,32 @@ function CustomLabelContent() {
         fetch()
     }, [lotId, token])
 
-    // ── Autosave ──
+    // ── Autosave chỉ lưu vào localStorage để dùng tạm trên máy hiện tại ──
     useEffect(() => {
-        const t = setTimeout(async () => {
-            if (!lotId || !data || loading) return
-            localStorage.setItem(`cpl_${lotId}`, JSON.stringify(config))
-            await (supabase.from('production_lots') as any).update({ print_config: config }).eq('id', lotId)
-        }, 800)
-        return () => clearTimeout(t)
+        if (!lotId || !data || loading) return
+        localStorage.setItem(`cpl_${lotId}`, JSON.stringify(config))
     }, [config, lotId, data, loading])
+
+    // ── Lưu cấu hình lên Database ──
+    const handleSaveConfig = async () => {
+        if (!data || !lotId) return
+        setIsSaving(true)
+        try {
+            const { error } = await (supabase.from('production_lots') as any)
+                .update({ print_config: config })
+                .eq('id', lotId)
+            
+            if (error) throw error
+
+            setData((p: any) => ({ ...p, print_config: config }))
+            localStorage.setItem(`cpl_${lotId}`, JSON.stringify(config))
+            showToast('Đã lưu cấu hình tem vào hệ thống thành công!')
+        } catch (e: any) {
+            showToast('Lỗi khi lưu cấu hình: ' + e.message, 'error')
+        } finally {
+            setIsSaving(false)
+        }
+    }
 
     // ── In ──
     const handlePrint = async () => {
@@ -231,14 +248,16 @@ function CustomLabelContent() {
                 total_printed_labels: (Number(data.total_printed_labels) || 0) + count,
                 last_printed_index: startIdx + count - 1,
                 last_printed_at: new Date().toISOString(),
+                print_config: config, // Đồng thời lưu cấu hình tem khi in
             }
             await (supabase.from('production_lots') as any).update(updates).eq('id', lotId)
             setData((p: any) => ({ ...p, ...updates }))
+            localStorage.setItem(`cpl_${lotId}`, JSON.stringify(config))
             setTimeout(() => {
                 window.print()
                 setConfig(p => ({ ...p, start_index: updates.last_printed_index + 1 }))
                 setIsSaving(false)
-                showToast(`Đã in ${count} tem khách hàng!`)
+                showToast(`Đã in ${count} tem khách hàng và lưu cấu hình!`)
             }, 300)
         } catch (e: any) {
             showToast('Lỗi khi lưu: ' + e.message, 'error')
@@ -293,6 +312,14 @@ function CustomLabelContent() {
                     <span className="text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg">
                         Đã in: {data.total_printed_labels || 0} tem
                     </span>
+                    <button
+                        onClick={handleSaveConfig}
+                        disabled={isSaving}
+                        className="flex items-center gap-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-95 border border-zinc-300 disabled:opacity-50"
+                    >
+                        {isSaving ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} className="text-emerald-600" />}
+                        Lưu Cấu Hình
+                    </button>
                     <button
                         onClick={handlePrint}
                         disabled={isSaving}
@@ -562,6 +589,10 @@ function CustomLabelContent() {
                         #custom-print-area { position: absolute !important; left: 0 !important; top: 0 !important; }
                         .cpl-break { page-break-after: always; break-after: page; display: block; height: 0; }
                         @page { margin: 0; size: 90mm 60mm; }
+                        * {
+                            -webkit-print-color-adjust: exact !important;
+                            print-color-adjust: exact !important;
+                        }
                     }
                     .barcode-font { font-family: 'Libre Barcode 39', cursive; font-size: 32px; }
                 `}} />
