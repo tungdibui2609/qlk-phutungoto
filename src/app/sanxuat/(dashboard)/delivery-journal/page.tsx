@@ -186,12 +186,13 @@ export default function SanXuatDeliveryJournalPage() {
 
     const loadActiveShift = useCallback(async () => {
         const companyId = currentSystem?.company_id || profile?.company_id
-        if (!companyId) return
+        if (!companyId || !currentSystem) return
         try {
             const { data, error } = await (supabase as any)
                 .from('delivery_shifts')
                 .select('*')
                 .eq('company_id', companyId)
+                .eq('system_code', currentSystem.code)
                 .eq('status', 'open')
                 .maybeSingle()
             if (!error && data) {

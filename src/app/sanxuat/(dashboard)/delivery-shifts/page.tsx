@@ -282,6 +282,7 @@ export default function SanxuatDeliveryShiftsPage() {
                 .from('delivery_shifts')
                 .select('*')
                 .eq('company_id', companyId)
+                .eq('system_code', 'sanxuat')
                 .order('created_at', { ascending: false })
 
             const { data, error } = await query
