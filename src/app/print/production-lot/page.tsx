@@ -116,7 +116,8 @@ function ProductionLotPrintContent() {
                         ? (lotData.productions?.last_sheet_index || 0) + 1
                         : (lotData.last_printed_index || 0) + 1,
                     specification: mergedConfig.specification || lotData.products?.name?.match(/\((.*?)\)/)?.[1] || '',
-                    net_weight: mergedConfig.net_weight || (lotData.weight_per_unit ? `${lotData.weight_per_unit} kg` : '')
+                    net_weight: mergedConfig.net_weight || (lotData.weight_per_unit ? `${lotData.weight_per_unit} kg` : ''),
+                    production_date: lotData.production_date ? new Date(lotData.production_date).toISOString().split('T')[0] : (mergedConfig.production_date || new Date().toISOString().split('T')[0])
                 }))
             }
             setLoading(false)
@@ -336,8 +337,8 @@ function ProductionLotPrintContent() {
                             <input
                                 type="date"
                                 value={printConfig.production_date}
-                                onChange={e => setPrintConfig(prev => ({ ...prev, production_date: e.target.value }))}
-                                className="w-full px-4 py-3 rounded-2xl bg-zinc-50 border border-zinc-100 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold text-sm text-zinc-800"
+                                disabled
+                                className="w-full px-4 py-3 rounded-2xl bg-zinc-100 border border-zinc-200 cursor-not-allowed focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold text-sm text-zinc-500"
                             />
                         </div>
                         <div className="space-y-2">
@@ -833,8 +834,8 @@ function ProductionLotPrintContent() {
                         <input
                             type="date"
                             value={printConfig.production_date}
-                            onChange={e => setPrintConfig(prev => ({ ...prev, production_date: e.target.value }))}
-                            className="w-full px-4 py-3 rounded-2xl bg-zinc-50 border border-zinc-100 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all font-bold text-sm text-zinc-800"
+                            disabled
+                            className="w-full px-4 py-3 rounded-2xl bg-zinc-100 border border-zinc-200 cursor-not-allowed focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all font-bold text-sm text-zinc-500"
                         />
                     </div>
                     <div className="space-y-2">

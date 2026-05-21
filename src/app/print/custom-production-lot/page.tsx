@@ -179,14 +179,20 @@ function CustomLabelContent() {
                 const merged = { ...config, ...local, ...db }
                 const expYears = merged.expiry_years || 2
                 
-                // NSX: Ưu tiên db > local > ngày tạo lot gốc > hôm nay
-                const pDate = db.production_date || local.production_date || raw.production_date || (raw.created_at ? raw.created_at.split('T')[0] : new Date().toISOString().split('T')[0])
+                // NSX: Ưu tiên ngày sản xuất được cài đặt trực tiếp trên lot > db config > local > ngày tạo lot > hôm nay
+                const lotProductionDate = raw.production_date ? new Date(raw.production_date).toISOString().split('T')[0] : null
+                const pDate = lotProductionDate || db.production_date || local.production_date || (raw.created_at ? raw.created_at.split('T')[0] : new Date().toISOString().split('T')[0])
                 
                 // Ngày in tem: Luôn cập nhật là ngày hôm nay mỗi khi mở trang
                 const prDate = new Date().toISOString().split('T')[0]
                 
                 // HSD
                 const eDate = db.expiry_date || local.expiry_date || new Date(new Date(pDate).setFullYear(new Date(pDate).getFullYear() + expYears)).toISOString().split('T')[0]
+                
+                // Nếu lot đã có ngày sản xuất, khóa trường NSX
+                if (lotProductionDate) {
+                    setIsNsxLocked(true)
+                }
                 
                 setConfig({
                     ...merged,

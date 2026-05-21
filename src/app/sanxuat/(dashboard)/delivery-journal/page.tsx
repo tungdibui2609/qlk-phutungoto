@@ -150,6 +150,13 @@ export default function SanXuatDeliveryJournalPage() {
     const [closeNotes, setCloseNotes] = useState('')
     const [shiftSummary, setShiftSummary] = useState<any>(null)
 
+    // Chốt ca tạm (Sub-shifts / Interim Close)
+    const [subShifts, setSubShifts] = useState<any[]>([])
+    const [interimCloseModal, setInterimCloseModal] = useState(false)
+    const [interimNotes, setInterimNotes] = useState('')
+    const [interimSummary, setInterimSummary] = useState<any>(null)
+    const [showSubShiftsPanel, setShowSubShiftsPanel] = useState(false)
+
     // Chỉnh sửa số liệu (Edit)
     const [editModal, setEditModal] = useState<DeliveryJournal | null>(null)
     const [editQtySent, setEditQtySent] = useState<number>(0)
@@ -159,6 +166,23 @@ export default function SanXuatDeliveryJournalPage() {
     const [editNotes, setEditNotes] = useState<string>('')
     const [confirmPassword, setConfirmPassword] = useState<string>('')
     const [isSaving, setIsSaving] = useState<boolean>(false)
+
+    const loadSubShifts = async (shiftId: string) => {
+        if (!currentSystem) return
+        try {
+            const { data, error } = await (supabase as any)
+                .from('delivery_sub_shifts')
+                .select('*')
+                .eq('shift_id', shiftId)
+                .eq('system_code', currentSystem.code)
+                .order('sub_shift_number', { ascending: true })
+            if (!error) {
+                setSubShifts(data || [])
+            }
+        } catch (err) {
+            console.error('Error loading sub-shifts:', err)
+        }
+    }
 
     const loadActiveShift = useCallback(async () => {
         const companyId = currentSystem?.company_id || profile?.company_id
@@ -172,13 +196,136 @@ export default function SanXuatDeliveryJournalPage() {
                 .maybeSingle()
             if (!error && data) {
                 setActiveShift(data)
+                // Load sub-shifts cho ca đang mở
+                loadSubShifts(data.id)
             } else {
                 setActiveShift(null)
+                setSubShifts([])
             }
         } catch (err) {
             console.error('Error loading active shift:', err)
         }
     }, [currentSystem, profile])
+
+    // Tính summary cho khoảng thời gian chốt ca tạm (từ lần chốt trước đến bây giờ)
+    const calculateInterimSummary = async () => {
+        const companyId = currentSystem?.company_id || profile?.company_id
+        if (!companyId || !activeShift) return
+        try {
+            // Thời điểm bắt đầu tính = lần chốt tạm cuối cùng hoặc thời điểm mở ca
+            const lastSubShift = subShifts.length > 0 ? subShifts[subShifts.length - 1] : null
+            const fromTime = lastSubShift ? lastSubShift.to_time : activeShift.opened_at
+
+            const { data, error } = await (supabase as any)
+                .from('delivery_journal')
+                .select('*')
+                .eq('company_id', companyId)
+                .gte('sent_at', fromTime)
+            if (error) throw error
+            const list = (data || []) as any[]
+            const total_sent = list.length
+            const total_received = list.filter((j: any) => j.status === 'received_by_warehouse' || j.status === 'received_by_production').length
+            const total_cancelled = list.filter((j: any) => j.status === 'cancelled').length
+
+            // Query delivery_settings để lấy mã Lệnh sản xuất (mo_code)
+            const { data: settingsData } = await (supabase as any)
+                .from('delivery_settings')
+                .select('id, mo_code')
+                .eq('company_id', companyId)
+            const settingsMap = (settingsData || []).reduce((acc: Record<string, string>, s: any) => {
+                acc[s.id] = s.mo_code
+                return acc
+            }, {})
+
+            const units_summary: Record<string, { sent: number; received: number; cancelled: number }> = {}
+            const mo_summary: Record<string, {
+                mo_code: string;
+                products: Record<string, {
+                    product_name: string;
+                    unit: string;
+                    sent: number;
+                    received: number;
+                    cancelled: number;
+                }>
+            }> = {}
+
+            for (const j of list) {
+                const unit = j.unit || 'Thùng'
+                const prodName = j.item_name || 'Hàng hóa'
+                const moCode = j.setting_id ? (settingsMap[j.setting_id] || 'Không xác định') : 'Không xác định'
+
+                if (!units_summary[unit]) {
+                    units_summary[unit] = { sent: 0, received: 0, cancelled: 0 }
+                }
+                units_summary[unit].sent += j.quantity_sent || 0
+                if (j.status === 'received_by_warehouse' || j.status === 'received_by_production') {
+                    units_summary[unit].received += j.quantity_sent || 0
+                } else if (j.status === 'cancelled') {
+                    units_summary[unit].cancelled += j.quantity_sent || 0
+                }
+
+                if (!mo_summary[moCode]) {
+                    mo_summary[moCode] = { mo_code: moCode, products: {} }
+                }
+                const prodKey = `${prodName}_${unit}`
+                if (!mo_summary[moCode].products[prodKey]) {
+                    mo_summary[moCode].products[prodKey] = {
+                        product_name: prodName, unit, sent: 0, received: 0, cancelled: 0
+                    }
+                }
+                mo_summary[moCode].products[prodKey].sent += j.quantity_sent || 0
+                if (j.status === 'received_by_warehouse' || j.status === 'received_by_production') {
+                    mo_summary[moCode].products[prodKey].received += j.quantity_sent || 0
+                } else if (j.status === 'cancelled') {
+                    mo_summary[moCode].products[prodKey].cancelled += j.quantity_sent || 0
+                }
+            }
+
+            setInterimSummary({
+                total_sent,
+                total_received,
+                total_cancelled,
+                units_summary,
+                mo_summary,
+                from_time: fromTime,
+            })
+        } catch (err) {
+            console.error('Error calculating interim summary:', err)
+        }
+    }
+
+    const handleInterimClose = async () => {
+        if (!activeShift || !currentSystem) return
+        try {
+            const lastSubShift = subShifts.length > 0 ? subShifts[subShifts.length - 1] : null
+            const fromTime = lastSubShift ? lastSubShift.to_time : activeShift.opened_at
+            const toTime = new Date().toISOString()
+
+            const payload = {
+                shift_id: activeShift.id,
+                system_code: currentSystem.code,
+                company_id: currentSystem.company_id || profile?.company_id || null,
+                sub_shift_number: subShifts.length + 1,
+                from_time: fromTime,
+                to_time: toTime,
+                closed_by: profile?.id || null,
+                closed_by_name: profile?.full_name || 'Nhân viên sản xuất',
+                summary_data: interimSummary || {},
+                notes: interimNotes || null,
+            }
+            const { error } = await (supabase as any)
+                .from('delivery_sub_shifts')
+                .insert([payload])
+            if (error) throw error
+            setInterimCloseModal(false)
+            setInterimNotes('')
+            setInterimSummary(null)
+            loadSubShifts(activeShift.id)
+        } catch (err: any) {
+            console.error('Interim close error:', err)
+            alert('Lỗi chốt ca tạm: ' + (err?.message || err))
+        }
+    }
 
     const calculateShiftSummary = async (openedAtStr: string) => {
         const companyId = currentSystem?.company_id || profile?.company_id
@@ -482,6 +629,12 @@ export default function SanXuatDeliveryJournalPage() {
                 table: 'delivery_shifts',
                 filter: `company_id=eq.${companyId}`,
             }, () => loadActiveShift())
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'delivery_sub_shifts',
+                filter: `company_id=eq.${companyId}`,
+            }, () => loadActiveShift())
             .subscribe()
 
         realtimeRef.current = channel
@@ -732,50 +885,151 @@ export default function SanXuatDeliveryJournalPage() {
             {/* Shift Banner Widget */}
             <div className="shrink-0">
                 {activeShift ? (
-                    <div className="bg-emerald-50 dark:bg-emerald-950/20 border-b border-emerald-100 dark:border-emerald-900/30 px-6 py-2.5 flex items-center justify-between gap-4 flex-wrap">
-                        <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 dark:text-emerald-300">
-                            <span className="flex h-2 w-2 relative">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                            </span>
-                            <span>🟢 Ca đang mở: <strong className="text-emerald-900 dark:text-white font-extrabold">{activeShift.opened_by_name}</strong> lúc {new Date(activeShift.opened_at).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Link href="/sanxuat/delivery-shifts" className="text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-300 text-[11px] font-bold underline mr-2">
-                                Xem lịch sử ca
-                            </Link>
-                            <button
-                                onClick={async () => {
-                                    const companyId = currentSystem?.company_id || profile?.company_id
-                                    if (!companyId) return
-                                    
-                                    try {
-                                        const { data: pendingData, error: pendingErr } = await (supabase as any)
-                                            .from('delivery_journal')
-                                            .select('id')
-                                            .eq('company_id', companyId)
-                                            .gte('sent_at', activeShift.opened_at)
-                                            .eq('status', 'sent')
+                    <div>
+                        <div className="bg-emerald-50 dark:bg-emerald-950/20 border-b border-emerald-100 dark:border-emerald-900/30 px-6 py-2.5 flex items-center justify-between gap-4 flex-wrap">
+                            <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                                <span className="flex h-2 w-2 relative">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                </span>
+                                <span>🟢 Ca đang mở: <strong className="text-emerald-900 dark:text-white font-extrabold">{activeShift.opened_by_name}</strong> lúc {new Date(activeShift.opened_at).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})}</span>
+                                {subShifts.length > 0 && (
+                                    <button 
+                                        onClick={() => setShowSubShiftsPanel(!showSubShiftsPanel)}
+                                        className="ml-2 px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-lg text-[10px] font-extrabold hover:bg-amber-200 dark:hover:bg-amber-800/40 transition-all flex items-center gap-1"
+                                    >
+                                        🟡 {subShifts.length} lần chốt tạm
+                                        <svg className={`w-3 h-3 transform transition-transform ${showSubShiftsPanel ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Link href="/sanxuat/delivery-shifts" className="text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-300 text-[11px] font-bold underline mr-2">
+                                    Xem lịch sử ca
+                                </Link>
+                                <button
+                                    onClick={async () => {
+                                        const companyId = currentSystem?.company_id || profile?.company_id
+                                        if (!companyId) return
+                                        
+                                        try {
+                                            // Xác định khoảng thời gian cần kiểm tra (từ lần chốt tạm trước hoặc mở ca)
+                                            const lastSubShift = subShifts.length > 0 ? subShifts[subShifts.length - 1] : null
+                                            const fromTime = lastSubShift ? lastSubShift.to_time : activeShift.opened_at
                                             
-                                        if (pendingErr) throw pendingErr
-                                        
-                                        if (pendingData && pendingData.length > 0) {
-                                            alert(`Không thể chốt ca! Hiện tại đang còn ${pendingData.length} đợt giao nhận chưa được bên nhận xác nhận (chờ nhận). Vui lòng xử lý hết các đợt này trước khi chốt ca.`);
-                                            return;
+                                            const { data: pendingData, error: pendingErr } = await (supabase as any)
+                                                .from('delivery_journal')
+                                                .select('id')
+                                                .eq('company_id', companyId)
+                                                .gte('sent_at', fromTime)
+                                                .eq('status', 'sent')
+                                                
+                                            if (pendingErr) throw pendingErr
+                                            
+                                            if (pendingData && pendingData.length > 0) {
+                                                alert(`Không thể chốt ca tạm! Hiện tại đang còn ${pendingData.length} đợt giao nhận chưa được bên nhận xác nhận (chờ nhận). Vui lòng xử lý hết các đợt này trước khi chốt ca tạm.`);
+                                                return;
+                                            }
+                                            
+                                            await calculateInterimSummary()
+                                            setInterimCloseModal(true)
+                                        } catch (err) {
+                                            console.error('Error checking pending journals:', err)
+                                            alert('Lỗi kiểm tra đợt giao nhận dở dang')
                                         }
+                                    }}
+                                    className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-black shadow-sm active:scale-95 transition-all flex items-center gap-1"
+                                >
+                                    🟡 Chốt ca tạm
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        const companyId = currentSystem?.company_id || profile?.company_id
+                                        if (!companyId) return
                                         
-                                        await calculateShiftSummary(activeShift.opened_at)
-                                        setCloseShiftModal(true)
-                                    } catch (err) {
-                                        console.error('Error checking pending journals:', err)
-                                        alert('Lỗi kiểm tra đợt giao nhận dở dang')
-                                    }
-                                }}
-                                className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-black shadow-sm active:scale-95 transition-all flex items-center gap-1"
-                            >
-                                🔴 Chốt ca đối soát
-                            </button>
+                                        try {
+                                            const { data: pendingData, error: pendingErr } = await (supabase as any)
+                                                .from('delivery_journal')
+                                                .select('id')
+                                                .eq('company_id', companyId)
+                                                .gte('sent_at', activeShift.opened_at)
+                                                .eq('status', 'sent')
+                                                
+                                            if (pendingErr) throw pendingErr
+                                            
+                                            if (pendingData && pendingData.length > 0) {
+                                                alert(`Không thể chốt ca! Hiện tại đang còn ${pendingData.length} đợt giao nhận chưa được bên nhận xác nhận (chờ nhận). Vui lòng xử lý hết các đợt này trước khi chốt ca.`);
+                                                return;
+                                            }
+                                            
+                                            await calculateShiftSummary(activeShift.opened_at)
+                                            setCloseShiftModal(true)
+                                        } catch (err) {
+                                            console.error('Error checking pending journals:', err)
+                                            alert('Lỗi kiểm tra đợt giao nhận dở dang')
+                                        }
+                                    }}
+                                    className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-black shadow-sm active:scale-95 transition-all flex items-center gap-1"
+                                >
+                                    🔴 Chốt ca đối soát
+                                </button>
+                            </div>
                         </div>
+                        
+                        {/* Sub-shifts panel (expandable) */}
+                        {showSubShiftsPanel && subShifts.length > 0 && (
+                            <div className="bg-amber-50/50 dark:bg-amber-950/10 border-b border-amber-100 dark:border-amber-900/20 px-6 py-3 animate-fadeIn">
+                                <div className="flex items-center justify-between mb-2">
+                                    <h4 className="text-[10px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-wider">📋 Lịch sử chốt ca tạm trong ca hiện tại</h4>
+                                </div>
+                                <div className="space-y-1.5">
+                                    {subShifts.map((ss: any) => {
+                                        const fromStr = new Date(ss.from_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
+                                        const toStr = new Date(ss.to_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
+                                        const summary = ss.summary_data || {}
+                                        return (
+                                            <div key={ss.id} className="flex items-center gap-3 bg-white dark:bg-zinc-800 rounded-xl px-3 py-2 border border-amber-100 dark:border-amber-900/20 text-xs">
+                                                <span className="font-black text-amber-600 dark:text-amber-400 shrink-0">
+                                                    Lần #{ss.sub_shift_number}
+                                                </span>
+                                                <span className="text-stone-500 dark:text-stone-400 shrink-0">
+                                                    {fromStr} → {toStr}
+                                                </span>
+                                                <span className="text-stone-500 shrink-0">|</span>
+                                                <span className="text-stone-600 dark:text-stone-300 font-semibold">
+                                                    {summary.total_sent || 0} đợt gửi
+                                                </span>
+                                                <span className="text-emerald-600 font-semibold">
+                                                    ✓ {summary.total_received || 0} xong
+                                                </span>
+                                                {(summary.total_cancelled || 0) > 0 && (
+                                                    <span className="text-rose-600 font-semibold">
+                                                        ✕ {summary.total_cancelled} hủy
+                                                    </span>
+                                                )}
+                                                {summary.units_summary && Object.entries(summary.units_summary).map(([unit, data]: any) => (
+                                                    <span key={unit} className="text-stone-400 text-[10px]">
+                                                        ({data.sent} {unit})
+                                                    </span>
+                                                ))}
+                                                {ss.closed_by_name && (
+                                                    <span className="text-stone-400 text-[10px] ml-auto shrink-0">
+                                                        👤 {ss.closed_by_name}
+                                                    </span>
+                                                )}
+                                                {ss.notes && (
+                                                    <span className="text-stone-400 text-[10px] italic truncate max-w-[120px]" title={ss.notes}>
+                                                        {ss.notes}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <div className="bg-amber-50 dark:bg-amber-950/20 border-b border-amber-100 dark:border-amber-900/30 px-6 py-2.5 flex items-center justify-between gap-4 flex-wrap">
@@ -1267,6 +1521,99 @@ export default function SanXuatDeliveryJournalPage() {
                     </div>
                 )
             })()}
+
+            {/* Interim Close Modal (Chốt ca tạm) */}
+            {interimCloseModal && interimSummary && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white dark:bg-zinc-800 rounded-3xl shadow-2xl w-full max-w-md mx-4 overflow-hidden max-h-[90vh] overflow-y-auto">
+                        <div className="p-6">
+                            <h3 className="text-base font-black text-stone-900 dark:text-white flex items-center gap-1.5 mb-4 text-amber-600">
+                                🟡 Chốt ca tạm (Đổi ca)
+                            </h3>
+                            
+                            {/* Thông tin khoảng thời gian */}
+                            <div className="bg-amber-50 dark:bg-amber-950/10 border border-amber-100 dark:border-amber-900/20 rounded-2xl p-3 mb-4">
+                                <div className="text-[10px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-wider mb-1">Khoảng thời gian tính toán</div>
+                                <div className="text-xs text-stone-600 dark:text-stone-300 font-semibold flex items-center gap-2">
+                                    <span>Từ: {formatDateTime(interimSummary.from_time)}</span>
+                                    <span className="text-amber-500">→</span>
+                                    <span>Đến: {formatDateTime(new Date().toISOString())}</span>
+                                </div>
+                                {subShifts.length > 0 && (
+                                    <div className="text-[10px] text-amber-600 dark:text-amber-400 mt-1 font-medium">
+                                        Đây là lần chốt tạm thứ #{subShifts.length + 1} trong ca
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="bg-stone-50 dark:bg-zinc-900 rounded-2xl p-4 mb-4 space-y-3">
+                                <h4 className="text-xs font-black text-stone-500 uppercase tracking-wider">Tổng kết khoảng thời gian này</h4>
+                                <div className="grid grid-cols-3 gap-2 text-center">
+                                    <div className="p-2 bg-white dark:bg-zinc-800 rounded-xl border border-stone-200/50">
+                                        <div className="text-[9px] text-stone-400 font-bold uppercase">Tổng đợt</div>
+                                        <div className="text-sm font-black mt-0.5">{interimSummary.total_sent}</div>
+                                    </div>
+                                    <div className="p-2 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-100/50 text-emerald-600">
+                                        <div className="text-[9px] font-bold uppercase">Thành công</div>
+                                        <div className="text-sm font-black mt-0.5">{interimSummary.total_received}</div>
+                                    </div>
+                                    <div className="p-2 bg-rose-50/50 dark:bg-rose-950/20 rounded-xl border border-rose-100/50 text-rose-600">
+                                        <div className="text-[9px] font-bold uppercase">Từ chối</div>
+                                        <div className="text-sm font-black mt-0.5">{interimSummary.total_cancelled}</div>
+                                    </div>
+                                </div>
+
+                                {Object.keys(interimSummary.units_summary).length > 0 && (
+                                    <div className="border border-stone-200/50 dark:border-zinc-700/50 rounded-xl overflow-hidden mt-2 text-[10px]">
+                                        <table className="w-full text-left">
+                                            <thead>
+                                                <tr className="bg-stone-100 dark:bg-zinc-800 font-bold text-stone-500 border-b border-stone-200/50">
+                                                    <th className="p-2">ĐVT</th>
+                                                    <th className="p-2 text-right">Gửi</th>
+                                                    <th className="p-2 text-right text-emerald-600">Nhận</th>
+                                                    <th className="p-2 text-right text-rose-600">Hủy</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {Object.entries(interimSummary.units_summary).map(([unit, data]: any) => (
+                                                    <tr key={unit} className="border-b border-stone-100 dark:border-zinc-700/30">
+                                                        <td className="p-2 font-bold">{unit}</td>
+                                                        <td className="p-2 text-right">{data.sent}</td>
+                                                        <td className="p-2 text-right text-emerald-600 font-bold">{data.received}</td>
+                                                        <td className="p-2 text-right text-rose-600 font-bold">{data.cancelled}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-stone-400 mb-1.5 uppercase">Ghi chú bàn giao đổi ca</label>
+                                    <textarea 
+                                        rows={2}
+                                        value={interimNotes}
+                                        onChange={(e) => setInterimNotes(e.target.value)}
+                                        placeholder="Ví dụ: Bàn giao đổi ca giữa buổi, đã giao đủ vật tư ca sáng..."
+                                        className="w-full px-4 py-2.5 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-2xl text-xs focus:ring-2 focus:ring-amber-500 outline-none" 
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2.5 mt-6 pt-4 border-t border-stone-200 dark:border-zinc-700">
+                                <button onClick={() => { setInterimCloseModal(false); setInterimSummary(null); }} className="px-4 py-2 text-xs font-bold text-stone-500 hover:bg-stone-100 rounded-xl">
+                                    Hủy
+                                </button>
+                                <button onClick={handleInterimClose} className="px-5 py-2 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl shadow-md active:scale-95 transition-all">
+                                    Xác nhận chốt ca tạm
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Open Shift Modal */}
             {openShiftModal && (

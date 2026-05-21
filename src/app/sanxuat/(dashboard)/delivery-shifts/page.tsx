@@ -36,6 +36,8 @@ export default function SanxuatDeliveryShiftsPage() {
     const [loadingJournals, setLoadingJournals] = useState(false)
     const [settingsMap, setSettingsMap] = useState<Record<string, { mo_code: string; mo_name: string }>>({})
     const [deleting, setDeleting] = useState(false)
+    const [subShifts, setSubShifts] = useState<any[]>([])
+    const [loadingSubShifts, setLoadingSubShifts] = useState(false)
     const canDelete = true
 
     // Tự động load settings map để phân rã mo_code ở Sản xuất
@@ -77,6 +79,32 @@ export default function SanxuatDeliveryShiftsPage() {
         }
         loadSettingsMap()
     }, [profile?.company_id])
+
+    // Load các sub-shifts (chốt tạm) của ca đang chọn ở Sản xuất
+    useEffect(() => {
+        const loadSubShifts = async () => {
+            if (!selectedShift) {
+                setSubShifts([])
+                return
+            }
+            setLoadingSubShifts(true)
+            try {
+                const { data, error } = await (supabase as any)
+                    .from('delivery_sub_shifts')
+                    .select('*')
+                    .eq('shift_id', selectedShift.id)
+                    .eq('system_code', 'sanxuat')
+                    .order('sub_shift_number', { ascending: true })
+                if (error) throw error
+                setSubShifts(data || [])
+            } catch (err) {
+                console.error('Error loading sub-shifts:', err)
+            } finally {
+                setLoadingSubShifts(false)
+            }
+        }
+        loadSubShifts()
+    }, [selectedShift])
 
     // Load các đợt giao nhận thuộc ca làm việc đang chọn ở Sản xuất
     useEffect(() => {
@@ -706,6 +734,80 @@ export default function SanxuatDeliveryShiftsPage() {
                                             </div>
                                         )
                                     })()
+                                )}
+
+                                {/* Lịch sử Chốt Ca Tạm (Sub-shifts Timeline) */}
+                                {subShifts.length > 0 && (
+                                    <div className="mb-6 border-t border-stone-100 dark:border-zinc-700/50 pt-6">
+                                        <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                                            <Layers size={13} className="text-amber-500" /> Chi tiết các lần chốt ca tạm (đổi ca)
+                                        </h4>
+                                        <div className="relative border-l border-amber-200 dark:border-amber-900/40 ml-2.5 pl-5 space-y-6">
+                                            {subShifts.map((ss: any) => {
+                                                const summary = ss.summary_data || {}
+                                                return (
+                                                    <div key={ss.id} className="relative group">
+                                                        {/* Timeline node */}
+                                                        <span className="absolute -left-[26px] top-1 flex items-center justify-center w-3 h-3 bg-amber-500 rounded-full ring-4 ring-white dark:ring-zinc-800 transition-all group-hover:scale-125" />
+                                                        
+                                                        <div className="bg-stone-50/50 dark:bg-zinc-900/50 hover:bg-stone-50 dark:hover:bg-zinc-900 border border-stone-200/50 dark:border-zinc-700/50 rounded-2xl p-4 shadow-sm transition-all duration-200">
+                                                            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                                                                 <span className="text-xs font-black text-amber-600 dark:text-amber-400">
+                                                                    Lần chốt ca tạm #{ss.sub_shift_number}
+                                                                </span>
+                                                                <span className="text-[10px] font-bold text-stone-450 dark:text-stone-400">
+                                                                    ⏱ {formatDateTime(ss.from_time).split(' ')[1] || ''} → {formatDateTime(ss.to_time).split(' ')[1] || ''} ({formatDateTime(ss.to_time).split(' ')[0] || ''})
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Mini Summary Grid */}
+                                                            <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                                                                <div className="p-1.5 bg-white dark:bg-zinc-800 rounded-xl border border-stone-200/40 text-[11px]">
+                                                                    <div className="text-[9px] text-stone-400 font-bold uppercase">Gửi</div>
+                                                                    <div className="font-extrabold mt-0.5 text-stone-700 dark:text-stone-300">{summary.total_sent || 0} đợt</div>
+                                                                </div>
+                                                                <div className="p-1.5 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-xl border border-emerald-100/30 text-[11px] text-emerald-600">
+                                                                    <div className="text-[9px] font-bold uppercase">Thành công</div>
+                                                                    <div className="font-extrabold mt-0.5">{summary.total_received || 0} đợt</div>
+                                                                </div>
+                                                                <div className="p-1.5 bg-rose-50/30 dark:bg-rose-950/10 rounded-xl border border-rose-100/30 text-[11px] text-rose-600">
+                                                                    <div className="text-[9px] font-bold uppercase">Từ chối</div>
+                                                                    <div className="font-extrabold mt-0.5">{summary.total_cancelled || 0} đợt</div>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Units breakdown in sub-shift */}
+                                                            {summary.units_summary && Object.keys(summary.units_summary).length > 0 && (
+                                                                <div className="text-[10px] bg-white dark:bg-zinc-800 border border-stone-200/30 dark:border-zinc-700/30 rounded-xl p-2 mb-3">
+                                                                    <div className="font-bold text-stone-400 mb-1">Chi tiết hàng hóa bàn giao:</div>
+                                                                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                                                        {Object.entries(summary.units_summary).map(([unit, data]: any) => (
+                                                                            <div key={unit} className="text-stone-600 dark:text-stone-300">
+                                                                                • <strong className="text-stone-800 dark:text-white">{unit}</strong>: Gửi {data.sent} | Nhận <span className="text-emerald-600 font-bold">{data.received}</span> | Hủy <span className="text-rose-600 font-bold">{data.cancelled}</span>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
+                                                            {/* Notes and Closer */}
+                                                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-t border-stone-200/30 dark:border-zinc-700/30 pt-2 text-[10px] text-stone-500">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <User size={10} />
+                                                                    <span>Người bàn giao: <strong className="text-stone-700 dark:text-stone-300 font-semibold">{ss.closed_by_name || 'Nhân viên'}</strong></span>
+                                                                </div>
+                                                                {ss.notes && (
+                                                                    <div className="italic bg-amber-500/5 dark:bg-amber-500/10 text-amber-850 dark:text-amber-400 px-2 py-0.5 rounded-lg max-w-full md:max-w-[60%] truncate" title={ss.notes}>
+                                                                        💬 Ghi chú: {ss.notes}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    </div>
                                 )}
 
                                 {/* Notes and Handover Details */}
