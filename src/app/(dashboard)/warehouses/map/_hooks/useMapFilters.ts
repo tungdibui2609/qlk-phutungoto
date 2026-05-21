@@ -44,6 +44,21 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
         if (searchTerm) {
             const trimmed = searchTerm.trim()
             if (trimmed) {
+                // Tự động tối ưu hóa tìm kiếm: nếu người dùng nhập danh sách các mã vị trí hoặc mã code viết liền ngăn cách bởi khoảng trắng
+                // (ví dụ: "K1D1A01T301 K1D1B02T401"), ta tự động chuyển đổi khoảng trắng thành dấu ";" đại diện cho phép OR.
+                let finalSearchTerm = trimmed
+                if (!trimmed.includes(';') && !trimmed.includes(',') && !trimmed.includes('&')) {
+                    if (searchMode === 'position') {
+                        finalSearchTerm = trimmed.split(/\s+/).join(';')
+                    } else if (searchMode === 'all') {
+                        const words = trimmed.split(/\s+/)
+                        const isAllCodes = words.every(w => /^[A-Z0-9\-_]{4,}$/i.test(w))
+                        if (isAllCodes && words.length > 1) {
+                            finalSearchTerm = words.join(';')
+                        }
+                    }
+                }
+
                 const getSearchableVals = (p: PositionWithZone, mode: SearchMode) => {
                     const lot = p.lot_id ? lotInfo[p.lot_id] : null
                     const res: string[] = []
@@ -115,7 +130,7 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
 
                 result = result.filter(p => {
                     const searchableVals = getSearchableVals(p, searchMode)
-                    return advancedMatchSearch(searchableVals, searchTerm)
+                    return advancedMatchSearch(searchableVals, finalSearchTerm)
                 })
             }
         }
