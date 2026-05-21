@@ -180,7 +180,7 @@ export function useWarehouseData() {
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
                 fetchAllZonesPos(),
                 fetchAll('zone_layouts', q => q.order('id')),
-                fetchAll('lots', q => q.eq('system_code', systemType), '*, productions(code, name, production_lots(id, lot_code, product_id)), suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)') as Promise<any[]>,
+                fetchAll('lots', q => q.eq('system_code', systemType), 'id, code, status, quantity, inbound_date, created_at, daily_seq, peeling_date, packaging_date, system_code, production_lot_id, products(name, sku, internal_code, internal_name), lot_items(id, product_id, quantity, unit, products(name, sku, internal_code, internal_name)), lot_tags(tag, lot_item_id), productions(code, name)') as Promise<any[]>,
                 supabase.from('export_task_items').select('position_id, lot_id, export_tasks!inner(status, system_code)').eq('export_tasks.system_code', systemType).in('export_tasks.status', ['Pending', 'Processing'])
             ])
 
@@ -209,10 +209,7 @@ export function useWarehouseData() {
                             .map((t: any) => t.tag.replace(/@/g, item.products?.sku || ''))
                             .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
                         accumulatedTags.push(...itemTags)
-                        const rel = (item.products as any)?.product_category_rel
-                        const categoryNames = Array.isArray(rel) 
-                            ? rel.map((r: any) => r.categories?.name).filter(Boolean)
-                            : (rel?.categories?.name ? [rel.categories.name] : [])
+                        const categoryNames: string[] = []
 
                         return {
                             product_name: item.products?.name,
@@ -230,10 +227,7 @@ export function useWarehouseData() {
                         .map((t: any) => t.tag.replace(/@/g, l.products?.sku || ''))
                         .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
                     accumulatedTags.push(...itemTags)
-                    const rel = (l.products as any)?.product_category_rel
-                    const categoryNames = Array.isArray(rel) 
-                        ? rel.map((r: any) => r.categories?.name).filter(Boolean)
-                        : (rel?.categories?.name ? [rel.categories.name] : [])
+                    const categoryNames: string[] = []
 
                     items = [{
                         product_name: l.products.name,
