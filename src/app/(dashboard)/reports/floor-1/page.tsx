@@ -52,13 +52,30 @@ export default function Floor1ReportPage() {
     const [activeAisleId, setActiveAisleId] = useState<string>('all')
 
     // Data States
-    const [positions, setPositions] = useState<any[]>([])
+    const [allPositions, setAllPositions] = useState<any[]>([])  // ALL positions (all floors)
+    const [floor1Ids, setFloor1Ids] = useState<Set<string>>(new Set())  // IDs of floor 1 positions
     const [zones, setZones] = useState<any[]>([])
     const [lotInfo, setLotInfo] = useState<Record<string, any>>({})
 
+    // Auth Session State
+    const [session, setSession] = useState<any>(null)
+    const [authLoaded, setAuthLoaded] = useState(false)
+
     useEffect(() => {
-        if (!systemType) {
-            setLoading(false)
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setSession(session)
+            setAuthLoaded(true)
+        })
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setSession(session)
+            setAuthLoaded(true)
+        })
+        return () => subscription.unsubscribe()
+    }, [])
+
+    useEffect(() => {
+        if (!systemType || !authLoaded) {
+            if (!systemType) setLoading(false)
             return
         }
         
@@ -69,8 +86,8 @@ export default function Floor1ReportPage() {
             try {
                 // 1. Fetch Zones and Positions
                 const [zoneData, posData] = await Promise.all([
-                    fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code')),
-                    fetchAll('positions', q => q.eq('system_type', systemType).order('code'))
+                    fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
+                    fetchAll('positions', q => q.eq('system_type', systemType).order('code').order('id'))
                 ])
 
                 if (!isMounted) return
@@ -84,6 +101,8 @@ export default function Floor1ReportPage() {
                         .from('zone_positions')
                         .select('zone_id, position_id, positions!inner(system_type)')
                         .eq('positions.system_type', systemType)
+                        .order('zone_id', { ascending: true })
+                        .order('position_id', { ascending: true })
                         .range(from, from + limit - 1)
                     
                     if (error) throw error
@@ -129,16 +148,44 @@ export default function Floor1ReportPage() {
 
                 // 4. Filter Floor 1 positions excluding the Hall tree
                 const floor1Positions = posWithZone.filter(p => {
-                    // Check Floor 1 pattern
-                    const match = p.code.match(/T(\d)/i) || p.code.match(/-(\d)-/)
-                    const isFloor1 = match && match[1] === '1'
-                    if (!isFloor1) return false
+                    // Check by Zone Tree (The most accurate if Zones are created properly)
+                    let isFloor1 = false;
+                    let currentZone = zoneData.find(z => z.id === p.zone_id);
+                    while (currentZone) {
+                        const name = (currentZone.name || '').toUpperCase();
+                        if (name.includes('TẦNG 1') || name === 'T1' || name === 'LEVEL 1' || name.includes('TẦNG 01')) {
+                            isFloor1 = true;
+                            break;
+                        }
+                        currentZone = zoneData.find(z => z.id === currentZone.parent_id);
+                    }
+
+                    // Fallback to Code regex if not found in Zone tree
+                    if (!isFloor1) {
+                        const code = (p.code || '').toUpperCase();
+                        // Match T followed by 1 or 01, then 2 digits at the end (e.g., T101, T0101)
+                        if (/T0*1\d{2}$/.test(code)) isFloor1 = true;
+                        // Match explicit -1- or -01-
+                        else if (/-0*1-/.test(code)) isFloor1 = true;
+                        // Fallback as in original logic but parsing the number properly
+                        else {
+                            const match = code.match(/T(\d+)/);
+                            if (match && parseInt(match[1], 10) === 1) isFloor1 = true;
+                            
+                            const matchDash = code.match(/-(\d+)-/);
+                            if (!isFloor1 && matchDash && parseInt(matchDash[1], 10) === 1) isFloor1 = true;
+                        }
+                    }
+
+                    if (!isFloor1) return false;
 
                     // Exclude if in Hall hierarchy
-                    return !hallZoneIds.has(p.zone_id || '')
+                    return !hallZoneIds.has(p.zone_id || '');
                 })
 
-                setPositions(floor1Positions)
+                // Store ALL positions and floor 1 IDs separately
+                setAllPositions(posWithZone)
+                setFloor1Ids(new Set(floor1Positions.map((p: any) => p.id)))
                 setZones(zoneData)
 
                 // 5. Fetch Lot Info for occupied positions (USING CHUNKS)
@@ -200,7 +247,7 @@ export default function Floor1ReportPage() {
 
         loadData()
         return () => { isMounted = false }
-    }, [systemType, showToast])
+    }, [systemType, showToast, authLoaded, session?.user?.id])
 
     // UI Helpers: Get hierarchical zones
     const warehouses = useMemo(() => zones.filter(z => !z.parent_id || z.level === 0), [zones])
@@ -209,70 +256,58 @@ export default function Floor1ReportPage() {
         return zones.filter(z => z.parent_id === activeWarehouseId)
     }, [zones, activeWarehouseId])
 
-    // Grouping & Grid Logic
+    // Floor 1 positions (derived from allPositions + floor1Ids)
+    const positions = useMemo(() => allPositions.filter(p => floor1Ids.has(p.id)), [allPositions, floor1Ids])
+
+    // Grouping & Grid Logic — Group ALL positions first, then filter to floor 1
     const gridData = useMemo(() => {
-        if (positions.length === 0) return { displayZones: [], bins: {} }
+        if (allPositions.length === 0 || floor1Ids.size === 0) return { displayZones: [], bins: {} }
 
-        // 1. Identify "Bins" by grouping siblings with shared numeric suffixes (A01, B01, C01 -> Bin 01)
-        const bins: Record<string, any[]> = {}
-        const mergedBins: any[] = []
+        // Group ALL positions (all floors) to get correct virtual bins with all levels
+        const { zones: groupedZones, positions: groupedPositions } = groupWarehouseData(zones, allPositions)
 
-        // To do this right, we look at the zones that are children of Aisle/Hall
-        const aisles = zones.filter(z => /D[ÃãYy]|S[Ảả]nh|S[Àà]NH/i.test(z.name || ''))
+        // Find all virtual bins
+        const virtualBins = groupedZones.filter((z: any) => z.id.startsWith('v-bin-'))
         
-        aisles.forEach(aisle => {
-            const children = zones.filter(z => z.parent_id === aisle.id)
-            const binGroups: Record<string, any[]> = {}
+        // Build position lookup per bin — only keep FLOOR 1 positions
+        const bins: Record<string, any[]> = {}
+        
+        virtualBins.forEach((bin: any) => {
+            // Find virtual levels under this bin
+            const levels = groupedZones.filter((z: any) => z.parent_id === bin.id)
+            const levelIds = new Set([bin.id, ...levels.map((l: any) => l.id)])
             
-            children.forEach(c => {
-                const name = c.name || ''
-                const match = name.match(/\d+$/)
-                const suffix = match ? match[0] : name
-                binGroups[suffix] = binGroups[suffix] || []
-                binGroups[suffix].push(c)
-            })
-
-            Object.entries(binGroups).forEach(([suffix, members]) => {
-                const binId = `v-bin-${aisle.id}-${suffix}`
-                const binName = `Ô ${suffix}`
-                
-                // Get all positions belonging to any member of this group (at Floor 1)
-                const memberIds = new Set(members.map(m => m.id))
-                
-                // Also include descendants of these members (like "Tầng 1" zones)
-                const allMemberDescendantIds = new Set<string>()
-                const collectDescendants = (pid: string) => {
-                    const childZones = zones.filter(z => z.parent_id === pid)
-                    childZones.forEach(cz => {
-                        allMemberDescendantIds.add(cz.id)
-                        collectDescendants(cz.id)
-                    })
-                }
-                members.forEach(m => collectDescendants(m.id))
-
-                const binPositions = positions.filter(p => 
-                    memberIds.has(p.zone_id || '') || allMemberDescendantIds.has(p.zone_id || '')
-                )
-
-                if (binPositions.length > 0) {
-                    bins[binId] = binPositions
-                    mergedBins.push({
-                        id: binId,
-                        parent_id: aisle.id,
-                        name: binName,
-                        suffix: suffix
-                    })
-                }
-            })
+            // Find ALL positions belonging to these levels, then filter to floor 1 only
+            const binPositions = (groupedPositions as any[]).filter((p: any) => 
+                levelIds.has(p.zone_id || '') && floor1Ids.has(p.id)
+            )
+            if (binPositions.length > 0) {
+                bins[bin.id] = binPositions
+            }
         })
 
-        // 2. Filter display bins based on Warehouse/Aisle selection
+        // Build display zones from bins that have positions
+        let mergedBins = virtualBins
+            .filter((bin: any) => bins[bin.id] && bins[bin.id].length > 0)
+            .map((bin: any) => {
+                const name = bin.name || ''
+                const match = name.match(/\d+$/)
+                const suffix = match ? match[0] : name
+                return {
+                    id: bin.id,
+                    parent_id: bin.parent_id,
+                    name: bin.name,
+                    suffix: suffix
+                }
+            })
+
+        // Filter by warehouse/aisle selection
         let displayZones = mergedBins
 
         if (activeWarehouseId !== 'all') {
             const getDescendantIds = (pid: string): string[] => {
-                const children = zones.filter(z => z.parent_id === pid)
-                return children.reduce((acc: string[], c) => [...acc, c.id, ...getDescendantIds(c.id)], [pid])
+                const children = groupedZones.filter((z: any) => z.parent_id === pid)
+                return children.reduce((acc: string[], c: any) => [...acc, c.id, ...getDescendantIds(c.id)], [pid])
             }
             const targetParentId = activeAisleId === 'all' ? activeWarehouseId : activeAisleId
             const allowedZoneIds = new Set(getDescendantIds(targetParentId))
@@ -299,16 +334,16 @@ export default function Floor1ReportPage() {
             })
         }
 
-        // 3. Final Sort: By Aisle Name -> Bin Suffix
+        // Sort: By Aisle Name -> Bin Suffix
         displayZones.sort((a, b) => {
-            const aisleA = zones.find(z => z.id === a.parent_id)
-            const aisleB = zones.find(z => z.id === b.parent_id)
+            const aisleA = groupedZones.find((z: any) => z.id === a.parent_id)
+            const aisleB = groupedZones.find((z: any) => z.id === b.parent_id)
             if (aisleA?.id !== aisleB?.id) return (aisleA?.name || '').localeCompare(aisleB?.name || '')
             return (a.suffix || '').localeCompare(b.suffix || '', undefined, { numeric: true })
         })
 
         return { displayZones, bins }
-    }, [positions, zones, activeWarehouseId, activeAisleId, searchTerm, lotInfo])
+    }, [allPositions, floor1Ids, zones, activeWarehouseId, activeAisleId, searchTerm, lotInfo])
 
     const handlePrint = () => window.print()
 
@@ -549,7 +584,7 @@ export default function Floor1ReportPage() {
                                             <div className="space-y-3">
                                                 {binPositions.map((pos) => {
                                                     const lot = pos.lot_id ? lotInfo[pos.lot_id] : null
-                                                    const posIsOccupied = !!lot
+                                                    const posIsOccupied = !!lot && lot.products && lot.products.length > 0
                                                     
                                                     if (!posIsOccupied) return (
                                                         <div key={pos.id} className="flex items-center justify-between text-stone-300 py-1 border-b border-stone-50 last:border-0">
