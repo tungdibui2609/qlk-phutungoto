@@ -1,53 +1,63 @@
-# Walkthrough: Mở Mặc Định & Cấu Hình Phân Quyền Nhật Ký Giao Nhận
+# Walkthrough: Chi Tiết Hóa Chốt Ca Tạm & Đối Soát Ca Làm Việc
 
-Tài liệu này mô tả các thay đổi kỹ thuật nhằm giải quyết vấn đề tài khoản nhân viên không truy cập được trang **Nhật ký giao nhận** (`/delivery-journal`) và **Ca làm & Thống kê** (`/delivery-shifts`), đồng thời nâng cấp hệ thống phân quyền để quản trị viên có thể tùy biến chặn trang linh hoạt.
-
-## 1. Vấn đề (Problem)
-- **Thiếu định nghĩa Quyền**: Trong cơ sở dữ liệu (bảng `permissions`), hai quyền `delivery_journal.view` và `delivery_journal.manage` chưa được khai báo. Do đó, quản trị viên không thể gán quyền này cho bất kỳ nhân viên nào trong giao diện phân quyền.
-- **Ràng buộc quá chặt chẽ**: Menu "Nhật ký giao nhận kho" và "Ca làm & Thống kê" yêu cầu quyền `delivery_journal.view`, khiến nhân viên mặc định bị ẩn menu và không thể truy cập, trong khi nhu cầu thực tế là **tất cả nhân viên đều nên vào được mặc định** để ghi nhận dữ liệu giao nhận.
-- **Thiếu kiểm soát chặn trang**: Các trang giao nhận chưa được cấu hình trong `APP_ROUTES` của Client, làm cho Admin không thể cấu hình chặn truy cập các trang này khi cần thiết.
-
-## 2. Giải pháp (Solution)
-
-### A. Mở mặc định truy cập (Default Access)
-Để giải quyết yêu cầu *"tốt nhất là tài khoản nào cũng vào được"* của khách hàng, chúng tôi đã loại bỏ ràng buộc `requiredPermission` đối với menu Nhật ký giao nhận và Thống kê ca trong hệ thống:
-- **File sửa đổi**: [Sidebar.tsx](file:///d:/chanh%20thu/web/src/components/layout/Sidebar.tsx)
-- **Chi tiết**: Loại bỏ thuộc tính `requiredPermission: 'delivery_journal.view'` khỏi menu `delivery_journal_kho` và `delivery_shifts_kho`.
-- **Kết quả**: Tất cả tài khoản nhân viên khi đăng nhập vào phân hệ kho có kích hoạt module `delivery_journal` đều sẽ nhìn thấy và truy cập được hai trang này một cách mặc định.
-
-### B. Tích hợp Quản lý Chặn Trang (Blocked Pages Management)
-Để Admin vẫn giữ được quyền kiểm soát tối cao (có thể chặn một số nhân viên cụ thể không được vào các trang này):
-- **File sửa đổi**: [routes.ts](file:///d:/chanh%20thu/web/src/config/routes.ts)
-- **Chi tiết**: Đã khai báo nhóm route `Giao nhận` vào danh sách `APP_ROUTES`:
-  ```typescript
-  {
-      name: 'Giao nhận',
-      path: '/delivery-management',
-      children: [
-          { name: 'Cài đặt giao nhận', path: '/delivery-settings' },
-          { name: 'Nhật ký giao nhận kho', path: '/delivery-journal' },
-          { name: 'Ca làm & Thống kê', path: '/delivery-shifts' },
-      ]
-  }
-  ```
-- **Kết quả**: Admin sẽ nhìn thấy các trang này xuất hiện trong tab **"Chặn Trang (Blocked Pages)"** tại màn hình Phân quyền người dùng. Admin có thể tích chọn để chặn một nhân viên bất kỳ không cho truy cập trang giao nhận.
-
-### C. Đồng bộ hiển thị Phân quyền & Khai báo Database
-Để hệ thống chuẩn chỉ và sẵn sàng cho việc phân quyền chi tiết:
-- **File sửa đổi**: [page.tsx](file:///d:/chanh%20thu/web/src/app/%28dashboard%29/users/permissions/page.tsx)
-- **Chi tiết**: Thêm nhãn dịch `"Giao nhận"` cho mã module `delivery_journal` trong `featureNames` để hiển thị trực quan trong bảng phân quyền.
-- **Migration SQL**: Tạo file [20260518000000_add_delivery_journal_permissions.sql](file:///d:/chanh%20thu/web/supabase/migrations/20260518000000_add_delivery_journal_permissions.sql) để chèn hai quyền này vào bảng `permissions` của cơ sở dữ liệu:
-  ```sql
-  INSERT INTO public.permissions (code, name, module, description)
-  VALUES 
-      ('delivery_journal.view', 'Xem nhật ký giao nhận', 'Giao nhận', 'Cho phép xem nhật ký giao nhận và ca làm việc'),
-      ('delivery_journal.manage', 'Quản lý giao nhận', 'Giao nhận', 'Cho phép cấu hình cài đặt giao nhận và ca làm việc')
-  ON CONFLICT (code) DO NOTHING;
-  ```
-
-## 3. Tuân thủ kiến trúc "System-Aware" & Cô lập dữ liệu (AGENTS.md)
-- **Kiến trúc Modular**: Các trang giao nhận được bảo vệ ở mức phân hệ thông qua thuộc tính `requiredModule: 'delivery_journal'` trong Sidebar. Chỉ những phân hệ kho nào được đăng ký và kích hoạt module này mới hiển thị menu.
-- **Cô lập dữ liệu**: Logic xử lý bên trong các trang `/delivery-journal` và `/delivery-shifts` đã tích hợp bộ lọc `system_code` chặt chẽ từ trước. Khi nhân viên truy cập, họ chỉ nhìn thấy dữ liệu giao nhận thuộc phân hệ kho hiện hành mà họ đang làm việc, tuyệt đối không bị rò rỉ dữ liệu sang các phân hệ kho khác.
+Tài liệu này mô tả các thay đổi kỹ thuật và cải tiến giao diện người dùng nhằm nâng cấp toàn diện tính năng **Chốt ca tạm (đổi ca)** và **Chốt ca đối soát (cuối ca)** tại trang Nhật trình giao nhận (`/delivery-journal`) và Lịch sử ca làm việc (`/delivery-shifts`).
 
 ---
-*Người thực hiện: Antigravity Agent*
+
+## 🎯 1. Mục Tiêu & Yêu Cầu Đã Đạt Được
+1. **Lưu trữ dữ liệu chi tiết (`summary_data`):** Cả ca tạm và ca đối soát đều lưu cấu trúc dữ liệu chi tiết gồm:
+   - Tổng quan 2 hướng (`w2p` - Cấp vật tư, `p2w` - Nhập thành phẩm).
+   - Chi tiết gom nhóm theo Đơn vị tính (`units_summary`).
+   - Đối soát chi tiết theo Lệnh sản xuất MO (`mo_summary` phân rã theo `from_department` và lấy được `mo_name` chính xác từ database `productions`).
+2. **Bố cục giao diện Lịch sử ca (`/delivery-shifts`):**
+   - Đưa Accordion Timeline các lần chốt ca tạm lên trên cùng (ngay dưới Header ca).
+   - Bấm vào từng ca tạm sẽ bung mở chi tiết đối soát đầy đủ (2 hướng, ĐVT, Lệnh sản xuất) của riêng ca tạm đó.
+   - Đưa phần Tổng hợp số liệu đối soát cả ca (Sum tổng) và Ghi chú bàn giao xuống phía dưới các ca tạm.
+   - **Mới:** Phần **Tổng hợp đối soát cả ca (Sum tổng)** cũng được cải tiến dưới dạng **Accordion đóng/mở (Collapse/Expand)**, giúp giao diện trở nên gọn gàng, thanh lịch và giảm thiểu cuộn trang khi không cần thiết.
+   - **Mặc định đóng:** Khi người dùng mở xem ca làm việc, phần Sum tổng đối soát cả ca sẽ **mặc định hiển thị ở trạng thái đóng (collapsed)** để giao diện ban đầu luôn gọn gàng và tinh tế nhất. Người dùng chỉ cần click vào tiêu đề để mở rộng xem chi tiết.
+   - Đồng bộ 100% giao diện bằng cách sử dụng chung hàm render chi tiết `renderDetailedReconciliation`.
+3. **Độ tương thích ngược hoàn hảo:** 
+   - Hàm `getShiftSummaryData()` tự động nhận diện nếu `summary_data` trong database đã nâng cấp (có chứa `w2p`) thì dùng trực tiếp để hiển thị tức thì.
+   - Đối với các ca cũ (chưa nâng cấp database), hàm sẽ tự động build động từ danh sách `shiftJournals` đã tải. Điều này giúp hệ thống hiển thị mượt mà tức thì cho các ca mới mà không cần load journals từ database, đồng thời vẫn giữ được khả năng hiển thị hoàn hảo cho dữ liệu lịch sử cũ.
+
+---
+
+## 🏗️ 2. Chi Tiết Các Thay Đổi Kỹ Thuật
+
+### A. Đồng bộ cấu trúc Backend & Database (`summary_data`)
+- **File sửa đổi:** [delivery-journal/page.tsx](file:///d:/chanh%20thu/web/src/app/%28dashboard%29/delivery-journal/page.tsx)
+- **Nâng cấp logic:**
+  - Nâng cấp hàm `calculateInterimSummary` (chốt ca tạm) và hàm `calculateShiftSummary` (chốt đối soát ca) để tự động query thông tin Lệnh sản xuất từ bảng `productions` thông qua `settingsData` để lưu trữ tên lệnh sản xuất (`mo_name`) trực tiếp vào JSON.
+  - Phân rã dữ liệu giao nhận thành hai hướng rõ rệt: `w2p` (Kho → Sản xuất) và `p2w` (Sản xuất → Kho).
+
+### B. Thiết kế lại giao diện Master-Detail & Accordion Timeline
+- **File sửa đổi:** [delivery-shifts/page.tsx](file:///d:/chanh%20thu/web/src/app/%28dashboard%29/delivery-shifts/page.tsx)
+- **Tái cấu trúc UI:**
+  - **Hàm render dùng chung `renderDetailedReconciliation(summaryData)`:** Được phát triển để hiển thị giao diện đối soát cực kỳ cao cấp, sử dụng HSL color palette sang trọng:
+    - *Màu xanh dương (blue):* Cho hướng Cấp vật tư (`w2p`).
+    - *Màu tím (purple):* Cho hướng Nhập thành phẩm (`p2w`).
+    - *Màu lục (emerald):* Cho các đợt nhận thành công.
+    - *Màu đỏ (rose):* Cho các đợt bị từ chối/hủy.
+    - *Màu chàm (indigo):* Cho gom nhóm theo Lệnh sản xuất.
+  - **Accordion ca tạm (Timeline):** Được đưa lên vị trí trang trọng nhất (dưới Header thông tin ca). Mỗi lần chốt ca tạm được hiển thị thành một Node Timeline tròn màu hổ phách (`amber`). Khi người dùng click vào, Accordion sẽ nhẹ nhàng trượt mở rộng (`animate-slideDown`) hiển thị toàn bộ chi tiết đối soát của riêng ca tạm đó.
+  - **Accordion Sum tổng cả ca:** Sử dụng state `isMainSummaryExpanded` để điều khiển đóng/mở, mặc định khởi tạo là `false`. Khi hover, có micro-animation scale nhẹ icon và đổi màu chữ sang cam nhằm tăng độ thu hút tương tác.
+
+---
+
+## 🔒 3. Bảo Mật & Cô Lập Dữ Liệu Theo Phân Hệ (RULE[AGENTS.md])
+
+Hệ thống tuân thủ nghiêm ngặt nguyên tắc **"System-Aware Planning"**:
+1. **Lọc dữ liệu ca tạm:** Truy vấn `delivery_sub_shifts` lọc chính xác theo:
+   ```typescript
+   .eq('shift_id', selectedShift.id)
+   .eq('system_code', currentSystem.code)
+   ```
+2. **Lọc dữ liệu ca làm việc:** Truy vấn `delivery_shifts` lọc chính xác theo:
+   ```typescript
+   .eq('company_id', companyId)
+   .eq('system_code', currentSystem?.code)
+   ```
+3. **Cô lập logic:** Mọi thao tác ghi nhận dữ liệu mới trong `/delivery-journal` khi chốt ca tạm/ca làm việc đều tự động truyền thuộc tính `system_code: currentSystem.code` từ Context.
+
+---
+*Người thực hiện: Antigravity Agent - Google DeepMind*

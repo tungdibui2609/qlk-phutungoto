@@ -832,18 +832,18 @@ export default function SanXuatDeliveryJournalPage() {
     return (
         <div className="h-[calc(100vh-4rem)] flex flex-col bg-stone-50 dark:bg-zinc-900">
             {/* Top bar */}
-            <div className="flex items-center justify-between px-6 py-3 bg-white dark:bg-zinc-800 border-b border-stone-200 dark:border-zinc-700 shrink-0">
-                <div className="flex items-center gap-3">
-                    <h1 className="text-xl font-bold text-stone-900 dark:text-white flex items-center gap-2">
-                        <Factory size={24} className="text-emerald-600" />
-                        Giao nhận Kho → Sản xuất
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-3 py-2 sm:px-6 sm:py-3 bg-white dark:bg-zinc-800 border-b border-stone-200 dark:border-zinc-700 shrink-0 gap-2 sm:gap-0">
+                <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-between sm:justify-start">
+                    <h1 className="text-base sm:text-xl font-bold text-stone-900 dark:text-white flex items-center gap-1.5 sm:gap-2">
+                        <Factory size={20} className="text-indigo-600 sm:w-6 sm:h-6" />
+                        Giao nhận SX ↔ Kho
                     </h1>
-                    <span className="flex items-center gap-1 text-xs text-stone-500">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="flex items-center gap-1 text-[10px] sm:text-xs text-stone-500 font-medium bg-stone-100 dark:bg-zinc-700 px-1.5 py-0.5 rounded-md">
+                        <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 animate-pulse" />
                         Live
                     </span>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3 self-end sm:self-auto">
                     {totalNotifs > 0 && (
                         <div className="relative">
                             <button
@@ -887,31 +887,32 @@ export default function SanXuatDeliveryJournalPage() {
             <div className="shrink-0">
                 {activeShift ? (
                     <div>
-                        <div className="bg-emerald-50 dark:bg-emerald-950/20 border-b border-emerald-100 dark:border-emerald-900/30 px-6 py-2.5 flex items-center justify-between gap-4 flex-wrap">
-                            <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 dark:text-emerald-300">
-                                <span className="flex h-2 w-2 relative">
+                        <div className="bg-emerald-50 dark:bg-emerald-950/20 border-b border-emerald-100 dark:border-emerald-900/30 px-3 py-2 sm:px-6 sm:py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
+                            <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs font-bold text-emerald-800 dark:text-emerald-300 flex-wrap">
+                                <span className="flex h-1.5 w-1.5 sm:h-2 sm:w-2 relative">
                                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 sm:h-2 sm:w-2 bg-emerald-500"></span>
                                 </span>
-                                <span>🟢 Ca đang mở: <strong className="text-emerald-900 dark:text-white font-extrabold">{activeShift.opened_by_name}</strong> lúc {new Date(activeShift.opened_at).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})}</span>
+                                <span>Ca mở: <strong className="text-emerald-900 dark:text-white font-extrabold">{activeShift.opened_by_name}</strong> ({new Date(activeShift.opened_at).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})})</span>
                                 {subShifts.length > 0 && (
                                     <button 
                                         onClick={() => setShowSubShiftsPanel(!showSubShiftsPanel)}
-                                        className="ml-2 px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-lg text-[10px] font-extrabold hover:bg-amber-200 dark:hover:bg-amber-800/40 transition-all flex items-center gap-1"
+                                        className="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-md text-[9px] sm:text-[10px] font-extrabold hover:bg-amber-200 dark:hover:bg-amber-800/40 transition-all flex items-center gap-1"
                                     >
-                                        🟡 {subShifts.length} lần chốt tạm
-                                        <svg className={`w-3 h-3 transform transition-transform ${showSubShiftsPanel ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        🟡 {subShifts.length} lần chốt
+                                        <svg className={`w-2.5 h-2.5 sm:w-3 sm:h-3 transform transition-transform ${showSubShiftsPanel ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
                                         </svg>
                                     </button>
                                 )}
                             </div>
-                            <div className="flex items-center gap-2">
-                                <Link href="/sanxuat/delivery-shifts" className="text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-300 text-[11px] font-bold underline mr-2">
-                                    Xem lịch sử ca
+                            <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2">
+                                <Link href="/sanxuat/delivery-shifts" className="text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-300 text-[10px] sm:text-[11px] font-bold underline">
+                                    Lịch sử
                                 </Link>
-                                <button
-                                    onClick={async () => {
+                                <div className="flex items-center gap-1.5 sm:gap-2">
+                                    <button
+                                        onClick={async () => {
                                         const companyId = currentSystem?.company_id || profile?.company_id
                                         if (!companyId) return
                                         
@@ -941,9 +942,9 @@ export default function SanXuatDeliveryJournalPage() {
                                             alert('Lỗi kiểm tra đợt giao nhận dở dang')
                                         }
                                     }}
-                                    className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-black shadow-sm active:scale-95 transition-all flex items-center gap-1"
+                                    className="px-2 sm:px-3 py-1 sm:py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-md sm:rounded-lg text-[10px] sm:text-xs font-black shadow-sm active:scale-95 transition-all flex items-center gap-1"
                                 >
-                                    🟡 Chốt ca tạm
+                                    🟡 Chốt tạm
                                 </button>
                                 <button
                                     onClick={async () => {
@@ -972,10 +973,11 @@ export default function SanXuatDeliveryJournalPage() {
                                             alert('Lỗi kiểm tra đợt giao nhận dở dang')
                                         }
                                     }}
-                                    className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-black shadow-sm active:scale-95 transition-all flex items-center gap-1"
+                                    className="px-2 sm:px-3 py-1 sm:py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-md sm:rounded-lg text-[10px] sm:text-xs font-black shadow-sm active:scale-95 transition-all flex items-center gap-1"
                                 >
-                                    🔴 Chốt ca đối soát
+                                    🔴 Chốt sổ
                                 </button>
+                                </div>
                             </div>
                         </div>
                         
@@ -1152,7 +1154,7 @@ export default function SanXuatDeliveryJournalPage() {
                             {/* Mobile Back Button */}
                             <button 
                                 onClick={() => setSelectedMoId(null)}
-                                className="lg:hidden mb-4 self-start px-3.5 py-2 bg-stone-150 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-stone-700 dark:text-stone-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1 active:scale-95 shadow-sm border border-stone-200 dark:border-zinc-700"
+                                className="lg:hidden mb-4 self-start px-3.5 py-2 bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-stone-700 dark:text-stone-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1 active:scale-95 shadow-sm border border-stone-200 dark:border-zinc-700"
                             >
                                 <ArrowLeft size={14} /> Quay lại danh sách Lệnh
                             </button>
@@ -1179,44 +1181,109 @@ export default function SanXuatDeliveryJournalPage() {
                                         const { setting, journals, totalSent, totalDone, activeCount, waitCount } = pw
                                     const dir = setting.direction === 'warehouse_to_production' ? 'Kho → SX' : 'SX → Kho'
                                     return (
-                                        <div key={setting.id} className="bg-white dark:bg-zinc-800 rounded-2xl border border-stone-200 dark:border-zinc-700 shadow-sm overflow-hidden">
-                                            <div className="p-4 border-b border-stone-100 dark:border-zinc-700">
-                                                <div className="flex items-start justify-between">
-                                                    <div><h3 className="font-bold text-stone-800 dark:text-stone-100">{setting.product_name}</h3>
-                                                    <div className="flex items-center gap-2 mt-1"><span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md bg-stone-100 dark:bg-zinc-700 text-stone-500">{dir}</span><span className="text-[10px] text-stone-500">Cấu hình: {setting.quantity} {setting.unit}</span></div></div>
+                                        <div key={setting.id} className={`rounded-2xl border shadow-sm overflow-hidden transition-all duration-350 ${
+                                            waitCount > 0 
+                                                ? 'bg-rose-50/30 dark:bg-rose-950/5 border-rose-200 dark:border-rose-900/30 shadow-md shadow-rose-100/5' 
+                                                : 'bg-white dark:bg-zinc-800 border-stone-200 dark:border-zinc-700'
+                                        }`}>
+                                            <div className={`p-3 sm:p-4 border-b border-stone-100 dark:border-zinc-700 transition-colors ${
+                                                waitCount > 0 
+                                                    ? 'bg-rose-100/40 dark:bg-rose-900/15' 
+                                                    : ''
+                                            }`}>
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0 flex-1">
+                                                        <h3 className="font-extrabold text-[11px] sm:text-sm md:text-base text-stone-800 dark:text-stone-100 leading-snug break-words">{setting.product_name}</h3>
+                                                        <div className="flex flex-wrap items-center gap-1 mt-1 sm:mt-1.5">
+                                                            <span className="text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded bg-stone-100 dark:bg-zinc-700 text-stone-500 shrink-0">{dir}</span>
+                                                            <span className="text-[8px] sm:text-[9px] text-stone-500 dark:text-stone-400 font-medium">Cấu hình: {setting.quantity} {setting.unit}</span>
+                                                        </div>
+                                                    </div>
                                                     {activeShift ? (
-                                                        <button onClick={() => openSendModal(setting)} className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-500/20 active:scale-95 shrink-0"><Send size={14} /> Gửi đợt mới</button>
+                                                        <button onClick={() => openSendModal(setting)} className="flex items-center gap-0.5 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[9px] sm:text-xs font-black shadow-md shadow-indigo-500/10 active:scale-95 transition-all shrink-0"><Send size={10} /> Gửi đợt mới</button>
                                                     ) : (
-                                                        <span className="text-[10px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 px-2.5 py-1.5 rounded-xl font-extrabold border border-amber-200 dark:border-amber-900/30 animate-pulse">
-                                                            ⚠ Cần mở ca
+                                                        <span className="text-[8px] sm:text-[9px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 px-2 py-1 rounded-lg font-bold border border-amber-200 dark:border-amber-900/30 shrink-0">
+                                                            ⚠ Ca đóng
                                                         </span>
                                                     )}
                                                 </div>
-                                                <div className="flex items-center gap-4 mt-2 text-xs font-semibold">
-                                                    <span className="text-stone-500">Đã gửi: <strong className="text-stone-700 dark:text-stone-300">{getSummaryText(journals, j => j.status !== 'cancelled', setting.unit)}</strong></span>
-                                                    <span className="text-stone-500">Xong: <strong className="text-emerald-600">{getSummaryText(journals, j => j.status === 'received_by_warehouse' || j.status === 'received_by_production', setting.unit)}</strong></span>
-                                                    <span className="text-stone-500">Đang: <strong className="text-cyan-600">{getSummaryText(journals, j => j.status === 'sent', setting.unit)}</strong></span>
-                                                    {waitCount > 0 && <span className="text-amber-600 font-bold animate-pulse">⚠ {waitCount} chờ nhận</span>}
+                                                <div className="flex flex-wrap items-center gap-x-1.5 sm:gap-x-2.5 gap-y-1 mt-2 text-[9px] sm:text-xs font-bold text-stone-500 dark:text-stone-400">
+                                                    <span>Đã gửi: <strong className="text-stone-700 dark:text-stone-300">{getSummaryText(journals, j => j.status !== 'cancelled', setting.unit)}</strong></span>
+                                                    <span className="text-stone-300 dark:text-zinc-700">•</span>
+                                                    <span>Xong: <strong className="text-emerald-600 dark:text-emerald-400">{getSummaryText(journals, j => j.status === 'received_by_warehouse' || j.status === 'received_by_production', setting.unit)}</strong></span>
+                                                    <span className="text-stone-300 dark:text-zinc-700">•</span>
+                                                    <span>Đang: <strong className="text-cyan-600 dark:text-cyan-400">{getSummaryText(journals, j => j.status === 'sent', setting.unit)}</strong></span>
+                                                    {waitCount > 0 && (
+                                                        <>
+                                                            <span className="text-stone-300 dark:text-zinc-700">•</span>
+                                                            <span className="text-rose-600 dark:text-rose-500 animate-pulse flex items-center gap-0.5">
+                                                                <AlertTriangle size={10} className="shrink-0" /> {waitCount} chờ nhận
+                                                            </span>
+                                                        </>
+                                                    )}
                                                 </div>
-                                                {totalSent > 0 && <div className="mt-2 h-1.5 bg-stone-100 dark:bg-zinc-700 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${Math.min(100, (totalDone / totalSent) * 100)}%` }} /></div>}
+                                                {totalSent > 0 && (
+                                                    <div className="mt-2 h-1 bg-stone-100 dark:bg-zinc-700 rounded-full overflow-hidden">
+                                                        <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (totalDone / totalSent) * 100)}%` }} />
+                                                    </div>
+                                                )}
                                             </div>
-                                            {/* Toggle History Bar */}
+
+                                            {/* === ĐỢT CHỜ XỬ LÝ - Hiển thị trực tiếp === */}
+                                            {(() => {
+                                                const pendingJournals = journals.filter(j => 
+                                                    j.status === 'sent' && (j as any).from_department === 'Kho'
+                                                )
+                                                if (pendingJournals.length === 0) return null
+                                                return (
+                                                    <div className="border-t border-rose-200 dark:border-rose-900/30 bg-rose-50/60 dark:bg-rose-950/10">
+                                                        <div className="px-3 py-1.5 sm:px-4 sm:py-2">
+                                                            <span className="text-[9px] sm:text-[10px] font-extrabold text-rose-600 dark:text-rose-400 uppercase tracking-wider flex items-center gap-1">
+                                                                <AlertTriangle size={10} className="animate-pulse" /> {pendingJournals.length} đợt chờ nhận
+                                                            </span>
+                                                        </div>
+                                                        <div className="divide-y divide-rose-100 dark:divide-rose-900/20">
+                                                            {pendingJournals.map(j => (
+                                                                <div key={j.id} className="flex items-center justify-between gap-2 px-3 py-2 sm:px-4 sm:py-2.5 bg-rose-100/50 dark:bg-rose-900/20 border-l-[3px] border-l-rose-500">
+                                                                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                                                        <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-black">Kho gửi</span>
+                                                                        <span className="text-[10px] sm:text-xs font-extrabold text-stone-800 dark:text-stone-300">
+                                                                            {j.quantity_sent} {j.unit}
+                                                                        </span>
+                                                                        {j.delivery_code && (
+                                                                            <span className="text-[8px] sm:text-[9px] text-stone-400 font-mono">{j.delivery_code}</span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                                        <button onClick={() => handleDirectReceive(j)} 
+                                                                            className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[8px] sm:text-[9px] font-black shadow-sm active:scale-95 transition-all flex items-center gap-0.5">
+                                                                            <Check size={9} /> Nhận
+                                                                        </button>
+                                                                        <button onClick={() => setRejectModal({ journal: j })} 
+                                                                            className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[8px] sm:text-[9px] font-black shadow-sm active:scale-95 transition-all flex items-center gap-0.5">
+                                                                            <X size={9} /> Từ chối
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })()}
+
+                                            {/* === LỊCH SỬ GIAO NHẬN - Dưới cùng, không tự mở === */}
                                             {journals.length > 0 && (
                                                 <button 
                                                     onClick={() => toggleExpandProductHistory(setting.id)}
-                                                    className="w-full py-2.5 px-4 bg-stone-50/50 hover:bg-stone-100/50 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/30 flex items-center justify-between border-t border-stone-100 dark:border-zinc-700 text-xs font-semibold text-stone-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                                                    className="w-full py-2 px-3 sm:py-2.5 sm:px-4 flex items-center justify-between border-t border-stone-100 dark:border-zinc-700 text-[10px] sm:text-xs font-bold transition-colors bg-stone-50/50 hover:bg-stone-100/50 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/30 text-stone-500 hover:text-indigo-600 dark:hover:text-indigo-400"
                                                 >
-                                                    <span className="flex items-center gap-1.5">
+                                                    <span className="flex items-center gap-1">
                                                         📋 Lịch sử giao nhận ({journals.length} đợt)
-                                                        {waitCount > 0 && <span className="px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 text-[9px] font-bold animate-pulse">Có đợt mới</span>}
                                                     </span>
-                                                    <span className="text-[10px] flex items-center gap-0.5 text-stone-400">
-                                                        {(() => {
-                                                            const isHistoryExpanded = expandedProductHistories.has(setting.id) || waitCount > 0
-                                                            return isHistoryExpanded ? 'Thu gọn' : 'Xem chi tiết'
-                                                        })()}
-                                                        <svg className={`w-3.5 h-3.5 transform transition-transform ${
-                                                            (expandedProductHistories.has(setting.id) || waitCount > 0) ? 'rotate-180 text-indigo-500' : 'text-stone-400'
+                                                    <span className="text-[9px] sm:text-[10px] flex items-center gap-0.5 text-stone-400 dark:text-zinc-500">
+                                                        {expandedProductHistories.has(setting.id) ? 'Thu gọn' : 'Xem chi tiết'}
+                                                        <svg className={`w-3 h-3 sm:w-3.5 sm:h-3.5 transform transition-transform ${
+                                                            expandedProductHistories.has(setting.id) ? 'rotate-180 text-indigo-500' : 'text-stone-400'
                                                         }`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
                                                         </svg>
@@ -1225,160 +1292,125 @@ export default function SanXuatDeliveryJournalPage() {
                                             )}
 
                                             {(() => {
-                                                const isHistoryExpanded = expandedProductHistories.has(setting.id) || waitCount > 0
-                                                if (isHistoryExpanded && journals.length > 0) {
+                                                if (expandedProductHistories.has(setting.id) && journals.length > 0) {
                                                     return (
                                                         <div className="divide-y divide-stone-100 dark:divide-zinc-700 max-h-60 overflow-y-auto">
                                                             {[...journals]
-                                                                .sort((a, b) => {
-                                                                    const aPending = a.status === 'sent' && (a as any).from_department === 'Kho'
-                                                                    const bPending = b.status === 'sent' && (b as any).from_department === 'Kho'
-                                                                    if (aPending && !bPending) return -1
-                                                                    if (!aPending && bPending) return 1
-                                                                    return new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime()
-                                                                })
+                                                                .sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime())
                                                                 .map(j => {
                                                                     const st = j.status
                                                                     const isPendingAction = st === 'sent' && (j as any).from_department === 'Kho'
-                                                                const isExpanded = expandedJournals.has(j.id) || isPendingAction
-                                                                
-                                                                let badge = <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500">--</span>
-                                                                if (st === 'sent') {
-                                                                    if ((j as any).from_department === 'Sản xuất') badge = <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold">SX gửi</span>
-                                                                    else badge = <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-bold">Kho gửi</span>
-                                                                } else if (st === 'received_by_warehouse') {
-                                                                    badge = <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold">✓ Kho đã nhận</span>
-                                                                } else if (st === 'completed_by_production') {
-                                                                    badge = <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold animate-pulse">SX xong</span>
-                                                                } else if (st === 'received_by_production') {
-                                                                    badge = <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold">✓ SX đã nhận</span>
-                                                                } else if (st === 'cancelled') {
-                                                                    badge = <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-bold">Hủy</span>
-                                                                }
-                                                                
-                                                                // Format short time
-                                                                const getShortTime = (dateStr: string) => {
-                                                                    try {
-                                                                        const d = new Date(dateStr)
-                                                                        return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
-                                                                    } catch {
-                                                                        return ''
+                                                                    const isExpanded = expandedJournals.has(j.id)
+                                                                    
+                                                                    let badge = <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded bg-stone-100 text-stone-500">--</span>
+                                                                    if (st === 'sent') {
+                                                                        if ((j as any).from_department === 'Sản xuất') badge = <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-black">SX gửi</span>
+                                                                        else badge = <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-black">Kho gửi</span>
+                                                                    } else if (st === 'received_by_warehouse') {
+                                                                        badge = <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-black">✓ Kho đã nhận</span>
+                                                                    } else if (st === 'completed_by_production') {
+                                                                        badge = <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-black">SX xong</span>
+                                                                    } else if (st === 'received_by_production') {
+                                                                        badge = <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-black">✓ SX đã nhận</span>
+                                                                    } else if (st === 'cancelled') {
+                                                                        badge = <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-black">Hủy</span>
                                                                     }
-                                                                }
-                                                                
-                                                                return (
-                                                                    <div key={j.id} 
-                                                                        onClick={() => !isPendingAction && toggleExpandJournal(j.id)}
-                                                                        className={`flex flex-col border-b border-stone-100 dark:border-zinc-700 last:border-b-0 transition-all ${
-                                                                            isPendingAction 
-                                                                                ? 'bg-rose-50/40 dark:bg-rose-950/10 border-l-4 border-l-rose-500 px-3 py-3' 
-                                                                                : 'hover:bg-stone-50/50 dark:hover:bg-zinc-700/20 cursor-pointer px-4 py-2.5'
-                                                                        }`}
-                                                                    >
-                                                                        <div className="flex items-center justify-between gap-3">
-                                                                            <div className="flex items-center gap-2 flex-wrap">
-                                                                                {badge}
-                                                                                <span className="text-xs font-bold text-stone-700 dark:text-stone-300">
-                                                                                    {j.quantity_sent} {j.unit}
-                                                                                </span>
-                                                                                {j.delivery_code && (
-                                                                                    <span className="text-[10px] text-stone-400 font-mono">
-                                                                                        {j.delivery_code}
+                                                                    
+                                                                    const getShortTime = (dateStr: string) => {
+                                                                        try {
+                                                                            const d = new Date(dateStr)
+                                                                            return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
+                                                                        } catch {
+                                                                            return ''
+                                                                        }
+                                                                    }
+                                                                    
+                                                                    return (
+                                                                        <div key={j.id} 
+                                                                            onClick={() => toggleExpandJournal(j.id)}
+                                                                            className={`flex flex-col cursor-pointer px-2 py-1.5 sm:px-4 sm:py-2 transition-all ${
+                                                                                isPendingAction 
+                                                                                    ? 'bg-rose-50/40 dark:bg-rose-950/5 border-l-[3px] border-l-rose-400' 
+                                                                                    : 'hover:bg-stone-50/50 dark:hover:bg-zinc-700/20'
+                                                                            }`}
+                                                                        >
+                                                                            <div className="flex items-center justify-between gap-3">
+                                                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                    {badge}
+                                                                                    <span className="text-[10px] sm:text-xs font-extrabold text-stone-800 dark:text-stone-300">
+                                                                                        {j.quantity_sent} {j.unit}
                                                                                     </span>
-                                                                                )}
-                                                                                {isPendingAction && (
-                                                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500 text-white font-bold animate-pulse uppercase tracking-wider shrink-0">
-                                                                                        Chờ nhận
-                                                                                    </span>
-                                                                                )}
-                                                                            </div>
-                                                                            
-                                                                            <div className="flex items-center gap-2 shrink-0">
-                                                                                {st === 'sent' && (j as any).from_department === 'Kho' && (
-                                                                                    <>
-                                                                                        <button onClick={(e) => { e.stopPropagation(); handleDirectReceive(j); }} 
-                                                                                            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-bold shadow-sm active:scale-95 transition-all flex items-center gap-0.5">
-                                                                                            <Check size={12} /> Nhận đủ
-                                                                                        </button>
-                                                                                        <button onClick={(e) => { e.stopPropagation(); setRejectModal({ journal: j }); }} 
-                                                                                            className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[11px] font-bold shadow-sm active:scale-95 transition-all flex items-center gap-0.5">
-                                                                                            <X size={12} /> Từ chối
-                                                                                        </button>
-                                                                                    </>
-                                                                                )}
-                                                                                {!isPendingAction && (
-                                                                                    <span className="text-[10px] text-stone-400 flex items-center gap-1.5 hover:text-stone-600">
-                                                                                        {!isExpanded && <span className="text-[10px] bg-stone-100 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-stone-500 font-medium">{getShortTime(j.sent_at)}</span>}
-                                                                                        <svg className={`w-3.5 h-3.5 transform transition-transform ${isExpanded ? 'rotate-180 text-stone-600' : 'text-stone-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-                                                                                        </svg>
-                                                                                    </span>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
-
-                                                                        {isExpanded && (
-                                                                            <div className="text-[10px] text-stone-400 mt-2 pl-2 border-l border-stone-200 dark:border-zinc-700 space-y-1 py-0.5 animate-fadeIn">
-                                                                                {j.sent_by_name && (
-                                                                                    <div>Gửi: <span className="font-semibold text-stone-600 dark:text-stone-300">{j.sent_by_name}</span> lúc <span className="font-medium text-stone-500">{formatDateTime(j.sent_at)}</span></div>
-                                                                                )}
-                                                                                {st === 'received_by_production' && j.received_by_production_name && (
-                                                                                    <div className="text-emerald-600 dark:text-emerald-400 font-medium">Nhận: <span className="font-bold">{j.received_by_production_name}</span> lúc <span>{formatDateTime(j.received_by_production_at || j.updated_at)}</span></div>
-                                                                                )}
-                                                                                {st === 'received_by_warehouse' && j.received_by_warehouse_name && (
-                                                                                    <div className="text-emerald-600 dark:text-emerald-400 font-medium">Nhận: <span className="font-bold">{j.received_by_warehouse_name}</span> lúc <span>{formatDateTime(j.received_by_warehouse_at || j.updated_at)}</span></div>
-                                                                                )}
-                                                                                {st === 'completed_by_production' && j.completed_by_name && (
-                                                                                    <div className="text-amber-600 dark:text-amber-400 font-medium">Xong: <span className="font-bold">{j.completed_by_name}</span> lúc <span>{formatDateTime(j.completed_by_production_at || j.updated_at)}</span></div>
-                                                                                )}
-                                                                                {(st === 'completed_by_production' || st === 'received_by_warehouse') && j.result_item_name && (
-                                                                                    <p className="text-[10px] text-emerald-600 font-medium mt-1">→ {j.result_item_name} ({j.result_quantity} {j.result_unit})</p>
-                                                                                )}
-                                                                                {(() => {
-                                                                                    const { text: notesText } = parseNotes(j.notes)
-                                                                                    const isReject = j.notes && j.notes.includes('[Từ chối]')
-                                                                                    const isDiff = j.notes && j.notes.includes('[Chênh lệch]')
-                                                                                    
-                                                                                    return (
-                                                                                        <>
-                                                                                            {notesText && (
-                                                                                                isReject ? (
-                                                                                                    <div className="mt-2 p-2.5 bg-rose-50 dark:bg-rose-950/10 border border-rose-200/50 dark:border-rose-800/30 rounded-xl text-[10px] text-rose-700 dark:text-rose-400 font-medium flex items-start gap-1.5 animate-fadeIn">
-                                                                                                        <X size={12} className="shrink-0 mt-0.5 text-rose-500" />
-                                                                                                        <div>{notesText}</div>
-                                                                                                    </div>
-                                                                                                ) : isDiff ? (
-                                                                                                    <div className="mt-2 p-2.5 bg-amber-50 dark:bg-amber-900/10 border border-amber-200/50 dark:border-amber-800/30 rounded-xl text-[10px] text-amber-700 dark:text-amber-400 font-medium flex items-start gap-1.5">
-                                                                                                        <AlertTriangle size={12} className="shrink-0 mt-0.5" />
-                                                                                                        <div>{notesText}</div>
-                                                                                                    </div>
-                                                                                                ) : (
-                                                                                                    <div className="text-[9px] text-stone-500 italic mt-1 pl-1">Ghi chú: {notesText}</div>
-                                                                                                )
-                                                                                            )}
-                                                                                        </>
-                                                                                    )
-                                                                                })()}
-                                                                                <div className="mt-2 flex items-center justify-end border-t border-stone-150/40 dark:border-zinc-700/40 pt-2 animate-fadeIn">
-                                                                                    <button
-                                                                                        onClick={(e) => {
-                                                                                            e.stopPropagation()
-                                                                                            openEditModal(j)
-                                                                                        }}
-                                                                                        className="px-2.5 py-1 bg-stone-50 hover:bg-stone-150 dark:bg-zinc-800 dark:hover:bg-zinc-750 text-stone-600 dark:text-stone-300 rounded-lg text-[9px] font-bold flex items-center gap-1 transition-all active:scale-95 border border-stone-200 dark:border-zinc-700"
-                                                                                    >
-                                                                                        <Pencil size={9} className="text-stone-500" /> Chỉnh sửa số liệu
-                                                                                    </button>
+                                                                                    {j.delivery_code && (
+                                                                                        <span className="text-[8px] sm:text-[9px] text-stone-400 font-mono">{j.delivery_code}</span>
+                                                                                    )}
                                                                                 </div>
+                                                                                <span className="text-[9px] text-stone-400 flex items-center gap-1 hover:text-stone-600">
+                                                                                    {!isExpanded && <span className="text-[8px] bg-stone-100 dark:bg-zinc-700 px-1 py-0.5 rounded text-stone-500 font-medium">{getShortTime(j.sent_at)}</span>}
+                                                                                    <svg className={`w-3 h-3 transform transition-transform ${isExpanded ? 'rotate-180 text-stone-600' : 'text-stone-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                                                                                    </svg>
+                                                                                </span>
                                                                             </div>
-                                                                        )}
-                                                                    </div>
-                                                                )
-                                                            })}
+
+                                                                            {isExpanded && (
+                                                                                <div className="text-[10px] text-stone-400 mt-2 pl-2 border-l border-stone-200 dark:border-zinc-700 space-y-1 py-0.5 animate-fadeIn">
+                                                                                    {j.sent_by_name && (
+                                                                                        <div>Gửi: <span className="font-semibold text-stone-600 dark:text-stone-300">{j.sent_by_name}</span> lúc <span className="font-medium text-stone-500">{formatDateTime(j.sent_at)}</span></div>
+                                                                                    )}
+                                                                                    {st === 'received_by_production' && j.received_by_production_name && (
+                                                                                        <div className="text-emerald-600 dark:text-emerald-400 font-medium">Nhận: <span className="font-bold">{j.received_by_production_name}</span> lúc <span>{formatDateTime(j.received_by_production_at || j.updated_at)}</span></div>
+                                                                                    )}
+                                                                                    {st === 'received_by_warehouse' && j.received_by_warehouse_name && (
+                                                                                        <div className="text-emerald-600 dark:text-emerald-400 font-medium">Nhận: <span className="font-bold">{j.received_by_warehouse_name}</span> lúc <span>{formatDateTime(j.received_by_warehouse_at || j.updated_at)}</span></div>
+                                                                                    )}
+                                                                                    {st === 'completed_by_production' && j.completed_by_name && (
+                                                                                        <div className="text-amber-600 dark:text-amber-400 font-medium">Xong: <span className="font-bold">{j.completed_by_name}</span> lúc <span>{formatDateTime(j.completed_by_production_at || j.updated_at)}</span></div>
+                                                                                    )}
+                                                                                    {(st === 'completed_by_production' || st === 'received_by_warehouse') && j.result_item_name && (
+                                                                                        <p className="text-[10px] text-emerald-600 font-medium mt-1">→ {j.result_item_name} ({j.result_quantity} {j.result_unit})</p>
+                                                                                    )}
+                                                                                    {(() => {
+                                                                                        const { text: notesText } = parseNotes(j.notes)
+                                                                                        const isReject = j.notes && j.notes.includes('[Từ chối]')
+                                                                                        const isDiff = j.notes && j.notes.includes('[Chênh lệch]')
+                                                                                        return (
+                                                                                            <>
+                                                                                                {notesText && (
+                                                                                                    isReject ? (
+                                                                                                        <div className="mt-2 p-2.5 bg-rose-50 dark:bg-rose-950/10 border border-rose-200/50 dark:border-rose-800/30 rounded-xl text-[10px] text-rose-700 dark:text-rose-400 font-medium flex items-start gap-1.5 animate-fadeIn">
+                                                                                                            <X size={12} className="shrink-0 mt-0.5 text-rose-500" />
+                                                                                                            <div>{notesText}</div>
+                                                                                                        </div>
+                                                                                                    ) : isDiff ? (
+                                                                                                        <div className="mt-2 p-2.5 bg-amber-50 dark:bg-amber-900/10 border border-amber-200/50 dark:border-amber-800/30 rounded-xl text-[10px] text-amber-700 dark:text-amber-400 font-medium flex items-start gap-1.5">
+                                                                                                            <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+                                                                                                            <div>{notesText}</div>
+                                                                                                        </div>
+                                                                                                    ) : (
+                                                                                                        <div className="text-[9px] text-stone-500 italic mt-1 pl-1">Ghi chú: {notesText}</div>
+                                                                                                    )
+                                                                                                )}
+                                                                                            </>
+                                                                                        )
+                                                                                    })()}
+                                                                                    <div className="mt-2 flex items-center justify-end border-t border-stone-150/40 dark:border-zinc-700/40 pt-2 animate-fadeIn">
+                                                                                        <button
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation()
+                                                                                                openEditModal(j)
+                                                                                            }}
+                                                                                            className="px-2.5 py-1 bg-stone-50 hover:bg-stone-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-stone-600 dark:text-stone-300 rounded-lg text-[9px] font-bold flex items-center gap-1 transition-all active:scale-95 border border-stone-200 dark:border-zinc-700"
+                                                                                        >
+                                                                                            <Pencil size={9} className="text-stone-500" /> Chỉnh sửa số liệu
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    )
+                                                                })}
                                                         </div>
                                                     )
-                                                } else if (journals.length === 0) {
-                                                    return <div className="px-4 py-3 text-center text-xs text-stone-400">Chưa có đợt giao nhận nào</div>
                                                 }
                                                 return null
                                             })()}
@@ -1489,7 +1521,7 @@ export default function SanXuatDeliveryJournalPage() {
                                 </div>
 
                                 <div className="bg-rose-50/50 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/30 rounded-2xl p-3.5 mb-4 space-y-1">
-                                    <p className="font-bold text-stone-850 dark:text-stone-150">{j.item_name}</p>
+                                    <p className="font-bold text-stone-800 dark:text-stone-200">{j.item_name}</p>
                                     <p className="text-xs text-stone-500">Số lượng bị từ chối: <strong>{qty} {unit}</strong></p>
                                 </div>
 
@@ -1753,7 +1785,7 @@ export default function SanXuatDeliveryJournalPage() {
                             <div className="bg-stone-50 dark:bg-zinc-900 rounded-2xl p-3.5 mb-4 space-y-1 text-xs">
                                 <div className="flex justify-between">
                                     <span className="text-stone-400">Mặt hàng:</span>
-                                    <span className="font-bold text-stone-855 dark:text-stone-200">{editModal.item_name}</span>
+                                    <span className="font-bold text-stone-800 dark:text-stone-200">{editModal.item_name}</span>
                                 </div>
                                 {editModal.delivery_code && (
                                     <div className="flex justify-between">
@@ -1763,7 +1795,7 @@ export default function SanXuatDeliveryJournalPage() {
                                 )}
                                 <div className="flex justify-between">
                                     <span className="text-stone-400">Trạng thái hiện tại:</span>
-                                    <span className="font-bold text-indigo-650 dark:text-indigo-400">
+                                    <span className="font-bold text-indigo-600 dark:text-indigo-400">
                                         {editModal.status === 'sent' && 'Đang gửi'}
                                         {editModal.status === 'received_by_production' && 'Sản xuất đã nhận'}
                                         {editModal.status === 'completed_by_production' && 'Sản xuất hoàn thành'}
@@ -1776,7 +1808,7 @@ export default function SanXuatDeliveryJournalPage() {
                             <div className="space-y-4">
                                 {/* Phần số liệu gửi */}
                                 <div className="border-b border-stone-100 dark:border-zinc-700/50 pb-4">
-                                    <h4 className="text-xs font-bold text-stone-450 dark:text-stone-400 mb-2 uppercase tracking-wider">Thông tin gửi hàng</h4>
+                                    <h4 className="text-xs font-bold text-stone-500 dark:text-stone-400 mb-2 uppercase tracking-wider">Thông tin gửi hàng</h4>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
                                             <label className="block text-xs font-bold text-stone-600 dark:text-stone-300 mb-1">Số lượng gửi</label>
@@ -1806,7 +1838,7 @@ export default function SanXuatDeliveryJournalPage() {
                                 {/* Phần số liệu nhận (nếu có) */}
                                 {(editModal.result_quantity !== null || editModal.status !== 'sent') && (
                                     <div className="border-b border-stone-100 dark:border-zinc-700/50 pb-4">
-                                        <h4 className="text-xs font-bold text-stone-450 dark:text-stone-400 mb-2 uppercase tracking-wider">Thông tin nhận hàng / kết quả</h4>
+                                        <h4 className="text-xs font-bold text-stone-500 dark:text-stone-400 mb-2 uppercase tracking-wider">Thông tin nhận hàng / kết quả</h4>
                                         <div className="grid grid-cols-2 gap-3">
                                             <div>
                                                 <label className="block text-xs font-bold text-stone-600 dark:text-stone-300 mb-1">Số lượng nhận</label>
@@ -1848,7 +1880,7 @@ export default function SanXuatDeliveryJournalPage() {
 
                                 {/* Mật khẩu xác nhận */}
                                 <div className="bg-rose-50 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/30 rounded-2xl p-3.5">
-                                    <label className="block text-xs font-bold text-rose-700 dark:text-rose-350 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
+                                    <label className="block text-xs font-bold text-rose-700 dark:text-rose-400 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
                                         <AlertTriangle size={14} className="text-rose-500 animate-pulse" />
                                         Nhập mật khẩu xác nhận <span className="text-rose-600 font-extrabold">*</span>
                                     </label>
@@ -1857,7 +1889,7 @@ export default function SanXuatDeliveryJournalPage() {
                                         value={confirmPassword}
                                         onChange={e => setConfirmPassword(e.target.value)}
                                         placeholder="Mật khẩu bảo mật..."
-                                        className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-rose-250 dark:border-rose-800 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-rose-500 font-bold"
+                                        className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-rose-200 dark:border-rose-800 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-rose-500 font-bold"
                                     />
                                 </div>
                             </div>
@@ -1869,7 +1901,7 @@ export default function SanXuatDeliveryJournalPage() {
                                 <button
                                     onClick={handleSaveEdit}
                                     disabled={isSaving}
-                                    className="px-5 py-2 text-xs font-bold text-white bg-indigo-650 hover:bg-indigo-750 disabled:bg-stone-300 rounded-xl shadow-lg shadow-indigo-500/20 active:scale-95 transition-all flex items-center gap-1.5"
+                                    className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-stone-300 rounded-xl shadow-lg shadow-indigo-500/20 active:scale-95 transition-all flex items-center gap-1.5"
                                 >
                                     {isSaving ? <Loader2 size={12} className="animate-spin" /> : <ClipboardCheck size={12} />}
                                     Lưu thay đổi

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Factory, Calendar, Clock, User, CheckCircle2, XCircle, AlertTriangle, FileText, ArrowLeft, RefreshCw, BarChart3, TrendingUp, Package, Shield, Layers, Trash2 } from 'lucide-react'
+import { Factory, Calendar, Clock, User, CheckCircle2, XCircle, AlertTriangle, FileText, ArrowLeft, RefreshCw, BarChart3, TrendingUp, Package, Shield, Layers, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import { useUser } from '@/contexts/UserContext'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
@@ -15,13 +15,7 @@ interface ShiftRecord {
     opened_at: string
     closed_by_name: string | null
     closed_at: string | null
-    summary_data: {
-        total_sent?: number
-        total_received?: number
-        total_cancelled?: number
-        units_summary?: Record<string, { sent: number; received: number; cancelled: number }>
-        mo_summary?: any
-    } | null
+    summary_data: any
     notes: string | null
     created_at: string
 }
@@ -38,7 +32,26 @@ export default function SanxuatDeliveryShiftsPage() {
     const [deleting, setDeleting] = useState(false)
     const [subShifts, setSubShifts] = useState<any[]>([])
     const [loadingSubShifts, setLoadingSubShifts] = useState(false)
-    const canDelete = true
+    const canDelete = false
+
+    const [expandedSubShifts, setExpandedSubShifts] = useState<Set<string>>(new Set())
+    const toggleExpandSubShift = (id: string) => {
+        setExpandedSubShifts(prev => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+        })
+    }
+
+    const [isMainSummaryExpanded, setIsMainSummaryExpanded] = useState(false)
+    const [isTwoWayExpanded, setIsTwoWayExpanded] = useState(false)
+    const [isUnitsExpanded, setIsUnitsExpanded] = useState(false)
+
+    useEffect(() => {
+        setIsTwoWayExpanded(false)
+        setIsUnitsExpanded(false)
+    }, [selectedShift?.id])
 
     // Tự động load settings map để phân rã mo_code ở Sản xuất
     useEffect(() => {
@@ -93,7 +106,6 @@ export default function SanxuatDeliveryShiftsPage() {
                     .from('delivery_sub_shifts')
                     .select('*')
                     .eq('shift_id', selectedShift.id)
-                    .eq('system_code', 'sanxuat')
                     .order('sub_shift_number', { ascending: true })
                 if (error) throw error
                 setSubShifts(data || [])
@@ -282,7 +294,6 @@ export default function SanxuatDeliveryShiftsPage() {
                 .from('delivery_shifts')
                 .select('*')
                 .eq('company_id', companyId)
-                .eq('system_code', 'sanxuat')
                 .order('created_at', { ascending: false })
 
             const { data, error } = await query
@@ -367,6 +378,324 @@ export default function SanxuatDeliveryShiftsPage() {
         } finally {
             setDeleting(false)
         }
+    }
+
+    const getShiftSummaryData = () => {
+        if (selectedShift?.summary_data && (selectedShift.summary_data as any).w2p) {
+            return selectedShift.summary_data
+        }
+
+        const initGroup = () => ({
+            sentUnits: {} as Record<string, number>,
+            receivedUnits: {} as Record<string, number>,
+            cancelledUnits: {} as Record<string, number>,
+            sentCount: 0,
+            receivedCount: 0,
+            cancelledCount: 0
+        })
+
+        const w2p = initGroup()
+        const p2w = initGroup()
+        const units_summary: Record<string, { sent: number; received: number; cancelled: number }> = {}
+
+        for (const j of shiftJournals) {
+            const unit = j.unit || 'Thùng'
+            const qtySent = Number(j.quantity_sent) || 0
+            const fromDept = j.from_department || 'Kho'
+
+            if (!units_summary[unit]) {
+                units_summary[unit] = { sent: 0, received: 0, cancelled: 0 }
+            }
+            units_summary[unit].sent += qtySent
+            if (j.status === 'received_by_warehouse' || j.status === 'received_by_production') {
+                units_summary[unit].received += qtySent
+            } else if (j.status === 'cancelled') {
+                units_summary[unit].cancelled += qtySent
+            }
+
+            const group = fromDept === 'Kho' ? w2p : p2w
+            group.sentCount++
+            group.sentUnits[unit] = (group.sentUnits[unit] || 0) + qtySent
+            if (j.status === 'received_by_warehouse' || j.status === 'received_by_production') {
+                group.receivedCount++
+                group.receivedUnits[unit] = (group.receivedUnits[unit] || 0) + qtySent
+            } else if (j.status === 'cancelled') {
+                group.cancelledCount++
+                group.cancelledUnits[unit] = (group.cancelledUnits[unit] || 0) + qtySent
+            }
+        }
+
+        return {
+            total_sent: shiftJournals.length,
+            total_received: shiftJournals.filter((j: any) => j.status === 'received_by_warehouse' || j.status === 'received_by_production').length,
+            total_cancelled: shiftJournals.filter((j: any) => j.status === 'cancelled').length,
+            w2p,
+            p2w,
+            units_summary,
+            mo_summary: getMoSummary()
+        }
+    }
+
+    const renderDetailedReconciliation = (summaryData: any, isSubShift = false) => {
+        if (!summaryData) return null
+
+        const w2p = summaryData.w2p || { sentCount: 0, receivedCount: 0, cancelledCount: 0, sentUnits: {}, receivedUnits: {}, cancelledUnits: {} }
+        const p2w = summaryData.p2w || { sentCount: 0, receivedCount: 0, cancelledCount: 0, sentUnits: {}, receivedUnits: {}, cancelledUnits: {} }
+        const unitsSummary = summaryData.units_summary || {}
+        
+        let moSummary = summaryData.mo_summary
+        if (!moSummary || Object.keys(moSummary).length === 0) {
+            if (summaryData === selectedShift?.summary_data) {
+                moSummary = getMoSummary()
+            }
+        }
+
+        const formatUnitQty = (unitsMap?: Record<string, number>) => {
+            if (!unitsMap) return '0 hàng hóa'
+            const entries = Object.entries(unitsMap)
+            if (entries.length === 0) return '0 hàng hóa'
+            return entries.map(([unit, qty]) => `${qty} ${unit}`).join(', ')
+        }
+
+        return (
+            <div className="space-y-6">
+                {/* 1. Tổng hợp số liệu 2 hướng */}
+                {!isSubShift && (
+                    <div className="border border-stone-200/60 dark:border-zinc-700/60 rounded-2xl overflow-hidden bg-white dark:bg-zinc-800 shadow-xs">
+                        <button
+                            onClick={() => setIsTwoWayExpanded(!isTwoWayExpanded)}
+                            className="w-full flex items-center justify-between p-3.5 bg-stone-50/50 hover:bg-stone-50 dark:bg-zinc-800/40 dark:hover:bg-zinc-800/80 transition-all text-left select-none border-b border-stone-100 dark:border-zinc-700/50"
+                        >
+                            <span className="text-[11px] font-black text-stone-750 dark:text-stone-300 uppercase tracking-wider flex items-center gap-1.5">
+                                📦 Tổng hợp số liệu 2 hướng (Nhập/Xuất)
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[9px] text-stone-400 font-bold bg-stone-100 dark:bg-zinc-700 px-1.5 py-0.5 rounded">
+                                    Tổng {(w2p.sentCount || 0) + (p2w.sentCount || 0)} đợt
+                                </span>
+                                {isTwoWayExpanded ? <ChevronDown size={14} className="text-stone-450" /> : <ChevronRight size={14} className="text-stone-450" />}
+                            </div>
+                        </button>
+
+                        {isTwoWayExpanded && (
+                            <div className="p-4 space-y-4 animate-slideDown">
+                                {/* Hướng 1: Kho -> Sản xuất */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <h4 className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-1">
+                                            📦 Cấp Vật Tư (Xuất Kho: Kho → Sản Xuất)
+                                        </h4>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <div className="bg-blue-50/30 dark:bg-blue-950/10 p-2.5 rounded-xl border border-blue-100/50 dark:border-blue-900/30 text-center flex flex-col justify-between shadow-xs">
+                                            <div className="text-[9px] text-blue-650 dark:text-blue-400 font-bold uppercase">Tổng xuất</div>
+                                            <div className="text-sm font-black mt-1 text-blue-700 dark:text-blue-450">{w2p.sentCount || 0} đợt</div>
+                                            <div className="text-[9px] text-stone-500 dark:text-stone-400 mt-1 truncate" title={formatUnitQty(w2p.sentUnits)}>
+                                                {formatUnitQty(w2p.sentUnits)}
+                                            </div>
+                                        </div>
+                                        <div className="bg-emerald-50/50 dark:bg-emerald-950/10 p-2.5 rounded-xl border border-emerald-100/50 dark:border-emerald-900/30 text-center flex flex-col justify-between shadow-xs">
+                                            <div className="text-[9px] text-emerald-600 font-bold uppercase">SX đã nhận</div>
+                                            <div className="text-sm font-black mt-1 text-emerald-600">{w2p.receivedCount || 0} đợt</div>
+                                            <div className="text-[9px] text-stone-500 dark:text-stone-400 mt-1 truncate" title={formatUnitQty(w2p.receivedUnits)}>
+                                                {formatUnitQty(w2p.receivedUnits)}
+                                            </div>
+                                        </div>
+                                        <div className="bg-rose-50/50 dark:bg-rose-950/10 p-2.5 rounded-xl border border-rose-100/50 dark:border-rose-900/30 text-center flex flex-col justify-between shadow-xs">
+                                            <div className="text-[9px] text-rose-600 font-bold uppercase">SX từ chối</div>
+                                            <div className="text-sm font-black mt-1 text-rose-600">{w2p.cancelledCount || 0} đợt</div>
+                                            <div className="text-[9px] text-stone-500 dark:text-stone-400 mt-1 truncate" title={formatUnitQty(w2p.cancelledUnits)}>
+                                                {formatUnitQty(w2p.cancelledUnits)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Hướng 2: Sản xuất -> Kho */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <h4 className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider flex items-center gap-1">
+                                            📥 Nhập Thành Phẩm (Nhập Kho: Sản Xuất → Kho)
+                                        </h4>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <div className="bg-purple-50/30 dark:bg-purple-950/10 p-2.5 rounded-xl border border-purple-100/50 dark:border-purple-900/30 text-center flex flex-col justify-between shadow-xs">
+                                            <div className="text-[9px] text-purple-650 dark:text-purple-400 font-bold uppercase">Tổng nhập về</div>
+                                            <div className="text-sm font-black mt-1 text-purple-700 dark:text-purple-450">{p2w.sentCount || 0} đợt</div>
+                                            <div className="text-[9px] text-stone-500 dark:text-stone-400 mt-1 truncate" title={formatUnitQty(p2w.sentUnits)}>
+                                                {formatUnitQty(p2w.sentUnits)}
+                                            </div>
+                                        </div>
+                                        <div className="bg-emerald-50/50 dark:bg-emerald-950/10 p-2.5 rounded-xl border border-emerald-100/50 dark:border-emerald-900/30 text-center flex flex-col justify-between shadow-xs">
+                                            <div className="text-[9px] text-emerald-600 font-bold uppercase">Kho đã nhận</div>
+                                            <div className="text-sm font-black mt-1 text-emerald-600">{p2w.receivedCount || 0} đợt</div>
+                                            <div className="text-[9px] text-stone-500 dark:text-stone-400 mt-1 truncate" title={formatUnitQty(p2w.receivedUnits)}>
+                                                {formatUnitQty(p2w.receivedUnits)}
+                                            </div>
+                                        </div>
+                                        <div className="bg-rose-50/50 dark:bg-rose-950/10 p-2.5 rounded-xl border border-rose-100/50 dark:border-rose-900/30 text-center flex flex-col justify-between shadow-xs">
+                                            <div className="text-[9px] text-rose-600 font-bold uppercase">Kho từ chối</div>
+                                            <div className="text-sm font-black mt-1 text-rose-600">{p2w.cancelledCount || 0} đợt</div>
+                                            <div className="text-[9px] text-stone-500 dark:text-stone-400 mt-1 truncate" title={formatUnitQty(p2w.cancelledUnits)}>
+                                                {formatUnitQty(p2w.cancelledUnits)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* 2. Chi tiết theo đơn vị hàng hóa */}
+                {!isSubShift && Object.keys(unitsSummary).length > 0 && (
+                    <div className="border border-stone-200/60 dark:border-zinc-700/60 rounded-2xl overflow-hidden bg-white dark:bg-zinc-800 shadow-xs">
+                        <button
+                            onClick={() => setIsUnitsExpanded(!isUnitsExpanded)}
+                            className="w-full flex items-center justify-between p-3.5 bg-stone-50/50 hover:bg-stone-50 dark:bg-zinc-800/40 dark:hover:bg-zinc-800/80 transition-all text-left select-none border-b border-stone-100 dark:border-zinc-700/50"
+                        >
+                            <span className="text-[11px] font-black text-stone-750 dark:text-stone-300 uppercase tracking-wider flex items-center gap-1.5">
+                                📊 Chi tiết theo đơn vị hàng hóa
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[9px] text-stone-400 font-bold bg-stone-100 dark:bg-zinc-700 px-1.5 py-0.5 rounded">
+                                    {Object.keys(unitsSummary).length} Đơn vị
+                                </span>
+                                {isUnitsExpanded ? <ChevronDown size={14} className="text-stone-450" /> : <ChevronRight size={14} className="text-stone-450" />}
+                            </div>
+                        </button>
+
+                        {isUnitsExpanded && (
+                            <div className="p-4 animate-slideDown">
+                                <div className="border border-stone-200 dark:border-zinc-700 rounded-xl overflow-hidden">
+                                    <table className="w-full text-[11px]">
+                                        <thead>
+                                            <tr className="bg-stone-50 dark:bg-zinc-800/60 border-b border-stone-200 dark:border-zinc-700 text-left font-bold text-stone-500">
+                                                <th className="p-2">Đơn vị</th>
+                                                <th className="p-2 text-right">Tổng gửi</th>
+                                                <th className="p-2 text-right text-emerald-600">Thành công</th>
+                                                <th className="p-2 text-right text-rose-600">Từ chối</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-stone-100 dark:divide-zinc-700 bg-white dark:bg-zinc-800">
+                                            {Object.entries(unitsSummary).map(([unit, data]: any) => (
+                                                <tr key={unit} className="hover:bg-stone-50/30 dark:hover:bg-zinc-700/10">
+                                                    <td className="p-2 font-semibold text-stone-700 dark:text-stone-300">{unit}</td>
+                                                    <td className="p-2 text-right font-bold text-stone-800 dark:text-white">{data.sent}</td>
+                                                    <td className="p-2 text-right font-bold text-emerald-600">{data.received}</td>
+                                                    <td className="p-2 text-right font-bold text-rose-600">{data.cancelled}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* 3. Đối soát chi tiết theo Lệnh sản xuất */}
+                {moSummary && Object.keys(moSummary).length > 0 ? (
+                    <div>
+                        <h5 className="text-[11px] font-bold text-stone-400 dark:text-stone-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                            <Layers size={12} className="text-emerald-500" /> Đối soát chi tiết theo Lệnh sản xuất (MO)
+                        </h5>
+                        <div className="space-y-3">
+                            {Object.entries(moSummary).map(([moCode, moData]: any) => (
+                                <div key={moCode} className="bg-stone-50/60 dark:bg-zinc-900/40 border border-stone-200/50 dark:border-zinc-700/40 rounded-xl p-3 shadow-xs">
+                                    <div className="text-xs font-black text-emerald-600 dark:text-emerald-400 mb-2 flex items-start sm:items-center justify-between flex-col sm:flex-row gap-2">
+                                        <span className="flex items-start sm:items-center gap-1.5">
+                                            <span className="shrink-0 mt-0.5 sm:mt-0">🛠 Lệnh SX:</span> 
+                                            <strong className="text-stone-800 dark:text-stone-100 break-words line-clamp-2">{moCode} {moData.mo_name ? `(${moData.mo_name})` : ''}</strong>
+                                        </span>
+                                        <span className="text-[9px] text-stone-400 font-bold bg-stone-100 dark:bg-zinc-700 px-1.5 py-0.5 rounded shrink-0 self-start sm:self-auto">
+                                            {Object.keys(moData.products || {}).length} dòng hàng
+                                        </span>
+                                    </div>
+                                    <div className="border border-stone-200/40 dark:border-zinc-700/40 rounded-lg overflow-hidden bg-white dark:bg-zinc-800">
+                                        {/* Desktop Table (ẩn trên mobile) */}
+                                        <table className="hidden md:table w-full text-[10px] text-left">
+                                            <thead>
+                                                <tr className="bg-stone-100/50 dark:bg-zinc-700/20 font-bold text-stone-500 border-b border-stone-200/40">
+                                                    <th className="p-2">Tên sản phẩm</th>
+                                                    <th className="p-2 text-right">Tổng gửi</th>
+                                                    <th className="p-2 text-right text-emerald-600">Thành công</th>
+                                                    <th className="p-2 text-right text-rose-600">Từ chối</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {Object.entries(moData.products || {}).map(([prodKey, p]: any) => (
+                                                    <tr key={prodKey} className="border-b border-stone-100 dark:border-zinc-700/30 hover:bg-stone-50/20 dark:hover:bg-zinc-700/5">
+                                                        <td className="p-2 font-semibold text-stone-700 dark:text-stone-300">
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                <span>{p.product_name}</span>
+                                                                <span className="text-[8px] text-stone-400 font-bold">({p.unit})</span>
+                                                                {p.from_department === 'Kho' ? (
+                                                                    <span className="text-[8px] px-1 py-0.5 rounded font-black bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 border border-blue-100/50 dark:border-blue-900/30 flex items-center gap-0.5">
+                                                                        📦 Kho → SX (Xuất)
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-[8px] px-1 py-0.5 rounded font-black bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400 border border-purple-100/50 dark:border-purple-900/30 flex items-center gap-0.5">
+                                                                        📥 SX → Kho (Nhập)
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-2 text-right font-bold text-stone-800 dark:text-stone-200">{p.sent}</td>
+                                                        <td className="p-2 text-right text-emerald-600 font-bold">{p.received}</td>
+                                                        <td className="p-2 text-right text-rose-600 font-bold">{p.cancelled}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+
+                                        {/* Mobile Cards (hiển thị trên mobile) */}
+                                        <div className="md:hidden flex flex-col divide-y divide-stone-100 dark:divide-zinc-700/50">
+                                            {Object.entries(moData.products || {}).map(([prodKey, p]: any) => (
+                                                <div key={prodKey} className="p-3 flex flex-col gap-2 hover:bg-stone-50/20 dark:hover:bg-zinc-700/5">
+                                                    <div className="font-semibold text-stone-700 dark:text-stone-300 text-xs">
+                                                        {p.product_name} <span className="text-[9px] text-stone-400 font-bold">({p.unit})</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between flex-wrap gap-2">
+                                                        {p.from_department === 'Kho' ? (
+                                                            <span className="text-[9px] px-1.5 py-0.5 rounded font-black bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 border border-blue-100/50 dark:border-blue-900/30 flex items-center gap-0.5">
+                                                                📦 Kho → SX
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[9px] px-1.5 py-0.5 rounded font-black bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400 border border-purple-100/50 dark:border-purple-900/30 flex items-center gap-0.5">
+                                                                📥 SX → Kho
+                                                            </span>
+                                                        )}
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="flex flex-col items-center">
+                                                                <span className="text-[9px] text-stone-400 font-medium">Gửi</span>
+                                                                <span className="text-xs font-bold text-stone-800 dark:text-stone-200">{p.sent}</span>
+                                                            </div>
+                                                            <div className="flex flex-col items-center">
+                                                                <span className="text-[9px] text-stone-400 font-medium">Nhận</span>
+                                                                <span className="text-xs font-bold text-emerald-600">{p.received}</span>
+                                                            </div>
+                                                            <div className="flex flex-col items-center">
+                                                                <span className="text-[9px] text-stone-400 font-medium">Hủy</span>
+                                                                <span className="text-xs font-bold text-rose-600">{p.cancelled}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="p-3 bg-amber-55/40 dark:bg-amber-950/10 border border-amber-100/30 dark:border-amber-900/20 rounded-xl text-[11px] text-amber-600 flex items-center gap-1.5 font-medium">
+                        <AlertTriangle size={12} /> Không ghi nhận đợt giao nhận nào phát sinh.
+                    </div>
+                )}
+            </div>
+        )
     }
 
     const filteredShifts = shifts.filter(s => {
@@ -546,273 +875,116 @@ export default function SanxuatDeliveryShiftsPage() {
                                 </div>
                             </div>
 
-                            {/* Summary Cards */}
-                            <div className="p-4 md:p-6">
-                                <h3 className="font-bold text-sm mb-4 flex items-center gap-1.5"><BarChart3 size={16} className="text-emerald-500" /> Tổng hợp số liệu giao nhận</h3>
-                                {(() => {
-                                    const totals = getShiftTotals()
-                                    return (
-                                        <div className="space-y-6">
-                                            {/* Hướng 1: Kho -> Sản xuất (Cấp vật tư) */}
-                                            <div>
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <h4 className="text-xs font-black text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-1">
-                                                        📦 1. Cấp Vật Tư (Xuất Kho: Kho → Sản Xuất)
-                                                    </h4>
-                                                    <span className="text-[10px] text-stone-400 font-semibold">Xuất nguyên vật liệu</span>
-                                                </div>
-                                                <div className="grid grid-cols-3 gap-3">
-                                                    <div className="bg-blue-50/30 dark:bg-blue-950/10 p-3.5 rounded-xl border border-blue-100/50 dark:border-blue-900/30 text-center flex flex-col justify-between min-h-[90px] shadow-sm transition-all hover:shadow-md">
-                                                        <div className="text-[10px] text-blue-650 dark:text-blue-400 font-bold uppercase tracking-wider">Tổng xuất</div>
-                                                        <div className="text-lg font-black mt-1 text-blue-700 dark:text-blue-450">
-                                                            {totals.w2p.sentCount} đợt
-                                                        </div>
-                                                        <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-1 truncate font-medium px-1" title={totals.w2p.sentQuantityText}>
-                                                            {totals.w2p.sentQuantityText}
-                                                        </div>
-                                                    </div>
-                                                    <div className="bg-emerald-50/50 dark:bg-emerald-950/10 p-3.5 rounded-xl border border-emerald-100/50 dark:border-emerald-900/30 text-center flex flex-col justify-between min-h-[90px] shadow-sm transition-all hover:shadow-md">
-                                                        <div className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">SX đã nhận</div>
-                                                        <div className="text-lg font-black mt-1 text-emerald-600">
-                                                            {totals.w2p.receivedCount} đợt
-                                                        </div>
-                                                        <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-1 truncate font-medium px-1" title={totals.w2p.receivedQuantityText}>
-                                                            {totals.w2p.receivedQuantityText}
-                                                        </div>
-                                                    </div>
-                                                    <div className="bg-rose-50/50 dark:bg-rose-950/10 p-3.5 rounded-xl border border-rose-100/50 dark:border-rose-900/30 text-center flex flex-col justify-between min-h-[90px] shadow-sm transition-all hover:shadow-md">
-                                                        <div className="text-[10px] text-rose-600 font-bold uppercase tracking-wider">SX từ chối</div>
-                                                        <div className="text-lg font-black mt-1 text-rose-600">
-                                                            {totals.w2p.cancelledCount} đợt
-                                                        </div>
-                                                        <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-1 truncate font-medium px-1" title={totals.w2p.cancelledQuantityText}>
-                                                            {totals.w2p.cancelledQuantityText}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
+                            {/* Shift Detail Content */}
+                            <div className="p-4 md:p-6 space-y-6">
+                                {/* 1. Chi tiết các lần chốt ca tạm (Accordion Timeline) - ĐƯA LÊN TRÊN CÙNG */}
+                                <div>
+                                    <h3 className="font-bold text-sm mb-4 flex items-center gap-1.5">
+                                        <Layers size={16} className="text-amber-500" />
+                                        <span>Chi tiết các lần chốt ca tạm (đổi ca)</span>
+                                        <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400 text-[10px] font-bold">
+                                            {subShifts.length} lần chốt
+                                        </span>
+                                    </h3>
 
-                                            {/* Hướng 2: Sản xuất -> Kho (Nhập thành phẩm) */}
-                                            <div>
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <h4 className="text-xs font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider flex items-center gap-1">
-                                                        📥 2. Nhập Thành Phẩm (Nhập Kho: Sản Xuất → Kho)
-                                                    </h4>
-                                                    <span className="text-[10px] text-stone-400 font-semibold">Thu hồi & nhập kho thành phẩm</span>
-                                                </div>
-                                                <div className="grid grid-cols-3 gap-3">
-                                                    <div className="bg-purple-50/30 dark:bg-purple-950/10 p-3.5 rounded-xl border border-purple-100/50 dark:border-purple-900/30 text-center flex flex-col justify-between min-h-[90px] shadow-sm transition-all hover:shadow-md">
-                                                        <div className="text-[10px] text-purple-650 dark:text-purple-400 font-bold uppercase tracking-wider">Tổng nhập về</div>
-                                                        <div className="text-lg font-black mt-1 text-purple-700 dark:text-purple-450">
-                                                            {totals.p2w.sentCount} đợt
-                                                        </div>
-                                                        <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-1 truncate font-medium px-1" title={totals.p2w.sentQuantityText}>
-                                                            {totals.p2w.sentQuantityText}
-                                                        </div>
-                                                    </div>
-                                                    <div className="bg-emerald-50/50 dark:bg-emerald-950/10 p-3.5 rounded-xl border border-emerald-100/50 dark:border-emerald-900/30 text-center flex flex-col justify-between min-h-[90px] shadow-sm transition-all hover:shadow-md">
-                                                        <div className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Kho đã nhận</div>
-                                                        <div className="text-lg font-black mt-1 text-emerald-600">
-                                                            {totals.p2w.receivedCount} đợt
-                                                        </div>
-                                                        <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-1 truncate font-medium px-1" title={totals.p2w.receivedQuantityText}>
-                                                            {totals.p2w.receivedQuantityText}
-                                                        </div>
-                                                    </div>
-                                                    <div className="bg-rose-50/50 dark:bg-rose-950/10 p-3.5 rounded-xl border border-rose-100/50 dark:border-rose-900/30 text-center flex flex-col justify-between min-h-[90px] shadow-sm transition-all hover:shadow-md">
-                                                        <div className="text-[10px] text-rose-600 font-bold uppercase tracking-wider">Kho từ chối</div>
-                                                        <div className="text-lg font-black mt-1 text-rose-600">
-                                                            {totals.p2w.cancelledCount} đợt
-                                                        </div>
-                                                        <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-1 truncate font-medium px-1" title={totals.p2w.cancelledQuantityText}>
-                                                            {totals.p2w.cancelledQuantityText}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
+                                    {loadingSubShifts ? (
+                                        <div className="p-8 text-center text-stone-400 flex flex-col items-center gap-2">
+                                            <RefreshCw className="animate-spin text-emerald-500" size={20} />
+                                            <span className="text-xs">Đang tải ca tạm...</span>
                                         </div>
-                                    )
-                                })()}
-
-                                {/* Units Breakdown */}
-                                {selectedShift.summary_data?.units_summary && Object.keys(selectedShift.summary_data.units_summary).length > 0 && (
-                                    <div className="mb-6">
-                                        <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-2.5">Chi tiết theo đơn vị hàng hóa</h4>
-                                        <div className="border border-stone-200 dark:border-zinc-700 rounded-xl overflow-hidden">
-                                            <table className="w-full text-xs">
-                                                <thead>
-                                                    <tr className="bg-stone-50 dark:bg-zinc-800/60 border-b border-stone-200 dark:border-zinc-700 text-left font-bold text-stone-500">
-                                                        <th className="p-3">Đơn vị</th>
-                                                        <th className="p-3 text-right">Tổng gửi</th>
-                                                        <th className="p-3 text-right text-emerald-600">Thành công</th>
-                                                        <th className="p-3 text-right text-rose-600">Từ chối</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-stone-100 dark:divide-zinc-700">
-                                                    {Object.entries(selectedShift.summary_data.units_summary).map(([unit, data]) => (
-                                                        <tr key={unit} className="hover:bg-stone-50/30 dark:hover:bg-zinc-700/10">
-                                                            <td className="p-3 font-semibold text-stone-700 dark:text-stone-300">{unit}</td>
-                                                            <td className="p-3 text-right font-bold text-stone-800 dark:text-white">{data.sent}</td>
-                                                            <td className="p-3 text-right font-bold text-emerald-600">{data.received}</td>
-                                                            <td className="p-3 text-right font-bold text-rose-600">{data.cancelled}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
+                                    ) : subShifts.length === 0 ? (
+                                        <div className="p-4 bg-stone-50 dark:bg-zinc-800/40 border border-stone-100 dark:border-zinc-700/50 rounded-xl text-xs text-stone-400 italic">
+                                            Không ghi nhận lần chốt ca tạm nào trong ca làm việc này.
                                         </div>
-                                    </div>
-                                )}
-
-                                {/* MO Breakdown */}
-                                {loadingJournals ? (
-                                    <div className="mb-6 p-6 bg-stone-50 dark:bg-zinc-800/40 border border-stone-200/50 dark:border-zinc-700/50 rounded-xl text-center flex flex-col items-center gap-2">
-                                        <RefreshCw className="animate-spin text-emerald-500" size={20} />
-                                        <span className="text-xs text-stone-400">Đang tải đối soát Lệnh sản xuất...</span>
-                                    </div>
-                                ) : (
-                                    (() => {
-                                        const moSummaryData = getMoSummary()
-                                        if (Object.keys(moSummaryData).length === 0) {
-                                            return (
-                                                <div className="mb-6 p-4 bg-amber-50/50 dark:bg-amber-950/10 border border-amber-100/50 dark:border-amber-900/20 rounded-xl text-xs text-amber-600 flex items-center gap-1.5 font-medium">
-                                                    <AlertTriangle size={14} /> Không tìm thấy đợt giao nhận nào phát sinh trong ca làm việc này.
-                                                </div>
-                                            )
-                                        }
-                                        return (
-                                            <div className="mb-6">
-                                                <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-                                                    <Layers size={13} className="text-emerald-500" /> Đối soát chi tiết theo Lệnh sản xuất (MO)
-                                                </h4>
-                                                <div className="space-y-4">
-                                                    {Object.entries(moSummaryData).map(([moCode, moData]: any) => (
-                                                        <div key={moCode} className="bg-stone-50/50 dark:bg-zinc-900/50 border border-stone-200/50 dark:border-zinc-700/50 rounded-xl p-3 shadow-sm">
-                                                            <div className="text-xs font-black text-emerald-650 dark:text-emerald-400 mb-2 flex items-center justify-between">
-                                                                <span className="flex items-center gap-1">🛠 Lệnh SX: <strong className="text-stone-850 dark:text-stone-100">{moCode} {moData.mo_name ? `(${moData.mo_name})` : ''}</strong></span>
-                                                                <span className="text-[10px] text-stone-400 font-bold bg-stone-100 dark:bg-zinc-700 px-1.5 py-0.5 rounded">
-                                                                    {Object.keys(moData.products).length} sản phẩm
-                                                                </span>
-                                                            </div>
-                                                            <div className="border border-stone-200/40 dark:border-zinc-700/40 rounded-lg overflow-hidden bg-white dark:bg-zinc-800">
-                                                                <table className="w-full text-[11px] text-left">
-                                                                    <thead>
-                                                                        <tr className="bg-stone-100/50 dark:bg-zinc-700/30 font-bold text-stone-500 border-b border-stone-200/40">
-                                                                            <th className="p-2">Tên sản phẩm</th>
-                                                                            <th className="p-2 text-right">Tổng gửi</th>
-                                                                            <th className="p-2 text-right text-emerald-600">Thành công</th>
-                                                                            <th className="p-2 text-right text-rose-600">Từ chối</th>
-                                                                        </tr>
-                                                                    </thead>
-                                                                    <tbody>
-                                                                        {Object.entries(moData.products).map(([prodKey, p]: any) => (
-                                                                            <tr key={prodKey} className="border-b border-stone-100 dark:border-zinc-700/30 hover:bg-stone-50/30 dark:hover:bg-zinc-700/10">
-                                                                                <td className="p-2 font-semibold text-stone-700 dark:text-stone-300">
-                                                                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                                                                        <span>{p.product_name}</span>
-                                                                                        <span className="text-[9px] text-stone-400 font-bold">({p.unit})</span>
-                                                                                        {p.from_department === 'Kho' ? (
-                                                                                            <span className="text-[9px] px-1.5 py-0.5 rounded font-black bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 border border-blue-100/50 dark:border-blue-900/30 flex items-center gap-0.5">
-                                                                                                📦 Kho → SX (Xuất)
-                                                                                            </span>
-                                                                                        ) : (
-                                                                                            <span className="text-[9px] px-1.5 py-0.5 rounded font-black bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400 border border-purple-100/50 dark:border-purple-900/30 flex items-center gap-0.5">
-                                                                                                📥 SX → Kho (Nhập)
-                                                                                            </span>
-                                                                                        )}
-                                                                                    </div>
-                                                                                </td>
-                                                                                <td className="p-2 text-right font-bold text-stone-855 dark:text-stone-250">{p.sent}</td>
-                                                                                <td className="p-2 text-right text-emerald-600 font-bold">{p.received}</td>
-                                                                                <td className="p-2 text-right text-rose-600 font-bold">{p.cancelled}</td>
-                                                                            </tr>
-                                                                        ))}
-                                                                    </tbody>
-                                                                </table>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )
-                                    })()
-                                )}
-
-                                {/* Lịch sử Chốt Ca Tạm (Sub-shifts Timeline) */}
-                                {subShifts.length > 0 && (
-                                    <div className="mb-6 border-t border-stone-100 dark:border-zinc-700/50 pt-6">
-                                        <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-4 flex items-center gap-1.5">
-                                            <Layers size={13} className="text-amber-500" /> Chi tiết các lần chốt ca tạm (đổi ca)
-                                        </h4>
-                                        <div className="relative border-l border-amber-200 dark:border-amber-900/40 ml-2.5 pl-5 space-y-6">
+                                    ) : (
+                                        <div className="relative border-l border-amber-200 dark:border-amber-900/40 ml-2.5 pl-5 space-y-4">
                                             {subShifts.map((ss: any) => {
+                                                const isExpanded = expandedSubShifts.has(ss.id)
                                                 const summary = ss.summary_data || {}
                                                 return (
                                                     <div key={ss.id} className="relative group">
                                                         {/* Timeline node */}
-                                                        <span className="absolute -left-[26px] top-1 flex items-center justify-center w-3 h-3 bg-amber-500 rounded-full ring-4 ring-white dark:ring-zinc-800 transition-all group-hover:scale-125" />
+                                                        <span className="absolute -left-[26px] top-4 flex items-center justify-center w-3 h-3 bg-amber-500 rounded-full ring-4 ring-white dark:ring-zinc-800 transition-all group-hover:scale-125" />
                                                         
-                                                        <div className="bg-stone-50/50 dark:bg-zinc-900/50 hover:bg-stone-50 dark:hover:bg-zinc-900 border border-stone-200/50 dark:border-zinc-700/50 rounded-2xl p-4 shadow-sm transition-all duration-200">
-                                                            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                                                                 <span className="text-xs font-black text-amber-600 dark:text-amber-400">
-                                                                    Lần chốt ca tạm #{ss.sub_shift_number}
-                                                                </span>
-                                                                <span className="text-[10px] font-bold text-stone-450 dark:text-stone-400">
-                                                                    ⏱ {formatDateTime(ss.from_time).split(' ')[1] || ''} → {formatDateTime(ss.to_time).split(' ')[1] || ''} ({formatDateTime(ss.to_time).split(' ')[0] || ''})
-                                                                </span>
-                                                            </div>
-
-                                                            {/* Mini Summary Grid */}
-                                                            <div className="grid grid-cols-3 gap-2 text-center mb-3">
-                                                                <div className="p-1.5 bg-white dark:bg-zinc-800 rounded-xl border border-stone-200/40 text-[11px]">
-                                                                    <div className="text-[9px] text-stone-400 font-bold uppercase">Gửi</div>
-                                                                    <div className="font-extrabold mt-0.5 text-stone-700 dark:text-stone-300">{summary.total_sent || 0} đợt</div>
+                                                        <div className="bg-stone-50/50 dark:bg-zinc-900/50 hover:bg-stone-50 dark:hover:bg-zinc-900 border border-stone-200/50 dark:border-zinc-700/50 rounded-2xl p-4 shadow-xs transition-all duration-200">
+                                                            <div 
+                                                                onClick={() => toggleExpandSubShift(ss.id)}
+                                                                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none"
+                                                            >
+                                                                <div className="flex flex-col gap-0.5 min-w-0">
+                                                                    <span className="text-xs font-black text-amber-600 dark:text-amber-400 truncate">
+                                                                        Lần chốt ca tạm #{ss.sub_shift_number}
+                                                                    </span>
+                                                                    <span className="text-[10px] font-bold text-stone-500 dark:text-stone-400 truncate">
+                                                                        ⏱ {formatDateTime(ss.from_time).split(' ')[1] || ''} → {formatDateTime(ss.to_time).split(' ')[1] || ''} ({formatDateTime(ss.to_time).split(' ')[0] || ''})
+                                                                    </span>
                                                                 </div>
-                                                                <div className="p-1.5 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-xl border border-emerald-100/30 text-[11px] text-emerald-600">
-                                                                    <div className="text-[9px] font-bold uppercase">Thành công</div>
-                                                                    <div className="font-extrabold mt-0.5">{summary.total_received || 0} đợt</div>
-                                                                </div>
-                                                                <div className="p-1.5 bg-rose-50/30 dark:bg-rose-950/10 rounded-xl border border-rose-100/30 text-[11px] text-rose-600">
-                                                                    <div className="text-[9px] font-bold uppercase">Từ chối</div>
-                                                                    <div className="font-extrabold mt-0.5">{summary.total_cancelled || 0} đợt</div>
+                                                                <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
+                                                                    <span className="text-[9px] sm:text-[10px] text-stone-500 font-bold bg-stone-100 dark:bg-zinc-700 px-2 py-1 rounded whitespace-nowrap">
+                                                                        Gửi {summary.total_sent || 0} | Nhận {summary.total_received || 0} | Hủy {summary.total_cancelled || 0}
+                                                                    </span>
+                                                                    {isExpanded ? <ChevronDown size={16} className="text-stone-500 shrink-0" /> : <ChevronRight size={16} className="text-stone-500 shrink-0" />}
                                                                 </div>
                                                             </div>
 
-                                                            {/* Units breakdown in sub-shift */}
-                                                            {summary.units_summary && Object.keys(summary.units_summary).length > 0 && (
-                                                                <div className="text-[10px] bg-white dark:bg-zinc-800 border border-stone-200/30 dark:border-zinc-700/30 rounded-xl p-2 mb-3">
-                                                                    <div className="font-bold text-stone-400 mb-1">Chi tiết hàng hóa bàn giao:</div>
-                                                                    <div className="flex flex-wrap gap-x-4 gap-y-1">
-                                                                        {Object.entries(summary.units_summary).map(([unit, data]: any) => (
-                                                                            <div key={unit} className="text-stone-600 dark:text-stone-300">
-                                                                                • <strong className="text-stone-800 dark:text-white">{unit}</strong>: Gửi {data.sent} | Nhận <span className="text-emerald-600 font-bold">{data.received}</span> | Hủy <span className="text-rose-600 font-bold">{data.cancelled}</span>
+                                                            {/* Accordion Content */}
+                                                            {isExpanded && (
+                                                                <div className="mt-4 pt-4 border-t border-stone-200/40 dark:border-zinc-700/40 space-y-4 animate-slideDown">
+                                                                    {/* Render chi tiết đối soát ca tạm */}
+                                                                    {renderDetailedReconciliation(summary, true)}
+
+                                                                    {/* Notes and Closer inside */}
+                                                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-t border-stone-250/30 dark:border-zinc-750/30 pt-3 text-[10px] text-stone-500">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <User size={10} />
+                                                                            <span>Người bàn giao: <strong className="text-stone-700 dark:text-stone-300 font-semibold">{ss.closed_by_name || 'Nhân viên'}</strong></span>
+                                                                        </div>
+                                                                        {ss.notes && (
+                                                                            <div className="italic bg-amber-500/5 dark:bg-amber-500/10 text-amber-850 dark:text-amber-400 px-2 py-0.5 rounded-lg max-w-full md:max-w-[60%] truncate" title={ss.notes}>
+                                                                                💬 Ghi chú: {ss.notes}
                                                                             </div>
-                                                                        ))}
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                             )}
-
-                                                            {/* Notes and Closer */}
-                                                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-t border-stone-200/30 dark:border-zinc-700/30 pt-2 text-[10px] text-stone-500">
-                                                                <div className="flex items-center gap-1.5">
-                                                                    <User size={10} />
-                                                                    <span>Người bàn giao: <strong className="text-stone-700 dark:text-stone-300 font-semibold">{ss.closed_by_name || 'Nhân viên'}</strong></span>
-                                                                </div>
-                                                                {ss.notes && (
-                                                                    <div className="italic bg-amber-500/5 dark:bg-amber-500/10 text-amber-850 dark:text-amber-400 px-2 py-0.5 rounded-lg max-w-full md:max-w-[60%] truncate" title={ss.notes}>
-                                                                        💬 Ghi chú: {ss.notes}
-                                                                    </div>
-                                                                )}
-                                                            </div>
                                                         </div>
                                                     </div>
                                                 )
                                             })}
                                         </div>
-                                    </div>
-                                )}
+                                    )}
+                                </div>
 
-                                {/* Notes and Handover Details */}
-                                <div>
+                                {/* 2. Tổng hợp đối soát cả ca (Sum tổng) - ĐƯA XUỐNG DƯỚI */}
+                                <div className="border-t border-stone-200/50 dark:border-zinc-700/50 pt-6">
+                                    <h3 
+                                        onClick={() => setIsMainSummaryExpanded(!isMainSummaryExpanded)}
+                                        className="font-bold text-sm mb-4 flex items-center justify-between gap-1.5 cursor-pointer select-none group"
+                                    >
+                                        <div className="flex items-center gap-1.5">
+                                            <BarChart3 size={16} className="text-emerald-500 transition-transform group-hover:scale-110" />
+                                            <span className="group-hover:text-emerald-600 transition-colors">Tổng hợp đối soát cả ca (Sum tổng)</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            {isMainSummaryExpanded ? <ChevronDown size={16} className="text-stone-450" /> : <ChevronRight size={16} className="text-stone-450" />}
+                                        </div>
+                                    </h3>
+                                    {isMainSummaryExpanded && (
+                                        <div className="animate-slideDown">
+                                            {loadingJournals ? (
+                                                <div className="p-8 text-center text-stone-400 flex flex-col items-center gap-2">
+                                                    <RefreshCw className="animate-spin text-emerald-500" size={20} />
+                                                    <span className="text-xs">Đang tổng hợp số liệu ca...</span>
+                                                </div>
+                                            ) : (
+                                                renderDetailedReconciliation(getShiftSummaryData())
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 3. Ghi chú bàn giao cuối ca - DƯỚI CÙNG */}
+                                <div className="border-t border-stone-200/50 dark:border-zinc-700/50 pt-6">
                                     <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                                         <FileText size={13} /> Ghi chú bàn giao cuối ca
                                     </h4>
